@@ -119,6 +119,19 @@ jobs:
       - name: Build image (Dockerfile.jvm)
         working-directory: backend
         run: docker build -f src/main/docker/Dockerfile.jvm -t beatzmedia:scan .
+      # DIAGNOSTIC (temporary): print the HIGH/CRITICAL table to the job log so
+      # the exact vulnerable jar/CVE is visible (SARIF output hides it). Non-gating.
+      # TODO: remove once the bootstrap image is clean.
+      - name: Trivy image scan (table, diagnostic, non-gating)
+        uses: aquasecurity/trivy-action@0.35.0
+        with:
+          scan-type: image
+          image-ref: beatzmedia:scan
+          format: table
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "0"
+
       - name: Trivy image scan (fail on HIGH/CRITICAL)
         uses: aquasecurity/trivy-action@0.35.0
         with:
