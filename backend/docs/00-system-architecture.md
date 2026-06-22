@@ -10,7 +10,7 @@
 - **Internal structure:** **modular monolith** — one module per **bounded context**, each built with
   **Hexagonal (Ports & Adapters)** layering. Modules talk **in-process** (synchronous input ports +
   asynchronous CDI domain events); **no module reads another module's tables.**
-- **Language/runtime:** Java 25, Quarkus 3.34.x (per the existing `backend/pom.xml`).
+- **Language/runtime:** Java 25, Quarkus 3.36.x (see ADR-10 for the version history).
 - **Data:** PostgreSQL with Flyway migrations; money stored in **integer minor units (pesewas)**.
 - **Media:** S3-compatible object storage (MinIO locally); audio transcoded to HLS with a server-side
   **30-second preview** rendition.
@@ -248,6 +248,8 @@ analytics rollups before insight reads; audit + RBAC before any admin mutation.
 | ADR-6 | Double-entry ledger | Auditable, balanced money movement; reconciliation | INV-6 |
 | ADR-7 | In-process events, not a broker (v1) | Lower ops cost in a monolith; can externalize later | §4.4 |
 | ADR-8 | Postgres FTS/`pg_trgm` for search (v1) | No extra infra; behind `SearchIndex` port for later swap | OQ-12 |
+| ADR-9 | Dockerfile.jvm pins UBI base to a specific rebuild tag | `ubi9/openjdk-25-runtime:1.24` is a floating tag; pinning to the dated build suffix (e.g. `1.24-2.1781533370`) ensures reproducible builds and picks up the latest OS security patches at pin-time. Trivy scan on `1.24-2.1781533370` (2026-06-15 rebuild) shows 0 fixable HIGH/CRITICAL CVEs. Update the pin when a new patch rebuild or minor version is published. No `.trivyignore` needed as of 2026-06-22. | Phase 0 bootstrap |
+| ADR-10 | Adopt Quarkus 3.36.3 (skip 3.34.x stream) at bootstrap | Driver: CVE-2026-39852 in `quarkus-vertx-http` has no fix in the 3.34.x stream (advisory lists 3.20.6.1, 3.27.3.1, 3.33.1.1, and 3.35.1.1 as the minimum patched releases). Additionally, Netty 4.1.132.Final (shipped by 3.34.3) carries 9 HIGH/CRITICAL CVEs (netty-codec, netty-codec-dns, netty-codec-haproxy, netty-codec-http, netty-handler, netty-resolver-dns); fixed in Netty 4.1.135.Final. Decision: adopt Quarkus 3.36.3, the latest stable LTS-aligned release available on Maven Central as of 2026-06-22, which ships `quarkus-vertx-http` 3.36.3 (>3.35.1.1, CVE-2026-39852 cleared) and Netty 4.1.135.Final (all 9 CVEs cleared). No business code exists yet, so the migration cost is zero. Consequence: lowest-debt path forward; no `.trivyignore` suppression needed; all transitive HIGH/CRITICAL fixable CVEs cleared. The CLAUDE.md toolchain line and all docs are updated to reflect 3.36.x. | Phase 0 bootstrap |
 
 New ADRs are appended here by agents when they make a structural decision (see
 `sdlc/agent-workflow.md`).

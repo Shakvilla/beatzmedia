@@ -1,7 +1,7 @@
 # CI/CD — GitHub Actions (BeatzClik Backend)
 
 > **Scope.** Concrete, copy-pasteable GitHub Actions workflows for the `beatzmedia` Quarkus
-> backend (Quarkus 3.34.3, Java 25, Maven, PostgreSQL 16, MinIO, Docker). Designed so that
+> backend (Quarkus 3.36.3, Java 25, Maven, PostgreSQL 16, MinIO, Docker). Designed so that
 > **autonomous Claude Code agents** can open PRs, get them validated, auto-merge on green, cut a
 > release, and deploy — with a human only as approver/break-glass.
 >

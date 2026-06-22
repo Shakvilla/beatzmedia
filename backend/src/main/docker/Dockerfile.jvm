@@ -80,7 +80,12 @@
 # You can find more information about the UBI base runtime images and their configuration here:
 # https://rh-openjdk.github.io/redhat-openjdk-containers/
 ###
-FROM registry.access.redhat.com/ubi9/openjdk-25-runtime:1.24
+# Pin to the most recent patch rebuild of the 1.24 stream (as of 2026-06-22).
+# Red Hat rebuilds this image frequently; the long build-number suffix is the
+# most recent rebuild incorporating current OS security patches. Update by
+# querying: curl -s https://registry.access.redhat.com/v2/ubi9/openjdk-25-runtime/tags/list
+# There is no 1.25/1.26 minor available yet — 1.24-2.1781533370 is the latest.
+FROM registry.access.redhat.com/ubi9/openjdk-25-runtime:1.24-2.1781533370
 
 ENV LANGUAGE='en_US:en'
 
