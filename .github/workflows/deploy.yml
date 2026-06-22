@@ -53,7 +53,7 @@ jobs:
             || (github.event.release.tag_name && github.event.release.tag_name)
             || 'latest' }}
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
 
       # -----------------------------------------------------------------------
       # Fail closed if required Environment secrets are missing. Without these
