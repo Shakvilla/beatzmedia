@@ -1,0 +1,291 @@
+# BeatzClik backend CI.
+#
+# The Maven project lives in backend/ (repo root is NOT the Maven project root),
+# so every Maven step runs with working-directory: backend and uses the
+# committed wrapper ./mvnw.
+#
+# Job `name:` values are the CONTRACT with branch protection. They must stay
+# byte-identical to the required status checks in
+# backend/docs/sdlc/branching-and-pr.md §4:
+#   build, unit-tests, integration-tests, contract-test, archunit,
+#   coverage-gate, spotless-lint, security-scan (security.yml),
+#   migration-test, compose-smoke
+# Do not rename without updating that doc.
+name: ci
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+# Cancel superseded runs on the same ref.
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+# Least privilege: read-only by default.
+permissions:
+  contents: read
+
+env:
+  MAVEN_ARGS: "-B -ntp -Dstyle.color=always"
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # spotless-lint — Spotless (google-java-format) + -Werror style gate.
+  # Fast, no DB. DoD §11.7.
+  # ---------------------------------------------------------------------------
+  spotless-lint:
+    name: spotless-lint
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 25 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+      - name: Spotless check (google-java-format)
+        working-directory: backend
+        run: ./mvnw $MAVEN_ARGS spotless:check
+
+  # ---------------------------------------------------------------------------
+  # build — compile on Java 25. Cheap gate the rest depend on.
+  # ---------------------------------------------------------------------------
+  build:
+    name: build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up JDK 25 (Temurin)
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+      - name: Compile (Java 25)
+        working-directory: backend
+        run: ./mvnw $MAVEN_ARGS clean compile
+
+  # ---------------------------------------------------------------------------
+  # unit-tests — surefire (domain + use cases with fakes). DoD §11.1.
+  # skipITs=true is the pom default, so failsafe stays out of this job.
+  # ---------------------------------------------------------------------------
+  unit-tests:
+    name: unit-tests
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+      - name: Unit tests (surefire)
+        working-directory: backend
+        run: ./mvnw $MAVEN_ARGS test
+      - name: Upload surefire reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: surefire-reports
+          path: backend/target/surefire-reports/
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # integration-tests — failsafe + Testcontainers (Postgres + MinIO).
+  # ubuntu-latest ships a working Docker daemon, so Testcontainers spins up
+  # ephemeral containers itself; no service: block required. DoD §11.1.
+  # ---------------------------------------------------------------------------
+  integration-tests:
+    name: integration-tests
+    runs-on: ubuntu-latest
+    needs: build
+    env:
+      # Keep Ryuk on for deterministic container cleanup in CI.
+      TESTCONTAINERS_RYUK_DISABLED: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+      - name: Integration tests (failsafe + Testcontainers)
+        working-directory: backend
+        # -DskipITs=false activates failsafe via `verify`.
+        run: ./mvnw $MAVEN_ARGS verify -DskipITs=false
+      - name: Upload failsafe reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: failsafe-reports
+          path: backend/target/failsafe-reports/
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # archunit — hexagonal dependency rule (adapters -> application -> domain).
+  # ArchUnit tests are tagged @Tag("arch"); run only that tag. DoD §11.5.
+  # ---------------------------------------------------------------------------
+  archunit:
+    name: archunit
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+      - name: Run ArchUnit suite
+        working-directory: backend
+        run: ./mvnw $MAVEN_ARGS test -Dgroups=arch
+
+  # ---------------------------------------------------------------------------
+  # coverage-gate — JaCoCo check rule fails the build below the gate.
+  # The pom wires @{argLine}; jacoco:check binds to verify. DoD §11.7.
+  # ---------------------------------------------------------------------------
+  coverage-gate:
+    name: coverage-gate
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+      - name: Tests with coverage + enforce gate
+        working-directory: backend
+        run: ./mvnw $MAVEN_ARGS verify -DskipITs=false -Pcoverage
+      - name: Upload JaCoCo report
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: jacoco-report
+          path: backend/target/site/jacoco/
+          retention-days: 7
+
+  # ---------------------------------------------------------------------------
+  # contract-test — build the OpenAPI document, then assert conformance to
+  # API-CONTRACT.md (REST-assured + schema validation, @Tag("contract")).
+  # DoD §11.2.
+  # ---------------------------------------------------------------------------
+  contract-test:
+    name: contract-test
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+      - name: Generate OpenAPI document
+        working-directory: backend
+        # smallrye-openapi writes the static document under target/openapi.
+        run: ./mvnw $MAVEN_ARGS quarkus:build -Dquarkus.smallrye-openapi.store-schema-directory=target/openapi
+      - name: Contract conformance tests
+        working-directory: backend
+        run: ./mvnw $MAVEN_ARGS verify -DskipITs=false -Dgroups=contract
+      - name: Upload generated OpenAPI
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: openapi
+          path: backend/target/openapi/
+          retention-days: 14
+
+  # ---------------------------------------------------------------------------
+  # migration-test — Flyway forward-only clean apply on an EMPTY Postgres.
+  # Uses a service container so it is independent of Testcontainers. DoD §11.3.
+  # ---------------------------------------------------------------------------
+  migration-test:
+    name: migration-test
+    runs-on: ubuntu-latest
+    needs: build
+    services:
+      db:
+        image: postgres:16
+        env:
+          POSTGRES_USER: beatz
+          POSTGRES_PASSWORD: beatz
+          POSTGRES_DB: beatzmedia
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U beatz"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      QUARKUS_DATASOURCE_JDBC_URL: jdbc:postgresql://localhost:5432/beatzmedia
+      QUARKUS_DATASOURCE_USERNAME: beatz
+      QUARKUS_DATASOURCE_PASSWORD: beatz
+      # Validate (not just migrate) to catch out-of-order / edited migrations.
+      QUARKUS_FLYWAY_VALIDATE_ON_MIGRATE: "true"
+      QUARKUS_FLYWAY_CLEAN_DISABLED: "false"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+      - name: Flyway clean + migrate + validate (forward-only, empty DB)
+        working-directory: backend
+        run: |
+          ./mvnw $MAVEN_ARGS flyway:clean flyway:migrate flyway:validate \
+            -Dflyway.url="$QUARKUS_DATASOURCE_JDBC_URL" \
+            -Dflyway.user="$QUARKUS_DATASOURCE_USERNAME" \
+            -Dflyway.password="$QUARKUS_DATASOURCE_PASSWORD" \
+            -Dflyway.locations=filesystem:src/main/resources/db/migration
+
+  # ---------------------------------------------------------------------------
+  # compose-smoke — boot the full stack, wait for readiness, hit a real
+  # endpoint, tear down. DoD §11.4.
+  # ---------------------------------------------------------------------------
+  compose-smoke:
+    name: compose-smoke
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+      - name: Build app jar (for Dockerfile.jvm)
+        working-directory: backend
+        run: ./mvnw $MAVEN_ARGS package -DskipTests
+      - name: docker compose up (full stack)
+        working-directory: backend
+        run: docker compose up -d --build
+      - name: Wait for /q/health/ready
+        run: |
+          echo "Waiting for app readiness..."
+          for i in $(seq 1 60); do
+            if curl -fsS http://localhost:8080/q/health/ready >/dev/null; then
+              echo "App is ready."; exit 0
+            fi
+            sleep 5
+          done
+          echo "App did not become ready in time."; exit 1
+      - name: Smoke test (real endpoints)
+        run: |
+          set -euo pipefail
+          curl -fsS http://localhost:8080/q/health/live | tee /tmp/live.json
+          curl -fsS "http://localhost:8080/v1/catalog/releases?page=1&size=1" \
+            -H "Accept: application/json" | tee /tmp/releases.json
+      - name: Dump logs on failure
+        if: failure()
+        working-directory: backend
+        run: docker compose logs --no-color
+      - name: Tear down
+        if: ${{ always() }}
+        working-directory: backend
+        run: docker compose down -v

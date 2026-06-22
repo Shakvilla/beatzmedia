@@ -1,0 +1,46 @@
+# Dependabot — keep Maven deps, GitHub Actions, and Docker base images current.
+# Dependabot PRs flow through the same required checks (branching-and-pr.md §4)
+# and auto-merge on green unless they touch a payments/security-owned path.
+version: 2
+updates:
+  # Maven (backend service — the Maven project lives in /backend).
+  - package-ecosystem: "maven"
+    directory: "/backend"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    open-pull-requests-limit: 5
+    labels: ["area:build", "autonomous", "type:chore"]
+    commit-message:
+      prefix: "build"
+      include: "scope"
+    groups:
+      quarkus:
+        patterns: ["io.quarkus*", "io.quarkus.platform*"]
+      test-stack:
+        patterns:
+          ["org.testcontainers*", "io.rest-assured*", "org.junit*", "org.assertj*"]
+    ignore:
+      # Java/Quarkus majors are deliberate, human-driven upgrades.
+      - dependency-name: "io.quarkus.platform:quarkus-bom"
+        update-types: ["version-update:semver-major"]
+
+  # GitHub Actions (workflow `uses:` pins live at the repo root).
+  - package-ecosystem: "github-actions"
+    directory: "/"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels: ["area:ci", "autonomous", "type:ci"]
+    commit-message:
+      prefix: "ci"
+
+  # Docker base images (Dockerfiles under backend/src/main/docker).
+  - package-ecosystem: "docker"
+    directory: "/backend/src/main/docker"
+    schedule:
+      interval: "weekly"
+      day: "monday"
+    labels: ["area:build", "type:chore"]
+    commit-message:
+      prefix: "build"

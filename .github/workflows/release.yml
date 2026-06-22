@@ -1,0 +1,134 @@
+# BeatzClik backend release: build + publish the container image to GHCR and
+# cut a GitHub Release.
+#
+# Triggers:
+#   - push to main      -> publish image tagged with the project version + sha
+#                          (every merged, CI-validated commit is releasable)
+#   - tag v*.*.*        -> immutable SemVer release + GitHub Release/CHANGELOG
+#
+# CI-pass guard: this workflow only proceeds once the `ci` workflow has
+# concluded successfully for the same commit (gate-ci job below). Branch
+# protection already blocks un-green merges to main, this is defence in depth.
+name: release
+
+on:
+  push:
+    branches: [main]
+    tags: ["v*.*.*"]
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false # never cancel an in-flight release
+
+permissions:
+  contents: read
+
+env:
+  REGISTRY: ghcr.io
+  IMAGE_NAME: ${{ github.repository }} # owner/repo -> ghcr.io/owner/repo
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # gate-ci — confirm CI passed for this exact commit before we publish.
+  # Tags (manually cut from a green main) skip the wait.
+  # ---------------------------------------------------------------------------
+  gate-ci:
+    name: gate-ci
+    runs-on: ubuntu-latest
+    permissions:
+      checks: read
+      actions: read
+      contents: read
+    steps:
+      - name: Wait for CI to succeed on this commit
+        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
+        uses: fountainhead/action-wait-for-check@v1.2.0
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          # Wait on a representative required CI check on the head commit.
+          checkName: build
+          ref: ${{ github.sha }}
+          timeoutSeconds: 1800
+          intervalSeconds: 20
+      - name: CI gate satisfied
+        run: echo "CI green (or tag release) — proceeding."
+
+  build-and-publish:
+    name: build-and-publish
+    runs-on: ubuntu-latest
+    needs: gate-ci
+    permissions:
+      contents: read
+      packages: write # push to ghcr.io
+      id-token: write # OIDC for build provenance/attestation
+    outputs:
+      version: ${{ steps.meta.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # full history for release notes
+
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      - name: Build app jar (CI already validated this commit)
+        working-directory: backend
+        run: ./mvnw -B -ntp package -DskipTests
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ${{ env.REGISTRY }}
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Derive image tags (SemVer + git sha)
+        id: meta
+        uses: docker/metadata-action@v5
+        with:
+          images: ${{ env.REGISTRY }}/${{ env.IMAGE_NAME }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha,format=long
+            type=raw,value=latest,enable={{is_default_branch}}
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
+      - name: Build + push JVM image (Dockerfile.jvm)
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          file: backend/src/main/docker/Dockerfile.jvm
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: true
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
+  github-release:
+    name: github-release
+    runs-on: ubuntu-latest
+    needs: build-and-publish
+    if: startsWith(github.ref, 'refs/tags/v')
+    permissions:
+      contents: write # create the GitHub Release
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Generate release notes + create Release
+        uses: softprops/action-gh-release@v2
+        with:
+          generate_release_notes: true # CHANGELOG from merged PRs
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
+          body: |
+            Container image: `ghcr.io/${{ github.repository }}:${{ needs.build-and-publish.outputs.version }}`
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

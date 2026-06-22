@@ -1,0 +1,172 @@
+# BeatzClik backend security pipeline (SAST + supply chain).
+#
+# Branch protection (branching-and-pr.md §4) requires a single context named
+# `security-scan` — implemented here as an aggregate gate that depends on the
+# individual scan jobs (codeql-java, dependency-review, trivy-image-scan).
+# The aggregate job's `name:` is `security-scan` and must stay byte-identical
+# to that required-check name.
+#
+# Least-privilege GITHUB_TOKEN: default read-only; jobs widen only as needed.
+name: security
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+  schedule:
+    - cron: "0 3 * * 1" # weekly full scan, Monday 03:00 UTC
+
+concurrency:
+  group: security-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  # ---------------------------------------------------------------------------
+  # CodeQL static analysis. Quarkus is JVM; CodeQL identifies as java-kotlin.
+  # ---------------------------------------------------------------------------
+  codeql-java:
+    name: codeql-java
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write # upload SARIF
+      actions: read
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+      - name: Initialize CodeQL
+        uses: github/codeql-action/init@v3
+        with:
+          languages: java-kotlin
+          # Manual build for determinism (autobuild can mis-detect multi-dir repos).
+          build-mode: manual
+      - name: Build for analysis
+        working-directory: backend
+        run: ./mvnw -B -ntp clean compile -DskipTests
+      - name: Perform CodeQL analysis
+        uses: github/codeql-action/analyze@v3
+        with:
+          category: "/language:java-kotlin"
+
+  # ---------------------------------------------------------------------------
+  # Dependency review — block PRs that introduce vulnerable / denied-license
+  # dependencies. PR-only (the action requires a base..head diff).
+  # ---------------------------------------------------------------------------
+  dependency-review:
+    name: dependency-review
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request'
+    permissions:
+      contents: read
+      pull-requests: write # post the summary comment
+    steps:
+      - uses: actions/checkout@v4
+      - name: Dependency Review
+        uses: actions/dependency-review-action@v4
+        with:
+          fail-on-severity: high
+          comment-summary-in-pr: always
+          deny-licenses: GPL-3.0, AGPL-3.0
+
+  # ---------------------------------------------------------------------------
+  # Trivy — filesystem scan (deps/config) + container image scan
+  # (Dockerfile.jvm). Fail on HIGH/CRITICAL; upload SARIF to code scanning.
+  # ---------------------------------------------------------------------------
+  trivy-image-scan:
+    name: trivy-image-scan
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "25"
+          cache: maven
+
+      # --- Filesystem scan (source tree: deps, IaC, misconfig) ---
+      - name: Trivy filesystem scan
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: fs
+          scan-ref: backend
+          format: sarif
+          output: trivy-fs.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "0" # surface in code scanning; gate happens on the image
+      - name: Upload Trivy FS SARIF
+        if: ${{ !cancelled() }}
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-fs.sarif
+          category: trivy-fs
+
+      # --- Image scan (the artifact we actually ship) ---
+      - name: Build app jar
+        working-directory: backend
+        run: ./mvnw -B -ntp package -DskipTests
+      - name: Build image (Dockerfile.jvm)
+        working-directory: backend
+        run: docker build -f src/main/docker/Dockerfile.jvm -t beatzmedia:scan .
+      - name: Trivy image scan (fail on HIGH/CRITICAL)
+        uses: aquasecurity/trivy-action@0.24.0
+        with:
+          scan-type: image
+          image-ref: beatzmedia:scan
+          format: sarif
+          output: trivy-image.sarif
+          severity: HIGH,CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+      - name: Upload Trivy image SARIF
+        if: ${{ !cancelled() }}
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-image.sarif
+          category: trivy-image
+
+  # ---------------------------------------------------------------------------
+  # security-scan — REQUIRED status check (branching-and-pr.md §4). Aggregates
+  # the scan jobs so branch protection can require a single stable context.
+  # On a pull_request, dependency-review runs and must succeed; on push/schedule
+  # it is skipped, so we treat 'skipped' as acceptable there.
+  # ---------------------------------------------------------------------------
+  security-scan:
+    name: security-scan
+    runs-on: ubuntu-latest
+    needs: [codeql-java, dependency-review, trivy-image-scan]
+    if: ${{ always() }}
+    steps:
+      - name: Assert all security scans passed
+        run: |
+          set -euo pipefail
+          codeql="${{ needs.codeql-java.result }}"
+          dep="${{ needs.dependency-review.result }}"
+          trivy="${{ needs.trivy-image-scan.result }}"
+          echo "codeql-java=$codeql dependency-review=$dep trivy-image-scan=$trivy"
+          fail=0
+          [ "$codeql" = "success" ] || { echo "::error::codeql-java failed"; fail=1; }
+          [ "$trivy" = "success" ] || { echo "::error::trivy-image-scan failed"; fail=1; }
+          # dependency-review only runs on PRs; 'skipped' is OK off-PR.
+          case "$dep" in
+            success|skipped) ;;
+            *) echo "::error::dependency-review failed"; fail=1 ;;
+          esac
+          exit $fail
+
+# NOTE: Enable GitHub Secret Scanning + Push Protection at the repo/org level
+# (Settings -> Code security). It is a platform feature, not a workflow, and
+# blocks commits containing recognized credentials before they land — important
+# because agents commit autonomously. No BEATZ_* secret, JWT key, or DB
+# password should ever be committed; all come from GitHub/Environment secrets.

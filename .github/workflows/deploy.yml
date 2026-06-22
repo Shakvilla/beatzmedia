@@ -1,0 +1,149 @@
+# BeatzClik backend deploy.
+#
+# Triggers:
+#   - release: published   -> deploy the released image (default: production)
+#   - workflow_dispatch     -> manual promotion to a chosen environment + tag
+#
+# The job binds to a GitHub Environment (default `production`), so it is GATED
+# on that environment's protection rules (required reviewers) and reads its
+# Environment secrets. If the required secrets are absent the job FAILS CLOSED
+# with a clear message (no partial / unauthenticated deploy).
+#
+# Migrations: the app runs Flyway at boot (QUARKUS_FLYWAY_MIGRATE_AT_START=true,
+# PRD §5.2), so a normal restart applies pending forward-only migrations.
+# Rollback is image-only — migrations are forward-only and are never reverted.
+name: deploy
+
+on:
+  release:
+    types: [published]
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Target environment
+        type: choice
+        options: [staging, production]
+        default: production
+      image_tag:
+        description: Image tag to deploy (e.g. 1.2.3 or a sha; defaults to latest)
+        type: string
+        default: latest
+
+concurrency:
+  group: deploy-${{ github.event.inputs.environment || 'production' }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+  packages: read
+
+jobs:
+  deploy:
+    name: deploy
+    runs-on: ubuntu-latest
+    # GATE: environment protection rules (required reviewers) + Environment
+    # secrets apply here. release:published deploys to production by default.
+    environment: ${{ github.event.inputs.environment || 'production' }}
+    env:
+      # On a release event, github.event.release.tag_name is e.g. v1.2.3; strip
+      # the leading v to match the published image tag. On manual dispatch use
+      # the provided tag. Falls back to latest.
+      IMAGE_TAG: >-
+        ${{ github.event.inputs.image_tag
+            || (github.event.release.tag_name && github.event.release.tag_name)
+            || 'latest' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # -----------------------------------------------------------------------
+      # Fail closed if required Environment secrets are missing. Without these
+      # we cannot authenticate to the host/registry or reach the health URL, so
+      # there is nothing safe to do but stop with a clear message.
+      # -----------------------------------------------------------------------
+      - name: Preflight — require deploy secrets (fail-closed)
+        env:
+          DEPLOY_HOST: ${{ secrets.DEPLOY_HOST }}
+          DEPLOY_USER: ${{ secrets.DEPLOY_USER }}
+          DEPLOY_SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          DEPLOY_HEALTH_URL: ${{ secrets.DEPLOY_HEALTH_URL }}
+          GHCR_PULL_TOKEN: ${{ secrets.GHCR_PULL_TOKEN }}
+        run: |
+          set -euo pipefail
+          missing=()
+          [ -n "${DEPLOY_HOST:-}" ]       || missing+=("DEPLOY_HOST")
+          [ -n "${DEPLOY_USER:-}" ]       || missing+=("DEPLOY_USER")
+          [ -n "${DEPLOY_SSH_KEY:-}" ]    || missing+=("DEPLOY_SSH_KEY")
+          [ -n "${DEPLOY_HEALTH_URL:-}" ] || missing+=("DEPLOY_HEALTH_URL")
+          [ -n "${GHCR_PULL_TOKEN:-}" ]   || missing+=("GHCR_PULL_TOKEN")
+          if [ ${#missing[@]} -gt 0 ]; then
+            echo "::error::Refusing to deploy — missing Environment secrets: ${missing[*]}"
+            echo "Configure them on the '${{ github.event.inputs.environment || 'production' }}' GitHub Environment."
+            echo "Required: DEPLOY_HOST, DEPLOY_USER, DEPLOY_SSH_KEY, DEPLOY_HEALTH_URL, GHCR_PULL_TOKEN,"
+            echo "          DB_JDBC_URL, DB_USERNAME, DB_PASSWORD, payment provider prod keys,"
+            echo "          BEATZ_PAYMENT_WEBHOOK_SECRET (consumed by the app at runtime via the host)."
+            exit 1
+          fi
+          # Normalise IMAGE_TAG: strip a leading 'v' from release tags.
+          TAG="${IMAGE_TAG#v}"
+          echo "IMAGE=ghcr.io/${{ github.repository }}:${TAG}" >> "$GITHUB_ENV"
+          echo "Deploying image: ghcr.io/${{ github.repository }}:${TAG}"
+
+      # -----------------------------------------------------------------------
+      # Generic SSH + compose-pull deploy (single-container, PRD §5.5).
+      # DB creds / payment prod keys / BEATZ_PAYMENT_WEBHOOK_SECRET are read by
+      # the app from the deploy host's compose env, not injected here, so they
+      # never transit the runner.
+      # -----------------------------------------------------------------------
+      - name: Deploy over SSH (compose pull + up)
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          envs: IMAGE
+          script: |
+            set -euo pipefail
+            echo "${{ secrets.GHCR_PULL_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
+            cd /opt/beatzmedia
+            export BEATZ_IMAGE="$IMAGE"
+            docker compose pull app
+            # Flyway migrates at boot (QUARKUS_FLYWAY_MIGRATE_AT_START=true).
+            # For multi-instance topologies run a one-shot migrate first instead:
+            #   docker compose run --rm app java -jar quarkus-run.jar --flyway-migrate
+            docker compose up -d app
+
+      - name: Health gate (/q/health/ready)
+        run: |
+          set -euo pipefail
+          URL="${{ secrets.DEPLOY_HEALTH_URL }}" # e.g. https://api.beatzclik.com/q/health/ready
+          for i in $(seq 1 40); do
+            if curl -fsS "$URL" >/dev/null; then echo "Healthy."; exit 0; fi
+            sleep 6
+          done
+          echo "::error::Health check failed — readiness not reached."; exit 1
+
+      # Rollback: re-pin to the last known-good image recorded on the host.
+      - name: Rollback on failure
+        if: failure()
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          script: |
+            set -euo pipefail
+            cd /opt/beatzmedia
+            export BEATZ_IMAGE="$(cat .last_good_image 2>/dev/null || echo ghcr.io/${{ github.repository }}:latest)"
+            docker compose up -d app
+            echo "Rolled back to $BEATZ_IMAGE (schema is forward-only; not reverted)."
+
+      - name: Record last-good image
+        if: success()
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.DEPLOY_HOST }}
+          username: ${{ secrets.DEPLOY_USER }}
+          key: ${{ secrets.DEPLOY_SSH_KEY }}
+          envs: IMAGE
+          script: |
+            echo "$IMAGE" > /opt/beatzmedia/.last_good_image

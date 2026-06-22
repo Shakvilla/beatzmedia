@@ -1,0 +1,34 @@
+# CODEOWNERS — review routing for the BeatzClik backend.
+#
+# These globs also align with the area:payments / area:security labels and the
+# human-approval gate in backend/docs/sdlc/branching-and-pr.md §6.2.
+#
+# PLACEHOLDER TEAMS — rename to your real GitHub teams before enabling
+# branch protection that requires CODEOWNER review:
+#   @beatzclik/backend   -> platform/backend reviewers (default)
+#   @beatzclik/payments  -> payments / money-path reviewers (human required)
+#   @beatzclik/security  -> security / auth / crypto reviewers (human required)
+
+# Default owner — platform team reviews anything not otherwise routed.
+*                               @beatzclik/backend
+
+# Broad backend ownership.
+/backend/**                     @beatzclik/backend
+
+# Money & ownership paths require a human reviewer (§6.2). These globs also
+# drive the area:payments label and the human gate.
+**/payments/**                  @beatzclik/payments @beatzclik/backend
+**/commerce/**                  @beatzclik/payments @beatzclik/backend
+**/ledger/**                    @beatzclik/payments @beatzclik/security @beatzclik/backend
+**/db/migration/**              @beatzclik/payments @beatzclik/backend
+
+# Security-sensitive paths (auth, RBAC, JWT, secrets, crypto).
+**/identity/**                  @beatzclik/security @beatzclik/backend
+**/*security*/**                @beatzclik/security
+**/*auth*/**                    @beatzclik/security
+.github/workflows/**            @beatzclik/security @beatzclik/backend
+.github/CODEOWNERS              @beatzclik/security
+
+# Specs & conventions.
+/BACKEND-PRD.md                 @beatzclik/backend
+/backend/docs/**                @beatzclik/backend

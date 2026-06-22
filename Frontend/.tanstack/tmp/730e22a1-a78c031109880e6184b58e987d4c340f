@@ -1,0 +1,120 @@
+import { createFileRoute } from '@tanstack/react-router'
+import { CreditCard, Smartphone, Check } from 'lucide-react'
+import { useState } from 'react'
+import { cn } from '../utils/cn'
+
+export const Route = createFileRoute('/checkout/')({
+  component: CheckoutComponent,
+})
+
+const PAYMENT_METHODS = [
+  { id: 'mtn', name: 'MTN MoMo', subtitle: '0244 ••• 9210 - default', color: 'bg-[#f6c644]', textColor: 'text-black', logoText: 'MTN' },
+  { id: 'voda', name: 'Vodafone Cash', subtitle: 'Add new number', color: 'bg-red-600', textColor: 'text-white', logoText: 'V' },
+  { id: 'airtel', name: 'AirtelTigo Money', subtitle: 'Add new number', color: 'bg-red-700', textColor: 'text-white', logoText: 'AT' },
+  { id: 'card', name: 'Card', subtitle: 'Visa / Mastercard', color: 'bg-beatz-dark-surface-3', textColor: 'text-white', isCard: true },
+]
+
+const ORDER_ITEMS = [
+  { id: 1, title: 'Last Last', artist: 'Burna Boy', price: '₵2.50', image: 'https://images.unsplash.com/photo-1493225255756-d9584f8606e9?q=80&w=50&auto=format&fit=crop' },
+  { id: 2, title: 'Kwaku the Traveller', artist: 'Black Sherif', price: '₵3.00', image: 'https://images.unsplash.com/photo-1619983081563-430f63602796?q=80&w=50&auto=format&fit=crop' },
+  { id: 3, title: 'Sungba', artist: 'Asake', price: '₵2.50', image: 'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?q=80&w=50&auto=format&fit=crop' },
+  { id: 4, title: 'The Villain I Never Was', artist: 'Black Sherif', price: '₵18.00', image: 'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=50&auto=format&fit=crop' },
+]
+
+function CheckoutComponent() {
+  const [selectedMethod, setSelectedMethod] = useState('mtn')
+
+  return (
+    <div className="flex flex-col gap-8 pb-12">
+      <h1 className="text-display tracking-tight text-beatz-dark-bg dark:text-white">Checkout</h1>
+
+      <div className="grid grid-cols-1 lg:grid-cols-3 gap-8 items-start">
+        {/* Left Column: Payment */}
+        <div className="lg:col-span-2 flex flex-col gap-8">
+          
+          <div className="flex flex-col gap-4">
+            <h2 className="text-xl font-bold text-beatz-dark-bg dark:text-white">Pay with</h2>
+            <div className="flex flex-col gap-3">
+              {PAYMENT_METHODS.map((method) => (
+                <button
+                  key={method.id}
+                  onClick={() => setSelectedMethod(method.id)}
+                  className={cn(
+                    "flex items-center gap-4 p-4 rounded-xl border transition-all text-left group",
+                    selectedMethod === method.id
+                      ? "bg-beatz-green/5 border-beatz-green"
+                      : "bg-white dark:bg-beatz-dark-surface-2 border-gray-100 dark:border-white/5 hover:border-white/20"
+                  )}
+                >
+                  <div className={cn(
+                    "w-12 h-12 rounded-lg flex items-center justify-center shrink-0 font-bold text-sm",
+                    method.color,
+                    method.textColor
+                  )}>
+                    {method.isCard ? <CreditCard size={20} /> : method.logoText}
+                  </div>
+                  <div className="flex flex-col flex-1">
+                    <span className="font-bold text-beatz-dark-bg dark:text-white">{method.name}</span>
+                    <span className="text-xs text-gray-500">{method.subtitle}</span>
+                  </div>
+                  <div className={cn(
+                    "w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors",
+                    selectedMethod === method.id
+                      ? "border-beatz-green bg-beatz-green"
+                      : "border-gray-300 dark:border-white/20"
+                  )}>
+                    {selectedMethod === method.id && <div className="w-2 h-2 rounded-full bg-black" />}
+                  </div>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* MoMo Info Box */}
+          {selectedMethod === 'mtn' && (
+            <div className="p-6 rounded-2xl bg-white dark:bg-beatz-dark-surface-2 border border-gray-100 dark:border-white/5 flex flex-col gap-3">
+              <h3 className="font-bold text-beatz-dark-bg dark:text-white">Confirm with MoMo PIN</h3>
+              <p className="text-sm text-gray-500 leading-relaxed">
+                You'll receive a prompt on <span className="text-beatz-dark-bg dark:text-white font-bold">0244 ••• 9210</span> to authorize this payment. The charge will appear as <span className="text-[#f6c644] font-bold">BEATZCLIK GH</span> on your statement.
+              </p>
+            </div>
+          )}
+        </div>
+
+        {/* Right Column: Order Review */}
+        <div className="lg:sticky lg:top-24 bg-white dark:bg-beatz-dark-surface-2 border border-gray-100 dark:border-white/5 rounded-2xl p-8 flex flex-col gap-6 shadow-xl">
+          <h2 className="text-2xl font-bold text-beatz-dark-bg dark:text-white">Your order</h2>
+          
+          <div className="flex flex-col gap-4 border-b border-gray-100 dark:border-white/5 pb-6">
+            {ORDER_ITEMS.map((item) => (
+              <div key={item.id} className="flex items-center gap-3">
+                <div className="w-10 h-10 rounded overflow-hidden shrink-0">
+                  <img src={item.image} alt={item.title} className="w-full h-full object-cover" />
+                </div>
+                <div className="flex flex-col flex-1 min-w-0">
+                  <span className="text-sm font-bold text-beatz-dark-bg dark:text-white truncate">{item.title}</span>
+                  <span className="text-[10px] text-gray-500 truncate">{item.artist}</span>
+                </div>
+                <span className="text-xs font-mono font-bold text-gray-400">{item.price}</span>
+              </div>
+            ))}
+          </div>
+
+          <div className="flex justify-between items-end">
+            <span className="text-lg font-bold text-beatz-dark-bg dark:text-white uppercase tracking-tight">Total</span>
+            <span className="text-3xl font-mono font-bold text-beatz-green leading-none">₵26.50</span>
+          </div>
+
+          <button className="w-full h-14 rounded-full bg-beatz-green text-black font-bold text-lg hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg shadow-beatz-green/20">
+            Pay ₵26.50 with MoMo
+          </button>
+
+          <p className="text-center text-[10px] text-gray-500">
+            By paying, you agree to the Beatzclik Terms.
+          </p>
+        </div>
+
+      </div>
+    </div>
+  )
+}

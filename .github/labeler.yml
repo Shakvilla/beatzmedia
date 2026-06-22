@@ -1,0 +1,50 @@
+# Path -> label rules for actions/labeler (branching-and-pr.md §5).
+# Format: actions/labeler v5 (each label maps to match rules under changed-files).
+#
+# Money/security paths force the area:payments / area:security labels, which in
+# turn force human review (§6.2). Everything else is autonomous.
+
+"area:payments":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/payments/**"
+          - "**/commerce/**"
+          - "**/ledger/**"
+
+"area:security":
+  - changed-files:
+      - any-glob-to-any-file:
+          - "**/identity/**"
+          - "**/*security*/**"
+          - "**/*auth*/**"
+          - ".github/workflows/**"
+          - ".github/CODEOWNERS"
+
+"area:identity":
+  - changed-files:
+      - any-glob-to-any-file: ["**/identity/**"]
+
+"area:catalog":
+  - changed-files:
+      - any-glob-to-any-file: ["**/catalog/**"]
+
+"area:commerce":
+  - changed-files:
+      - any-glob-to-any-file: ["**/commerce/**"]
+
+"area:platform":
+  - changed-files:
+      - any-glob-to-any-file: ["**/platform/**"]
+
+"area:build":
+  - changed-files:
+      - any-glob-to-any-file: ["**/pom.xml", "backend/mvnw*", "**/Dockerfile*"]
+
+"area:ci":
+  - changed-files:
+      - any-glob-to-any-file: [".github/workflows/**", ".github/dependabot.yml"]
+
+# Default: PRs that touch none of the gated paths above are eligible for
+# autonomous merge. (Applied by a complementary rule/automation; labeler alone
+# cannot express "none of the above", so apply `autonomous` by default in the
+# repo's labeling automation and let the gated labels override.)
