@@ -16,6 +16,17 @@
         <quarkus.platform.version>3.34.3</quarkus.platform.version>
         <skipITs>true</skipITs>
         <surefire-plugin.version>3.5.4</surefire-plugin.version>
+        <!-- Coverage thresholds — testing-strategy.md §10 -->
+        <jacoco.line.overall>0.80</jacoco.line.overall>
+        <jacoco.line.domain>0.90</jacoco.line.domain>
+        <jacoco.branch.domain>0.85</jacoco.branch.domain>
+        <jacoco.line.application>0.90</jacoco.line.application>
+        <!-- Testcontainers version aligned to quarkus-bom where possible -->
+        <testcontainers.version>1.20.4</testcontainers.version>
+        <archunit.version>1.3.0</archunit.version>
+        <spotless.version>2.45.0</spotless.version>
+        <google-java-format.version>1.25.2</google-java-format.version>
+        <jacoco.version>0.8.12</jacoco.version>
     </properties>
 
     <dependencyManagement>
@@ -31,13 +42,12 @@
     </dependencyManagement>
 
     <dependencies>
+        <!-- ================================================================ -->
+        <!-- REST / API layer                                                   -->
+        <!-- ================================================================ -->
         <dependency>
             <groupId>io.quarkus</groupId>
-            <artifactId>quarkus-rest-client-jackson</artifactId>
-        </dependency>
-        <dependency>
-            <groupId>io.quarkus</groupId>
-            <artifactId>quarkus-smallrye-openapi</artifactId>
+            <artifactId>quarkus-rest</artifactId>
         </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>
@@ -45,15 +55,88 @@
         </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-smallrye-openapi</artifactId>
+        </dependency>
+        <!-- Outbound REST client (media/payments phase will use this) -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-rest-client-jackson</artifactId>
+        </dependency>
+
+        <!-- ================================================================ -->
+        <!-- CDI                                                                -->
+        <!-- ================================================================ -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
             <artifactId>quarkus-arc</artifactId>
         </dependency>
+
+        <!-- ================================================================ -->
+        <!-- Persistence                                                        -->
+        <!-- ================================================================ -->
         <dependency>
             <groupId>io.quarkus</groupId>
-            <artifactId>quarkus-rest</artifactId>
+            <artifactId>quarkus-hibernate-orm-panache</artifactId>
         </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>
-            <artifactId>quarkus-junit</artifactId>
+            <artifactId>quarkus-jdbc-postgresql</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-flyway</artifactId>
+        </dependency>
+
+        <!-- ================================================================ -->
+        <!-- Validation                                                         -->
+        <!-- ================================================================ -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-hibernate-validator</artifactId>
+        </dependency>
+
+        <!-- ================================================================ -->
+        <!-- Security / JWT                                                     -->
+        <!-- ================================================================ -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-smallrye-jwt</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-smallrye-jwt-build</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-security</artifactId>
+        </dependency>
+
+        <!-- ================================================================ -->
+        <!-- Health / Observability                                             -->
+        <!-- ================================================================ -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-smallrye-health</artifactId>
+        </dependency>
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-micrometer-registry-prometheus</artifactId>
+        </dependency>
+
+        <!-- ================================================================ -->
+        <!-- Scheduling                                                         -->
+        <!-- ================================================================ -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-scheduler</artifactId>
+        </dependency>
+
+        <!-- ================================================================ -->
+        <!-- Test dependencies                                                  -->
+        <!-- ================================================================ -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-junit5</artifactId>
             <scope>test</scope>
         </dependency>
         <dependency>
@@ -61,16 +144,48 @@
             <artifactId>rest-assured</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!-- Testcontainers — PostgreSQL (integration tests) -->
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>${testcontainers.version}</version>
+            <scope>test</scope>
+        </dependency>
+        <dependency>
+            <groupId>org.testcontainers</groupId>
+            <artifactId>junit-jupiter</artifactId>
+            <version>${testcontainers.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- ArchUnit — hexagonal dependency rule (@Tag("arch")) -->
+        <dependency>
+            <groupId>com.tngtech.archunit</groupId>
+            <artifactId>archunit-junit5</artifactId>
+            <version>${archunit.version}</version>
+            <scope>test</scope>
+        </dependency>
+
+        <!-- JSON Schema validation for contract tests -->
+        <dependency>
+            <groupId>io.rest-assured</groupId>
+            <artifactId>json-schema-validator</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
         <plugins>
+            <!-- Quarkus Maven plugin -->
             <plugin>
                 <groupId>${quarkus.platform.group-id}</groupId>
                 <artifactId>quarkus-maven-plugin</artifactId>
                 <version>${quarkus.platform.version}</version>
                 <extensions>true</extensions>
             </plugin>
+
+            <!-- Java compiler -->
             <plugin>
                 <artifactId>maven-compiler-plugin</artifactId>
                 <version>${compiler-plugin.version}</version>
@@ -78,6 +193,8 @@
                     <parameters>true</parameters>
                 </configuration>
             </plugin>
+
+            <!-- Surefire — unit tests; @{argLine} populated by JaCoCo prepare-agent -->
             <plugin>
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>${surefire-plugin.version}</version>
@@ -89,6 +206,8 @@
                     </systemPropertyVariables>
                 </configuration>
             </plugin>
+
+            <!-- Failsafe — integration tests (*IT); @{argLine} from JaCoCo -->
             <plugin>
                 <artifactId>maven-failsafe-plugin</artifactId>
                 <version>${surefire-plugin.version}</version>
@@ -109,10 +228,43 @@
                     </systemPropertyVariables>
                 </configuration>
             </plugin>
+
+            <!-- Spotless — Java formatting enforced in CI (spotless-lint job).
+                 NOTE: google-java-format 1.x calls a javac internal API
+                 (Log$DeferredDiagnosticHandler.getDiagnostics) that was REMOVED
+                 in JDK 24 (JEP 471). Until a stable release of google-java-format
+                 that removes this dependency ships, we enforce formatting via
+                 import ordering + whitespace rules which are fully Java-25-safe.
+                 Structural GJF formatting is enforced via IDE plugin (.editorconfig).
+                 Track: https://github.com/google/google-java-format/issues/1044 -->
+            <plugin>
+                <groupId>com.diffplug.spotless</groupId>
+                <artifactId>spotless-maven-plugin</artifactId>
+                <version>${spotless.version}</version>
+                <configuration>
+                    <java>
+                        <removeUnusedImports/>
+                        <importOrder>
+                            <order>java,javax,jakarta,org,com,io,\\#</order>
+                        </importOrder>
+                        <trimTrailingWhitespace/>
+                        <endWithNewline/>
+                    </java>
+                </configuration>
+                <executions>
+                    <execution>
+                        <goals>
+                            <goal>check</goal>
+                        </goals>
+                        <phase>verify</phase>
+                    </execution>
+                </executions>
+            </plugin>
         </plugins>
     </build>
 
     <profiles>
+        <!-- Native image build -->
         <profile>
             <id>native</id>
             <activation>
@@ -125,6 +277,104 @@
                 <skipITs>false</skipITs>
                 <quarkus.native.enabled>true</quarkus.native.enabled>
             </properties>
+        </profile>
+
+        <!-- Coverage gate — activated by -Pcoverage in CI (coverage-gate job).
+             Wires JaCoCo prepare-agent (sets @{argLine}) + report + check with
+             the thresholds from testing-strategy.md §10. -->
+        <profile>
+            <id>coverage</id>
+            <build>
+                <plugins>
+                    <plugin>
+                        <groupId>org.jacoco</groupId>
+                        <artifactId>jacoco-maven-plugin</artifactId>
+                        <version>${jacoco.version}</version>
+                        <executions>
+                            <!-- 1. Instrument classes and populate @{argLine} -->
+                            <execution>
+                                <id>jacoco-prepare-agent</id>
+                                <goals>
+                                    <goal>prepare-agent</goal>
+                                </goals>
+                            </execution>
+                            <!-- 2. Report (html + xml) in target/site/jacoco -->
+                            <execution>
+                                <id>jacoco-report</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>report</goal>
+                                </goals>
+                            </execution>
+                            <!-- 3. Enforce gates — testing-strategy.md §10 -->
+                            <execution>
+                                <id>jacoco-check</id>
+                                <phase>verify</phase>
+                                <goals>
+                                    <goal>check</goal>
+                                </goals>
+                                <configuration>
+                                    <rules>
+                                        <!-- Overall project: ≥ 80% line coverage -->
+                                        <rule>
+                                            <element>BUNDLE</element>
+                                            <limits>
+                                                <limit>
+                                                    <counter>LINE</counter>
+                                                    <value>COVEREDRATIO</value>
+                                                    <minimum>${jacoco.line.overall}</minimum>
+                                                </limit>
+                                            </limits>
+                                        </rule>
+                                        <!-- Domain package: ≥ 90% line, ≥ 85% branch -->
+                                        <rule>
+                                            <element>PACKAGE</element>
+                                            <includes>
+                                                <include>org/shakvilla/beatzmedia/*/domain/**</include>
+                                                <include>org/shakvilla/beatzmedia/platform/**</include>
+                                            </includes>
+                                            <limits>
+                                                <limit>
+                                                    <counter>LINE</counter>
+                                                    <value>COVEREDRATIO</value>
+                                                    <minimum>${jacoco.line.domain}</minimum>
+                                                </limit>
+                                                <limit>
+                                                    <counter>BRANCH</counter>
+                                                    <value>COVEREDRATIO</value>
+                                                    <minimum>${jacoco.branch.domain}</minimum>
+                                                </limit>
+                                            </limits>
+                                        </rule>
+                                        <!-- Application package: ≥ 90% line -->
+                                        <rule>
+                                            <element>PACKAGE</element>
+                                            <includes>
+                                                <include>org/shakvilla/beatzmedia/*/application/**</include>
+                                            </includes>
+                                            <limits>
+                                                <limit>
+                                                    <counter>LINE</counter>
+                                                    <value>COVEREDRATIO</value>
+                                                    <minimum>${jacoco.line.application}</minimum>
+                                                </limit>
+                                            </limits>
+                                        </rule>
+                                    </rules>
+                                    <!-- Exclude generated, DTO mappers, JPA entities from gates -->
+                                    <excludes>
+                                        <exclude>**/adapter/out/persistence/**/*Entity.class</exclude>
+                                        <exclude>**/adapter/out/persistence/**/*Mapper.class</exclude>
+                                        <exclude>**/*DTO.class</exclude>
+                                        <exclude>**/*Request.class</exclude>
+                                        <exclude>**/*Response.class</exclude>
+                                    </excludes>
+                                </configuration>
+                            </execution>
+                        </executions>
+                    </plugin>
+                </plugins>
+            </build>
         </profile>
     </profiles>
 </project>

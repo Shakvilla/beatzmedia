@@ -11,9 +11,9 @@ name: security
 
 on:
   pull_request:
-    branches: [main]
+    branches: [master]
   push:
-    branches: [main]
+    branches: [master]
   schedule:
     - cron: "0 3 * * 1" # weekly full scan, Monday 03:00 UTC
 
