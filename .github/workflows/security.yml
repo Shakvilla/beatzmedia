@@ -119,9 +119,12 @@ jobs:
       - name: Build image (Dockerfile.jvm)
         working-directory: backend
         run: docker build -f src/main/docker/Dockerfile.jvm -t beatzmedia:scan .
-      # DIAGNOSTIC (temporary): print HIGH/CRITICAL table to the log. Non-gating.
-      # TODO: remove once the bootstrap image is clean.
-      - name: Trivy image scan (table, diagnostic, non-gating)
+      # GATE: fail ONLY on fixable HIGH/CRITICAL. Uses table format on purpose —
+      # trivy-action's `format: sarif` path builds the SARIF "with all severities"
+      # and makes exit-code fire on LOW/MEDIUM too, ignoring the severity filter.
+      # Table format passes --severity/--exit-code straight to trivy, so the gate
+      # is scoped correctly and the findings table is printed to the job log.
+      - name: Trivy image scan (gate — fail on HIGH/CRITICAL)
         uses: aquasecurity/trivy-action@0.35.0
         with:
           scan-type: image
@@ -129,17 +132,19 @@ jobs:
           format: table
           severity: HIGH,CRITICAL
           ignore-unfixed: true
-          exit-code: "0"
-      - name: Trivy image scan (fail on HIGH/CRITICAL)
+          exit-code: "1"
+      # REPORT: full-severity SARIF for code scanning. Non-gating (exit-code 0)
+      # so MEDIUM/LOW surface in the Security tab without blocking the merge.
+      - name: Trivy image scan (SARIF report)
+        if: ${{ !cancelled() }}
         uses: aquasecurity/trivy-action@0.35.0
         with:
           scan-type: image
           image-ref: beatzmedia:scan
           format: sarif
           output: trivy-image.sarif
-          severity: HIGH,CRITICAL
           ignore-unfixed: true
-          exit-code: "1"
+          exit-code: "0"
       - name: Upload Trivy image SARIF
         if: ${{ !cancelled() }}
         uses: github/codeql-action/upload-sarif@v3
