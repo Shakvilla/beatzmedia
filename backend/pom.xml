@@ -27,6 +27,12 @@
         <spotless.version>2.45.0</spotless.version>
         <google-java-format.version>1.25.2</google-java-format.version>
         <jacoco.version>0.8.15</jacoco.version>
+        <!-- Override the pgjdbc driver pinned by quarkus-bom 3.34.3 (42.7.5),
+             which carries two HIGH advisories: GHSA-hq9p-pm7w-8p54 (channelBinding
+             bypass) and GHSA-98qh-xjc8-98pq (PBKDF2 DoS). 42.7.11 is the first
+             release patching both. Applies to the runtime image and the Flyway
+             Maven plugin classpath. -->
+        <postgresql.version>42.7.11</postgresql.version>
     </properties>
 
     <dependencyManagement>
@@ -81,6 +87,14 @@
         <dependency>
             <groupId>io.quarkus</groupId>
             <artifactId>quarkus-jdbc-postgresql</artifactId>
+        </dependency>
+        <!-- Explicit pgjdbc override: forces the patched driver (see
+             postgresql.version) into the shipped image, ahead of the
+             BOM-managed 42.7.5 that quarkus-jdbc-postgresql would otherwise pull. -->
+        <dependency>
+            <groupId>org.postgresql</groupId>
+            <artifactId>postgresql</artifactId>
+            <version>${postgresql.version}</version>
         </dependency>
         <dependency>
             <groupId>io.quarkus</groupId>
@@ -251,7 +265,7 @@
                     <dependency>
                         <groupId>org.postgresql</groupId>
                         <artifactId>postgresql</artifactId>
-                        <version>42.7.5</version>
+                        <version>${postgresql.version}</version>
                     </dependency>
                 </dependencies>
             </plugin>
