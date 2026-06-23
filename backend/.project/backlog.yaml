@@ -1,0 +1,404 @@
+# BeatzClik backend — Work Unit backlog (single source of truth for the autonomous loop)
+#
+# This registry drives the build. The tech-lead / scrum-master read it to find the next
+# READY work unit (status: todo AND every id in depends_on has status: done), respecting phase
+# order. Each WU maps to PRD §8 and a module Architecture Design Doc under backend/docs/architecture/.
+#
+# STATUS values: todo | in_progress | in_review | blocked | done
+# Update via scripts/progress.sh or by the scrum-master agent. Keep this file the truth; never
+# mark done until the WU's PR is merged and CI is green.
+#
+# human_gate: open questions (PRD §12) that need a human decision. The loop applies the documented
+# DEFAULT and proceeds, but flags the WU in status reports so a human can confirm/override.
+
+meta:
+  project: beatzmedia
+  prd: ../docs/../../BACKEND-PRD.md      # repo-root BACKEND-PRD.md
+  docs: ../docs/README.md
+  phases:
+    0: "Foundations (platform kernel, scheduler, media, audit)"
+    1: "Identity & Catalog"
+    2: "Commerce & Payments core"
+    3: "Money completion (payouts/KYC, refunds/disputes)"
+    4: "Surfaces & proposals (store, podcasts, events, notifications, studio, admin, analytics)"
+
+work_units:
+  # ---------------- Phase 0 — Foundations ----------------
+  - id: WU-PLT-1
+    title: Platform kernel — Money VO, error model, pagination, ids/clock, PlatformSettings + flags
+    phase: 0
+    module: platform
+    add: analytics-audit-platform.md
+    owner: backend-engineer
+    depends_on: []
+    llfrs: [LLFR-PLATFORM-01.1, LLFR-ADMIN-10.1]
+    status: in_progress
+  - id: WU-PLT-2
+    title: Scheduler infrastructure + job registration
+    phase: 0
+    module: platform
+    add: analytics-audit-platform.md
+    owner: backend-engineer
+    depends_on: [WU-PLT-1]
+    llfrs: [LLFR-PLATFORM-01.2]
+    status: todo
+  - id: WU-MED-1
+    title: Media pipeline — upload, validate, transcode (HLS + 30s preview), signed delivery
+    phase: 0
+    module: media
+    add: media.md
+    owner: backend-engineer
+    depends_on: [WU-PLT-1]
+    llfrs: [LLFR-MEDIA-01.1, LLFR-MEDIA-01.2, LLFR-MEDIA-01.3]
+    status: todo
+
+  # ---------------- Phase 1 — Identity & Catalog ----------------
+  - id: WU-IDN-1
+    title: Account model, signup/login, password hashing, JWT issue
+    phase: 1
+    module: identity
+    add: identity.md
+    owner: backend-engineer
+    depends_on: [WU-PLT-1]
+    llfrs: [LLFR-IDENTITY-01.1, LLFR-IDENTITY-01.2, LLFR-IDENTITY-01.4]
+    status: todo
+  - id: WU-IDN-2
+    title: /me, social login, password reset
+    phase: 1
+    module: identity
+    add: identity.md
+    owner: backend-engineer
+    depends_on: [WU-IDN-1]
+    llfrs: [LLFR-IDENTITY-01.3, LLFR-IDENTITY-01.5, LLFR-IDENTITY-02.1]
+    status: todo
+  - id: WU-IDN-3
+    title: Become-artist + fan settings
+    phase: 1
+    module: identity
+    add: identity.md
+    owner: backend-engineer
+    depends_on: [WU-IDN-1]
+    llfrs: [LLFR-IDENTITY-02.2, LLFR-IDENTITY-02.3]
+    status: todo
+  - id: WU-IDN-4
+    title: Admin members + RBAC scope enforcement
+    phase: 1
+    module: identity
+    add: identity.md
+    owner: backend-engineer
+    depends_on: [WU-IDN-1, WU-PLT-1]
+    llfrs: [LLFR-IDENTITY-03.1, LLFR-IDENTITY-03.2, LLFR-IDENTITY-03.3]
+    status: todo
+  - id: WU-AUD-1
+    title: Audit writer interceptor + read endpoint
+    phase: 1
+    module: audit
+    add: analytics-audit-platform.md
+    owner: backend-engineer
+    depends_on: [WU-IDN-4]
+    llfrs: [LLFR-AUDIT-01.1, LLFR-ADMIN-11.1]
+    status: todo
+  - id: WU-CAT-1
+    title: Catalog entities + read endpoints (artists/albums/tracks/playlists/lyrics)
+    phase: 1
+    module: catalog
+    add: catalog.md
+    owner: backend-engineer
+    depends_on: [WU-PLT-1]
+    llfrs: [LLFR-CATALOG-01.4, LLFR-CATALOG-01.5, LLFR-CATALOG-01.6, LLFR-CATALOG-01.7]
+    status: todo
+  - id: WU-SRCH-1
+    title: Search index lifecycle (Postgres pg_trgm behind SearchIndex port)
+    phase: 1
+    module: search
+    add: search.md
+    owner: backend-engineer
+    depends_on: [WU-CAT-1]
+    llfrs: [LLFR-SEARCH-01.1, LLFR-SEARCH-01.2]
+    status: todo
+  - id: WU-CAT-2
+    title: Home feed + browse + search read
+    phase: 1
+    module: catalog
+    add: catalog.md
+    owner: backend-engineer
+    depends_on: [WU-CAT-1, WU-SRCH-1]
+    llfrs: [LLFR-CATALOG-01.1, LLFR-CATALOG-01.2, LLFR-CATALOG-01.3]
+    status: todo
+  - id: WU-CAT-3
+    title: Release wizard submit + manage + track upload
+    phase: 1
+    module: catalog
+    add: catalog.md
+    owner: backend-engineer
+    depends_on: [WU-CAT-1, WU-MED-1, WU-IDN-3]
+    llfrs: [LLFR-CATALOG-02.1, LLFR-CATALOG-02.2, LLFR-CATALOG-02.3, LLFR-CATALOG-02.4]
+    status: todo
+  - id: WU-CAT-4
+    title: Release state machine + scheduled go-live
+    phase: 1
+    module: catalog
+    add: catalog.md
+    owner: backend-engineer
+    depends_on: [WU-CAT-3, WU-PLT-2]
+    llfrs: [LLFR-CATALOG-02.5, LLFR-PLATFORM-01.2]
+    status: todo
+  - id: WU-LIB-1
+    title: Collection — likes/follows/saved/user playlists/owned
+    phase: 1
+    module: library
+    add: library.md
+    owner: backend-engineer
+    depends_on: [WU-IDN-1, WU-CAT-1]
+    llfrs: [LLFR-LIBRARY-01.1, LLFR-LIBRARY-01.2, LLFR-LIBRARY-01.3, LLFR-LIBRARY-01.4, LLFR-LIBRARY-01.5, LLFR-LIBRARY-01.6]
+    status: todo
+
+  # ---------------- Phase 2 — Commerce & Payments core ----------------
+  - id: WU-PAY-1
+    title: PaymentIntent + InitiateCharge + idempotency
+    phase: 2
+    module: payments
+    add: payments.md
+    owner: payments-specialist
+    depends_on: [WU-PLT-1]
+    llfrs: [LLFR-PAYMENTS-01.1]
+    status: todo
+  - id: WU-PAY-2
+    title: Provider webhooks + timeout poll + reconciliation
+    phase: 2
+    module: payments
+    add: payments.md
+    owner: payments-specialist
+    depends_on: [WU-PAY-1, WU-PLT-2]
+    llfrs: [LLFR-PAYMENTS-01.2, LLFR-PAYMENTS-01.3, LLFR-PAYMENTS-01.4]
+    status: todo
+  - id: WU-PAY-3
+    title: Double-entry ledger + creator balance + split posting + tips
+    phase: 2
+    module: payments
+    add: payments.md
+    owner: payments-specialist
+    depends_on: [WU-PAY-1]
+    llfrs: [LLFR-PAYMENTS-02.1, LLFR-PAYMENTS-02.2, LLFR-PAYMENTS-02.3, LLFR-PAYMENTS-05]
+    human_gate: [OQ-2, OQ-4]   # tip fee %, royalty model — defaults applied, confirm before prod money
+    status: todo
+  - id: WU-COM-1
+    title: Cart with stackability + totals
+    phase: 2
+    module: commerce
+    add: commerce.md
+    owner: backend-engineer
+    depends_on: [WU-PLT-1, WU-CAT-1]
+    llfrs: [LLFR-COMMERCE-01.1, LLFR-COMMERCE-01.2, LLFR-COMMERCE-01.3]
+    status: todo
+  - id: WU-COM-2
+    title: Checkout orchestration + settlement→ownership grant + orders + ticket issuance
+    phase: 2
+    module: commerce
+    add: commerce.md
+    owner: payments-specialist
+    depends_on: [WU-COM-1, WU-PAY-1, WU-PAY-3]
+    llfrs: [LLFR-COMMERCE-02.1, LLFR-COMMERCE-02.2, LLFR-COMMERCE-02.3, LLFR-COMMERCE-02.4, LLFR-COMMERCE-02.5]
+    status: todo
+  - id: WU-PLY-1
+    title: Stream URL (ownership-aware) + record play
+    phase: 2
+    module: playback
+    add: playback.md
+    owner: backend-engineer
+    depends_on: [WU-MED-1, WU-CAT-1, WU-COM-2]
+    llfrs: [LLFR-PLAYBACK-01.1, LLFR-PLAYBACK-01.2]
+    status: todo
+
+  # ---------------- Phase 3 — Money completion ----------------
+  - id: WU-PAY-4
+    title: Payout methods + withdrawals (KYC) + admin payout runs
+    phase: 3
+    module: payments
+    add: payments.md
+    owner: payments-specialist
+    depends_on: [WU-PAY-3, WU-IDN-4]
+    llfrs: [LLFR-PAYMENTS-03.1, LLFR-PAYMENTS-03.2, LLFR-PAYMENTS-03.3, LLFR-PAYMENTS-03.4]
+    status: todo
+  - id: WU-PAY-5
+    title: Refunds/chargebacks/disputes + ownership revocation + clawback
+    phase: 3
+    module: payments
+    add: payments.md
+    owner: payments-specialist
+    depends_on: [WU-PAY-3, WU-COM-2]
+    llfrs: [LLFR-PAYMENTS-04.1, LLFR-PAYMENTS-04.2, LLFR-PAYMENTS-04.3]
+    status: todo
+
+  # ---------------- Phase 4 — Surfaces & proposals ----------------
+  - id: WU-STO-1
+    title: Store catalog + detail
+    phase: 4
+    module: store
+    add: store.md
+    owner: backend-engineer
+    depends_on: [WU-CAT-1, WU-SRCH-1]
+    llfrs: [LLFR-STORE-01.1, LLFR-STORE-01.2]
+    status: todo
+  - id: WU-POD-1
+    title: Podcast shows/episodes browse + gating
+    phase: 4
+    module: podcasts
+    add: podcasts.md
+    owner: backend-engineer
+    depends_on: [WU-CAT-1, WU-MED-1]
+    llfrs: [LLFR-PODCAST-01.1, LLFR-PODCAST-01.2, LLFR-PODCAST-01.3]
+    status: todo
+  - id: WU-POD-2
+    title: Tipping (90/10 via payments)
+    phase: 4
+    module: podcasts
+    add: podcasts.md
+    owner: payments-specialist
+    depends_on: [WU-PAY-3, WU-POD-1]
+    llfrs: [LLFR-PODCAST-02.1]
+    status: todo
+  - id: WU-EVT-1
+    title: Events browse + detail + tier availability
+    phase: 4
+    module: events
+    add: events.md
+    owner: backend-engineer
+    depends_on: [WU-CAT-1]
+    llfrs: [LLFR-EVENTS-01.1, LLFR-EVENTS-01.2]
+    status: todo
+  - id: WU-NOT-1
+    title: In-app notifications feed + read state
+    phase: 4
+    module: notifications
+    add: notifications.md
+    owner: backend-engineer
+    depends_on: [WU-IDN-1]
+    llfrs: [LLFR-NOTIF-01.1, LLFR-NOTIF-01.2, LLFR-NOTIF-01.3]
+    status: todo
+  - id: WU-NOT-2
+    title: Email/SMS dispatch on events with retry
+    phase: 4
+    module: notifications
+    add: notifications.md
+    owner: backend-engineer
+    depends_on: [WU-NOT-1, WU-PLT-2]
+    llfrs: [LLFR-NOTIF-02.1]
+    status: todo
+  - id: WU-STU-1
+    title: Studio profile
+    phase: 4
+    module: studio
+    add: studio.md
+    owner: backend-engineer
+    depends_on: [WU-IDN-3]
+    llfrs: [LLFR-STUDIO-01.1]
+    status: todo
+  - id: WU-STU-2
+    title: Studio podcast shows/episodes create/manage
+    phase: 4
+    module: studio
+    add: studio.md
+    owner: backend-engineer
+    depends_on: [WU-MED-1, WU-POD-1]
+    llfrs: [LLFR-STUDIO-02.1, LLFR-STUDIO-02.2, LLFR-STUDIO-02.3, LLFR-STUDIO-02.4]
+    status: todo
+  - id: WU-ANA-1
+    title: Analytics rollups
+    phase: 4
+    module: analytics
+    add: analytics-audit-platform.md
+    owner: backend-engineer
+    depends_on: [WU-PLY-1, WU-COM-2, WU-PLT-2]
+    llfrs: [LLFR-ANALYTICS-01.1]
+    status: todo
+  - id: WU-STU-3
+    title: Studio analytics/audience reads
+    phase: 4
+    module: studio
+    add: studio.md
+    owner: backend-engineer
+    depends_on: [WU-ANA-1]
+    llfrs: [LLFR-STUDIO-03.1, LLFR-STUDIO-03.2]
+    status: todo
+  - id: WU-STU-4
+    title: Studio settings
+    phase: 4
+    module: studio
+    add: studio.md
+    owner: backend-engineer
+    depends_on: [WU-IDN-3]
+    llfrs: [LLFR-STUDIO-04.2]
+    status: todo
+  - id: WU-ADM-1
+    title: Admin overview & health
+    phase: 4
+    module: admin
+    add: admin.md
+    owner: backend-engineer
+    depends_on: [WU-IDN-4, WU-AUD-1]
+    llfrs: [LLFR-ADMIN-01.1, LLFR-ADMIN-01.2]
+    status: todo
+  - id: WU-ADM-2
+    title: User administration (verify/suspend/reactivate/impersonate/data-export)
+    phase: 4
+    module: admin
+    add: admin.md
+    owner: backend-engineer
+    depends_on: [WU-IDN-4, WU-AUD-1]
+    llfrs: [LLFR-ADMIN-02.1, LLFR-ADMIN-02.2, LLFR-ADMIN-02.3, LLFR-ADMIN-02.4, LLFR-ADMIN-02.5, LLFR-ADMIN-02.6]
+    status: todo
+  - id: WU-ADM-3
+    title: Catalog moderation + moderation queue
+    phase: 4
+    module: admin
+    add: admin.md
+    owner: backend-engineer
+    depends_on: [WU-IDN-4, WU-AUD-1, WU-CAT-4]
+    llfrs: [LLFR-ADMIN-03.1, LLFR-ADMIN-03.2, LLFR-ADMIN-04.1]
+    status: todo
+  - id: WU-ADM-4
+    title: Editorial (featured/push/playlists)
+    phase: 4
+    module: admin
+    add: admin.md
+    owner: backend-engineer
+    depends_on: [WU-IDN-4, WU-AUD-1, WU-CAT-2]
+    llfrs: [LLFR-ADMIN-06.1]
+    status: todo
+  - id: WU-ADM-5
+    title: Finance ops surface (delegates to payments)
+    phase: 4
+    module: admin
+    add: admin.md
+    owner: payments-specialist
+    depends_on: [WU-IDN-4, WU-AUD-1, WU-PAY-4, WU-PAY-5]
+    llfrs: [LLFR-ADMIN-05.1, LLFR-ADMIN-05.2, LLFR-ADMIN-05.3, LLFR-ADMIN-05.4]
+    status: todo
+  - id: WU-ADM-6
+    title: Trust & safety (risk review/clear/ban)
+    phase: 4
+    module: admin
+    add: admin.md
+    owner: backend-engineer
+    depends_on: [WU-IDN-4, WU-AUD-1]
+    llfrs: [LLFR-ADMIN-07.1]
+    status: todo
+  - id: WU-ADM-7
+    title: Support tickets
+    phase: 4
+    module: admin
+    add: admin.md
+    owner: backend-engineer
+    depends_on: [WU-IDN-4, WU-AUD-1]
+    llfrs: [LLFR-ADMIN-08.1]
+    status: todo
+  - id: WU-ADM-8
+    title: Compliance + platform settings & feature flags
+    phase: 4
+    module: admin
+    add: admin.md
+    owner: backend-engineer
+    depends_on: [WU-IDN-4, WU-AUD-1, WU-PLT-1]
+    llfrs: [LLFR-ADMIN-09.1, LLFR-ADMIN-10.1]
+    status: todo
