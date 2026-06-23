@@ -10,6 +10,6 @@ import org.shakvilla.beatzmedia.platform.domain.ErrorCode;
 public class UnsupportedFormatException extends DomainException {
 
   public UnsupportedFormatException(String message) {
-    super(ErrorCode.VALIDATION, message, "file");
+    super(ErrorCode.UNSUPPORTED_FORMAT, message, "file");
   }
 }

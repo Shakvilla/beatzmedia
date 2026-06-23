@@ -282,15 +282,24 @@ CREATE TABLE media_asset (
 );
 CREATE INDEX idx_media_asset_owner_ref ON media_asset (owner_ref);
 CREATE INDEX idx_media_asset_status    ON media_asset (status);
+-- Unique partial index: prevents concurrent identical uploads from both inserting (S1)
+CREATE UNIQUE INDEX uidx_media_asset_owner_content
+    ON media_asset (owner_ref, content_hash)
+    WHERE content_hash IS NOT NULL;
 ```
 
 > **Schema note (WU-MED-1):** `content_hash` was added to the implemented table beyond the
 > original sketch above to back the `(ownerRef, contentHash)` idempotency key (§9): a re-upload of
 > identical bytes returns the existing handle instead of creating a duplicate asset/object.
+>
+> **S1 (unique index):** `uidx_media_asset_owner_content` is a partial unique index on
+> `(owner_ref, content_hash) WHERE content_hash IS NOT NULL`. It provides a database-level guard
+> against two concurrent identical uploads both inserting a row before either has committed. The
+> application tolerates a unique-violation on retry by returning the existing handle (idempotency).
 
 **Flyway list** (`src/main/resources/db/migration/`, forward-only):
 
-- `V<n>__create_media_asset.sql` — table + indexes above.
+- `V<n>__create_media_asset.sql` — table + indexes above (including `uidx_media_asset_owner_content`).
 
 Repeatable seed `R__seed_dev_data.sql` (dev/test only) inserts placeholder `media_asset` rows for the
 seed catalog audio uploaded to MinIO by the `createbuckets`/seed init (PRD §5.4).

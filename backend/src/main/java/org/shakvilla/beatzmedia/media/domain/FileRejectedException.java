@@ -10,6 +10,6 @@ import org.shakvilla.beatzmedia.platform.domain.ErrorCode;
 public class FileRejectedException extends DomainException {
 
   public FileRejectedException(String message) {
-    super(ErrorCode.VALIDATION, message, "file");
+    super(ErrorCode.FILE_REJECTED, message, "file");
   }
 }

@@ -11,6 +11,7 @@ import java.util.stream.Stream;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.shakvilla.beatzmedia.media.application.port.out.AudioTranscoderPort;
 import org.shakvilla.beatzmedia.media.application.port.out.ObjectStorePort;
 import org.shakvilla.beatzmedia.media.domain.MediaAssetId;
@@ -34,11 +35,17 @@ public class FfmpegAudioTranscoderAdapter implements AudioTranscoderPort {
 
   private final S3Client s3Client;
   private final ObjectStorePort objectStore;
+  private final String bucketDelivery;
 
   @Inject
-  public FfmpegAudioTranscoderAdapter(S3Client s3Client, ObjectStorePort objectStore) {
+  public FfmpegAudioTranscoderAdapter(
+      S3Client s3Client,
+      ObjectStorePort objectStore,
+      @ConfigProperty(name = "beatz.s3.bucket-delivery", defaultValue = "beatz-media-delivery")
+          String bucketDelivery) {
     this.s3Client = s3Client;
     this.objectStore = objectStore;
+    this.bucketDelivery = bucketDelivery;
   }
 
   @Override
@@ -179,13 +186,8 @@ public class FfmpegAudioTranscoderAdapter implements AudioTranscoderPort {
   }
 
   private String deliveryBucketOf(ObjectKey original) {
-    // The delivery bucket name is configured — read from objectStore implicitly via convention.
-    // We cannot inject the bucket name here without coupling, so we read from the original bucket
-    // name by convention: originals bucket is "beatz-media-originals", delivery is "beatz-media-delivery".
-    // The objectStore.putDelivery() already uses the delivery bucket; we just need the name for ObjectKey.
-    // Derive: strip "-originals" → add "-delivery".
-    String bucket = original.bucket();
-    return bucket.replace("-originals", "-delivery");
+    // S3: use the injected delivery bucket name — never derive from originals bucket string. S3.
+    return bucketDelivery;
   }
 
   private void deleteSilently(Path path) {

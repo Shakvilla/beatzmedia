@@ -79,7 +79,7 @@ class RealTranscodeIT {
     s3Client.createBucket(CreateBucketRequest.builder().bucket(BUCKET_DELIVERY).build());
 
     objectStore = new S3ObjectStoreAdapter(s3Client, presigner, BUCKET_ORIGINALS, BUCKET_DELIVERY);
-    transcoder = new FfmpegAudioTranscoderAdapter(s3Client, objectStore);
+    transcoder = new FfmpegAudioTranscoderAdapter(s3Client, objectStore, BUCKET_DELIVERY);
   }
 
   /**
@@ -96,7 +96,8 @@ class RealTranscodeIT {
         org.shakvilla.beatzmedia.media.domain.MediaKind.AUDIO,
         id,
         new ByteArrayInputStream(wav),
-        "audio/wav");
+        "audio/wav",
+        wav.length);
 
     assertTrue(objectStore.exists(originalKey), "Original must exist before transcode");
 

@@ -99,7 +99,7 @@ class MediaDeliveryIT {
     byte[] body = dummyWav();
 
     ObjectKey key = adapter.putOriginal(
-        MediaKind.AUDIO, id, new ByteArrayInputStream(body), "audio/wav");
+        MediaKind.AUDIO, id, new ByteArrayInputStream(body), "audio/wav", body.length);
 
     assertTrue(adapter.exists(key), "Stored original must exist in bucket");
     assertEquals(BUCKET_ORIGINALS, key.bucket());

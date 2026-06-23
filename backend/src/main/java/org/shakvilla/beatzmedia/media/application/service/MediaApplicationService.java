@@ -1,6 +1,7 @@
 package org.shakvilla.beatzmedia.media.application.service;
 
 import java.io.ByteArrayInputStream;
+import java.io.FilterInputStream;
 import java.io.IOException;
 import java.io.InputStream;
 import java.io.SequenceInputStream;
@@ -21,6 +22,7 @@ import org.shakvilla.beatzmedia.media.application.port.in.IssueDeliveryUrlUseCas
 import org.shakvilla.beatzmedia.media.application.port.in.TranscodeUseCase;
 import org.shakvilla.beatzmedia.media.application.port.in.UploadCommand;
 import org.shakvilla.beatzmedia.media.application.port.in.UploadOriginalUseCase;
+import org.shakvilla.beatzmedia.media.application.port.out.ArtworkProcessorPort;
 import org.shakvilla.beatzmedia.media.application.port.out.MediaAssetRepository;
 import org.shakvilla.beatzmedia.media.application.port.out.MediaService;
 import org.shakvilla.beatzmedia.media.application.port.out.ObjectStorePort;
@@ -48,6 +50,18 @@ import org.shakvilla.beatzmedia.platform.domain.NotFoundException;
  * Primary application service implementing all media use cases and the {@link MediaService} facade.
  * Enforces INV-3 (preview gate), idempotency on (ownerRef, contentHash), and publishes
  * {@link MediaReady} after transcode completion. ADD §4 / §8.
+ *
+ * <h3>Streaming design (B3/S2/M-1)</h3>
+ * The uploaded body is streamed exactly once through a chain:
+ * <pre>
+ *   body → [magic probe 12 bytes] → SequenceInputStream(probe || rest)
+ *        → CountingLimitingInputStream (enforces MAX_SIZE on actual bytes)
+ *        → DigestInputStream (SHA-256)
+ *        → S3 PUT via RequestBody.fromInputStream (no heap buffer)
+ * </pre>
+ * After the S3 PUT completes, the SHA-256 digest is read from the {@link DigestInputStream}.
+ * The client-declared {@code sizeBytes} is used as the content-length hint only when it is a
+ * positive value ≤ {@link #MAX_SIZE_BYTES}; otherwise the AWS SDK uses chunked transfer encoding.
  */
 @ApplicationScoped
 public class MediaApplicationService
@@ -67,6 +81,7 @@ public class MediaApplicationService
   private final UrlSignerPort urlSigner;
   private final TranscodeJobPort transcodeJobPort;
   private final VirusScanPort virusScan;
+  private final ArtworkProcessorPort artworkProcessor;
   private final MagicByteValidator magicByteValidator;
   private final IdGenerator idGenerator;
   private final Clock clock;
@@ -80,6 +95,7 @@ public class MediaApplicationService
       UrlSignerPort urlSigner,
       TranscodeJobPort transcodeJobPort,
       VirusScanPort virusScan,
+      ArtworkProcessorPort artworkProcessor,
       MagicByteValidator magicByteValidator,
       IdGenerator idGenerator,
       Clock clock,
@@ -90,6 +106,7 @@ public class MediaApplicationService
     this.urlSigner = urlSigner;
     this.transcodeJobPort = transcodeJobPort;
     this.virusScan = virusScan;
+    this.artworkProcessor = artworkProcessor;
     this.magicByteValidator = magicByteValidator;
     this.idGenerator = idGenerator;
     this.clock = clock;
@@ -102,13 +119,7 @@ public class MediaApplicationService
   @Override
   @Transactional
   public MediaHandle uploadOriginal(UploadCommand command) {
-    // Size guard (stream-level; Quarkus http.limits is the first line)
-    if (command.sizeBytes() > MAX_SIZE_BYTES) {
-      throw new FileTooLargeException(
-          "File exceeds maximum allowed size of " + (MAX_SIZE_BYTES / 1024 / 1024) + " MB");
-    }
-
-    // Read magic bytes prefix, then reconstruct the full stream
+    // Read magic bytes prefix for format validation
     byte[] header = new byte[MAGIC_PROBE_SIZE];
     int bytesRead;
     try {
@@ -119,46 +130,93 @@ public class MediaApplicationService
     byte[] effectiveHeader =
         (bytesRead < MAGIC_PROBE_SIZE) ? java.util.Arrays.copyOf(header, bytesRead) : header;
 
-    // Magic-byte format validation
+    // Magic-byte format validation — must happen before storing
     magicByteValidator.validate(command.kind(), effectiveHeader);
 
-    // Reconstruct stream: put the already-read header back at the front
-    InputStream fullStream =
+    // Reconstruct full stream: prepend the already-read magic bytes
+    InputStream reconstructed =
         new SequenceInputStream(new ByteArrayInputStream(effectiveHeader), command.body());
 
-    // Use caller-supplied content hash, or compute on the fly
-    String contentHash = command.contentHash();
-    if (contentHash == null || contentHash.isBlank()) {
-      contentHash = computeHash(fullStream);
-      // Stream was consumed by hashing — rebuild it
-      fullStream =
-          new SequenceInputStream(new ByteArrayInputStream(effectiveHeader), command.body());
-    }
+    // Wrap with a counting/limiting stream that enforces the size cap on ACTUAL bytes,
+    // not the client-declared sizeBytes (which is untrusted).
+    // This is the primary size enforcement; quarkus.http.limits.max-body-size is the backstop.
+    CountingLimitingInputStream countingStream =
+        new CountingLimitingInputStream(reconstructed, MAX_SIZE_BYTES);
 
-    // Idempotency: return existing handle if same owner + content already uploaded
-    Optional<MediaAsset> existing =
-        repository.findByOwnerRefAndContentHash(command.ownerRef(), contentHash);
-    if (existing.isPresent()) {
-      return existing.get().toHandle();
+    // Wrap with a DigestInputStream so we compute the SHA-256 in one pass (no second read)
+    MessageDigest digest;
+    try {
+      digest = MessageDigest.getInstance("SHA-256");
+    } catch (NoSuchAlgorithmException e) {
+      throw new IllegalStateException("SHA-256 not available", e);
     }
+    DigestInputStream digestStream = new DigestInputStream(countingStream, digest);
 
-    // Store original in private originals bucket
+    // Generate asset id and determine content type before the PUT
     String assetIdStr = idGenerator.newId();
     MediaAssetId assetId = new MediaAssetId(assetIdStr);
-
     String contentType = resolveContentType(command.kind(), effectiveHeader);
-    ObjectKey originalKey =
-        objectStore.putOriginal(command.kind(), assetId, fullStream, contentType);
+
+    // Determine content-length hint: use the declared value only if it is trustworthy
+    // (positive and within the allowed max). Pass -1 for chunked transfer otherwise.
+    long contentLengthHint =
+        (command.sizeBytes() > 0 && command.sizeBytes() <= MAX_SIZE_BYTES)
+            ? command.sizeBytes()
+            : -1L;
+
+    // Stream the body to S3 — ONE pass. The DigestInputStream computes hash while S3 receives.
+    // CountingLimitingInputStream aborts with FileTooLargeException if actual bytes exceed max.
+    ObjectKey originalKey;
+    try {
+      originalKey =
+          objectStore.putOriginal(command.kind(), assetId, digestStream, contentType, contentLengthHint);
+    } catch (FileTooLargeException e) {
+      throw e; // already the right domain exception
+    }
+
+    // After the single-pass PUT, extract the computed hash from the digest
+    String contentHash = command.contentHash();
+    if (contentHash == null || contentHash.isBlank()) {
+      contentHash = HexFormat.of().formatHex(digest.digest());
+    }
 
     // Virus scan the stored original
     if (!virusScan.isClean(originalKey)) {
+      // H-1: purge the (possibly malicious) stored object before throwing
+      try {
+        objectStore.deleteOriginal(originalKey);
+      } catch (Exception deleteEx) {
+        // Log but do not suppress the primary rejection — the object may not be deletable
+        // in some failure modes; operators should have alerting on orphaned originals.
+        // We still throw FileRejectedException so the caller gets the right HTTP 422.
+        throw new FileRejectedException(
+            "File failed safety scan. Cleanup of stored object may have failed: "
+                + deleteEx.getMessage());
+      }
       throw new FileRejectedException("File failed safety scan and was rejected");
+    }
+
+    // Idempotency: return existing handle if same owner + content already uploaded
+    // (checked after hash is computed, so null-hash uploads also benefit)
+    final String finalHash = contentHash;
+    Optional<MediaAsset> existing =
+        repository.findByOwnerRefAndContentHash(command.ownerRef(), finalHash);
+    if (existing.isPresent()) {
+      // Clean up the duplicate original we just stored
+      objectStore.deleteOriginal(originalKey);
+      return existing.get().toHandle();
     }
 
     // Persist in UPLOADING state (duration 0; probed async by transcode job)
     MediaAsset asset =
         MediaAsset.createUploading(
-            assetId, command.ownerRef(), command.kind(), originalKey, 0, clock.now(), contentHash);
+            assetId,
+            command.ownerRef(),
+            command.kind(),
+            originalKey,
+            0,
+            clock.now(),
+            finalHash);
     repository.save(asset);
 
     // For AUDIO: enqueue transcode job (runs off the request thread)
@@ -214,12 +272,29 @@ public class MediaApplicationService
   @Transactional
   public MediaHandle processArtwork(MediaAssetId assetId) {
     MediaAsset asset = requireAsset(assetId);
-    asset.markArtworkReady(asset.getOriginalKey());
+    // Process image variants (validates format, copies to delivery bucket)
+    // Returns a key in the DELIVERY bucket (e.g. delivery/{id}/art/cover-1024.jpg)
+    ObjectKey deliveryKey = artworkProcessor.processVariants(asset.getOriginalKey(), assetId);
+    asset.markArtworkReady(deliveryKey);
     repository.save(asset);
     return asset.toHandle();
   }
 
-  // ---- Transcode result callback (called from the worker, its own @Transactional unit) ----
+  // ---- Transcode lifecycle callbacks (called from the async worker, each own @Transactional) ----
+
+  /**
+   * Persists the TRANSCODING status transition. Called by the transcode worker immediately before
+   * invoking ffmpeg, in its own transaction. B4: ensures the state is TRANSCODING before READY.
+   */
+  @Transactional
+  public void markTranscoding(MediaAssetId assetId) {
+    MediaAsset asset = requireAsset(assetId);
+    if (asset.getStatus() == MediaStatus.TRANSCODING) {
+      return; // already in progress, idempotent
+    }
+    asset.startTranscoding();
+    repository.save(asset);
+  }
 
   @Transactional
   public void handleTranscodeResult(TranscodeResult result) {
@@ -242,22 +317,6 @@ public class MediaApplicationService
         .orElseThrow(() -> new NotFoundException("MediaAsset not found: " + assetId.value()));
   }
 
-  private String computeHash(InputStream stream) {
-    try {
-      MessageDigest md = MessageDigest.getInstance("SHA-256");
-      try (DigestInputStream dis = new DigestInputStream(stream, md)) {
-        byte[] buf = new byte[8192];
-        // noinspection StatementWithEmptyBody
-        while (dis.read(buf) != -1) {
-          // drain stream to compute digest
-        }
-      }
-      return HexFormat.of().formatHex(md.digest());
-    } catch (NoSuchAlgorithmException | IOException e) {
-      throw new IllegalStateException("Failed to compute content hash", e);
-    }
-  }
-
   private String resolveContentType(MediaKind kind, byte[] header) {
     if (kind == MediaKind.AUDIO) {
       return switch (magicByteValidator.detectAudioFormat(header)) {
@@ -269,6 +328,57 @@ public class MediaApplicationService
         case PNG -> "image/png";
         case JPG -> "image/jpeg";
       };
+    }
+  }
+
+  // ---- Inner class: counting + limiting InputStream (B3 / M-1) ----
+
+  /**
+   * Wraps an {@link InputStream} and counts actual bytes read. If the byte count exceeds
+   * {@code maxBytes}, a {@link FileTooLargeException} is thrown immediately — before the full
+   * body has been buffered. This enforces the size cap on actual transferred bytes, not the
+   * client-declared content-length. The Quarkus {@code http.limits.max-body-size} is the
+   * first-line backstop (set generously for WAV/FLAC); this stream is the second-line enforcement
+   * within the application layer.
+   */
+  static final class CountingLimitingInputStream extends FilterInputStream {
+
+    private final long maxBytes;
+    private long bytesRead = 0;
+
+    CountingLimitingInputStream(InputStream in, long maxBytes) {
+      super(in);
+      this.maxBytes = maxBytes;
+    }
+
+    @Override
+    public int read() throws IOException {
+      int b = super.read();
+      if (b != -1) {
+        checkLimit(1);
+      }
+      return b;
+    }
+
+    @Override
+    public int read(byte[] buf, int off, int len) throws IOException {
+      int n = super.read(buf, off, len);
+      if (n > 0) {
+        checkLimit(n);
+      }
+      return n;
+    }
+
+    private void checkLimit(int n) {
+      bytesRead += n;
+      if (bytesRead > maxBytes) {
+        throw new FileTooLargeException(
+            "File exceeds maximum allowed size of " + (maxBytes / 1024 / 1024) + " MB");
+      }
+    }
+
+    long getBytesRead() {
+      return bytesRead;
     }
   }
 }

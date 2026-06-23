@@ -12,9 +12,15 @@ public interface ObjectStorePort {
   /**
    * Stream a raw upload to the private originals bucket.
    *
+   * @param kind        the media kind (used to build the object key prefix)
+   * @param id          the asset id
+   * @param body        the raw bytes stream (streamed, not buffered)
+   * @param contentType MIME type for the S3 object
+   * @param contentLength exact byte count when known; pass {@code -1} to use chunked/unknown length
    * @return the resulting {@link ObjectKey}
    */
-  ObjectKey putOriginal(MediaKind kind, MediaAssetId id, InputStream body, String contentType);
+  ObjectKey putOriginal(
+      MediaKind kind, MediaAssetId id, InputStream body, String contentType, long contentLength);
 
   /**
    * Write a delivery-side file (HLS segment, playlist, artwork variant) to the delivery bucket.
@@ -26,4 +32,10 @@ public interface ObjectStorePort {
 
   /** Check if an object exists (used for idempotency guard on re-upload). */
   boolean exists(ObjectKey key);
+
+  /**
+   * Delete an object from the store. Used after virus-scan rejection to purge malicious originals.
+   * Implementations must treat a missing key as a no-op (idempotent delete). H-1.
+   */
+  void deleteOriginal(ObjectKey key);
 }

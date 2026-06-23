@@ -7,6 +7,8 @@ import jakarta.ws.rs.core.Response;
 
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.shakvilla.beatzmedia.media.domain.FileRejectedException;
+import org.shakvilla.beatzmedia.media.domain.UnsupportedFormatException;
 import org.shakvilla.beatzmedia.platform.domain.ConflictException;
 import org.shakvilla.beatzmedia.platform.domain.DomainException;
 import org.shakvilla.beatzmedia.platform.domain.ErrorCode;
@@ -14,6 +16,7 @@ import org.shakvilla.beatzmedia.platform.domain.FeatureDisabledException;
 import org.shakvilla.beatzmedia.platform.domain.MaintenanceModeException;
 import org.shakvilla.beatzmedia.platform.domain.MismatchedCurrencyException;
 import org.shakvilla.beatzmedia.platform.domain.NotFoundException;
+import org.shakvilla.beatzmedia.platform.domain.RateLimitedException;
 import org.shakvilla.beatzmedia.platform.domain.ValidationException;
 
 /**
@@ -133,10 +136,59 @@ class PlatformRestAdapterTest {
   }
 
   @Test
+  void domainMapper_rateLimitedException_sets_retryAfter_header() {
+    RateLimitedException ex = new RateLimitedException("too many login attempts", 30);
+    try (Response r = domainMapper.toResponse(ex)) {
+      assertEquals(429, r.getStatus());
+      ErrorEnvelope body = (ErrorEnvelope) r.getEntity();
+      assertEquals("RATE_LIMITED", body.error().code());
+      assertEquals("30", r.getHeaderString("Retry-After"));
+    }
+  }
+
+  @Test
+  void domainMapper_rateLimitedException_clamps_negative_retryAfter_to_zero() {
+    RateLimitedException ex = new RateLimitedException("too many requests", -5);
+    try (Response r = domainMapper.toResponse(ex)) {
+      assertEquals("0", r.getHeaderString("Retry-After"));
+    }
+  }
+
+  @Test
+  void domainMapper_plainRateLimited_omits_retryAfter_header() {
+    DomainException ex = new DomainException(ErrorCode.RATE_LIMITED, "too many requests");
+    try (Response r = domainMapper.toResponse(ex)) {
+      assertNull(r.getHeaderString("Retry-After"));
+    }
+  }
+
+  @Test
   void domainMapper_internal_returns_500() {
     DomainException ex = new DomainException(ErrorCode.INTERNAL, "unexpected");
     try (Response r = domainMapper.toResponse(ex)) {
       assertEquals(500, r.getStatus());
+    }
+  }
+
+  @Test
+  void domainMapper_unsupportedFormat_returns_422_with_exact_code() {
+    UnsupportedFormatException ex = new UnsupportedFormatException("EXE is not accepted");
+    try (Response r = domainMapper.toResponse(ex)) {
+      assertEquals(422, r.getStatus());
+      ErrorEnvelope body = (ErrorEnvelope) r.getEntity();
+      assertEquals("UNSUPPORTED_FORMAT", body.error().code());
+      assertEquals("file", body.error().field());
+    }
+  }
+
+  @Test
+  void domainMapper_fileRejected_returns_422_with_exact_code() {
+    FileRejectedException ex = new FileRejectedException("virus detected");
+    try (Response r = domainMapper.toResponse(ex)) {
+      assertEquals(422, r.getStatus());
+      ErrorEnvelope body = (ErrorEnvelope) r.getEntity();
+      assertEquals("FILE_REJECTED", body.error().code());
+      assertEquals("file", body.error().field());
     }
   }
 

@@ -7,6 +7,7 @@ import jakarta.ws.rs.ext.Provider;
 import org.shakvilla.beatzmedia.platform.domain.ApiError;
 import org.shakvilla.beatzmedia.platform.domain.DomainException;
 import org.shakvilla.beatzmedia.platform.domain.ErrorCode;
+import org.shakvilla.beatzmedia.platform.domain.RateLimitedException;
 
 /**
  * Maps {@link DomainException} subclasses to the uniform error envelope. No stack traces, SQL, or
@@ -22,12 +23,16 @@ public class DomainExceptionMapper implements ExceptionMapper<DomainException> {
   public Response toResponse(DomainException ex) {
     int status = mapStatus(ex.getErrorCode());
     ApiError error = ApiError.of(ex.getErrorCode(), ex.getMessage(), ex.getField());
-    return Response.status(status).entity(new ErrorEnvelope(error)).build();
+    Response.ResponseBuilder builder = Response.status(status).entity(new ErrorEnvelope(error));
+    if (ex instanceof RateLimitedException rateLimited) {
+      builder.header("Retry-After", rateLimited.getRetryAfterSeconds());
+    }
+    return builder.build();
   }
 
   private int mapStatus(ErrorCode code) {
     return switch (code) {
-      case VALIDATION -> UNPROCESSABLE_ENTITY;
+      case VALIDATION, UNSUPPORTED_FORMAT, FILE_REJECTED -> UNPROCESSABLE_ENTITY;
       case NOT_FOUND -> Response.Status.NOT_FOUND.getStatusCode();
       case UNAUTHENTICATED -> Response.Status.UNAUTHORIZED.getStatusCode();
       case UNAUTHORIZED, FEATURE_DISABLED -> Response.Status.FORBIDDEN.getStatusCode();

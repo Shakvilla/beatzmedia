@@ -5,6 +5,7 @@ import java.io.IOException;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.shakvilla.beatzmedia.media.application.port.out.ArtworkProcessorPort;
 import org.shakvilla.beatzmedia.media.application.port.out.ObjectStorePort;
 import org.shakvilla.beatzmedia.media.application.service.MagicByteValidator;
@@ -30,13 +31,19 @@ public class ImageArtworkProcessorAdapter implements ArtworkProcessorPort {
   private final S3Client s3Client;
   private final ObjectStorePort objectStore;
   private final MagicByteValidator validator;
+  private final String bucketDelivery;
 
   @Inject
   public ImageArtworkProcessorAdapter(
-      S3Client s3Client, ObjectStorePort objectStore, MagicByteValidator validator) {
+      S3Client s3Client,
+      ObjectStorePort objectStore,
+      MagicByteValidator validator,
+      @ConfigProperty(name = "beatz.s3.bucket-delivery", defaultValue = "beatz-media-delivery")
+          String bucketDelivery) {
     this.s3Client = s3Client;
     this.objectStore = objectStore;
     this.validator = validator;
+    this.bucketDelivery = bucketDelivery;
   }
 
   @Override
@@ -76,6 +83,7 @@ public class ImageArtworkProcessorAdapter implements ArtworkProcessorPort {
   }
 
   private String deliveryBucketOf(ObjectKey original) {
-    return original.bucket().replace("-originals", "-delivery");
+    // S3: use the injected delivery bucket name — never derive from originals bucket string. S3.
+    return bucketDelivery;
   }
 }

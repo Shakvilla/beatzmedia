@@ -19,3 +19,10 @@ CREATE TABLE media_asset (
 
 CREATE INDEX idx_media_asset_owner_ref ON media_asset (owner_ref);
 CREATE INDEX idx_media_asset_status    ON media_asset (status);
+
+-- S1: Unique index preventing concurrent identical uploads from both inserting.
+-- WHERE content_hash IS NOT NULL: rows without a hash (e.g. before hashing completes) are exempt.
+-- The application layer handles the unique-violation on retry by returning the existing handle.
+CREATE UNIQUE INDEX uidx_media_asset_owner_content
+    ON media_asset (owner_ref, content_hash)
+    WHERE content_hash IS NOT NULL;

@@ -18,6 +18,7 @@ import org.shakvilla.beatzmedia.media.domain.MediaStatus;
 import org.shakvilla.beatzmedia.media.domain.ObjectKey;
 import org.shakvilla.beatzmedia.media.domain.OwnerRef;
 import org.shakvilla.beatzmedia.media.domain.SignedUrl;
+import org.shakvilla.beatzmedia.media.fakes.FakeArtworkProcessor;
 import org.shakvilla.beatzmedia.media.fakes.FakeMediaAssetRepository;
 import org.shakvilla.beatzmedia.media.fakes.FakeMediaReadyEvent;
 import org.shakvilla.beatzmedia.media.fakes.FakeObjectStore;
@@ -47,6 +48,7 @@ class Inv3PreviewGateTest {
         urlSigner,
         new FakeTranscodeJobPort(),
         new FakeVirusScan(),
+        new FakeArtworkProcessor(),
         new MagicByteValidator(),
         FakeIds.sequential("asset"),
         FakeClock.fixed(),

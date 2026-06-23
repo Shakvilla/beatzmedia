@@ -16,7 +16,7 @@ public class FakeObjectStore implements ObjectStorePort {
 
   @Override
   public ObjectKey putOriginal(
-      MediaKind kind, MediaAssetId id, InputStream body, String contentType) {
+      MediaKind kind, MediaAssetId id, InputStream body, String contentType, long contentLength) {
     String key = "originals/" + kind.name().toLowerCase() + "/" + id.value();
     storeBytes("test-originals", key, body);
     return new ObjectKey("test-originals", key);
@@ -34,8 +34,17 @@ public class FakeObjectStore implements ObjectStorePort {
     return store.containsKey(key.bucket() + "|" + key.key());
   }
 
+  @Override
+  public void deleteOriginal(ObjectKey key) {
+    store.remove(key.bucket() + "|" + key.key());
+  }
+
   public boolean objectExists(String bucket, String key) {
     return store.containsKey(bucket + "|" + key);
+  }
+
+  public byte[] getBytes(String bucket, String key) {
+    return store.get(bucket + "|" + key);
   }
 
   private void storeBytes(String bucket, String key, InputStream body) {
