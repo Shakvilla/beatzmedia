@@ -85,10 +85,23 @@
 # most recent rebuild incorporating current OS security patches. Update by
 # querying: curl -s https://registry.access.redhat.com/v2/ubi9/openjdk-25-runtime/tags/list
 # There is no 1.25/1.26 minor available yet — 1.24-2.1781533370 is the latest.
+# ── Stage 1: pull static ffmpeg binary ───────────────────────────────────────
+# mwader/static-ffmpeg provides a zero-dependency, statically-linked ffmpeg/ffprobe
+# binary compiled against the latest upstream release. We COPY only the two
+# executables into the final image (multi-stage copy) — no extra RPM repos or
+# microdnf calls needed on UBI9, which lacks ffmpeg in the default content sets.
+# ADR (WU-MED-1 §2 / Dockerfile.jvm note).
+FROM mwader/static-ffmpeg:7.1.1 AS ffmpeg-stage
+
+# ── Stage 2: Quarkus JVM runtime ─────────────────────────────────────────────
 FROM registry.access.redhat.com/ubi9/openjdk-25-runtime:1.24-2.1781533370
 
 ENV LANGUAGE='en_US:en'
 
+# Install static ffmpeg + ffprobe from the build stage into /usr/local/bin
+# (on PATH for all users, including UID 185 the container runs as).
+COPY --from=ffmpeg-stage /ffmpeg  /usr/local/bin/ffmpeg
+COPY --from=ffmpeg-stage /ffprobe /usr/local/bin/ffprobe
 
 # We make four distinct layers so if there are application changes the library layers can be re-used
 COPY --chown=185 target/quarkus-app/lib/ /deployments/lib/

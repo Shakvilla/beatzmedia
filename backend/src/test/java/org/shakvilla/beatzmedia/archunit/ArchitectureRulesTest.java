@@ -74,7 +74,7 @@ class ArchitectureRulesTest {
           .dependOnClassesThat()
           .resideInAPackage("jakarta.persistence..");
 
-  /** Inbound adapters must not import outbound adapters and vice versa. */
+  /** Inbound adapters must not import outbound adapters. */
   @ArchTest
   static final ArchRule inbound_adapters_dont_import_outbound =
       noClasses()
@@ -83,6 +83,16 @@ class ArchitectureRulesTest {
           .should()
           .dependOnClassesThat()
           .resideInAPackage("..adapter.out..");
+
+  /** Outbound adapters must not import inbound adapters (symmetric rule). L1. */
+  @ArchTest
+  static final ArchRule outbound_adapters_dont_import_inbound =
+      noClasses()
+          .that()
+          .resideInAPackage("..adapter.out..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAPackage("..adapter.in..");
 
   /** No wall-clock or random in domain/application code. */
   @ArchTest
