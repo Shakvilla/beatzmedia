@@ -15,7 +15,7 @@
         <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
         <quarkus.platform.version>3.36.3</quarkus.platform.version>
         <skipITs>true</skipITs>
-        <surefire-plugin.version>3.5.4</surefire-plugin.version>
+        <surefire-plugin.version>3.5.6</surefire-plugin.version>
         <!-- Coverage thresholds — testing-strategy.md §10 -->
         <jacoco.line.overall>0.80</jacoco.line.overall>
         <jacoco.line.domain>0.90</jacoco.line.domain>
