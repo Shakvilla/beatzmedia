@@ -23,7 +23,7 @@
         <jacoco.line.application>0.90</jacoco.line.application>
         <!-- Testcontainers version aligned to quarkus-bom where possible -->
         <testcontainers.version>1.20.4</testcontainers.version>
-        <archunit.version>1.3.0</archunit.version>
+        <archunit.version>1.4.2</archunit.version>
         <spotless.version>2.45.0</spotless.version>
         <google-java-format.version>1.25.2</google-java-format.version>
         <jacoco.version>0.8.15</jacoco.version>
@@ -191,6 +191,17 @@
             <artifactId>json-schema-validator</artifactId>
             <scope>test</scope>
         </dependency>
+
+        <!-- quarkus-jacoco — captures @QuarkusTest coverage inside the Quarkus
+             isolated classloader. The extension appends its exec data into the
+             SAME file as the surefire JaCoCo agent (target/jacoco.exec) so the
+             jacoco-maven-plugin report + check goals see a merged data set.
+             Version managed by quarkus-bom; scope test (never in runtime image). -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-jacoco</artifactId>
+            <scope>test</scope>
+        </dependency>
     </dependencies>
 
     <build>
@@ -326,18 +337,47 @@
         </profile>
 
         <!-- Coverage gate — activated by -Pcoverage in CI (coverage-gate job).
-             Wires JaCoCo prepare-agent (sets @{argLine}) + report + check with
-             the thresholds from testing-strategy.md §10. -->
+             Wires JaCoCo prepare-agent (sets @{argLine} for surefire unit tests)
+             + quarkus-jacoco (captures @QuarkusTest IT coverage in the Quarkus
+             classloader) + report + check with thresholds from testing-strategy.md §10.
+
+             Data-file merge strategy:
+               - prepare-agent writes surefire data to target/jacoco.exec
+               - quarkus-jacoco is configured (%test profile in application.properties)
+                 to append its IT data to the SAME target/jacoco.exec file
+                 (quarkus.jacoco.data-file + reuse-data-file=true)
+               - report/check read the merged target/jacoco.exec
+
+             Double-instrumentation guard:
+               The maven JaCoCo agent (via @{argLine}) handles surefire JVM classes.
+               quarkus-jacoco handles the Quarkus isolated classloader used by @QuarkusTest.
+               Passing @{argLine} to failsafe would load the maven agent into the
+               parent JVM of the Quarkus test runtime and corrupt the exec data.
+               The coverage profile therefore clears failsafe's argLine so only the
+               Quarkus extension instruments the ITs. -->
         <profile>
             <id>coverage</id>
             <build>
                 <plugins>
+                    <!-- Override failsafe argLine to empty — quarkus-jacoco handles
+                         @QuarkusTest instrumentation; the maven agent must not also
+                         attach to the same JVM or it will double-count / corrupt data. -->
+                    <plugin>
+                        <artifactId>maven-failsafe-plugin</artifactId>
+                        <version>${surefire-plugin.version}</version>
+                        <configuration>
+                            <argLine></argLine>
+                        </configuration>
+                    </plugin>
                     <plugin>
                         <groupId>org.jacoco</groupId>
                         <artifactId>jacoco-maven-plugin</artifactId>
                         <version>${jacoco.version}</version>
                         <executions>
-                            <!-- 1. Instrument classes and populate @{argLine} -->
+                            <!-- 1. Instrument classes for surefire unit tests and
+                                 populate @{argLine}. destFile is the default
+                                 target/jacoco.exec — quarkus-jacoco is told to
+                                 reuse the same file via application.properties. -->
                             <execution>
                                 <id>jacoco-prepare-agent</id>
                                 <goals>
