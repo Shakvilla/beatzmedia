@@ -275,6 +275,7 @@ CREATE TABLE media_asset (
     original_key  VARCHAR(255) NOT NULL,               -- originals/{kind}/{id}
     hls_key       VARCHAR(255),                        -- delivery/{id}/hls/playlist.m3u8
     preview_key   VARCHAR(255),                        -- delivery/{id}/preview/preview.m3u8
+    content_hash  VARCHAR(64),                         -- SHA-256 of the original bytes; idempotency on (owner_ref, content_hash)
     created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
     CONSTRAINT chk_media_kind   CHECK (kind   IN ('AUDIO','ARTWORK')),
     CONSTRAINT chk_media_status CHECK (status IN ('UPLOADING','TRANSCODING','READY','ERROR'))
@@ -282,6 +283,10 @@ CREATE TABLE media_asset (
 CREATE INDEX idx_media_asset_owner_ref ON media_asset (owner_ref);
 CREATE INDEX idx_media_asset_status    ON media_asset (status);
 ```
+
+> **Schema note (WU-MED-1):** `content_hash` was added to the implemented table beyond the
+> original sketch above to back the `(ownerRef, contentHash)` idempotency key (§9): a re-upload of
+> identical bytes returns the existing handle instead of creating a duplicate asset/object.
 
 **Flyway list** (`src/main/resources/db/migration/`, forward-only):
 
