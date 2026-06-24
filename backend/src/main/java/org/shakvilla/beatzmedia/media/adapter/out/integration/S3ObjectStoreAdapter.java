@@ -16,7 +16,9 @@ import org.shakvilla.beatzmedia.media.domain.MediaAssetId;
 import org.shakvilla.beatzmedia.media.domain.MediaKind;
 import org.shakvilla.beatzmedia.media.domain.ObjectKey;
 import org.shakvilla.beatzmedia.media.domain.SignedUrl;
+import org.shakvilla.beatzmedia.platform.domain.DomainException;
 
+import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
@@ -75,8 +77,32 @@ public class S3ObjectStoreAdapter implements ObjectStorePort, UrlSignerPort {
             .contentType(contentType)
             .build();
     RequestBody requestBody = toRequestBody(body, contentLength);
-    s3Client.putObject(request, requestBody);
+    try {
+      s3Client.putObject(request, requestBody);
+    } catch (SdkException e) {
+      // The 500MB cap is enforced by the limiting input stream (see MediaApplicationService),
+      // which throws FileTooLargeException mid-read. The AWS SDK reads the body inside its own
+      // marshalling loop, so it may wrap that domain exception as an SdkClientException. Re-surface
+      // the original domain exception so DomainExceptionMapper returns 413 (not 500). Any non-domain
+      // SDK failure is rethrown unchanged. Flagged by security review of WU-MED-1 (PR #11).
+      throw unwrapDomainException(e);
+    }
     return new ObjectKey(bucketOriginals, key);
+  }
+
+  /**
+   * If a {@link DomainException} (e.g. the size-cap {@link
+   * org.shakvilla.beatzmedia.media.domain.FileTooLargeException}) is present anywhere in the cause
+   * chain of an SDK failure, return it so the REST layer maps it to the correct status. Otherwise
+   * return the original SDK exception unchanged.
+   */
+  private static RuntimeException unwrapDomainException(SdkException sdkException) {
+    for (Throwable t = sdkException; t != null; t = t.getCause()) {
+      if (t instanceof DomainException domainException) {
+        return domainException;
+      }
+    }
+    return sdkException;
   }
 
   @Override
