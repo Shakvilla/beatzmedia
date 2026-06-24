@@ -16,7 +16,8 @@ public interface ObjectStorePort {
    * @param id          the asset id
    * @param body        the raw bytes stream (streamed, not buffered)
    * @param contentType MIME type for the S3 object
-   * @param contentLength exact byte count when known; pass {@code -1} to use chunked/unknown length
+   * @param contentLength exact byte count when known; pass {@code -1} when the length is unknown or
+   *     untrusted, and the adapter will spool the body to determine it
    * @return the resulting {@link ObjectKey}
    */
   ObjectKey putOriginal(

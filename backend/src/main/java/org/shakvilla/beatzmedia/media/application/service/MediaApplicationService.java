@@ -61,7 +61,9 @@ import org.shakvilla.beatzmedia.platform.domain.NotFoundException;
  * </pre>
  * After the S3 PUT completes, the SHA-256 digest is read from the {@link DigestInputStream}.
  * The client-declared {@code sizeBytes} is used as the content-length hint only when it is a
- * positive value ≤ {@link #MAX_SIZE_BYTES}; otherwise the AWS SDK uses chunked transfer encoding.
+ * positive value ≤ {@link #MAX_SIZE_BYTES}; otherwise {@code -1} is passed and the adapter spools
+ * the body to a bounded temp file to PUT it with a known length (the sync SDK cannot stream an
+ * unknown length).
  */
 @ApplicationScoped
 public class MediaApplicationService
@@ -158,7 +160,8 @@ public class MediaApplicationService
     String contentType = resolveContentType(command.kind(), effectiveHeader);
 
     // Determine content-length hint: use the declared value only if it is trustworthy
-    // (positive and within the allowed max). Pass -1 for chunked transfer otherwise.
+    // (positive and within the allowed max). Pass -1 otherwise; the adapter then spools the body
+    // to a temp file to PUT it with a known length (the sync AWS SDK cannot stream unknown length).
     long contentLengthHint =
         (command.sizeBytes() > 0 && command.sizeBytes() <= MAX_SIZE_BYTES)
             ? command.sizeBytes()
