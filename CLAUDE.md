@@ -73,6 +73,6 @@ and request human confirmation before shipping to production:
 
 ## Toolchain
 
-Java 25, Maven (`./backend/mvnw`), Quarkus 3.34.x, PostgreSQL 16, Docker + Docker Compose, `gh` CLI.
+Java 25, Maven (`./backend/mvnw`), Quarkus 3.36.x, PostgreSQL 16, Docker + Docker Compose, `gh` CLI.
 Run app locally: `cd backend && ./mvnw quarkus:dev`. Full stack: `docker compose up` (from repo root
 once `docker-compose.yml` exists — see `backend/docs/sdlc/environments-and-deployment.md`).

@@ -73,16 +73,28 @@ mvnw_cmd() {
 }
 
 # Run a maven goal in the backend dir. Usage: run_mvn <args...>
+# NOTE: We exec the wrapper directly rather than eval-ing it so that paths
+# containing spaces (e.g. "BeatzClik FullStack") are handled correctly.
 run_mvn() {
-  _mvn="$(mvnw_cmd)" || die "Maven wrapper not found at $BACKEND_DIR/mvnw"
-  ( cd "$BACKEND_DIR" && eval "$_mvn" -B -ntp "$@" )
+  if [ -x "$BACKEND_DIR/mvnw" ]; then
+    ( cd "$BACKEND_DIR" && "$BACKEND_DIR/mvnw" -B -ntp "$@" )
+  elif [ -f "$BACKEND_DIR/mvnw" ]; then
+    ( cd "$BACKEND_DIR" && sh "$BACKEND_DIR/mvnw" -B -ntp "$@" )
+  else
+    die "Maven wrapper not found at $BACKEND_DIR/mvnw"
+  fi
 }
 
 # True if a maven plugin/goal prefix is resolvable (used to skip absent plugins).
 mvn_has_plugin() {
   _prefix="$1"
-  _mvn="$(mvnw_cmd)" || return 1
-  ( cd "$BACKEND_DIR" && eval "$_mvn" -B -ntp -q help:describe "-Dplugin=$_prefix" >/dev/null 2>&1 )
+  if [ -x "$BACKEND_DIR/mvnw" ]; then
+    ( cd "$BACKEND_DIR" && "$BACKEND_DIR/mvnw" -B -ntp -q help:describe "-Dplugin=$_prefix" >/dev/null 2>&1 )
+  elif [ -f "$BACKEND_DIR/mvnw" ]; then
+    ( cd "$BACKEND_DIR" && sh "$BACKEND_DIR/mvnw" -B -ntp -q help:describe "-Dplugin=$_prefix" >/dev/null 2>&1 )
+  else
+    return 1
+  fi
 }
 
 have() { command -v "$1" >/dev/null 2>&1; }
