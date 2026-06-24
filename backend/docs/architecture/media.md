@@ -241,7 +241,11 @@ the part to an `UploadCommand` and call `MediaService.uploadOriginal`. Delivery 
 - **S3/MinIO adapter** (`ObjectStorePort`, `UrlSignerPort`): streams originals to the private bucket,
   writes HLS/preview/art to the delivery bucket, presigns time-boxed GET URLs. Endpoint + creds from
   `BEATZ_S3_*` env (PRD §5.2); buckets `BEATZ_S3_BUCKET_ORIGINALS`/`_DELIVERY` created by the Compose
-  `createbuckets` init job (PRD §5.1).
+  `createbuckets` init job (PRD §5.1). The 500 MB cap is enforced mid-PUT by a limiting input stream
+  that throws `FileTooLargeException`; because the AWS SDK reads the body inside its own marshalling
+  loop it may wrap that domain exception as `SdkClientException`, so `putOriginal` unwraps any
+  `DomainException` from the SDK cause chain and re-throws it — oversize uploads surface `413`, never
+  `500` (guarded by `S3UploadCapIT` against real MinIO and by `S3ObjectStoreAdapterUnwrapTest`).
 - **ffmpeg transcoder adapter** (`AudioTranscoderPort`): probes duration (`ffprobe`), produces the full
   HLS rendition and the 30s preview clip via the Compose `transcoder` service (`jrottenberg/ffmpeg`,
   PRD §5.1). Long-running, off the request thread (async job).
