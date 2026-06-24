@@ -2,6 +2,9 @@ package org.shakvilla.beatzmedia.media.adapter.out.integration;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.time.Instant;
 
@@ -9,6 +12,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
 import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.jboss.logging.Logger;
 import org.shakvilla.beatzmedia.media.application.port.out.ObjectStorePort;
 import org.shakvilla.beatzmedia.media.application.port.out.UrlSignerPort;
 import org.shakvilla.beatzmedia.media.domain.DeliveryVariant;
@@ -33,15 +37,19 @@ import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequ
  * S3/MinIO adapter implementing {@link ObjectStorePort} and {@link UrlSignerPort}.
  * Originals bucket is PRIVATE — never signed for client read. ADD §3 / §5.2 / ADR (WU-MED-1 §3).
  *
- * <p>Streaming note: {@code putOriginal} passes the stream directly to the AWS SDK via
- * {@link RequestBody#fromInputStream} with the supplied content-length. The body is never
- * buffered into a heap {@code byte[]} — only the 12-byte magic probe is read before the S3 PUT.
- * When content-length is {@code -1} (unknown), chunked transfer encoding is used via
- * {@code RequestBody.fromContentProvider}, so the JVM heap is never exhausted by large WAV/FLAC
- * files. See B3/S2/M-1 fix notes.
+ * <p>Streaming note: when the content length is known, {@code putOriginal} streams the body straight
+ * to the AWS SDK via {@link RequestBody#fromInputStream} — the body is never buffered into a heap
+ * {@code byte[]} (only the 12-byte magic probe is read before the PUT). The AWS SDK v2 <em>sync</em>
+ * client cannot PUT a stream of unknown length, so when content-length is {@code -1} (unknown) the
+ * body is spooled to a bounded temporary file and streamed from disk via {@link
+ * RequestBody#fromFile}. The upload size cap still trips during the spool (the {@code
+ * CountingLimitingInputStream} throws mid-read), and {@code Files.copy} uses a small fixed buffer so
+ * the JVM heap is never exhausted by large WAV/FLAC files. See B3/S2/M-1 fix notes.
  */
 @ApplicationScoped
 public class S3ObjectStoreAdapter implements ObjectStorePort, UrlSignerPort {
+
+  private static final Logger LOG = Logger.getLogger(S3ObjectStoreAdapter.class);
 
   private static final String ORIGINALS_KEY_PREFIX = "originals/";
 
@@ -76,9 +84,17 @@ public class S3ObjectStoreAdapter implements ObjectStorePort, UrlSignerPort {
             .key(key)
             .contentType(contentType)
             .build();
-    RequestBody requestBody = toRequestBody(body, contentLength);
     try {
-      s3Client.putObject(request, requestBody);
+      if (contentLength >= 0) {
+        // Known, trusted length: stream straight through with no heap buffer.
+        s3Client.putObject(request, RequestBody.fromInputStream(body, contentLength));
+      } else {
+        // Unknown/untrusted length: the service passes -1 when the declared size is absent
+        // (<= 0) or exceeds the cap. The AWS SDK v2 sync client cannot PUT a stream of unknown
+        // length — RequestBody.fromInputStream(body, -1) throws "Content-length must not be
+        // negative". Spool to a bounded temp file to learn the real length, then stream from disk.
+        putViaTempSpool(request, body);
+      }
     } catch (SdkException e) {
       // The 500MB cap is enforced by the limiting input stream (see MediaApplicationService),
       // which throws FileTooLargeException mid-read. The AWS SDK reads the body inside its own
@@ -126,20 +142,37 @@ public class S3ObjectStoreAdapter implements ObjectStorePort, UrlSignerPort {
   }
 
   /**
-   * Build a {@link RequestBody} that streams the content without loading it fully into memory.
-   *
-   * <p>If {@code contentLength >= 0} we know the size upfront (the magic probe was already counted
-   * in the DigestInputStream wrapper in the service, so the stream still carries the full bytes).
-   * If {@code contentLength < 0} we fall back to {@code fromInputStream} with unknown length
-   * (requires the S3 client to be configured for chunked encoding or path-style transfer — MinIO
-   * handles this correctly).
+   * Spool a body of unknown length to a bounded temporary file, then PUT it from disk with a known
+   * content length. Reading the body here runs it through the caller's limiting/digest stream chain
+   * (see {@code MediaApplicationService}), so a size-cap breach throws {@link
+   * org.shakvilla.beatzmedia.media.domain.FileTooLargeException} during the spool — before any S3
+   * PUT — and propagates unchanged (→ HTTP 413). {@code Files.copy} uses a small fixed buffer, so
+   * the JVM heap is never exhausted even by a 500MB body. The temp file is always deleted.
    */
-  private RequestBody toRequestBody(InputStream body, long contentLength) {
-    if (contentLength >= 0) {
-      return RequestBody.fromInputStream(body, contentLength);
+  private void putViaTempSpool(PutObjectRequest request, InputStream body) {
+    Path spool;
+    try {
+      spool = Files.createTempFile("beatz-upload-", ".tmp");
+    } catch (IOException e) {
+      throw new IllegalStateException("Failed to create temp file for unknown-length upload", e);
     }
-    // Unknown length: use chunked streaming (AWS SDK v2 supports this with unsigned payloads)
-    return RequestBody.fromInputStream(body, -1L);
+    try {
+      // A FileTooLargeException (RuntimeException) raised by the limiting stream propagates out of
+      // Files.copy unchanged; only genuine I/O failures are wrapped.
+      Files.copy(body, spool, StandardCopyOption.REPLACE_EXISTING);
+      s3Client.putObject(request, RequestBody.fromFile(spool));
+    } catch (IOException e) {
+      throw new IllegalStateException("Failed to spool unknown-length upload body", e);
+    } finally {
+      try {
+        Files.deleteIfExists(spool);
+      } catch (IOException cleanupFailure) {
+        // Best-effort cleanup; never mask the primary outcome. Warn (with the path) so a repeated
+        // failure to delete a potentially 500MB spool file is visible to operators instead of
+        // silently exhausting disk — /tmp is not guaranteed to be reaped automatically.
+        LOG.warnf(cleanupFailure, "Failed to delete unknown-length upload spool file %s", spool);
+      }
+    }
   }
 
   @Override
