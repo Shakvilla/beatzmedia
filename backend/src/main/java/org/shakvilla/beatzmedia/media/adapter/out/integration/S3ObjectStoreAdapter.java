@@ -12,6 +12,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
 import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.jboss.logging.Logger;
 import org.shakvilla.beatzmedia.media.application.port.out.ObjectStorePort;
 import org.shakvilla.beatzmedia.media.application.port.out.UrlSignerPort;
 import org.shakvilla.beatzmedia.media.domain.DeliveryVariant;
@@ -47,6 +48,8 @@ import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequ
  */
 @ApplicationScoped
 public class S3ObjectStoreAdapter implements ObjectStorePort, UrlSignerPort {
+
+  private static final Logger LOG = Logger.getLogger(S3ObjectStoreAdapter.class);
 
   private static final String ORIGINALS_KEY_PREFIX = "originals/";
 
@@ -163,8 +166,11 @@ public class S3ObjectStoreAdapter implements ObjectStorePort, UrlSignerPort {
     } finally {
       try {
         Files.deleteIfExists(spool);
-      } catch (IOException ignored) {
-        // Best-effort cleanup; the OS reaps the temp directory. Do not mask the primary outcome.
+      } catch (IOException cleanupFailure) {
+        // Best-effort cleanup; never mask the primary outcome. Warn (with the path) so a repeated
+        // failure to delete a potentially 500MB spool file is visible to operators instead of
+        // silently exhausting disk — /tmp is not guaranteed to be reaped automatically.
+        LOG.warnf(cleanupFailure, "Failed to delete unknown-length upload spool file %s", spool);
       }
     }
   }
