@@ -41,7 +41,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-PLT-1]
     llfrs: [LLFR-PLATFORM-01.2]
-    status: in_review
+    status: done
   - id: WU-MED-1
     title: Media pipeline — upload, validate, transcode (HLS + 30s preview), signed delivery
     phase: 0

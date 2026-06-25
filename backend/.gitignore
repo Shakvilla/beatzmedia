@@ -39,6 +39,11 @@ nb-configuration.xml
 # Local environment
 .env
 
+# BeatzClik project config — keep tracked (its name collides with the
+# Eclipse ".project" file pattern above, which would otherwise ignore it)
+!.project/
+!.project/**
+
 # Plugin directory
 /.quarkus/cli/plugins/
 # TLS Certificates
