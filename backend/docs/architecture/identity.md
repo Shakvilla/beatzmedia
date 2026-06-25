@@ -491,7 +491,9 @@ stateDiagram-v2
   (401), `WEAK_PASSWORD` (422), `SOCIAL_TOKEN_INVALID` (401), `ACCOUNT_SUSPENDED` (403),
   `FEATURE_DISABLED` (403), `USERNAME_TAKEN` (409, reserved for future handle uniqueness),
   `INVALID_ROLE` (422), `LAST_SUPER_ADMIN` (409). `INVALID_CREDENTIALS` and the always-204 password
-  reset are deliberately non-enumerating.
+  reset are deliberately non-enumerating. These codes live in the shared platform `ErrorCode` enum
+  and are mapped by the platform `DomainExceptionMapper`; Bean Validation failures are normalised by
+  the platform `ConstraintViolationExceptionMapper` — see **ADR-16** in `00-system-architecture.md` §9.
 - **Observability:** Micrometer counters for signups, logins (success/fail), social logins, becomes,
   admin role changes; never log passwords, hashes, tokens, or PII. Correlation id on every request.
 
