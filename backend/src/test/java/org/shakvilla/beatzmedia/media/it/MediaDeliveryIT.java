@@ -12,6 +12,7 @@ import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.Instant;
 
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -90,6 +91,17 @@ class MediaDeliveryIT {
     s3Client.createBucket(CreateBucketRequest.builder().bucket(BUCKET_DELIVERY).build());
 
     adapter = new S3ObjectStoreAdapter(s3Client, presigner, BUCKET_ORIGINALS, BUCKET_DELIVERY);
+  }
+
+  @AfterAll
+  static void tearDownS3() {
+    // Release the SDK HTTP/native resources held by the class-scoped clients.
+    if (presigner != null) {
+      presigner.close();
+    }
+    if (s3Client != null) {
+      s3Client.close();
+    }
   }
 
   /** LLFR-MEDIA-01.1 / ADD §3 — originals bucket stores raw upload. */
