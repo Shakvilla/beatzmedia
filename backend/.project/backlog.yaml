@@ -61,7 +61,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-PLT-1]
     llfrs: [LLFR-IDENTITY-01.1, LLFR-IDENTITY-01.2, LLFR-IDENTITY-01.4]
-    status: todo
+    status: in_progress
   - id: WU-IDN-2
     title: /me, social login, password reset
     phase: 1
