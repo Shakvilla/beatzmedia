@@ -181,10 +181,35 @@ class S3UnknownLengthUploadIT {
   }
 
   /**
+   * Defense-in-depth: even when the body is NOT pre-wrapped in the application-layer limiting stream,
+   * the adapter's own spool cap must abort an oversized unknown-length body with {@link
+   * FileTooLargeException}, so a missed upstream wrapper can never fill the disk. Uses a small cap and
+   * a plain (unwrapped) stream larger than it, so only the adapter-internal bound can raise.
+   */
+  @Test
+  void unknown_length_adapter_enforces_its_own_spool_cap() {
+    long tinyCap = 128 * 1024; // 128 KB
+    S3ObjectStoreAdapter cappedAdapter =
+        new S3ObjectStoreAdapter(s3Client, presigner, BUCKET_ORIGINALS, BUCKET_DELIVERY, tinyCap);
+    byte[] rawBody = new byte[(int) tinyCap * 2]; // 256 KB, unwrapped — exceeds the adapter cap
+
+    assertThrows(
+        FileTooLargeException.class,
+        () ->
+            cappedAdapter.putOriginal(
+                MediaKind.AUDIO,
+                new MediaAssetId("unknown-len-003"),
+                new ByteArrayInputStream(rawBody),
+                "audio/wav",
+                UNKNOWN_LENGTH));
+  }
+
+  /**
    * Stand-in for {@code MediaApplicationService.CountingLimitingInputStream} once the cap is
-   * exceeded: serves {@code limit} zero-bytes, then throws {@link FileTooLargeException} on the next
-   * read — the same domain exception, from the same {@code read()} method, that the production
-   * limiting stream throws.
+   * exceeded: serves {@code limit} zero-bytes, then throws {@link FileTooLargeException} from {@code
+   * read()}. It reproduces the behaviour relevant to this test — the same domain exception raised
+   * from {@code read()} mid-transfer — not the exact byte threshold (the real stream throws once
+   * {@code bytesRead > maxBytes}); the precise threshold is irrelevant to what these tests assert.
    */
   private static final class ThrowAtLimitInputStream extends InputStream {
 

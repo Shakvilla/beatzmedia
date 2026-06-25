@@ -168,14 +168,10 @@ public class MediaApplicationService
             : -1L;
 
     // Stream the body to S3 — ONE pass. The DigestInputStream computes hash while S3 receives.
-    // CountingLimitingInputStream aborts with FileTooLargeException if actual bytes exceed max.
-    ObjectKey originalKey;
-    try {
-      originalKey =
-          objectStore.putOriginal(command.kind(), assetId, digestStream, contentType, contentLengthHint);
-    } catch (FileTooLargeException e) {
-      throw e; // already the right domain exception
-    }
+    // CountingLimitingInputStream aborts with FileTooLargeException (→ 413) if actual bytes exceed
+    // max; the adapter re-surfaces it even if the SDK wraps it mid-PUT (see S3ObjectStoreAdapter).
+    ObjectKey originalKey =
+        objectStore.putOriginal(command.kind(), assetId, digestStream, contentType, contentLengthHint);
 
     // After the single-pass PUT, extract the computed hash from the digest
     String contentHash = command.contentHash();

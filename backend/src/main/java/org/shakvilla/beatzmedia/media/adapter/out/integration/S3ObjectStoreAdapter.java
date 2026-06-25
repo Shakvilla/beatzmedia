@@ -2,9 +2,9 @@ package org.shakvilla.beatzmedia.media.adapter.out.integration;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.io.OutputStream;
 import java.nio.file.Files;
 import java.nio.file.Path;
-import java.nio.file.StandardCopyOption;
 import java.time.Duration;
 import java.time.Instant;
 
@@ -16,6 +16,7 @@ import org.jboss.logging.Logger;
 import org.shakvilla.beatzmedia.media.application.port.out.ObjectStorePort;
 import org.shakvilla.beatzmedia.media.application.port.out.UrlSignerPort;
 import org.shakvilla.beatzmedia.media.domain.DeliveryVariant;
+import org.shakvilla.beatzmedia.media.domain.FileTooLargeException;
 import org.shakvilla.beatzmedia.media.domain.MediaAssetId;
 import org.shakvilla.beatzmedia.media.domain.MediaKind;
 import org.shakvilla.beatzmedia.media.domain.ObjectKey;
@@ -42,9 +43,9 @@ import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequ
  * {@code byte[]} (only the 12-byte magic probe is read before the PUT). The AWS SDK v2 <em>sync</em>
  * client cannot PUT a stream of unknown length, so when content-length is {@code -1} (unknown) the
  * body is spooled to a bounded temporary file and streamed from disk via {@link
- * RequestBody#fromFile}. The upload size cap still trips during the spool (the {@code
- * CountingLimitingInputStream} throws mid-read), and {@code Files.copy} uses a small fixed buffer so
- * the JVM heap is never exhausted by large WAV/FLAC files. See B3/S2/M-1 fix notes.
+ * RequestBody#fromFile}. The spool is capped here in the adapter ({@link #MAX_SPOOL_BYTES}) using a
+ * small fixed buffer, so neither the JVM heap nor the disk can be exhausted by a large or untrusted
+ * body — independently of the caller's own limiting stream. See B3/S2/M-1 fix notes.
  */
 @ApplicationScoped
 public class S3ObjectStoreAdapter implements ObjectStorePort, UrlSignerPort {
@@ -53,10 +54,19 @@ public class S3ObjectStoreAdapter implements ObjectStorePort, UrlSignerPort {
 
   private static final String ORIGINALS_KEY_PREFIX = "originals/";
 
+  /**
+   * Backstop cap (bytes) on the unknown-length spool, enforced inside the adapter so a caller that
+   * forgets to wrap the body in the application-layer limiting stream still cannot fill the disk.
+   * Mirrors {@code MediaApplicationService.MAX_SIZE_BYTES} (500 MB); when the application limit is
+   * present it trips first, making this a pure defense-in-depth backstop.
+   */
+  private static final long MAX_SPOOL_BYTES = 500L * 1024 * 1024;
+
   private final S3Client s3Client;
   private final S3Presigner presigner;
   private final String bucketOriginals;
   private final String bucketDelivery;
+  private final long maxSpoolBytes;
 
   @Inject
   public S3ObjectStoreAdapter(
@@ -66,10 +76,21 @@ public class S3ObjectStoreAdapter implements ObjectStorePort, UrlSignerPort {
           String bucketOriginals,
       @ConfigProperty(name = "beatz.s3.bucket-delivery", defaultValue = "beatz-media-delivery")
           String bucketDelivery) {
+    this(s3Client, presigner, bucketOriginals, bucketDelivery, MAX_SPOOL_BYTES);
+  }
+
+  /** Visible for testing — lets an integration test drive the unknown-length spool cap small. */
+  public S3ObjectStoreAdapter(
+      S3Client s3Client,
+      S3Presigner presigner,
+      String bucketOriginals,
+      String bucketDelivery,
+      long maxSpoolBytes) {
     this.s3Client = s3Client;
     this.presigner = presigner;
     this.bucketOriginals = bucketOriginals;
     this.bucketDelivery = bucketDelivery;
+    this.maxSpoolBytes = maxSpoolBytes;
   }
 
   // ---- ObjectStorePort ----
@@ -113,7 +134,10 @@ public class S3ObjectStoreAdapter implements ObjectStorePort, UrlSignerPort {
    * return the original SDK exception unchanged.
    */
   private static RuntimeException unwrapDomainException(SdkException sdkException) {
-    for (Throwable t = sdkException; t != null; t = t.getCause()) {
+    // A well-formed Throwable chain is acyclic, but getCause() is overridable, so bound the walk to
+    // guarantee termination even on a pathological self-referential cause.
+    int maxHops = 64;
+    for (Throwable t = sdkException; t != null && maxHops-- > 0; t = t.getCause()) {
       if (t instanceof DomainException domainException) {
         return domainException;
       }
@@ -143,11 +167,11 @@ public class S3ObjectStoreAdapter implements ObjectStorePort, UrlSignerPort {
 
   /**
    * Spool a body of unknown length to a bounded temporary file, then PUT it from disk with a known
-   * content length. Reading the body here runs it through the caller's limiting/digest stream chain
-   * (see {@code MediaApplicationService}), so a size-cap breach throws {@link
-   * org.shakvilla.beatzmedia.media.domain.FileTooLargeException} during the spool — before any S3
-   * PUT — and propagates unchanged (→ HTTP 413). {@code Files.copy} uses a small fixed buffer, so
-   * the JVM heap is never exhausted even by a 500MB body. The temp file is always deleted.
+   * content length. The copy itself enforces {@link #MAX_SPOOL_BYTES}, throwing {@link
+   * FileTooLargeException} the moment the cap is exceeded — so the bound holds even if the caller
+   * forgot to wrap {@code body} in its own limiting stream. When the caller's limiting stream is
+   * present (the normal path via {@code MediaApplicationService}) it trips at the same point and the
+   * domain exception propagates unchanged (→ HTTP 413). The temp file is always deleted.
    */
   private void putViaTempSpool(PutObjectRequest request, InputStream body) {
     Path spool;
@@ -157,9 +181,9 @@ public class S3ObjectStoreAdapter implements ObjectStorePort, UrlSignerPort {
       throw new IllegalStateException("Failed to create temp file for unknown-length upload", e);
     }
     try {
-      // A FileTooLargeException (RuntimeException) raised by the limiting stream propagates out of
-      // Files.copy unchanged; only genuine I/O failures are wrapped.
-      Files.copy(body, spool, StandardCopyOption.REPLACE_EXISTING);
+      // A FileTooLargeException (RuntimeException) raised by the cap propagates out of the copy
+      // unchanged; only genuine I/O failures are wrapped.
+      spoolBounded(body, spool, maxSpoolBytes);
       s3Client.putObject(request, RequestBody.fromFile(spool));
     } catch (IOException e) {
       throw new IllegalStateException("Failed to spool unknown-length upload body", e);
@@ -171,6 +195,28 @@ public class S3ObjectStoreAdapter implements ObjectStorePort, UrlSignerPort {
         // failure to delete a potentially 500MB spool file is visible to operators instead of
         // silently exhausting disk — /tmp is not guaranteed to be reaped automatically.
         LOG.warnf(cleanupFailure, "Failed to delete unknown-length upload spool file %s", spool);
+      }
+    }
+  }
+
+  /**
+   * Stream {@code in} to {@code target}, aborting with {@link FileTooLargeException} the moment more
+   * than {@code maxBytes} have been read. Enforces the upload cap inside the adapter — independently
+   * of any caller-supplied limiting stream — so an unknown/untrusted-length body can never fill the
+   * disk. The fixed buffer keeps heap usage flat regardless of body size.
+   */
+  private static void spoolBounded(InputStream in, Path target, long maxBytes) throws IOException {
+    byte[] buf = new byte[8192];
+    long total = 0;
+    try (OutputStream out = Files.newOutputStream(target)) {
+      int n;
+      while ((n = in.read(buf)) != -1) {
+        total += n;
+        if (total > maxBytes) {
+          throw new FileTooLargeException(
+              "File exceeds maximum allowed size of " + (maxBytes / 1024 / 1024) + " MB");
+        }
+        out.write(buf, 0, n);
       }
     }
   }
