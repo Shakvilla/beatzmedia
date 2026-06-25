@@ -32,7 +32,7 @@ work_units:
     owner: backend-engineer
     depends_on: []
     llfrs: [LLFR-PLATFORM-01.1, LLFR-ADMIN-10.1]
-    status: in_progress
+    status: done
   - id: WU-PLT-2
     title: Scheduler infrastructure + job registration
     phase: 0
@@ -50,7 +50,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-PLT-1]
     llfrs: [LLFR-MEDIA-01.1, LLFR-MEDIA-01.2, LLFR-MEDIA-01.3]
-    status: todo
+    status: done
 
   # ---------------- Phase 1 — Identity & Catalog ----------------
   - id: WU-IDN-1
@@ -191,6 +191,14 @@ work_units:
     depends_on: [WU-PLT-1, WU-CAT-1]
     llfrs: [LLFR-COMMERCE-01.1, LLFR-COMMERCE-01.2, LLFR-COMMERCE-01.3]
     status: todo
+    # Carryover from WU-PLT-1 review (PR #10): Uuidv7IdGenerator.newOrderRef() uses an in-memory
+    # AtomicLong (orderRefSeq) that resets to 0 on JVM restart and wraps at % 100000. Before order
+    # refs are exposed in production, replace it with a collision-safe source — a DB-backed sequence
+    # (Postgres SEQUENCE per year or a counter table), or at minimum seed the AtomicLong from
+    # SELECT max(order_ref) at startup AND add a UNIQUE constraint on the order_ref column so a
+    # collision fails loudly instead of silently duplicating. Add a test. Conventions §3 requires
+    # order_ref uniqueness; the current impl is unsafe under horizontal scaling / rapid restarts.
+    # Source: platform/adapter/out/persistence/Uuidv7IdGenerator.java:24,33
   - id: WU-COM-2
     title: Checkout orchestration + settlement→ownership grant + orders + ticket issuance
     phase: 2
@@ -200,6 +208,10 @@ work_units:
     depends_on: [WU-COM-1, WU-PAY-1, WU-PAY-3]
     llfrs: [LLFR-COMMERCE-02.1, LLFR-COMMERCE-02.2, LLFR-COMMERCE-02.3, LLFR-COMMERCE-02.4, LLFR-COMMERCE-02.5]
     status: todo
+    # Implements the order_ref collision-safety carryover planned at WU-COM-1 (see its note). This WU
+    # creates the order table + order_ref column, so the fix lands here: DB-backed sequence (or
+    # seed-from-max at startup) AND a UNIQUE constraint on order_ref, plus a collision test. Source
+    # of the unsafe impl: platform/adapter/out/persistence/Uuidv7IdGenerator.java:24,33 (PR #10).
   - id: WU-PLY-1
     title: Stream URL (ownership-aware) + record play
     phase: 2
