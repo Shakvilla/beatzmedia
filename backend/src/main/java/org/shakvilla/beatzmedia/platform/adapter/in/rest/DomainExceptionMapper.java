@@ -32,11 +32,12 @@ public class DomainExceptionMapper implements ExceptionMapper<DomainException> {
 
   private int mapStatus(ErrorCode code) {
     return switch (code) {
-      case VALIDATION, UNSUPPORTED_FORMAT, FILE_REJECTED -> UNPROCESSABLE_ENTITY;
+      case VALIDATION, UNSUPPORTED_FORMAT, FILE_REJECTED, WEAK_PASSWORD -> UNPROCESSABLE_ENTITY;
       case NOT_FOUND -> Response.Status.NOT_FOUND.getStatusCode();
-      case UNAUTHENTICATED -> Response.Status.UNAUTHORIZED.getStatusCode();
-      case UNAUTHORIZED, FEATURE_DISABLED -> Response.Status.FORBIDDEN.getStatusCode();
-      case CONFLICT, ILLEGAL_TRANSITION -> Response.Status.CONFLICT.getStatusCode();
+      case UNAUTHENTICATED, INVALID_CREDENTIALS -> Response.Status.UNAUTHORIZED.getStatusCode();
+      case UNAUTHORIZED, FEATURE_DISABLED, ACCOUNT_SUSPENDED ->
+          Response.Status.FORBIDDEN.getStatusCode();
+      case CONFLICT, ILLEGAL_TRANSITION, EMAIL_TAKEN -> Response.Status.CONFLICT.getStatusCode();
       case RATE_LIMITED -> Response.Status.TOO_MANY_REQUESTS.getStatusCode();
       case MAINTENANCE -> Response.Status.SERVICE_UNAVAILABLE.getStatusCode();
       case PAYLOAD_TOO_LARGE -> 413;
