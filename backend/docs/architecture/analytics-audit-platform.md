@@ -333,10 +333,27 @@ public record PlatformSettings(
     Currency defaultCurrency, boolean maintenanceMode) {}
 ```
 
+**WU-PLT-2 scheduler SPI** (application layer, `application.port.in`):
+
+```java
+/**
+ * SPI that owning modules implement to register a job with SchedulerRegistry.
+ * Implementations are CDI @ApplicationScoped beans; the registry discovers them via
+ * Instance<ScheduledJob> at startup.
+ */
+public interface ScheduledJob {
+    /** Stable, unique name — convention: <module>.<action> in lower-kebab-case. */
+    String jobName();
+    /** Idempotent unit of work; called inside an advisory-lock guard. */
+    void runOnce();
+}
+```
+
 One line each on adapters: `Clock`→`SystemClockAdapter`; `IdGenerator`→`Uuidv7IdGenerator`;
 `FeatureFlags`/`PlatformSettingsProvider`→ JPA-backed `feature_flag` / `platform_settings` repos with a
 short-TTL in-memory cache; `AuditWriter`/`AuditReader`→`AuditEntryRepository`;
-`AnalyticsReader`→`RollupQueryAdapter` over `sales_rollup`/`audience_rollup`.
+`AnalyticsReader`→`RollupQueryAdapter` over `sales_rollup`/`audience_rollup`;
+`ScheduledJob` SPI→`SchedulerRegistry` (outbound adapter, `adapter.out.scheduler`).
 
 ---
 
@@ -500,6 +517,7 @@ CREATE TABLE feature_flag (
   `payout_minimum_minor=1000`, `service_fee_minor=50`, `default_currency='GHS'`,
   `is_maintenance_mode=false`) and seed the five flags
   (`artistSignups`, `podcasts`, `events`, `tipping=true`, `fanMessaging=false`).
+- *(WU-PLT-2: no migration required — advisory locks are transient Postgres session state, no DDL needed)*
 - `V3__audit_entry.sql` — `audit_entry` + indexes + append-only guard trigger (WU-AUD-1).
 - `V4__analytics_rollups.sql` — `sales_rollup`, `audience_rollup` + indexes (WU-ANA-1).
 - `R__seed_dev_data.sql` contribution — sample rollups + audit rows for local rendering (dev/test only).
@@ -624,9 +642,21 @@ Note: WU-PLT-1 is the literal foundation — no other module compiles without th
 **PLATFORM.**
 - *Unit:* `Money` arithmetic (half-up, same-currency guard, percentage); flag filter →
   `403 FEATURE_DISABLED`; maintenance → `503 MAINTENANCE`.
-- *Integration:* **scheduled release publishes exactly once** — seed a `scheduled` release with
-  `go_live_at` in the past, run the go-live job twice (and concurrently across two instances); assert
-  the release is `live` and the transition fired exactly once (INV-7). Reconciliation/digest
+- *Unit (WU-PLT-2 scheduler):* `AdvisoryLockServiceTest` — lock-key determinism for all job names;
+  different names yield different keys. `SchedulerRegistryUnitTest` — job invoked exactly once on lock
+  acquire; skipped when lock is not acquired; lock released on success and on exception; error/skip/run
+  counters and duration timer recorded correctly; exactly-once under simulated two-node concurrent ticks.
+- *Integration (WU-PLT-2 scheduler, Testcontainers Postgres):* `SchedulerRegistryIT` — advisory lock
+  acquire/release with real `pg_try_advisory_lock`; second connection cannot acquire a held lock;
+  re-acquire succeeds after release; job runs exactly once across 8 concurrent threads (stress test);
+  lock is free after successful run and after job exception (lock released in finally); `pg_locks` view
+  shows no dangling advisory locks after release.
+- *Integration (WU-PLT-2 QuarkusTest):* `SchedulerBootIT` — registry and lock service inject in full
+  CDI container; `runWithLock` for unregistered names is a safe no-op; `tryAcquire`/`release` work
+  against real Dev Services Postgres.
+- *Integration (WU-PLT-1):* **scheduled release publishes exactly once** — (deferred to WU-CAT-3 which
+  implements the `catalog.go-live` ScheduledJob; the infrastructure here is the SPI + advisory-lock
+  guard + SKIP concurrency; the conditional UPDATE lives in the catalog module). Reconciliation/digest
   idempotency by key. Flyway seed applies defaults (`platformFeePct=30`, flags) on an empty DB.
 
 Coverage ≥ the gate in `sdlc/testing-strategy.md`.
