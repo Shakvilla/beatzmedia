@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assumptions.assumeTrue;
 import java.io.ByteArrayInputStream;
 import java.net.URI;
 
+import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
@@ -47,6 +48,7 @@ class RealTranscodeIT {
           .withPassword("minioadmin");
 
   private static S3Client s3Client;
+  private static S3Presigner presigner;
   private static S3ObjectStoreAdapter objectStore;
   private static FfmpegAudioTranscoderAdapter transcoder;
 
@@ -68,7 +70,7 @@ class RealTranscodeIT {
         .serviceConfiguration(s3Config)
         .build();
 
-    S3Presigner presigner = S3Presigner.builder()
+    presigner = S3Presigner.builder()
         .endpointOverride(endpoint)
         .region(Region.US_EAST_1)
         .credentialsProvider(creds)
@@ -80,6 +82,18 @@ class RealTranscodeIT {
 
     objectStore = new S3ObjectStoreAdapter(s3Client, presigner, BUCKET_ORIGINALS, BUCKET_DELIVERY);
     transcoder = new FfmpegAudioTranscoderAdapter(s3Client, objectStore, BUCKET_DELIVERY);
+  }
+
+  @AfterAll
+  static void tearDownS3() {
+    // Release the SDK HTTP/native resources held by the class-scoped clients.
+    // Null-safe: setUp aborts via assumeTrue when ffmpeg is absent, leaving these unset.
+    if (presigner != null) {
+      presigner.close();
+    }
+    if (s3Client != null) {
+      s3Client.close();
+    }
   }
 
   /**
