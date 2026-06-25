@@ -246,6 +246,13 @@ the part to an `UploadCommand` and call `MediaService.uploadOriginal`. Delivery 
   loop it may wrap that domain exception as `SdkClientException`, so `putOriginal` unwraps any
   `DomainException` from the SDK cause chain and re-throws it — oversize uploads surface `413`, never
   `500` (guarded by `S3UploadCapIT` against real MinIO and by `S3ObjectStoreAdapterUnwrapTest`).
+  **Streaming paths:** a known content length streams straight to the SDK via
+  `RequestBody.fromInputStream` (no heap buffer). The sync SDK cannot PUT a stream of *unknown*
+  length, so when the service passes `-1` (declared size absent or untrusted) the body is spooled to
+  a bounded temp file and PUT from disk via `RequestBody.fromFile`; the spool is itself capped at
+  `MAX_SPOOL_BYTES` (mirrors the 500 MB limit) as an adapter-level disk backstop, throws
+  `FileTooLargeException` the moment the cap trips (still `413`), and the temp file is always deleted.
+  Guarded by `S3UnknownLengthUploadIT` (normal body stored byte-for-byte; over-cap body → `413`).
 - **ffmpeg transcoder adapter** (`AudioTranscoderPort`): probes duration (`ffprobe`), produces the full
   HLS rendition and the 30s preview clip via the Compose `transcoder` service (`jrottenberg/ffmpeg`,
   PRD §5.1). Long-running, off the request thread (async job).
