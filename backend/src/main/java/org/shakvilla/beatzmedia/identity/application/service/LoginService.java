@@ -6,6 +6,7 @@ import java.util.Set;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.transaction.Transactional;
 
 import org.shakvilla.beatzmedia.identity.application.port.in.AccountView;
 import org.shakvilla.beatzmedia.identity.application.port.in.AuthResult;
@@ -40,6 +41,7 @@ public class LoginService implements Login {
   }
 
   @Override
+  @Transactional
   public AuthResult login(LoginCommand command) {
     Optional<Account> maybeAccount = accountRepository.findByEmail(command.email());
 

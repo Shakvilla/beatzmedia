@@ -413,7 +413,8 @@ admin team (with ≥ 1 `super-admin`) so the API returns the data the UI was bui
 when catalog/studio seed data is authored).
 
 **OQ-3 note:** WU-IDN-1 implements short-lived access JWTs only (TTL configured via
-`beatz.jwt.access-ttl-seconds`). No refresh token is issued for v1. This is the OQ-3 default.
+`beatz.jwt.access-ttl-seconds`, default 900 s / 15 min per security-authz.md §1.3). No refresh
+token is issued for v1. This is the OQ-3 default.
 
 ## 8. Key flows
 

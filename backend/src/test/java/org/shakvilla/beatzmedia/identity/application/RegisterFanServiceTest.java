@@ -4,6 +4,10 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.ArrayList;
+import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -11,6 +15,7 @@ import org.junit.jupiter.api.Test;
 import org.shakvilla.beatzmedia.identity.application.port.in.AuthResult;
 import org.shakvilla.beatzmedia.identity.application.port.in.RegisterFan.RegisterFanCommand;
 import org.shakvilla.beatzmedia.identity.application.service.RegisterFanService;
+import org.shakvilla.beatzmedia.identity.domain.AccountRegistered;
 import org.shakvilla.beatzmedia.identity.domain.Credential;
 import org.shakvilla.beatzmedia.identity.domain.EmailTakenException;
 import org.shakvilla.beatzmedia.identity.domain.WeakPasswordException;
@@ -21,7 +26,8 @@ import org.shakvilla.beatzmedia.platform.fakes.FakeClock;
 import org.shakvilla.beatzmedia.platform.fakes.FakeIds;
 
 /**
- * Unit tests for {@link RegisterFanService}. Covers LLFR-IDENTITY-01.1 acceptance criteria.
+ * Unit tests for {@link RegisterFanService}. Covers LLFR-IDENTITY-01.1 acceptance criteria,
+ * including the AccountRegistered event firing requirement (B1).
  */
 @Tag("unit")
 class RegisterFanServiceTest {
@@ -31,6 +37,7 @@ class RegisterFanServiceTest {
   private FakeTokenIssuer tokenIssuer;
   private FakeIds ids;
   private FakeClock clock;
+  private FakeEvent<AccountRegistered> fakeEvent;
   private RegisterFanService service;
 
   @BeforeEach
@@ -40,7 +47,8 @@ class RegisterFanServiceTest {
     tokenIssuer = new FakeTokenIssuer();
     ids = FakeIds.sequential("acc");
     clock = FakeClock.fixed();
-    service = new RegisterFanService(repo, hasher, tokenIssuer, ids, clock);
+    fakeEvent = new FakeEvent<>();
+    service = new RegisterFanService(repo, hasher, tokenIssuer, ids, clock, fakeEvent);
   }
 
   // ---- LLFR-IDENTITY-01.1: success ----
@@ -81,7 +89,55 @@ class RegisterFanServiceTest {
     // FakeTokenIssuer format: "token:<id>:<roles>"
     String token = result.token();
     assertNotNull(token);
-    org.junit.jupiter.api.Assertions.assertTrue(token.contains("fan"), "Token must carry fan role");
+    assertTrue(token.contains("fan"), "Token must carry fan role");
+  }
+
+  // ---- B1: AccountRegistered event ----
+
+  @Test
+  void register_success_fires_exactly_one_AccountRegistered_event() {
+    service.register(new RegisterFanCommand("Alice", "alice@example.com", "password123"));
+
+    assertEquals(1, fakeEvent.fired().size(), "Exactly one AccountRegistered event must be fired");
+  }
+
+  @Test
+  void register_success_event_carries_correct_accountId_and_email() {
+    AuthResult result = service.register(
+        new RegisterFanCommand("Alice", "alice@example.com", "password123"));
+
+    AccountRegistered event = fakeEvent.fired().get(0);
+    assertEquals(result.account().id(), event.accountId(), "Event accountId must match returned account id");
+    assertEquals("alice@example.com", event.email(), "Event email must match signup email");
+    assertEquals("Alice", event.name(), "Event name must match signup name");
+    assertNotNull(event.registeredAt(), "Event registeredAt must not be null");
+  }
+
+  @Test
+  void register_duplicate_email_fires_no_AccountRegistered_event() {
+    service.register(new RegisterFanCommand("Alice", "alice@example.com", "password123"));
+    fakeEvent.clear(); // clear the first successful registration's event
+
+    try {
+      service.register(new RegisterFanCommand("Alice2", "alice@example.com", "password456"));
+    } catch (EmailTakenException ignored) {
+      // expected
+    }
+
+    assertEquals(0, fakeEvent.fired().size(),
+        "AccountRegistered must NOT be fired on duplicate-email (EMAIL_TAKEN) attempt");
+  }
+
+  @Test
+  void register_weak_password_fires_no_AccountRegistered_event() {
+    try {
+      service.register(new RegisterFanCommand("Eve", "eve@example.com", "short"));
+    } catch (WeakPasswordException ignored) {
+      // expected
+    }
+
+    assertEquals(0, fakeEvent.fired().size(),
+        "AccountRegistered must NOT be fired on weak-password failure");
   }
 
   // ---- LLFR-IDENTITY-01.1: duplicate email → EMAIL_TAKEN ----
@@ -140,5 +196,66 @@ class RegisterFanServiceTest {
   void register_null_password_throws_WeakPasswordException() {
     assertThrows(WeakPasswordException.class,
         () -> service.register(new RegisterFanCommand("Heidi", "heidi@example.com", null)));
+  }
+
+  // ---- Minimal fake CDI Event for unit tests ----
+
+  /**
+   * Lightweight stand-in for {@link jakarta.enterprise.event.Event} that records all fired
+   * payloads. Used in unit tests to assert event publication without a CDI container.
+   */
+  static final class FakeEvent<T> implements jakarta.enterprise.event.Event<T> {
+
+    private final List<T> firedEvents = new ArrayList<>();
+
+    @Override
+    public void fire(T event) {
+      firedEvents.add(event);
+    }
+
+    @Override
+    public <U extends T> java.util.concurrent.CompletionStage<U> fireAsync(U event) {
+      firedEvents.add(event);
+      return java.util.concurrent.CompletableFuture.completedFuture(event);
+    }
+
+    @Override
+    public <U extends T> java.util.concurrent.CompletionStage<U> fireAsync(
+        U event, jakarta.enterprise.event.NotificationOptions options) {
+      firedEvents.add(event);
+      return java.util.concurrent.CompletableFuture.completedFuture(event);
+    }
+
+    @Override
+    public <U extends T> jakarta.enterprise.event.Event<U> select(
+        jakarta.enterprise.util.TypeLiteral<U> subtype,
+        java.lang.annotation.Annotation... qualifiers) {
+      @SuppressWarnings("unchecked")
+      FakeEvent<U> cast = (FakeEvent<U>) this;
+      return cast;
+    }
+
+    @Override
+    public <U extends T> jakarta.enterprise.event.Event<U> select(
+        Class<U> subtype, java.lang.annotation.Annotation... qualifiers) {
+      @SuppressWarnings("unchecked")
+      FakeEvent<U> cast = (FakeEvent<U>) this;
+      return cast;
+    }
+
+    @Override
+    public jakarta.enterprise.event.Event<T> select(java.lang.annotation.Annotation... qualifiers) {
+      return this;
+    }
+
+    /** Returns an unmodifiable snapshot of all events fired so far. */
+    List<T> fired() {
+      return List.copyOf(firedEvents);
+    }
+
+    /** Resets the captured list (call between sub-scenarios in one test). */
+    void clear() {
+      firedEvents.clear();
+    }
   }
 }

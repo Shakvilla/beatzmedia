@@ -264,6 +264,56 @@ class AuthResourceIT {
         .statusCode(204);
   }
 
+  // ---- NB-2: input-size upper bounds (Argon2 DoS prevention) ----
+
+  @Test
+  @Order(13)
+  void signup_password_over_200_chars_returns_422_VALIDATION() {
+    String oversizedPassword = "a".repeat(201);
+    given()
+        .contentType(ContentType.JSON)
+        .body("""
+            { "name": "Bob", "email": "bob-overflow@example.com", "password": "%s" }
+            """.formatted(oversizedPassword))
+        .when()
+        .post(SIGNUP_URL)
+        .then()
+        .statusCode(422)
+        .body("error.code", equalTo("VALIDATION"));
+  }
+
+  @Test
+  @Order(14)
+  void login_password_over_200_chars_returns_422_VALIDATION() {
+    String oversizedPassword = "b".repeat(201);
+    given()
+        .contentType(ContentType.JSON)
+        .body("""
+            { "email": "nobody@example.com", "password": "%s" }
+            """.formatted(oversizedPassword))
+        .when()
+        .post(LOGIN_URL)
+        .then()
+        .statusCode(422)
+        .body("error.code", equalTo("VALIDATION"));
+  }
+
+  @Test
+  @Order(15)
+  void signup_name_over_120_chars_returns_422_VALIDATION() {
+    String oversizedName = "x".repeat(121);
+    given()
+        .contentType(ContentType.JSON)
+        .body("""
+            { "name": "%s", "email": "longname@example.com", "password": "validpassword" }
+            """.formatted(oversizedName))
+        .when()
+        .post(SIGNUP_URL)
+        .then()
+        .statusCode(422)
+        .body("error.code", equalTo("VALIDATION"));
+  }
+
   // ---- JWT sub + roles verification ----
 
   @Test

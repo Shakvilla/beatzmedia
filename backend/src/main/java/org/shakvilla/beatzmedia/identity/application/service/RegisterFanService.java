@@ -3,6 +3,7 @@ package org.shakvilla.beatzmedia.identity.application.service;
 import java.util.Set;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 
@@ -14,6 +15,7 @@ import org.shakvilla.beatzmedia.identity.application.port.out.CredentialHasher;
 import org.shakvilla.beatzmedia.identity.application.port.out.TokenIssuer;
 import org.shakvilla.beatzmedia.identity.domain.Account;
 import org.shakvilla.beatzmedia.identity.domain.AccountId;
+import org.shakvilla.beatzmedia.identity.domain.AccountRegistered;
 import org.shakvilla.beatzmedia.identity.domain.Credential;
 import org.shakvilla.beatzmedia.identity.domain.EmailTakenException;
 import org.shakvilla.beatzmedia.identity.domain.WeakPasswordException;
@@ -22,7 +24,8 @@ import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
 
 /**
  * Application service for LLFR-IDENTITY-01.1 (fan signup). Validates uniqueness and password
- * strength, hashes the password, persists the account, and issues a JWT. Identity ADD §4.1.
+ * strength, hashes the password, persists the account, issues a JWT, and fires an
+ * {@link AccountRegistered} CDI event after the repository save succeeds. Identity ADD §4.1.
  */
 @ApplicationScoped
 public class RegisterFanService implements RegisterFan {
@@ -35,6 +38,7 @@ public class RegisterFanService implements RegisterFan {
   private final TokenIssuer tokenIssuer;
   private final IdGenerator idGenerator;
   private final Clock clock;
+  private final Event<AccountRegistered> accountRegisteredEvent;
 
   @Inject
   public RegisterFanService(
@@ -42,12 +46,14 @@ public class RegisterFanService implements RegisterFan {
       CredentialHasher credentialHasher,
       TokenIssuer tokenIssuer,
       IdGenerator idGenerator,
-      Clock clock) {
+      Clock clock,
+      Event<AccountRegistered> accountRegisteredEvent) {
     this.accountRepository = accountRepository;
     this.credentialHasher = credentialHasher;
     this.tokenIssuer = tokenIssuer;
     this.idGenerator = idGenerator;
     this.clock = clock;
+    this.accountRegisteredEvent = accountRegisteredEvent;
   }
 
   @Override
@@ -74,6 +80,15 @@ public class RegisterFanService implements RegisterFan {
 
     // Persist (account + credential in one transaction)
     accountRepository.save(account);
+
+    // Publish domain event — fires after successful save; only reached when no exception was thrown.
+    // Synchronous CDI fire mirrors the pattern in MediaApplicationService (ADD §5 / AFTER_SUCCESS).
+    accountRegisteredEvent.fire(
+        new AccountRegistered(
+            account.getId().value(),
+            account.getEmail(),
+            account.getName(),
+            account.getCreatedAt()));
 
     // Issue JWT — fan role only (isArtist=false at creation)
     String token = tokenIssuer.issue(id, Set.of("fan"));

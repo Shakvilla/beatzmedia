@@ -29,7 +29,7 @@ public class JwtTokenIssuer implements TokenIssuer {
   @Inject
   public JwtTokenIssuer(
       @ConfigProperty(name = "mp.jwt.verify.issuer") String issuer,
-      @ConfigProperty(name = "beatz.jwt.access-ttl-seconds", defaultValue = "3600")
+      @ConfigProperty(name = "beatz.jwt.access-ttl-seconds", defaultValue = "900")
           long accessTtlSeconds,
       Clock clock) {
     this.issuer = issuer;
