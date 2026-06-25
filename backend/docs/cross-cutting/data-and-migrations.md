@@ -292,8 +292,8 @@ Two acceptable forms — keep both in sync:
 |---|---|---|
 | `V100` | platform | `enable_pg_trgm` (+ `uuid`/`pgcrypto` if needed) |
 | `V101` | platform | `create_platform_settings`, `feature_flag` |
-| `V201` | identity | `create_account`, `credential`, `social_identity` |
-| `V202` | identity | `create_fan_settings`, `admin_member`, `password_reset_token` |
+| `V201` | identity | `create_account`, `credential` (WU-IDN-1 ✅); `social_identity` deferred to WU-IDN-2 (next V2xx) |
+| `V202` | identity | `create_fan_settings`, `admin_member`, `password_reset_token` (WU-IDN-2/4) |
 | `V301` | catalog | `create_artist_profile`, `album` |
 | `V302` | catalog | `create_track`, `track_credit`, `lyrics`, `lyric_line` |
 | `V303` | catalog | `create_playlist`, `playlist_track`, `browse_category` |

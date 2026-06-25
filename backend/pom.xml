@@ -148,6 +148,17 @@
         </dependency>
 
         <!-- ================================================================ -->
+        <!-- Password hashing — Argon2id (WU-IDN-1)                           -->
+        <!-- argon2-jvm: pure-JVM Argon2 via JNA + native libargon2.          -->
+        <!-- No Bouncy Castle; identity ADD §5.2 requires Argon2id only.      -->
+        <!-- ================================================================ -->
+        <dependency>
+            <groupId>de.mkammerer</groupId>
+            <artifactId>argon2-jvm</artifactId>
+            <version>2.11</version>
+        </dependency>
+
+        <!-- ================================================================ -->
         <!-- Scheduling                                                         -->
         <!-- ================================================================ -->
         <dependency>

@@ -227,20 +227,28 @@ public enum AdminRole { SUPER_ADMIN, FINANCE, MODERATOR, EDITOR, SUPPORT } // se
 ### 4.2 Output ports
 
 ```java
+// WU-IDN-1 declares only the methods it needs.  Later WUs extend this port incrementally.
 public interface AccountRepository {                       // adapter: JpaAccountRepository (Panache + Postgres)
+    // --- WU-IDN-1 methods ---
     Optional<Account> findById(AccountId id);
     Optional<Account> findByEmail(String email);
-    Optional<Account> findBySocialIdentity(SocialProvider provider, String providerUid);
     boolean existsByEmail(String email);
-    Account save(Account account);                          // upsert aggregate (account + credential + social + settings)
-    Optional<FanSettings> findSettings(AccountId id);
-    FanSettings saveSettings(FanSettings settings);
-    List<AdminMember> findAllAdminMembers();
-    Optional<AdminMember> findAdminMember(String adminMemberId);
-    long countAdminsWithRole(AdminRole role);
-    void deleteAdminMember(String adminMemberId);
-    Optional<PasswordResetToken> findResetToken(String token);
-    PasswordResetToken saveResetToken(PasswordResetToken token);
+    Account save(Account account);                          // upsert aggregate (account + credential)
+
+    // --- WU-IDN-2 additions (social login, password reset) ---
+    // Optional<Account> findBySocialIdentity(SocialProvider provider, String providerUid);
+    // Optional<PasswordResetToken> findResetToken(String token);
+    // PasswordResetToken saveResetToken(PasswordResetToken token);
+
+    // --- WU-IDN-3 additions (fan settings) ---
+    // Optional<FanSettings> findSettings(AccountId id);
+    // FanSettings saveSettings(FanSettings settings);
+
+    // --- WU-IDN-4 additions (admin team) ---
+    // List<AdminMember> findAllAdminMembers();
+    // Optional<AdminMember> findAdminMember(String adminMemberId);
+    // long countAdminsWithRole(AdminRole role);
+    // void deleteAdminMember(String adminMemberId);
 }
 
 public interface CredentialHasher {                        // adapter: Argon2CredentialHasher (Argon2id)
@@ -389,9 +397,23 @@ CREATE INDEX password_reset_token_account_idx ON password_reset_token (account_i
 ```
 
 **Money:** n/a for this module. **Flyway migrations** (forward-only, `db/migration/`):
-`V1__identity_accounts.sql`, `V2__identity_social_and_settings.sql`, `V3__identity_admin_and_reset.sql`.
+
+| Migration | Scope | WU |
+|---|---|---|
+| `V201__create_account.sql` | `account` + `credential` tables + indexes/constraints | WU-IDN-1 ✅ |
+| Next V2xx | `social_identity` + `fan_settings` | WU-IDN-2 |
+| Next V2xx | `admin_member` + `password_reset_token` | WU-IDN-4 |
+
+The identity module uses the **V2xx Flyway band** (data-and-migrations §4.1). Note: the original
+design showed three files `V1/V2/V3` — those were pre-band-allocation placeholder names. The actual
+files use the V2xx band (`V201`, etc.) to avoid collisions with platform migrations.
+
 The shared repeatable `R__seed_dev_data.sql` contributes a sample fan, a sample artist, and the seeded
-admin team (with ≥ 1 `super-admin`) so the API returns the data the UI was built against.
+admin team (with ≥ 1 `super-admin`) so the API returns the data the UI was built against (to be added
+when catalog/studio seed data is authored).
+
+**OQ-3 note:** WU-IDN-1 implements short-lived access JWTs only (TTL configured via
+`beatz.jwt.access-ttl-seconds`). No refresh token is issued for v1. This is the OQ-3 default.
 
 ## 8. Key flows
 
