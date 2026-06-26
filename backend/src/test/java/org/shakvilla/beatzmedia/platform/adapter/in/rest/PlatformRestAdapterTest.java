@@ -29,6 +29,7 @@ class PlatformRestAdapterTest {
 
   private final DomainExceptionMapper domainMapper = new DomainExceptionMapper();
   private final FallbackExceptionMapper fallbackMapper = new FallbackExceptionMapper();
+  private final WebApplicationExceptionMapper webMapper = new WebApplicationExceptionMapper();
 
   // ---- ErrorEnvelope -------------------------------------------------------
 
@@ -230,6 +231,79 @@ class PlatformRestAdapterTest {
       ErrorEnvelope body = (ErrorEnvelope) r.getEntity();
       assertNull(body.error().field());
     }
+  }
+
+  // ---- WebApplicationExceptionMapper ---------------------------------------
+  // Framework-thrown JAX-RS exceptions (unknown route, wrong method, etc.) must
+  // keep their real HTTP status instead of being swallowed into 500 by the
+  // catch-all FallbackExceptionMapper. Regression for the 404/405 -> 500 bug.
+
+  @Test
+  void webMapper_notFound_returns_404_with_NOT_FOUND_code() {
+    try (Response r = webMapper.toResponse(new jakarta.ws.rs.NotFoundException())) {
+      assertEquals(404, r.getStatus());
+      ErrorEnvelope body = (ErrorEnvelope) r.getEntity();
+      assertEquals("NOT_FOUND", body.error().code());
+    }
+  }
+
+  @Test
+  void webMapper_methodNotAllowed_returns_405_with_METHOD_NOT_ALLOWED_code() {
+    try (Response r = webMapper.toResponse(new jakarta.ws.rs.NotAllowedException("GET"))) {
+      assertEquals(405, r.getStatus());
+      ErrorEnvelope body = (ErrorEnvelope) r.getEntity();
+      assertEquals("METHOD_NOT_ALLOWED", body.error().code());
+    }
+  }
+
+  @Test
+  void webMapper_badRequest_returns_400_with_VALIDATION_code() {
+    try (Response r = webMapper.toResponse(new jakarta.ws.rs.BadRequestException())) {
+      assertEquals(400, r.getStatus());
+      ErrorEnvelope body = (ErrorEnvelope) r.getEntity();
+      assertEquals("VALIDATION", body.error().code());
+    }
+  }
+
+  @Test
+  void webMapper_notAuthorized_returns_401_with_UNAUTHENTICATED_code() {
+    try (Response r = webMapper.toResponse(new jakarta.ws.rs.NotAuthorizedException("Bearer"))) {
+      assertEquals(401, r.getStatus());
+      ErrorEnvelope body = (ErrorEnvelope) r.getEntity();
+      assertEquals("UNAUTHENTICATED", body.error().code());
+    }
+  }
+
+  @Test
+  void webMapper_forbidden_returns_403_with_UNAUTHORIZED_code() {
+    try (Response r = webMapper.toResponse(new jakarta.ws.rs.ForbiddenException())) {
+      assertEquals(403, r.getStatus());
+      ErrorEnvelope body = (ErrorEnvelope) r.getEntity();
+      assertEquals("UNAUTHORIZED", body.error().code());
+    }
+  }
+
+  @Test
+  void webMapper_serverError_returns_500_with_INTERNAL_code() {
+    try (Response r = webMapper.toResponse(new jakarta.ws.rs.InternalServerErrorException())) {
+      assertEquals(500, r.getStatus());
+      ErrorEnvelope body = (ErrorEnvelope) r.getEntity();
+      assertEquals("INTERNAL", body.error().code());
+    }
+  }
+
+  @Test
+  void webMapper_message_is_generic_not_exception_detail() {
+    jakarta.ws.rs.NotFoundException ex =
+        new jakarta.ws.rs.NotFoundException("no row for id 42 in table accounts");
+    try (Response r = webMapper.toResponse(ex)) {
+      // Must not echo arbitrary framework/internal detail into the envelope.
+      assertEquals("Resource not found.", body(r).error().message());
+    }
+  }
+
+  private static ErrorEnvelope body(Response r) {
+    return (ErrorEnvelope) r.getEntity();
   }
 
   private static void assertNull(Object value) {

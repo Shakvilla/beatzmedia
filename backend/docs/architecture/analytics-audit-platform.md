@@ -323,8 +323,9 @@ public record Page<T>(List<T> items, int page, int size, long total) {}
 public record ApiError(String code, String message, String field) {}
 
 public enum ErrorCode {
-    VALIDATION, NOT_FOUND, UNAUTHENTICATED, UNAUTHORIZED, CONFLICT, ILLEGAL_TRANSITION,
-    RATE_LIMITED, FEATURE_DISABLED, MAINTENANCE, INTERNAL
+    VALIDATION, NOT_FOUND, METHOD_NOT_ALLOWED, UNAUTHENTICATED, UNAUTHORIZED, CONFLICT,
+    ILLEGAL_TRANSITION, RATE_LIMITED, FEATURE_DISABLED, MAINTENANCE, INTERNAL
+    // + per-module additions (PAYLOAD_TOO_LARGE, UNSUPPORTED_FORMAT, identity/catalog codes, …)
 }
 
 public record PlatformSettings(
@@ -597,6 +598,9 @@ multi-instance ticks (advisory lock + `SKIP` concurrency) publish each row exact
 
 **Error model.** `ErrorCode` + `ApiError` envelope `{ error: { code, message, field } }`; a single
 `ExceptionMapper` per family maps domain exceptions to the envelope; no stack traces / SQL / PII leak.
+`WebApplicationExceptionMapper` maps framework JAX-RS errors (unknown route → 404, wrong method →
+405, …) preserving their HTTP status, so `FallbackExceptionMapper` only ever returns 500/INTERNAL for
+genuinely unexpected exceptions.
 
 **Observability (PRD §9.5).** Each scheduled job emits a Micrometer timer
 (`job.duration{name=...}`), a success/failure counter (`job.runs{name,outcome}`), and an OpenTelemetry

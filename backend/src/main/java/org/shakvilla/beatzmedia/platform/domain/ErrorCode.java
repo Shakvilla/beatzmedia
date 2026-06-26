@@ -11,6 +11,7 @@ package org.shakvilla.beatzmedia.platform.domain;
 public enum ErrorCode {
   VALIDATION,
   NOT_FOUND,
+  METHOD_NOT_ALLOWED,
   UNAUTHENTICATED,
   UNAUTHORIZED,
   CONFLICT,
