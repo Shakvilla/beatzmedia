@@ -33,7 +33,12 @@ public class DomainExceptionMapper implements ExceptionMapper<DomainException> {
   private int mapStatus(ErrorCode code) {
     return switch (code) {
       case VALIDATION, UNSUPPORTED_FORMAT, FILE_REJECTED, WEAK_PASSWORD -> UNPROCESSABLE_ENTITY;
-      case NOT_FOUND -> Response.Status.NOT_FOUND.getStatusCode();
+      case NOT_FOUND,
+              ARTIST_NOT_FOUND,
+              ALBUM_NOT_FOUND,
+              TRACK_NOT_FOUND,
+              LYRICS_NOT_FOUND ->
+          Response.Status.NOT_FOUND.getStatusCode();
       case UNAUTHENTICATED, INVALID_CREDENTIALS -> Response.Status.UNAUTHORIZED.getStatusCode();
       case UNAUTHORIZED, FEATURE_DISABLED, ACCOUNT_SUSPENDED ->
           Response.Status.FORBIDDEN.getStatusCode();
