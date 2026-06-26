@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import io.quarkus.test.junit.QuarkusTest;
+import io.restassured.http.ContentType;
 
 /**
  * Integration tests for {@link
@@ -228,7 +229,23 @@ class PublicCatalogResourceIT {
   void getPlaylist_private_by_anonymous_returns_404() {
     // LLFR-CATALOG-01.7: existence hidden for anonymous callers
     given()
-        .when().get("/v1/playlists/private-test-playlist")
+        .when()
+        .get("/v1/playlists/private-test-playlist")
+        .then()
+        .statusCode(404);
+  }
+
+  @Test
+  void getPlaylist_private_by_authenticated_non_owner_returns_404() {
+    // LLFR-CATALOG-01.7: private playlist must be hidden (404) even for authenticated callers.
+    // Authenticated-owner access unblocked by WU-LIB-1.
+    // Mint a real JWT by signing up a new fan account via the identity service.
+    String token = obtainFreshBearerToken("catalog-priv-it@example.com", "Password123!");
+
+    given()
+        .header("Authorization", "Bearer " + token)
+        .when()
+        .get("/v1/playlists/private-test-playlist")
         .then()
         .statusCode(404);
   }
@@ -236,9 +253,43 @@ class PublicCatalogResourceIT {
   @Test
   void getPlaylist_unknown_id_returns_404() {
     given()
-        .when().get("/v1/playlists/nobody-xyz")
+        .when()
+        .get("/v1/playlists/nobody-xyz")
         .then()
         .statusCode(404);
+  }
+
+  // ---- helpers ----
+
+  /**
+   * Registers a fresh fan account (idempotent: if it already exists, falls back to login) and
+   * returns the JWT bearer token. Mirrors the pattern in {@code AuthResourceIT#obtainToken}.
+   */
+  private String obtainFreshBearerToken(String email, String password) {
+    // Attempt signup first; ignore 409 (already registered from a prior test run).
+    given()
+        .contentType(ContentType.JSON)
+        .body(
+            """
+            { "name": "CatalogTestFan", "email": "%s", "password": "%s" }
+            """.formatted(email, password))
+        .when()
+        .post("/v1/auth/signup");
+
+    // Login to get a fresh token regardless of whether signup succeeded or 409'd.
+    return given()
+        .contentType(ContentType.JSON)
+        .body(
+            """
+            { "email": "%s", "password": "%s" }
+            """.formatted(email, password))
+        .when()
+        .post("/v1/auth/login")
+        .then()
+        .statusCode(200)
+        .extract()
+        .jsonPath()
+        .getString("token");
   }
 
   // ==========================================================================

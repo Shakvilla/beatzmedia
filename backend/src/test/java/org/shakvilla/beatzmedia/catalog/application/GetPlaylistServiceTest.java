@@ -58,13 +58,27 @@ class GetPlaylistServiceTest {
   @Test
   void get_private_playlist_by_anonymous_caller_returns_404() {
     PlaylistId pid = new PlaylistId("secret");
-    Playlist pl = new Playlist(pid, "Secret", null, "Kojo", null, "img.jpg",
-        false, 0L, List.of());
+    Playlist pl =
+        new Playlist(pid, "Secret", null, "Kojo", null, "img.jpg", false, 0L, List.of());
     repo.addPlaylist(pl);
 
     // LLFR-CATALOG-01.7: private playlist accessed by anonymous → 404 (existence hidden)
-    assertThrows(PlaylistNotFoundException.class,
-        () -> service.get(pid, Optional.empty()));
+    assertThrows(
+        PlaylistNotFoundException.class, () -> service.get(pid, Optional.empty()));
+  }
+
+  @Test
+  void get_private_playlist_by_authenticated_non_owner_returns_404() {
+    PlaylistId pid = new PlaylistId("secret-auth");
+    Playlist pl =
+        new Playlist(pid, "Secret Auth", null, "Kojo", null, "img.jpg", false, 0L, List.of());
+    repo.addPlaylist(pl);
+
+    // LLFR-CATALOG-01.7: private playlist accessed by authenticated non-owner → 404 too.
+    // Authenticated-owner access unblocked by WU-LIB-1.
+    assertThrows(
+        PlaylistNotFoundException.class,
+        () -> service.get(pid, Optional.of("some-other-account-id")));
   }
 
   @Test

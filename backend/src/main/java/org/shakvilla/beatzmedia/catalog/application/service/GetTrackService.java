@@ -4,6 +4,7 @@ import java.util.Optional;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.transaction.Transactional;
 
 import org.shakvilla.beatzmedia.catalog.application.port.in.GetTrack;
 import org.shakvilla.beatzmedia.catalog.application.port.in.TrackView;
@@ -16,6 +17,7 @@ import org.shakvilla.beatzmedia.catalog.domain.TrackNotFoundException;
  * Application service for LLFR-CATALOG-01.6 (track detail). Catalog ADD §4.1.
  */
 @ApplicationScoped
+@Transactional
 public class GetTrackService implements GetTrack {
 
   private final CatalogRepository catalogRepository;

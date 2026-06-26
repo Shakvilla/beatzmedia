@@ -5,6 +5,7 @@ import java.util.Optional;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.transaction.Transactional;
 
 import org.shakvilla.beatzmedia.catalog.application.port.in.AlbumView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.ArtistView;
@@ -22,6 +23,7 @@ import org.shakvilla.beatzmedia.catalog.domain.ArtistProfile;
  * §4.1.
  */
 @ApplicationScoped
+@Transactional
 public class GetArtistService implements GetArtist {
 
   private final CatalogRepository catalogRepository;

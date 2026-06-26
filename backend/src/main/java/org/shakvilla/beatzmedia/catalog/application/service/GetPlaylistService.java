@@ -5,6 +5,7 @@ import java.util.Optional;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.transaction.Transactional;
 
 import org.shakvilla.beatzmedia.catalog.application.port.in.GetPlaylist;
 import org.shakvilla.beatzmedia.catalog.application.port.in.PlaylistView;
@@ -20,6 +21,7 @@ import org.shakvilla.beatzmedia.catalog.domain.PlaylistNotFoundException;
  * non-owners return 404 (existence hidden). Catalog ADD §4.1.
  */
 @ApplicationScoped
+@Transactional
 public class GetPlaylistService implements GetPlaylist {
 
   private final CatalogRepository catalogRepository;
@@ -36,11 +38,12 @@ public class GetPlaylistService implements GetPlaylist {
     Playlist playlist = catalogRepository.findPlaylist(id)
         .orElseThrow(() -> new PlaylistNotFoundException(id.value()));
 
-    // LLFR-CATALOG-01.7: private playlist accessed by non-owner → 404 (existence hidden).
-    // WU-CAT-1 stub: "creator" is a display name, not an account id. A proper owner check will
-    // require the library module to provide a user playlist port (WU-LIB-1). For now, since
-    // all seeded playlists in this WU are public, we hide private ones from anonymous callers.
-    if (!playlist.isPublic() && callerId.isEmpty()) {
+    // LLFR-CATALOG-01.7: private playlist → 404 for ALL callers (existence hidden).
+    // WU-CAT-1: "creator" is a display name, not an account id — a real owner check is impossible
+    // here. Authenticated-owner access will be unblocked by WU-LIB-1 once the library module
+    // provides an owner-check port. Until then every caller (anonymous AND authenticated) receives
+    // 404 for a non-public playlist.
+    if (!playlist.isPublic()) {
       throw new PlaylistNotFoundException(id.value());
     }
 
