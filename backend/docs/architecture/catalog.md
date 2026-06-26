@@ -132,6 +132,7 @@ erDiagram
     string id PK
     string artist_id FK
     string album_id FK
+    string album_title
     string release_id FK
     int duration_sec
     bigint price_minor
@@ -338,8 +339,8 @@ role; public reads accept anonymous (token, if present, decorates `ownership`/`p
 | GET | `/artists/:id/tracks` | public | — | `Track[]` | 200 | 404 `ARTIST_NOT_FOUND` | 01.4 |
 | GET | `/artists/:id/albums` | public | — | `Album[]` | 200 | 404 `ARTIST_NOT_FOUND` | 01.4 |
 | GET | `/artists/:id/shows` | public | — | `Show[]` | 200 | 404 `ARTIST_NOT_FOUND` | 01.4 |
-| GET | `/albums/:id?tracks=true` | public | `tracks` flag | `Album (+tracks)` | 200 | 404 | 01.5 |
-| GET | `/tracks/:id` | public | — | `Track` | 200 | 404 | 01.6 |
+| GET | `/albums/:id?tracks=true` | public | `tracks` flag | `Album (+tracks)` | 200 | 404 `ALBUM_NOT_FOUND` | 01.5 |
+| GET | `/tracks/:id` | public | — | `Track` | 200 | 404 `TRACK_NOT_FOUND` | 01.6 |
 | GET | `/tracks/:id/lyrics` | public | — | `{ lines: {time,text}[] }` | 200 | 404 `LYRICS_NOT_FOUND` | 01.6 |
 | GET | `/playlists/:id` | public | — | `Playlist (+tracks)` | 200 | 404 (private→404) | 01.7 |
 | GET | `/studio/releases?status=&page=&size=` | artist (owner) | — | `{ items: StudioRelease[], page, size, total }` | 200 | 401/403 | 02.1 |
@@ -446,9 +447,11 @@ CREATE TABLE track (
   artist_id        TEXT NOT NULL REFERENCES artist_profile(id),
   artist_name      TEXT NOT NULL,
   album_id         TEXT REFERENCES album(id),
+  album_title      TEXT,                         -- denormalised; set when album_id is non-null
   release_id       TEXT REFERENCES release(id),
   duration_sec     INT  NOT NULL,
   image            TEXT NOT NULL,
+  audio_url        TEXT,
   ownership        TEXT NOT NULL CHECK (ownership IN ('owned','free','for-sale')),
   price_minor      BIGINT,                       -- present when ownership='for-sale'
   plays            BIGINT NOT NULL DEFAULT 0,
@@ -613,8 +616,9 @@ stateDiagram-v2
   appends the `AuditEntry`; this module emits the domain events (`ReleaseApproved`, `ReleaseWentLive`,
   `ContentTakenDown`) the audit/notifications/analytics modules consume after commit.
 - **Error model.** Uniform envelope `{ error: { code, message, field? } }`. Codes used here:
-  `ARTIST_NOT_FOUND` (404), `LYRICS_NOT_FOUND` (404), `MISSING_QUERY` (422), `TRACK_COUNT_INVALID`
-  (422), `SPLIT_OVER_100` (422, INV-12), `RELEASE_LIVE` (409, delete of live), `ILLEGAL_TRANSITION`
+  `ARTIST_NOT_FOUND` (404), `ALBUM_NOT_FOUND` (404), `TRACK_NOT_FOUND` (404), `LYRICS_NOT_FOUND`
+  (404), `PLAYLIST_NOT_FOUND` (404), `MISSING_QUERY` (422), `TRACK_COUNT_INVALID` (422),
+  `SPLIT_OVER_100` (422, INV-12), `RELEASE_LIVE` (409, delete of live), `ILLEGAL_TRANSITION`
   (409, FSM), `UNSUPPORTED_FORMAT` (422, non-WAV/FLAC). Private/`in_review` resources are hidden as 404.
 - **Domain events.** `ReleaseApproved`, `ReleaseWentLive`, `ContentTakenDown` (ids + snapshot, after-commit).
 - **Observability.** Micrometer counters: releases by status, go-live job runs/failures, search QPS;
