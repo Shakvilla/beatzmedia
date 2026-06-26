@@ -43,6 +43,7 @@ public class DomainExceptionMapper implements ExceptionMapper<DomainException> {
       case UNAUTHORIZED, FEATURE_DISABLED, ACCOUNT_SUSPENDED ->
           Response.Status.FORBIDDEN.getStatusCode();
       case CONFLICT, ILLEGAL_TRANSITION, EMAIL_TAKEN -> Response.Status.CONFLICT.getStatusCode();
+      case METHOD_NOT_ALLOWED -> 405;
       case RATE_LIMITED -> Response.Status.TOO_MANY_REQUESTS.getStatusCode();
       case MAINTENANCE -> Response.Status.SERVICE_UNAVAILABLE.getStatusCode();
       case PAYLOAD_TOO_LARGE -> 413;

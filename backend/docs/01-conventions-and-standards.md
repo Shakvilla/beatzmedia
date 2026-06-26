@@ -51,12 +51,17 @@ Uniform envelope (matches `API-CONTRACT.md`):
 ```
 
 - HTTP codes: `400` malformed, `401` unauthenticated, `403` unauthorized/feature-off, `404` not found
-  (also used to hide existence of private resources), `409` conflict/illegal transition, `422`
-  validation, `429` rate limited (+ `Retry-After`), `500` unexpected, `503` maintenance.
+  (also used to hide existence of private resources), `405` method not allowed, `409` conflict/illegal
+  transition, `422` validation, `429` rate limited (+ `Retry-After`), `500` unexpected, `503` maintenance.
 - `code` is a stable `SCREAMING_SNAKE_CASE` string an agent can assert on in tests (e.g.
   `EMAIL_TAKEN`, `KYC_REQUIRED`, `ALREADY_OWNED`, `ILLEGAL_TRANSITION`, `SPLIT_OVER_100`).
 - A single Quarkus `ExceptionMapper` per exception family maps domain exceptions → envelope. Domain
   throws framework-free exceptions; the mapper lives in `adapter.in.rest`.
+- Framework-thrown JAX-RS errors (unknown route → `404`, wrong method → `405`, malformed body →
+  `400`, …) are mapped by `WebApplicationExceptionMapper`, which **preserves the original HTTP
+  status** and emits the same envelope. The catch-all `FallbackExceptionMapper` (`500`/`INTERNAL`)
+  is reserved for genuinely unexpected exceptions only — it must never downgrade a `WebApplication`
+  `Exception`'s status.
 - Never leak stack traces, SQL, or PII in `message`.
 
 ## 5. REST conventions
