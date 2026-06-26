@@ -106,7 +106,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-PLT-1]
     llfrs: [LLFR-CATALOG-01.4, LLFR-CATALOG-01.5, LLFR-CATALOG-01.6, LLFR-CATALOG-01.7]
-    status: in_progress
+    status: done
   - id: WU-SRCH-1
     title: Search index lifecycle (Postgres pg_trgm behind SearchIndex port)
     phase: 1

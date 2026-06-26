@@ -1,0 +1,413 @@
+{
+  "info": {
+    "name": "BeatzClik Media API \u2014 1.0.0",
+    "description": "BeatzClik buy-to-own music streaming & marketplace API\n\nGenerated from /q/openapi. Base URL defaults to the local Docker stack on :8081. Run **Signup** or **Login** first \u2014 the JWT is captured into {{token}} automatically and reused by all authed requests.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:8081",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "artistId",
+      "value": "black-sherif",
+      "type": "string"
+    },
+    {
+      "key": "albumId",
+      "value": "iron-boy",
+      "type": "string"
+    },
+    {
+      "key": "trackId",
+      "value": "last-last",
+      "type": "string"
+    },
+    {
+      "key": "playlistId",
+      "value": "vibes-from-the-233",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Identity \u2014 Auth",
+      "item": [
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Login",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"ama+test@beatzclik.local\",\n  \"password\": \"Passw0rd!23\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Capture the JWT into the collection {{token}} variable for authed requests.",
+                  "try {",
+                  "  const b = pm.response.json();",
+                  "  if (b && b.token) {",
+                  "    pm.collectionVariables.set('token', b.token);",
+                  "    console.log('Saved token to {{token}}');",
+                  "  }",
+                  "} catch (e) { /* non-JSON response */ }",
+                  "pm.test('status is 2xx', () => pm.expect(pm.response.code).to.be.within(200, 299));"
+                ]
+              }
+            }
+          ]
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "Logout"
+          },
+          "response": []
+        },
+        {
+          "name": "Signup",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "url": {
+              "raw": "{{baseUrl}}/v1/auth/signup",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "auth",
+                "signup"
+              ]
+            },
+            "description": "Signup",
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Ama Mensah\",\n  \"email\": \"ama+test@beatzclik.local\",\n  \"password\": \"Passw0rd!23\"\n}",
+              "options": {
+                "raw": {
+                  "language": "json"
+                }
+              }
+            },
+            "auth": {
+              "type": "noauth"
+            }
+          },
+          "response": [],
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "// Capture the JWT into the collection {{token}} variable for authed requests.",
+                  "try {",
+                  "  const b = pm.response.json();",
+                  "  if (b && b.token) {",
+                  "    pm.collectionVariables.set('token', b.token);",
+                  "    console.log('Saved token to {{token}}');",
+                  "  }",
+                  "} catch (e) { /* non-JSON response */ }",
+                  "pm.test('status is 2xx', () => pm.expect(pm.response.code).to.be.within(200, 299));"
+                ]
+              }
+            }
+          ]
+        }
+      ]
+    },
+    {
+      "name": "Catalog \u2014 Public read",
+      "item": [
+        {
+          "name": "Get Album",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/albums/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "albums",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "iron-boy",
+                  "description": "seed default; see {{albumId}}"
+                }
+              ]
+            },
+            "description": "Get Album"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Artist",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/artists/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "artists",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "black-sherif",
+                  "description": "seed default; see {{artistId}}"
+                }
+              ]
+            },
+            "description": "Get Artist"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Artist Albums",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/artists/:id/albums",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "artists",
+                ":id",
+                "albums"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "black-sherif",
+                  "description": "seed default; see {{artistId}}"
+                }
+              ]
+            },
+            "description": "Get Artist Albums"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Artist Shows",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/artists/:id/shows",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "artists",
+                ":id",
+                "shows"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "black-sherif",
+                  "description": "seed default; see {{artistId}}"
+                }
+              ]
+            },
+            "description": "Get Artist Shows"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Artist Tracks",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/artists/:id/tracks",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "artists",
+                ":id",
+                "tracks"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "black-sherif",
+                  "description": "seed default; see {{artistId}}"
+                }
+              ]
+            },
+            "description": "Get Artist Tracks"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Playlist",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/playlists/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "playlists",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "vibes-from-the-233",
+                  "description": "seed default; see {{playlistId}}"
+                }
+              ]
+            },
+            "description": "Get Playlist"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Track",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/tracks/:id",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "tracks",
+                ":id"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "last-last",
+                  "description": "seed default; see {{trackId}}"
+                }
+              ]
+            },
+            "description": "Get Track"
+          },
+          "response": []
+        },
+        {
+          "name": "Get Lyrics",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/v1/tracks/:id/lyrics",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "v1",
+                "tracks",
+                ":id",
+                "lyrics"
+              ],
+              "variable": [
+                {
+                  "key": "id",
+                  "value": "last-last",
+                  "description": "seed default; see {{trackId}}"
+                }
+              ]
+            },
+            "description": "Get Lyrics"
+          },
+          "response": []
+        }
+      ]
+    }
+  ]
+}
