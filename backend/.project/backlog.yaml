@@ -88,7 +88,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-IDN-1, WU-PLT-1]
     llfrs: [LLFR-IDENTITY-03.1, LLFR-IDENTITY-03.2, LLFR-IDENTITY-03.3]
-    status: in_progress
+    status: done
     # Hardening carryover from WU-IDN-4 review (PR #27, code-review + security-review sign-off):
     # the last-super-admin guard in ChangeAdminRoleService/RemoveAdminService is a check-then-act
     # (findAdminMember -> countAdminsWithRole(SUPER_ADMIN) -> update/delete) that is NOT atomic under
