@@ -298,7 +298,9 @@ class AdminTeamResourceIT {
   @Test
   @Order(13)
   void delete_last_super_admin_returns_409_LAST_SUPER_ADMIN() {
-    // The seeded super-admin is the only one. Trying to delete it should fail.
+    // Remove any extra super-admin members created by other IT classes sharing this DB.
+    // This test must run against exactly one super-admin (it-super-member) to trigger the guard.
+    removeExtraSuperAdmins();
     String memberId = getSuperAdminMemberId();
 
     given()
@@ -365,5 +367,17 @@ class AdminTeamResourceIT {
         .setParameter("accountId", superAdminAccountId)
         .getSingleResult();
     return (String) result;
+  }
+
+  /**
+   * Removes any super-admin members that were created by other IT classes sharing the same
+   * Quarkus test database session. Keeps only "it-super-member" so the last-super-admin guard
+   * can be triggered deterministically regardless of test execution order.
+   */
+  @Transactional
+  void removeExtraSuperAdmins() {
+    em.createNativeQuery(
+            "DELETE FROM admin_member WHERE role = 'super-admin' AND id != 'it-super-member'")
+        .executeUpdate();
   }
 }

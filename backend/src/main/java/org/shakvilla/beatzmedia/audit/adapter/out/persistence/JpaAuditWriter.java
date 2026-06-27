@@ -9,8 +9,8 @@ import org.shakvilla.beatzmedia.audit.domain.AuditEntry;
 
 /**
  * Thin JPA adapter that INSERTs audit entries into the {@code audit_entry} table. Append-only: no
- * UPDATE or DELETE paths exist. Runs within the calling use-case's transaction (INV-10). WU-AUD-1
- * will layer the read/interceptor side on top of this same port. Audit ADD §adapter.
+ * UPDATE or DELETE paths exist. Runs within the calling use-case's transaction (INV-10). Audit ADD
+ * §5.2 / migration V941 (table) + V942 (actor_name).
  */
 @ApplicationScoped
 public class JpaAuditWriter implements AuditWriter {
@@ -27,6 +27,7 @@ public class JpaAuditWriter implements AuditWriter {
     AuditEntryEntity entity = new AuditEntryEntity();
     entity.id = entry.getId();
     entity.actorId = entry.getActor();
+    entity.actorName = entry.getActorName();
     entity.action = entry.getAction();
     entity.targetType = entry.getTargetType();
     entity.targetId = entry.getTargetId();
