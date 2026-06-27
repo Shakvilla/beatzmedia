@@ -244,11 +244,15 @@ public interface AccountRepository {                       // adapter: JpaAccoun
     // Optional<FanSettings> findSettings(AccountId id);
     // FanSettings saveSettings(FanSettings settings);
 
-    // --- WU-IDN-4 additions (admin team) ---
-    // List<AdminMember> findAllAdminMembers();
-    // Optional<AdminMember> findAdminMember(String adminMemberId);
-    // long countAdminsWithRole(AdminRole role);
-    // void deleteAdminMember(String adminMemberId);
+    // --- WU-IDN-4 additions (admin team) — live ---
+    List<AdminMemberProjection> findAllAdminMembers();            // joined w/ account name+email, last_active DESC
+    Optional<AdminMemberProjection> findAdminMember(String adminMemberId);
+    long countAdminsWithRole(AdminRole role);                     // last-super-admin guard
+    AdminMember saveAdminMember(AdminMember member);              // + flips account.is_admin = true
+    AdminMember updateAdminMember(AdminMember member);            // role change / last-active update
+    void deleteAdminMember(String adminMemberId);                 // + flips account.is_admin = false
+    record AdminMemberProjection(String id, AccountId accountId, String name, String email,
+                                 AdminRole role, Instant lastActiveAt) {}
 }
 
 public interface CredentialHasher {                        // adapter: Argon2CredentialHasher (Argon2id)
@@ -402,7 +406,8 @@ CREATE INDEX password_reset_token_account_idx ON password_reset_token (account_i
 |---|---|---|
 | `V201__create_account.sql` | `account` + `credential` tables + indexes/constraints | WU-IDN-1 ✅ |
 | Next V2xx | `social_identity` + `fan_settings` | WU-IDN-2 |
-| Next V2xx | `admin_member` + `password_reset_token` | WU-IDN-4 |
+| `V202__create_admin_member.sql` | `admin_member` table + role/account-uk constraints + role index | WU-IDN-4 ✅ |
+| Next V2xx | `password_reset_token` | WU-IDN-2 |
 
 The identity module uses the **V2xx Flyway band** (data-and-migrations §4.1). Note: the original
 design showed three files `V1/V2/V3` — those were pre-band-allocation placeholder names. The actual
@@ -504,7 +509,7 @@ stateDiagram-v2
 | **WU-IDN-1** | Account model, signup, login, password hashing, JWT issue, logout (01.1, 01.2, 01.4) | `RegisterFan`, `Login`, `Logout`; `AccountRepository`, `CredentialHasher`, `TokenIssuer` | `account`, `credential` | WU-PLT-1 (kernel) | 1 |
 | **WU-IDN-2** | `/me`, social login, password reset (02.1, 01.3, 01.5) | `GetCurrentAccount`, `SocialLogin`, `RequestPasswordReset`; `SocialVerifier`, `Mailer` | `account`, `social_identity`, `password_reset_token` | WU-IDN-1 | 2 |
 | **WU-IDN-3** | Become-artist + fan settings (02.2, 02.3) | `UpgradeToArtist`, `UpdateFanSettings` | `account`, `fan_settings`, (`artist_profile` shell via catalog port) | WU-IDN-1 | 3 |
-| **WU-IDN-4** | Admin members + RBAC scope enforcement (03.1, 03.2, 03.3) | `ListAdminTeam`, `InviteAdmin`, `ChangeAdminRole`, `RemoveAdmin`; RBAC filter | `admin_member` | WU-IDN-1, WU-PLT-1; AuditWriter (WU-AUD-1) | 4 |
+| **WU-IDN-4** ✅ | Admin members + RBAC scope enforcement (03.1, 03.2, 03.3) | `ListAdminTeam`, `InviteAdmin`, `ChangeAdminRole`, `RemoveAdmin`; RBAC filter | `admin_member` | WU-IDN-1, WU-PLT-1; AuditWriter (audit write stub, full read in WU-AUD-1) | 4 |
 
 Cross-reference PRD §8: build order is `WU-IDN-1 → {WU-IDN-2, WU-IDN-3, WU-IDN-4}` (Phase 1).
 
