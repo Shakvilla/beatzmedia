@@ -56,7 +56,12 @@ public class RemoveAdminService implements RemoveAdmin {
     AdminMemberProjection projection = accountRepository.findAdminMember(adminMemberId)
         .orElseThrow(() -> new NotFoundException("Admin member not found: " + adminMemberId));
 
-    // Last-super-admin guard: removing the last super-admin is rejected
+    // Last-super-admin guard: removing the last super-admin is rejected.
+    // KNOWN LIMITATION (TOCTOU, accepted for v1 — code-review + security-review sign-off on PR #27):
+    // this count-then-act is not atomic under READ COMMITTED, so two concurrent removals/demotions
+    // of distinct super-admins could each observe count=2 and both commit, leaving zero super-admins.
+    // Hardening follow-up (see backlog WU-IDN-4 note): lock the super-admin rows
+    // (SELECT ... WHERE role='super-admin' FOR UPDATE) in the same transaction before counting.
     if (projection.role() == AdminRole.SUPER_ADMIN) {
       long superAdminCount = accountRepository.countAdminsWithRole(AdminRole.SUPER_ADMIN);
       if (superAdminCount <= 1) {

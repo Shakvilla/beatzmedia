@@ -89,6 +89,16 @@ work_units:
     depends_on: [WU-IDN-1, WU-PLT-1]
     llfrs: [LLFR-IDENTITY-03.1, LLFR-IDENTITY-03.2, LLFR-IDENTITY-03.3]
     status: in_progress
+    # Hardening carryover from WU-IDN-4 review (PR #27, code-review + security-review sign-off):
+    # the last-super-admin guard in ChangeAdminRoleService/RemoveAdminService is a check-then-act
+    # (findAdminMember -> countAdminsWithRole(SUPER_ADMIN) -> update/delete) that is NOT atomic under
+    # READ COMMITTED. Two concurrent demotions/removals of distinct super-admins can each observe
+    # count=2 and both commit, leaving ZERO super-admins -> permanent admin lockout (recovery = manual
+    # DB surgery). Accepted as MEDIUM / not-a-blocker for v1 (tiny admin team, self-inflicted by
+    # trusted actors). Before multi-instance prod: lock the contended rows in the same @Transactional
+    # (SELECT id FROM admin_member WHERE role='super-admin' FOR UPDATE) before counting, or use
+    # SERIALIZABLE on these two services; add a concurrency test. Sources:
+    # ChangeAdminRoleService.java guard, RemoveAdminService.java guard.
   - id: WU-AUD-1
     title: Audit writer interceptor + read endpoint
     phase: 1
