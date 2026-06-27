@@ -68,11 +68,18 @@ public class LoginService implements Login {
       throw new InvalidCredentialsException();
     }
 
-    // Build role set
+    // Build role set — include admin role if the account has an AdminMember record (WU-IDN-4)
     Set<String> roles = new HashSet<>();
     roles.add("fan");
     if (account.isArtist()) {
       roles.add("artist");
+    }
+    if (account.isAdmin()) {
+      // Resolve the specific admin role (e.g. super-admin, finance, …) from the admin_member row
+      accountRepository.findAllAdminMembers().stream()
+          .filter(p -> p.accountId().equals(account.getId()))
+          .findFirst()
+          .ifPresent(p -> roles.add(p.role().wireValue()));
     }
 
     String token = tokenIssuer.issue(account.getId(), roles);

@@ -1,12 +1,15 @@
 package org.shakvilla.beatzmedia.identity.fakes;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
 
 import org.shakvilla.beatzmedia.identity.application.port.out.AccountRepository;
 import org.shakvilla.beatzmedia.identity.domain.Account;
 import org.shakvilla.beatzmedia.identity.domain.AccountId;
+import org.shakvilla.beatzmedia.identity.domain.AdminMember;
+import org.shakvilla.beatzmedia.identity.domain.AdminRole;
 
 /**
  * In-memory fake for {@link AccountRepository}. Returns deterministic data for unit tests without
@@ -15,6 +18,7 @@ import org.shakvilla.beatzmedia.identity.domain.AccountId;
 public class FakeAccountRepository implements AccountRepository {
 
   private final List<Account> store = new ArrayList<>();
+  private final List<AdminMember> adminStore = new ArrayList<>();
 
   @Override
   public Optional<Account> findById(AccountId id) {
@@ -40,6 +44,62 @@ public class FakeAccountRepository implements AccountRepository {
     return account;
   }
 
+  // --- WU-IDN-4 admin-team methods ---
+
+  @Override
+  public List<AdminMemberProjection> findAllAdminMembers() {
+    return adminStore.stream()
+        .sorted(Comparator.comparing(
+            m -> m.getLastActiveAt() == null ? java.time.Instant.EPOCH : m.getLastActiveAt(),
+            Comparator.reverseOrder()))
+        .map(m -> {
+          Account account = findById(m.getAccountId()).orElse(null);
+          String name = account != null ? account.getName() : m.getAccountId().value();
+          String email = account != null ? account.getEmail() : m.getAccountId().value();
+          return new AdminMemberProjection(m.getId(), m.getAccountId(), name, email, m.getRole(),
+              m.getLastActiveAt());
+        })
+        .toList();
+  }
+
+  @Override
+  public Optional<AdminMemberProjection> findAdminMember(String adminMemberId) {
+    return adminStore.stream()
+        .filter(m -> m.getId().equals(adminMemberId))
+        .findFirst()
+        .map(m -> {
+          Account account = findById(m.getAccountId()).orElse(null);
+          String name = account != null ? account.getName() : m.getAccountId().value();
+          String email = account != null ? account.getEmail() : m.getAccountId().value();
+          return new AdminMemberProjection(m.getId(), m.getAccountId(), name, email, m.getRole(),
+              m.getLastActiveAt());
+        });
+  }
+
+  @Override
+  public long countAdminsWithRole(AdminRole role) {
+    return adminStore.stream().filter(m -> m.getRole() == role).count();
+  }
+
+  @Override
+  public AdminMember saveAdminMember(AdminMember member) {
+    adminStore.removeIf(m -> m.getId().equals(member.getId()));
+    adminStore.add(member);
+    return member;
+  }
+
+  @Override
+  public AdminMember updateAdminMember(AdminMember member) {
+    adminStore.removeIf(m -> m.getId().equals(member.getId()));
+    adminStore.add(member);
+    return member;
+  }
+
+  @Override
+  public void deleteAdminMember(String adminMemberId) {
+    adminStore.removeIf(m -> m.getId().equals(adminMemberId));
+  }
+
   /** Returns all stored accounts (for test assertions). */
   public List<Account> all() {
     return List.copyOf(store);
@@ -48,5 +108,15 @@ public class FakeAccountRepository implements AccountRepository {
   /** Seeds an account directly into the fake store. */
   public void seed(Account account) {
     store.add(account);
+  }
+
+  /** Seeds an admin member directly into the fake store. */
+  public void seedAdminMember(AdminMember member) {
+    adminStore.add(member);
+  }
+
+  /** Returns all stored admin members (for test assertions). */
+  public List<AdminMember> allAdminMembers() {
+    return List.copyOf(adminStore);
   }
 }

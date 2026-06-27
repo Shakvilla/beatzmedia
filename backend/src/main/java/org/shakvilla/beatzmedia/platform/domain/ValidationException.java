@@ -10,4 +10,9 @@ public class ValidationException extends DomainException {
   public ValidationException(String message, String field) {
     super(ErrorCode.VALIDATION, message, field);
   }
+
+  /** Constructor for subclasses that carry a specific error code (e.g. INVALID_ROLE). */
+  protected ValidationException(ErrorCode code, String message, String field) {
+    super(code, message, field);
+  }
 }

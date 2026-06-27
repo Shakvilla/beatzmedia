@@ -28,6 +28,9 @@ public enum ErrorCode {
   INVALID_CREDENTIALS,
   WEAK_PASSWORD,
   ACCOUNT_SUSPENDED,
+  // ---- Identity codes (WU-IDN-4) ----
+  INVALID_ROLE,
+  LAST_SUPER_ADMIN,
   // ---- Catalog codes (WU-CAT-1) ----
   ARTIST_NOT_FOUND,
   ALBUM_NOT_FOUND,

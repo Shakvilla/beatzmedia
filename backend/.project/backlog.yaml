@@ -88,7 +88,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-IDN-1, WU-PLT-1]
     llfrs: [LLFR-IDENTITY-03.1, LLFR-IDENTITY-03.2, LLFR-IDENTITY-03.3]
-    status: todo
+    status: in_progress
   - id: WU-AUD-1
     title: Audit writer interceptor + read endpoint
     phase: 1
