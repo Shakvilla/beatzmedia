@@ -79,7 +79,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-IDN-1]
     llfrs: [LLFR-IDENTITY-02.2, LLFR-IDENTITY-02.3]
-    status: todo
+    status: in_progress
   - id: WU-IDN-4
     title: Admin members + RBAC scope enforcement
     phase: 1

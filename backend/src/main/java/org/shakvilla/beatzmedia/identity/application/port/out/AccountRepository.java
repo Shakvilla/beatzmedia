@@ -7,6 +7,7 @@ import org.shakvilla.beatzmedia.identity.domain.Account;
 import org.shakvilla.beatzmedia.identity.domain.AccountId;
 import org.shakvilla.beatzmedia.identity.domain.AdminMember;
 import org.shakvilla.beatzmedia.identity.domain.AdminRole;
+import org.shakvilla.beatzmedia.identity.domain.FanSettings;
 
 /**
  * Output port for account persistence. WU-IDN-1 declares only the methods it needs; later WUs
@@ -28,6 +29,19 @@ public interface AccountRepository {
    * aggregate.
    */
   Account save(Account account);
+
+  // --- WU-IDN-3 additions (fan settings) ---
+
+  /**
+   * Finds the fan settings for the given account id. Returns empty if no row exists yet (lazy
+   * creation pattern — callers are responsible for creating defaults). Identity ADD §4.2.
+   */
+  Optional<FanSettings> findSettings(AccountId id);
+
+  /**
+   * Persists (upsert) the fan settings row. Returns the saved instance. Identity ADD §4.2.
+   */
+  FanSettings saveSettings(FanSettings settings);
 
   // --- WU-IDN-4 additions (admin team) ---
 
