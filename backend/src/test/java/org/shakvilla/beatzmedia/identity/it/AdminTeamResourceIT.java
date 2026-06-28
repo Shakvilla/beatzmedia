@@ -5,6 +5,8 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+import java.util.List;
+
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import jakarta.transaction.Transactional;
@@ -298,17 +300,23 @@ class AdminTeamResourceIT {
   @Test
   @Order(13)
   void delete_last_super_admin_returns_409_LAST_SUPER_ADMIN() {
-    // Remove any extra super-admin members created by other IT classes sharing this DB.
-    // This test must run against exactly one super-admin (it-super-member) to trigger the guard.
-    removeExtraSuperAdmins();
-    String memberId = getSuperAdminMemberId();
+    // Other IT classes sharing this DB session may have seeded their own super-admins. To trigger
+    // the global last-super-admin guard deterministically we temporarily remove them, run the
+    // assertion, then RESTORE them in a finally so we never leave shared fixtures mutated for later
+    // test classes (keeps the suite order-independent — addresses PR #29 review).
+    List<Object[]> removed = removeExtraSuperAdmins();
+    try {
+      String memberId = getSuperAdminMemberId();
 
-    given()
-        .header("Authorization", "Bearer " + superAdminToken)
-        .delete(TEAM_URL + "/" + memberId)
-        .then()
-        .statusCode(409)
-        .body("error.code", equalTo("LAST_SUPER_ADMIN"));
+      given()
+          .header("Authorization", "Bearer " + superAdminToken)
+          .delete(TEAM_URL + "/" + memberId)
+          .then()
+          .statusCode(409)
+          .body("error.code", equalTo("LAST_SUPER_ADMIN"));
+    } finally {
+      restoreSuperAdmins(removed);
+    }
   }
 
   @Test
@@ -370,14 +378,36 @@ class AdminTeamResourceIT {
   }
 
   /**
-   * Removes any super-admin members that were created by other IT classes sharing the same
-   * Quarkus test database session. Keeps only "it-super-member" so the last-super-admin guard
-   * can be triggered deterministically regardless of test execution order.
+   * Captures then removes any super-admin members created by other IT classes sharing the same
+   * Quarkus test database session, keeping only "it-super-member" so the last-super-admin guard can
+   * be triggered deterministically. Returns the removed rows so the caller can restore them via
+   * {@link #restoreSuperAdmins(List)} — this test must not leave shared fixtures mutated.
    */
   @Transactional
-  void removeExtraSuperAdmins() {
+  List<Object[]> removeExtraSuperAdmins() {
+    @SuppressWarnings("unchecked")
+    List<Object[]> rows = em.createNativeQuery(
+            "SELECT id, account_id, role, last_active_at FROM admin_member "
+                + "WHERE role = 'super-admin' AND id != 'it-super-member'")
+        .getResultList();
     em.createNativeQuery(
             "DELETE FROM admin_member WHERE role = 'super-admin' AND id != 'it-super-member'")
         .executeUpdate();
+    return rows;
+  }
+
+  /** Re-inserts the super-admin rows previously removed by {@link #removeExtraSuperAdmins()}. */
+  @Transactional
+  void restoreSuperAdmins(List<Object[]> rows) {
+    for (Object[] r : rows) {
+      em.createNativeQuery(
+              "INSERT INTO admin_member (id, account_id, role, last_active_at) "
+                  + "VALUES (:id, :accountId, :role, :lastActive)")
+          .setParameter("id", r[0])
+          .setParameter("accountId", r[1])
+          .setParameter("role", r[2])
+          .setParameter("lastActive", r[3])
+          .executeUpdate();
+    }
   }
 }

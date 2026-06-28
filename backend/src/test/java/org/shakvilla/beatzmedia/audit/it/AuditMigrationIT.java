@@ -50,6 +50,10 @@ class AuditMigrationIT {
 
     assertDoesNotThrow(() -> auditWriter.append(entry));
 
+    // Force a DB round-trip so the read validates the migrated schema, not the first-level cache.
+    em.flush();
+    em.clear();
+
     AuditEntryEntity found = em.find(AuditEntryEntity.class, "migration-it-id-1");
     assertNotNull(found, "Inserted entity should be findable");
     assertEquals("actor-migration", found.actorId);
@@ -74,6 +78,10 @@ class AuditMigrationIT {
 
     assertDoesNotThrow(() -> auditWriter.append(legacy),
         "Legacy entry with null actorName must insert without error");
+
+    // Force a DB round-trip so the read validates the migrated schema, not the first-level cache.
+    em.flush();
+    em.clear();
 
     AuditEntryEntity found = em.find(AuditEntryEntity.class, "migration-it-legacy-1");
     assertNotNull(found);

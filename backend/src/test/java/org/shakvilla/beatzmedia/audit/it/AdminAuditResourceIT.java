@@ -2,6 +2,7 @@ package org.shakvilla.beatzmedia.audit.it;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -152,6 +153,15 @@ class AdminAuditResourceIT {
   @Test
   @Order(5)
   void audit_entries_written_by_idn4_are_visible() {
+    // Capture the count before the invite so we prove the NEW audit row actually appears
+    // (total >= 1 alone could already be satisfied by entries from earlier tests).
+    int totalBefore = given()
+        .header("Authorization", "Bearer " + superAdminToken)
+        .get(AUDIT_URL)
+        .then()
+        .statusCode(200)
+        .extract().path("total");
+
     // Invite a new admin to generate an audit entry (WU-IDN-4 service writes audit rows directly)
     String inviteeEmail = "aud1-vis-" + System.nanoTime() + "@beatzclik.com";
     given()
@@ -169,7 +179,7 @@ class AdminAuditResourceIT {
         .get(AUDIT_URL)
         .then()
         .statusCode(200)
-        .body("total", greaterThanOrEqualTo(1));
+        .body("total", greaterThanOrEqualTo(totalBefore + 1));
   }
 
   @Test
@@ -202,13 +212,16 @@ class AdminAuditResourceIT {
   @Test
   @Order(7)
   void filter_by_type_settings_returns_settings_entries() {
+    // Asserting every returned item is type=settings proves the filter is actually wired through
+    // (a non-empty page alone would also pass if the filter were silently ignored).
     given()
         .header("Authorization", "Bearer " + superAdminToken)
         .queryParam("type", "settings")
         .get(AUDIT_URL)
         .then()
         .statusCode(200)
-        .body("items.size()", greaterThanOrEqualTo(1));
+        .body("items.size()", greaterThanOrEqualTo(1))
+        .body("items.type", everyItem(equalTo("settings")));
   }
 
   @Test

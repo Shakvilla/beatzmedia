@@ -85,6 +85,22 @@ class AuditInterceptorTest {
   }
 
   @Test
+  void intercept_uses_unknown_target_when_no_audit_target_annotation() throws Exception {
+    // Security: without @AuditTarget the interceptor must NOT serialize an arbitrary argument
+    // (which could leak payload PII into target_id); it records "unknown" instead.
+    AuditInterceptor interceptor = new AuditInterceptor(auditWriter, ids, clock, null);
+    FakeInvocationContext ctx = FakeInvocationContext.forMethod(
+        AuditedService.class.getMethod("doSomething", String.class),
+        new Object[]{"sensitive@example.com"},
+        false);
+
+    interceptor.intercept(ctx);
+
+    AuditEntry entry = auditWriter.all().get(0);
+    assertEquals("unknown", entry.getTargetId());
+  }
+
+  @Test
   void intercept_writes_zero_entries_on_exception() throws Exception {
     AuditInterceptor interceptor = new AuditInterceptor(auditWriter, ids, clock, null);
     FakeInvocationContext ctx = FakeInvocationContext.forMethod(

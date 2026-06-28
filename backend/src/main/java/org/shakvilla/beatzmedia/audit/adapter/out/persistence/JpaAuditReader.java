@@ -48,7 +48,7 @@ public class JpaAuditReader implements AuditReader {
 
     // Data query
     TypedQuery<AuditEntryEntity> dataQuery = em.createQuery(
-        "SELECT a " + baseJpql + " ORDER BY a.occurredAt DESC", AuditEntryEntity.class);
+        "SELECT a " + baseJpql + " ORDER BY a.occurredAt DESC, a.id DESC", AuditEntryEntity.class);
     applyParams(dataQuery, filter);
     dataQuery.setFirstResult(page.offset());
     dataQuery.setMaxResults(page.size());
@@ -82,10 +82,10 @@ public class JpaAuditReader implements AuditReader {
       q.setParameter("type", filter.type().name());
     }
     if (filter.actor() != null && !filter.actor().isBlank()) {
-      q.setParameter("actor", "%" + filter.actor().toLowerCase() + "%");
+      q.setParameter("actor", "%" + filter.actor().toLowerCase(java.util.Locale.ROOT) + "%");
     }
     if (filter.q() != null && !filter.q().isBlank()) {
-      q.setParameter("q", "%" + filter.q().toLowerCase() + "%");
+      q.setParameter("q", "%" + filter.q().toLowerCase(java.util.Locale.ROOT) + "%");
     }
   }
 

@@ -89,8 +89,11 @@ public class AuditInterceptor {
   }
 
   /**
-   * Resolves the audit target string. Prefers the first parameter annotated with
-   * {@link AuditTarget}; falls back to the first parameter's {@code toString()}.
+   * Resolves the audit target string from the parameter annotated with {@link AuditTarget}. When no
+   * parameter is annotated we deliberately return {@code "unknown"} rather than serializing an
+   * arbitrary argument: blindly persisting {@code params[0].toString()} could leak request/command
+   * payload (e.g. emails) into {@code audit_entry.target_id}. Annotate the target parameter with
+   * {@code @AuditTarget} to record a meaningful target id.
    */
   private String resolveTarget(Method method, Object[] params) {
     if (params == null || params.length == 0) {
@@ -102,8 +105,7 @@ public class AuditInterceptor {
         return params[i] != null ? params[i].toString() : "null";
       }
     }
-    // Fallback: first non-null param
-    return params[0] != null ? params[0].toString() : "unknown";
+    return "unknown";
   }
 
   /**

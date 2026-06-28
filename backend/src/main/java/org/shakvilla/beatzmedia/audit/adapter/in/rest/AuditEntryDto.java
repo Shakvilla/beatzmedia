@@ -1,5 +1,7 @@
 package org.shakvilla.beatzmedia.audit.adapter.in.rest;
 
+import java.util.Locale;
+
 import org.shakvilla.beatzmedia.audit.domain.AuditEntry;
 
 /**
@@ -33,7 +35,7 @@ public record AuditEntryDto(
         ? entry.getActorName()
         : entry.getActor();
     String target = entry.getTargetType() + ":" + entry.getTargetId();
-    String type = entry.getType().name().toLowerCase();
+    String type = entry.getType().name().toLowerCase(Locale.ROOT);
     String time = entry.getOccurredAt().toString();
     return new AuditEntryDto(entry.getId(), actor, entry.getAction(), target, type, time);
   }
