@@ -10,6 +10,7 @@ import org.shakvilla.beatzmedia.identity.domain.Account;
 import org.shakvilla.beatzmedia.identity.domain.AccountId;
 import org.shakvilla.beatzmedia.identity.domain.AdminMember;
 import org.shakvilla.beatzmedia.identity.domain.AdminRole;
+import org.shakvilla.beatzmedia.identity.domain.FanSettings;
 
 /**
  * In-memory fake for {@link AccountRepository}. Returns deterministic data for unit tests without
@@ -19,6 +20,7 @@ public class FakeAccountRepository implements AccountRepository {
 
   private final List<Account> store = new ArrayList<>();
   private final List<AdminMember> adminStore = new ArrayList<>();
+  private final List<FanSettings> settingsStore = new ArrayList<>();
 
   @Override
   public Optional<Account> findById(AccountId id) {
@@ -42,6 +44,22 @@ public class FakeAccountRepository implements AccountRepository {
     store.removeIf(a -> a.getId().equals(account.getId()));
     store.add(account);
     return account;
+  }
+
+  // --- WU-IDN-3 fan-settings methods ---
+
+  @Override
+  public Optional<FanSettings> findSettings(AccountId id) {
+    return settingsStore.stream()
+        .filter(s -> s.getAccountId().equals(id))
+        .findFirst();
+  }
+
+  @Override
+  public FanSettings saveSettings(FanSettings settings) {
+    settingsStore.removeIf(s -> s.getAccountId().equals(settings.getAccountId()));
+    settingsStore.add(settings);
+    return settings;
   }
 
   // --- WU-IDN-4 admin-team methods ---
