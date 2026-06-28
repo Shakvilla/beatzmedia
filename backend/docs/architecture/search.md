@@ -251,6 +251,7 @@ CREATE TABLE search_document (
     popularity   BIGINT      NOT NULL DEFAULT 0,
     visible      BOOLEAN     NOT NULL DEFAULT TRUE,
     payload      JSONB       NOT NULL DEFAULT '{}'::jsonb,
+    price_minor  BIGINT      NULL,  -- V803: typed sort column (see below)
     indexed_at   TIMESTAMPTZ NOT NULL DEFAULT now(),
     CONSTRAINT uq_search_document_entity UNIQUE (entity_type, entity_id),
     CONSTRAINT ck_search_document_type CHECK (entity_type IN
@@ -264,6 +265,7 @@ CREATE INDEX idx_search_document_title_trgm ON search_document USING GIN (title 
 -- Filter/sort support.
 CREATE INDEX idx_search_document_type_visible ON search_document (entity_type, visible);
 CREATE INDEX idx_search_document_popularity ON search_document (popularity DESC);
+CREATE INDEX idx_search_document_price_minor ON search_document (price_minor ASC NULLS LAST);
 ```
 
 **`tsv` maintenance — DB trigger** (chosen over app-side so reindex/backfill and any direct writes
@@ -287,15 +289,36 @@ CREATE TRIGGER trg_search_document_tsv
   FOR EACH ROW EXECUTE FUNCTION search_document_tsv_update();
 ```
 
+**`price_minor` typed sort column (V803 — security fix F2):** A dedicated `BIGINT NULL` column
+holds the denormalised price in minor units (pesewas). The adapter populates it on upsert from the
+allow-listed payload. `ORDER BY price_minor ASC/DESC NULLS LAST` is used instead of
+`CAST(payload->>'price_minor' AS BIGINT)` which would throw a Postgres cast error on any non-numeric
+JSONB value and produce a 500 on every price-sorted query. Non-priced entities store `NULL` and sort
+last. Aligns with INV-SRCH money-as-integer-minor-units convention.
+
 **Flyway list** (forward-only, `src/main/resources/db/migration/`):
 - `V801__create_search_document.sql` — extension, table, GIN(tsv), GIN(title trgm), filter/sort indexes.
 - `V802__search_document_tsv_trigger.sql` — `tsv` trigger function + trigger.
+- `V803__search_document_price_minor.sql` — adds `price_minor BIGINT NULL` column + sort index (security fix F2).
 
 > **Migration band note (WU-SRCH-1):** Earlier drafts showed V60/V61. The actual implementation uses
 > V801/V802 (V8xx band = search + store) to avoid collisions with existing migrations (V1xx platform,
 > V2xx identity, V3xx catalog, V9xx audit). V801 and V802 were confirmed free at time of implementation.
 - Repeatable: no `search` rows in `R__seed_dev_data.sql`; the index is **derived** — seed catalog/store,
   then run `ReindexUseCase.reindex(ALL)` (dev bootstrap) to populate.
+
+**Payload allow-list (V803-era addition — security fix F4):** `SearchDocumentMapper` enforces a closed
+allow-list of permitted payload keys per `EntityType`. Any key not on the list is silently stripped
+before the document is persisted. The list is documented in `SearchDocumentMapper.ALLOWED_PAYLOAD_KEYS`.
+To expose a new field in public search hits the caller must extend the allow-list and update this ADD
+in the same PR. Allowed keys per type:
+- `TRACK`: `image`, `duration_sec`, `price_minor`, `price_amount`, `price_currency`, `quality`, `type`, `genre`
+- `ARTIST`: `image`, `genre`
+- `ALBUM`: `image`, `price_minor`, `price_amount`, `price_currency`, `genre`
+- `PLAYLIST`: `image`
+- `STORE_ITEM`: `image`, `duration_sec`, `price_minor`, `price_amount`, `price_currency`, `quality`, `type`, `genre`
+- `PODCAST`: `image`, `genre`
+- `EVENT`: `image`, `genre`, `type`
 
 ## 8. Key flows
 
@@ -390,7 +413,13 @@ which both list `search index` as a required artifact (PRD §8 rows WU-CAT-2 / W
     `/search` (INV-SRCH-2).
 - **Coverage:** ≥ the gate in `sdlc/testing-strategy.md`.
 
-## 12. Definition of done (module-specific)
+## 12. Tracked deferrals
+
+| ID | Finding | Deferred until | Note |
+|---|---|---|---|
+| F6 | `ReindexUseCase.reindex` appends no `AuditEntry` (INV-10) | WU-CAT-3 / WU-STO-1 — when an admin-privileged REST trigger lands | A `// INV-10` comment is in place at the trigger point in `ReindexService`. When the admin endpoint is implemented, wrap `reindex(...)` with an `AuditEntry` write. |
+
+## 13. Definition of done (module-specific)
 
 Global DoD (PRD §8 / conventions §11) **plus**:
 1. `search_document` migrations apply cleanly on an empty DB; `pg_trgm` extension and both GIN indexes
