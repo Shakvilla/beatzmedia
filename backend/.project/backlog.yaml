@@ -107,7 +107,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-IDN-4]
     llfrs: [LLFR-AUDIT-01.1, LLFR-ADMIN-11.1]
-    status: in_progress
+    status: done
   - id: WU-CAT-1
     title: Catalog entities + read endpoints (artists/albums/tracks/playlists/lyrics)
     phase: 1
