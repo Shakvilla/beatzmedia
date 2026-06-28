@@ -122,6 +122,77 @@ class SearchIndexIT {
     assertEquals("s2", results.storeItems().get(0).entityId());
   }
 
+  // -------------------------------------------------------------------------
+  // F1 — type/genre filter applied as bound parameters (not silently dropped)
+  // -------------------------------------------------------------------------
+
+  @Test
+  void genre_filter_narrows_results() {
+    // F1: genre filter must be applied; a document whose payload->>'genre' != :filterGenre
+    // must not appear in results.
+    indexEntityUseCase.index(docWithPayload("s1", "Afro Beat", EntityType.STORE_ITEM,
+        Map.of("price_minor", 200L, "type", "beat", "genre", "afrobeats")));
+    indexEntityUseCase.index(docWithPayload("s2", "Hip Hop Drum Loop", EntityType.STORE_ITEM,
+        Map.of("price_minor", 100L, "type", "beat", "genre", "hiphop")));
+
+    var filters = new SearchFilters(java.util.Optional.empty(), java.util.Optional.of("afrobeats"), Sort.POPULAR);
+    var query = new SearchQuery("beat", SearchScope.ALL, filters, PageRequest.defaults());
+    SearchResults results = queryService.search(query);
+
+    assertEquals(1, results.storeItems().size(), "Only the afrobeats document should match the genre filter");
+    assertEquals("s1", results.storeItems().get(0).entityId());
+  }
+
+  @Test
+  void type_filter_narrows_results() {
+    // F1: type filter must be applied; only documents with payload->>'type' = 'loop' should match.
+    indexEntityUseCase.index(docWithPayload("s1", "Drum Loop Sample", EntityType.STORE_ITEM,
+        Map.of("price_minor", 150L, "type", "loop", "genre", "afrobeats")));
+    indexEntityUseCase.index(docWithPayload("s2", "Melody Beat", EntityType.STORE_ITEM,
+        Map.of("price_minor", 300L, "type", "beat", "genre", "afrobeats")));
+
+    var filters = new SearchFilters(java.util.Optional.of("loop"), java.util.Optional.empty(), Sort.POPULAR);
+    var query = new SearchQuery("sample loop beat", SearchScope.ALL, filters, PageRequest.defaults());
+    SearchResults results = queryService.search(query);
+
+    assertEquals(1, results.storeItems().size(), "Only the loop document should match the type filter");
+    assertEquals("s1", results.storeItems().get(0).entityId());
+  }
+
+  // -------------------------------------------------------------------------
+  // F2 — price sort uses typed price_minor column (not JSONB cast)
+  // -------------------------------------------------------------------------
+
+  @Test
+  void sort_by_price_asc_uses_typed_column() {
+    // F2: price sort must use the price_minor BIGINT column, not CAST(payload->>'price_minor' AS BIGINT).
+    // A non-numeric payload value must NOT cause a 500; it should sort as NULL LAST.
+    indexEntityUseCase.index(docWithPrice("s1", "Expensive Beat", 5000L, EntityType.STORE_ITEM));
+    indexEntityUseCase.index(docWithPrice("s2", "Cheap Beat", 100L, EntityType.STORE_ITEM));
+    // Document with no price_minor — must sort NULLS LAST, not throw.
+    indexEntityUseCase.index(doc("s3", "Free Beat", "free beat sample", EntityType.STORE_ITEM, 0L, true));
+
+    var query = new SearchQuery("beat", SearchScope.STORE_ITEM, SearchFilters.withSort(Sort.PRICE_ASC), PageRequest.defaults());
+    SearchResults results = queryService.search(query);
+
+    assertTrue(results.storeItems().size() >= 2, "At least s1 and s2 must be returned");
+    // s2 (100) must come before s1 (5000); s3 (NULL) at end
+    String firstId = results.storeItems().get(0).entityId();
+    assertEquals("s2", firstId, "Cheapest item (price_minor=100) must sort first ASC");
+  }
+
+  @Test
+  void sort_by_price_desc_uses_typed_column() {
+    indexEntityUseCase.index(docWithPrice("s1", "Expensive Beat", 5000L, EntityType.STORE_ITEM));
+    indexEntityUseCase.index(docWithPrice("s2", "Cheap Beat", 100L, EntityType.STORE_ITEM));
+
+    var query = new SearchQuery("beat", SearchScope.STORE_ITEM, SearchFilters.withSort(Sort.PRICE_DESC), PageRequest.defaults());
+    SearchResults results = queryService.search(query);
+
+    assertEquals(2, results.storeItems().size());
+    assertEquals("s1", results.storeItems().get(0).entityId(), "Most expensive item must sort first DESC");
+  }
+
   @Test
   void reindex_report_counts_existing_documents() {
     indexEntityUseCase.index(doc("t1", "Track A", "", EntityType.TRACK, 0L, true));
@@ -171,5 +242,9 @@ class SearchIndexIT {
 
   private IndexDocument docWithPrice(String id, String title, long priceMinor, EntityType type) {
     return new IndexDocument(type, id, title, null, "", Popularity.ZERO, true, Map.of("price_minor", priceMinor));
+  }
+
+  private IndexDocument docWithPayload(String id, String title, EntityType type, Map<String, Object> payload) {
+    return new IndexDocument(type, id, title, null, title.toLowerCase(), Popularity.ZERO, true, payload);
   }
 }
