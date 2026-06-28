@@ -54,10 +54,6 @@ setup is `/bootstrap`. Status anytime via `/status`.
 - Branches: `feat|fix|chore|test|docs/<WU-ID>-slug`, one WU per branch. Commits: Conventional Commits
   with the WU id in scope, e.g. `feat(identity): WU-IDN-1 account registration`. PRs: one per WU using
   the template. Details: `backend/docs/sdlc/branching-and-pr.md`.
-- **Frequent WIP commits (mandatory):** during implementation, commit after each logical unit — domain
-  model, port, adapter, migration, test class — using a `WIP:` prefix for incomplete work, e.g.
-  `WIP: feat(search): WU-SRCH-1 domain model + ports`. This prevents code loss on context interruption.
-  Final commit(s) before opening the PR must use the full Conventional Commits format.
 - Migrations: forward-only `V<n>__<desc>.sql`; allocate the next version with
   `backend/scripts/next-migration-version.sh`. Never edit a merged migration.
   Policy: `backend/docs/cross-cutting/data-and-migrations.md`.
