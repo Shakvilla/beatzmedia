@@ -23,6 +23,7 @@ import org.shakvilla.beatzmedia.search.domain.SearchResults;
 import org.shakvilla.beatzmedia.search.domain.SearchScope;
 import org.shakvilla.beatzmedia.search.domain.Sort;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
@@ -33,6 +34,13 @@ import com.fasterxml.jackson.databind.ObjectMapper;
  * with pg_trgm similarity fallback, filtered by {@code visible=true} (INV-SRCH-2), ranked by
  * ts_rank_cd then popularity.
  * <p>
+ * Filters: {@code SearchFilters.type()} and {@code SearchFilters.genre()} are matched against
+ * the {@code payload} JSONB field ({@code payload->>'type'} and {@code payload->>'genre'}). Only
+ * TRACK/STORE_ITEM payload shapes carry these fields per the allow-list in
+ * {@link SearchDocumentMapper}. If a document does not carry the field the filter simply produces
+ * no match for that document (SQL {@code payload->>'field' = :value} is NULL-safe via IS NOT
+ * DISTINCT FROM or by the caller only setting present filters).
+ * <p>
  * OQ-12: an OpenSearch adapter would implement the same {@link SearchIndex} interface; no other
  * module references this class directly.
  */
@@ -42,12 +50,14 @@ class PostgresFtsSearchAdapter implements SearchIndex, IndexDocumentRepository {
   private final EntityManager em;
   private final Clock clock;
   private final SearchDocumentMapper mapper;
+  private final ObjectMapper objectMapper;
 
   @Inject
-  PostgresFtsSearchAdapter(EntityManager em, Clock clock, SearchDocumentMapper mapper) {
+  PostgresFtsSearchAdapter(EntityManager em, Clock clock, SearchDocumentMapper mapper, ObjectMapper objectMapper) {
     this.em = em;
     this.clock = clock;
     this.mapper = mapper;
+    this.objectMapper = objectMapper;
   }
 
   // -------------------------------------------------------------------------
@@ -57,13 +67,17 @@ class PostgresFtsSearchAdapter implements SearchIndex, IndexDocumentRepository {
   @Override
   public void upsert(IndexDocument document) {
     Instant now = clock.now();
+    // Apply allow-list before persistence (F4): strip keys not permitted for this entity type.
+    var allowedPayload = SearchDocumentMapper.applyAllowList(document.entityType(), document.payload());
+    // Extract price_minor from the allow-listed payload for the typed sort column (F2/INV-SRCH money-as-minor-units).
+    Long priceMinor = extractPriceMinor(allowedPayload);
     // Use native SQL for upsert with ON CONFLICT; tsv is filled by the DB trigger.
     em.createNativeQuery(
             """
             INSERT INTO search_document
-                (entity_type, entity_id, title, subtitle, search_text, popularity, visible, payload, indexed_at)
+                (entity_type, entity_id, title, subtitle, search_text, popularity, visible, payload, price_minor, indexed_at)
             VALUES
-                (:entityType, :entityId, :title, :subtitle, :searchText, :popularity, :visible, CAST(:payload AS jsonb), :indexedAt)
+                (:entityType, :entityId, :title, :subtitle, :searchText, :popularity, :visible, CAST(:payload AS jsonb), :priceMinor, :indexedAt)
             ON CONFLICT (entity_type, entity_id) DO UPDATE SET
                 title       = EXCLUDED.title,
                 subtitle    = EXCLUDED.subtitle,
@@ -71,6 +85,7 @@ class PostgresFtsSearchAdapter implements SearchIndex, IndexDocumentRepository {
                 popularity  = EXCLUDED.popularity,
                 visible     = EXCLUDED.visible,
                 payload     = EXCLUDED.payload,
+                price_minor = EXCLUDED.price_minor,
                 indexed_at  = EXCLUDED.indexed_at
             """)
         .setParameter("entityType", document.entityType().name())
@@ -80,7 +95,8 @@ class PostgresFtsSearchAdapter implements SearchIndex, IndexDocumentRepository {
         .setParameter("searchText", document.searchText())
         .setParameter("popularity", document.popularity().score())
         .setParameter("visible", document.visible())
-        .setParameter("payload", payloadJson(document.payload()))
+        .setParameter("payload", payloadJson(allowedPayload))
+        .setParameter("priceMinor", priceMinor)
         .setParameter("indexedAt", now)
         .executeUpdate();
   }
@@ -105,10 +121,18 @@ class PostgresFtsSearchAdapter implements SearchIndex, IndexDocumentRepository {
     SearchScope scope = query.scope();
     Sort sort = filters.sort();
 
-    // Build entity_type filter clause
-    String typeClause = buildTypeClause(scope);
+    // Build parameterised filter clauses (F1, F5 — no string concatenation of user/enum-derived values).
+    // scope -> entity_type bound parameter; type/genre -> payload fields bound parameters.
+    boolean hasScope = scope != null && scope != SearchScope.ALL;
+    boolean hasType = filters.type().isPresent();
+    boolean hasGenre = filters.genre().isPresent();
 
-    // Determine ORDER BY
+    String filterClauses =
+        (hasScope  ? " AND entity_type = :scope"              : "")
+      + (hasType   ? " AND payload->>'type' = :filterType"    : "")
+      + (hasGenre  ? " AND payload->>'genre' = :filterGenre"  : "");
+
+    // Determine ORDER BY using the typed price_minor column (F2 — no JSONB cast in ORDER BY).
     String orderBy = buildOrderBy(sort);
 
     // Combined FTS + trgm query: match tsv OR title similarity.
@@ -130,17 +154,20 @@ class PostgresFtsSearchAdapter implements SearchIndex, IndexDocumentRepository {
               OR similarity(title, CAST(:q AS text)) > 0.2
           )
         """
-            + typeClause
+            + filterClauses
             + " ORDER BY "
             + orderBy
             + " LIMIT :limit OFFSET :offset";
 
-    List<Object[]> rows =
-        em.createNativeQuery(sql)
+    var mainQuery = em.createNativeQuery(sql)
             .setParameter("q", q)
             .setParameter("limit", page.size())
-            .setParameter("offset", page.offset())
-            .getResultList();
+            .setParameter("offset", page.offset());
+    if (hasScope)  mainQuery.setParameter("scope", scope.name());
+    if (hasType)   mainQuery.setParameter("filterType", filters.type().get());
+    if (hasGenre)  mainQuery.setParameter("filterGenre", filters.genre().get());
+
+    List<Object[]> rows = mainQuery.getResultList();
 
     // Count query
     String countSql =
@@ -153,14 +180,14 @@ class PostgresFtsSearchAdapter implements SearchIndex, IndexDocumentRepository {
               OR similarity(title, CAST(:q AS text)) > 0.2
           )
         """
-            + typeClause;
+            + filterClauses;
 
-    long total =
-        ((Number)
-                em.createNativeQuery(countSql)
-                    .setParameter("q", q)
-                    .getSingleResult())
-            .longValue();
+    var countQuery = em.createNativeQuery(countSql).setParameter("q", q);
+    if (hasScope)  countQuery.setParameter("scope", scope.name());
+    if (hasType)   countQuery.setParameter("filterType", filters.type().get());
+    if (hasGenre)  countQuery.setParameter("filterGenre", filters.genre().get());
+
+    long total = ((Number) countQuery.getSingleResult()).longValue();
 
     // Group hits
     List<SearchHit> tracks = new ArrayList<>();
@@ -220,30 +247,42 @@ class PostgresFtsSearchAdapter implements SearchIndex, IndexDocumentRepository {
   // Helpers
   // -------------------------------------------------------------------------
 
-  private String buildTypeClause(SearchScope scope) {
-    if (scope == null || scope == SearchScope.ALL) return "";
-    return " AND entity_type = '" + scope.name() + "'";
-  }
-
+  /**
+   * ORDER BY fragment. Uses the typed {@code price_minor BIGINT} column (F2) — never casts
+   * arbitrary JSONB in ORDER BY, which would throw a Postgres cast error on non-numeric values.
+   */
   private String buildOrderBy(Sort sort) {
     if (sort == null) return "rank DESC, popularity DESC";
     return switch (sort) {
       case RELEVANCE -> "rank DESC, popularity DESC";
-      case POPULAR -> "popularity DESC, rank DESC";
-      case NEWEST -> "indexed_at DESC, rank DESC";
-      case PRICE_ASC ->
-          "CAST(payload->>'price_minor' AS BIGINT) ASC NULLS LAST, rank DESC";
-      case PRICE_DESC ->
-          "CAST(payload->>'price_minor' AS BIGINT) DESC NULLS LAST, rank DESC";
+      case POPULAR   -> "popularity DESC, rank DESC";
+      case NEWEST    -> "indexed_at DESC, rank DESC";
+      case PRICE_ASC  -> "price_minor ASC NULLS LAST, rank DESC";
+      case PRICE_DESC -> "price_minor DESC NULLS LAST, rank DESC";
     };
   }
 
+  /**
+   * Serialises the allow-listed payload map using the INJECTED ObjectMapper (F3).
+   * Throws {@link IllegalStateException} on failure so data loss is never silently swallowed.
+   */
   private String payloadJson(Map<String, Object> payload) {
     if (payload == null || payload.isEmpty()) return "{}";
     try {
-      return new ObjectMapper().writeValueAsString(payload);
-    } catch (Exception e) {
-      return "{}";
+      return objectMapper.writeValueAsString(payload);
+    } catch (JsonProcessingException e) {
+      throw new IllegalStateException("Failed to serialise search document payload", e);
     }
+  }
+
+  /**
+   * Extracts {@code price_minor} from the payload map for the typed sort column.
+   * Returns {@code null} (mapped to SQL NULL) when the field is absent or not a Number.
+   */
+  private Long extractPriceMinor(Map<String, Object> payload) {
+    if (payload == null) return null;
+    Object val = payload.get("price_minor");
+    if (val instanceof Number n) return n.longValue();
+    return null;
   }
 }
