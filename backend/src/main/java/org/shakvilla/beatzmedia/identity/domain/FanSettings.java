@@ -18,6 +18,10 @@ public final class FanSettings {
   private final AccountId accountId;
   private final String theme;
   private final String audioQuality;
+  private final String streamingQuality;
+  private final String downloadQuality;
+  private final String crossfade;
+  private final boolean dataSaver;
   private final boolean newReleases;
   private final boolean playlistUpdates;
   private final boolean dropsOffers;
@@ -28,6 +32,10 @@ public final class FanSettings {
       AccountId accountId,
       String theme,
       String audioQuality,
+      String streamingQuality,
+      String downloadQuality,
+      String crossfade,
+      boolean dataSaver,
       boolean newReleases,
       boolean playlistUpdates,
       boolean dropsOffers,
@@ -36,6 +44,10 @@ public final class FanSettings {
     this.accountId = accountId;
     this.theme = theme;
     this.audioQuality = audioQuality;
+    this.streamingQuality = streamingQuality;
+    this.downloadQuality = downloadQuality;
+    this.crossfade = crossfade;
+    this.dataSaver = dataSaver;
     this.newReleases = newReleases;
     this.playlistUpdates = playlistUpdates;
     this.dropsOffers = dropsOffers;
@@ -45,8 +57,9 @@ public final class FanSettings {
 
   /** Factory for a new FanSettings with all defaults applied. Identity ADD §7. */
   public static FanSettings defaults(AccountId accountId) {
-    return new FanSettings(accountId, "system", "High (256 kbps)", true, true, false, "Ghana",
-        null);
+    return new FanSettings(
+        accountId, "system", "High (256 kbps)", "High (256 kbps)", "Very high (320 kbps)",
+        "Off", false, true, true, false, "Ghana", null);
   }
 
   public AccountId getAccountId() {
@@ -59,6 +72,22 @@ public final class FanSettings {
 
   public String getAudioQuality() {
     return audioQuality;
+  }
+
+  public String getStreamingQuality() {
+    return streamingQuality;
+  }
+
+  public String getDownloadQuality() {
+    return downloadQuality;
+  }
+
+  public String getCrossfade() {
+    return crossfade;
+  }
+
+  public boolean isDataSaver() {
+    return dataSaver;
   }
 
   public boolean isNewReleases() {

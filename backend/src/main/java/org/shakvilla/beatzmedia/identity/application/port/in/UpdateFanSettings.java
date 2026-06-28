@@ -30,6 +30,10 @@ public interface UpdateFanSettings {
   record UpdateFanSettingsCommand(
       Optional<String> theme,
       Optional<String> audioQuality,
+      Optional<String> streamingQuality,
+      Optional<String> downloadQuality,
+      Optional<String> crossfade,
+      Optional<Boolean> dataSaver,
       Optional<NotificationPrefs> notifications,
       Optional<String> country,
       Optional<String> phone) {}

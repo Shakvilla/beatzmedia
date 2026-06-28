@@ -5,9 +5,12 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Instant;
+import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.shakvilla.beatzmedia.audit.domain.AuditEntry;
+import org.shakvilla.beatzmedia.audit.fakes.FakeAuditWriter;
 import org.shakvilla.beatzmedia.identity.application.port.in.AccountView;
 import org.shakvilla.beatzmedia.identity.application.service.UpgradeToArtistService;
 import org.shakvilla.beatzmedia.identity.domain.Account;
@@ -28,6 +31,7 @@ class UpgradeToArtistServiceTest {
   private FakeAccountRepository accountRepository;
   private FakeFeatureFlags featureFlags;
   private FakeClock clock;
+  private FakeAuditWriter auditWriter;
   private FakeEventBus<org.shakvilla.beatzmedia.identity.domain.ArtistUpgraded> eventBus;
   private UpgradeToArtistService service;
 
@@ -36,8 +40,15 @@ class UpgradeToArtistServiceTest {
     accountRepository = new FakeAccountRepository();
     featureFlags = new FakeFeatureFlags();
     clock = new FakeClock(Instant.parse("2026-01-01T00:00:00Z"));
+    auditWriter = new FakeAuditWriter();
     eventBus = new FakeEventBus<>();
-    service = new UpgradeToArtistService(accountRepository, featureFlags, clock, eventBus);
+    org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator idGenerator =
+        new org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator() {
+          @Override public String newId() { return UUID.randomUUID().toString(); }
+          @Override public String newOrderRef(int year) { return "BZ-" + year + "-00001"; }
+        };
+    service = new UpgradeToArtistService(
+        accountRepository, featureFlags, clock, idGenerator, auditWriter, eventBus);
   }
 
   @Test
@@ -50,6 +61,11 @@ class UpgradeToArtistServiceTest {
     assertTrue(result.isArtist(), "isArtist must be true after upgrade");
     assertEquals(1, eventBus.fired.size(), "ArtistUpgraded event must be published");
     assertEquals("acc-1", eventBus.fired.get(0).accountId());
+    // INV-10: audit entry must be recorded on upgrade
+    assertEquals(1, auditWriter.size(), "AuditEntry must be appended on BECOME_ARTIST");
+    AuditEntry audit = auditWriter.all().get(0);
+    assertEquals("BECOME_ARTIST", audit.getAction());
+    assertEquals("acc-1", audit.getActor());
   }
 
   @Test
@@ -61,8 +77,9 @@ class UpgradeToArtistServiceTest {
     AccountView result = service.upgrade(id); // second call
 
     assertTrue(result.isArtist());
-    // Event must be published only once (idempotency: second call is a no-op)
+    // Event and audit must each be recorded only once (idempotency: second call is no-op)
     assertEquals(1, eventBus.fired.size(), "Event must be published only once");
+    assertEquals(1, auditWriter.size(), "AuditEntry must be appended only once");
   }
 
   @Test
@@ -77,6 +94,7 @@ class UpgradeToArtistServiceTest {
 
     assertTrue(result.isArtist());
     assertEquals(0, eventBus.fired.size(), "Event must NOT be published again");
+    assertEquals(0, auditWriter.size(), "AuditEntry must NOT be appended for idempotent no-op");
   }
 
   @Test

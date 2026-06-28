@@ -38,6 +38,10 @@ public class UpdateFanSettingsService implements UpdateFanSettings {
     // Apply partial update — only present Optional values override current
     String theme = command.theme().orElse(existing.getTheme());
     String audioQuality = command.audioQuality().orElse(existing.getAudioQuality());
+    String streamingQuality = command.streamingQuality().orElse(existing.getStreamingQuality());
+    String downloadQuality = command.downloadQuality().orElse(existing.getDownloadQuality());
+    String crossfade = command.crossfade().orElse(existing.getCrossfade());
+    boolean dataSaver = command.dataSaver().orElse(existing.isDataSaver());
     String country = command.country().orElse(existing.getCountry());
     String phone = command.phone().orElse(existing.getPhone());
 
@@ -60,7 +64,8 @@ public class UpdateFanSettingsService implements UpdateFanSettings {
     }
 
     FanSettings merged = new FanSettings(
-        accountId, theme, audioQuality, newReleases, playlistUpdates, dropsOffers, country, phone);
+        accountId, theme, audioQuality, streamingQuality, downloadQuality, crossfade, dataSaver,
+        newReleases, playlistUpdates, dropsOffers, country, phone);
 
     accountRepository.saveSettings(merged);
 
@@ -71,6 +76,10 @@ public class UpdateFanSettingsService implements UpdateFanSettings {
     return new FanSettingsView(
         s.getTheme(),
         s.getAudioQuality(),
+        s.getStreamingQuality(),
+        s.getDownloadQuality(),
+        s.getCrossfade(),
+        s.isDataSaver(),
         new FanSettingsView.NotificationPrefs(
             s.isNewReleases(), s.isPlaylistUpdates(), s.isDropsOffers()),
         s.getCountry(),

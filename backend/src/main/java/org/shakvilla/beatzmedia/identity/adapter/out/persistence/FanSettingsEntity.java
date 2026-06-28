@@ -26,6 +26,18 @@ public class FanSettingsEntity {
   @Column(name = "audio_quality", nullable = false)
   public String audioQuality;
 
+  @Column(name = "streaming_quality", nullable = false)
+  public String streamingQuality;
+
+  @Column(name = "download_quality", nullable = false)
+  public String downloadQuality;
+
+  @Column(name = "crossfade", nullable = false)
+  public String crossfade;
+
+  @Column(name = "data_saver", nullable = false)
+  public boolean dataSaver;
+
   /**
    * Stored as a JSONB column. The {@link JdbcTypeCode} annotation instructs Hibernate to send the
    * string value with the correct JDBC type for PostgreSQL's jsonb cast. Format:

@@ -1,10 +1,15 @@
 package org.shakvilla.beatzmedia.identity.application.service;
 
+import java.time.Instant;
+
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 
+import org.shakvilla.beatzmedia.audit.application.port.out.AuditWriter;
+import org.shakvilla.beatzmedia.audit.domain.AuditEntry;
+import org.shakvilla.beatzmedia.audit.domain.AuditType;
 import org.shakvilla.beatzmedia.identity.application.port.in.AccountView;
 import org.shakvilla.beatzmedia.identity.application.port.in.UpgradeToArtist;
 import org.shakvilla.beatzmedia.identity.application.port.out.AccountRepository;
@@ -14,6 +19,7 @@ import org.shakvilla.beatzmedia.identity.domain.AccountNotFoundException;
 import org.shakvilla.beatzmedia.identity.domain.ArtistUpgraded;
 import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
 import org.shakvilla.beatzmedia.platform.application.port.out.FeatureFlags;
+import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
 import org.shakvilla.beatzmedia.platform.domain.FeatureDisabledException;
 import org.shakvilla.beatzmedia.platform.domain.FeatureKey;
 
@@ -33,6 +39,8 @@ public class UpgradeToArtistService implements UpgradeToArtist {
   private final AccountRepository accountRepository;
   private final FeatureFlags featureFlags;
   private final Clock clock;
+  private final IdGenerator idGenerator;
+  private final AuditWriter auditWriter;
   private final Event<ArtistUpgraded> artistUpgradedEvent;
 
   @Inject
@@ -40,10 +48,14 @@ public class UpgradeToArtistService implements UpgradeToArtist {
       AccountRepository accountRepository,
       FeatureFlags featureFlags,
       Clock clock,
+      IdGenerator idGenerator,
+      AuditWriter auditWriter,
       Event<ArtistUpgraded> artistUpgradedEvent) {
     this.accountRepository = accountRepository;
     this.featureFlags = featureFlags;
     this.clock = clock;
+    this.idGenerator = idGenerator;
+    this.auditWriter = auditWriter;
     this.artistUpgradedEvent = artistUpgradedEvent;
   }
 
@@ -63,8 +75,20 @@ public class UpgradeToArtistService implements UpgradeToArtist {
       return toView(account);
     }
 
-    Account upgraded = account.upgradeToArtist(clock.now());
+    Instant now = clock.now();
+    Account upgraded = account.upgradeToArtist(now);
     accountRepository.save(upgraded);
+
+    // INV-10: audit every privileged role escalation atomically in the same transaction.
+    auditWriter.append(new AuditEntry(
+        idGenerator.newId(),
+        accountId.value(),
+        "BECOME_ARTIST",
+        "Account",
+        accountId.value(),
+        AuditType.USER,
+        null,
+        now));
 
     // Publish domain event. Catalog reacts to create the artist_profile shell (ADD §10).
     artistUpgradedEvent.fire(
@@ -72,7 +96,7 @@ public class UpgradeToArtistService implements UpgradeToArtist {
             upgraded.getId().value(),
             upgraded.getEmail(),
             upgraded.getName(),
-            clock.now()));
+            now));
 
     return toView(upgraded);
   }

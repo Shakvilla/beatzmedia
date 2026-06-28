@@ -7,6 +7,10 @@ package org.shakvilla.beatzmedia.identity.application.port.in;
 public record FanSettingsView(
     String theme,
     String audioQuality,
+    String streamingQuality,
+    String downloadQuality,
+    String crossfade,
+    boolean dataSaver,
     NotificationPrefs notifications,
     String country,
     String phone) {

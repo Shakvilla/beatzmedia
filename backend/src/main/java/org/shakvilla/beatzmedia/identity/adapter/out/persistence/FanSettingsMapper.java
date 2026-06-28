@@ -18,6 +18,10 @@ final class FanSettingsMapper {
     entity.accountId = settings.getAccountId().value();
     entity.theme = settings.getTheme();
     entity.audioQuality = settings.getAudioQuality();
+    entity.streamingQuality = settings.getStreamingQuality();
+    entity.downloadQuality = settings.getDownloadQuality();
+    entity.crossfade = settings.getCrossfade();
+    entity.dataSaver = settings.isDataSaver();
     entity.notifJson = buildNotifJson(
         settings.isNewReleases(), settings.isPlaylistUpdates(), settings.isDropsOffers());
     entity.country = settings.getCountry();
@@ -31,6 +35,10 @@ final class FanSettingsMapper {
         new AccountId(entity.accountId),
         entity.theme,
         entity.audioQuality,
+        entity.streamingQuality,
+        entity.downloadQuality,
+        entity.crossfade,
+        entity.dataSaver,
         notifs[0],
         notifs[1],
         notifs[2],

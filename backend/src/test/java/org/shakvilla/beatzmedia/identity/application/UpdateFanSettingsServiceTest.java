@@ -39,11 +39,14 @@ class UpdateFanSettingsServiceTest {
     AccountId id = new AccountId("acc-lazy");
     accountRepository.seed(fanAccount(id));
 
-    FanSettingsView result = service.update(id,
-        emptyCommand()); // all Optional.empty()
+    FanSettingsView result = service.update(id, emptyCommand());
 
     assertEquals("system", result.theme());
     assertEquals("High (256 kbps)", result.audioQuality());
+    assertEquals("High (256 kbps)", result.streamingQuality());
+    assertEquals("Very high (320 kbps)", result.downloadQuality());
+    assertEquals("Off", result.crossfade());
+    assertFalse(result.dataSaver());
     assertEquals("Ghana", result.country());
     assertNull(result.phone());
     assertTrue(result.notifications().newReleases());
@@ -55,16 +58,18 @@ class UpdateFanSettingsServiceTest {
   void update_applies_partial_fields_and_keeps_others() {
     AccountId id = new AccountId("acc-partial");
     accountRepository.seed(fanAccount(id));
-    // Seed existing settings
-    accountRepository.saveSettings(new FanSettings(id, "dark", "High (256 kbps)", true, true,
-        false, "Ghana", null));
+    accountRepository.saveSettings(existingSettings(id));
 
     UpdateFanSettings.UpdateFanSettingsCommand cmd = new UpdateFanSettings.UpdateFanSettingsCommand(
-        Optional.of("light"),       // theme changes
-        Optional.empty(),           // audioQuality unchanged
-        Optional.empty(),           // notifications unchanged
-        Optional.empty(),           // country unchanged
-        Optional.of("+233201234567")); // phone set
+        Optional.of("light"),
+        Optional.empty(),
+        Optional.empty(),
+        Optional.empty(),
+        Optional.empty(),
+        Optional.empty(),
+        Optional.empty(),
+        Optional.empty(),
+        Optional.of("+233201234567"));
 
     FanSettingsView result = service.update(id, cmd);
 
@@ -78,13 +83,16 @@ class UpdateFanSettingsServiceTest {
   void update_merges_partial_notification_prefs() {
     AccountId id = new AccountId("acc-notif");
     accountRepository.seed(fanAccount(id));
-    accountRepository.saveSettings(
-        new FanSettings(id, "system", "High (256 kbps)", true, true, false, "Ghana", null));
+    accountRepository.saveSettings(existingSettings(id));
 
     UpdateFanSettings.UpdateFanSettingsCommand cmd = new UpdateFanSettings.UpdateFanSettingsCommand(
         Optional.empty(),
         Optional.empty(),
-        Optional.of(new UpdateFanSettings.NotificationPrefs(null, null, true)), // only dropsOffers
+        Optional.empty(),
+        Optional.empty(),
+        Optional.empty(),
+        Optional.empty(),
+        Optional.of(new UpdateFanSettings.NotificationPrefs(null, null, true)),
         Optional.empty(),
         Optional.empty());
 
@@ -103,6 +111,10 @@ class UpdateFanSettingsServiceTest {
     UpdateFanSettings.UpdateFanSettingsCommand cmd = new UpdateFanSettings.UpdateFanSettingsCommand(
         Optional.of("dark"),
         Optional.of("Lossless (FLAC)"),
+        Optional.of("Very high (320 kbps)"),
+        Optional.of("Very high (320 kbps)"),
+        Optional.of("5s"),
+        Optional.of(true),
         Optional.of(new UpdateFanSettings.NotificationPrefs(false, false, true)),
         Optional.of("Nigeria"),
         Optional.of("+2348000000000"));
@@ -111,6 +123,9 @@ class UpdateFanSettingsServiceTest {
 
     assertEquals("dark", result.theme());
     assertEquals("Lossless (FLAC)", result.audioQuality());
+    assertEquals("Very high (320 kbps)", result.streamingQuality());
+    assertEquals("5s", result.crossfade());
+    assertTrue(result.dataSaver());
     assertEquals("Nigeria", result.country());
     assertEquals("+2348000000000", result.phone());
     assertFalse(result.notifications().newReleases());
@@ -120,6 +135,7 @@ class UpdateFanSettingsServiceTest {
     // Verify persisted
     FanSettings saved = accountRepository.findSettings(id).orElseThrow();
     assertEquals("dark", saved.getTheme());
+    assertTrue(saved.isDataSaver());
   }
 
   // ---- helpers ----
@@ -129,9 +145,14 @@ class UpdateFanSettingsServiceTest {
         new Credential(id, "hash"), Instant.now());
   }
 
+  private static FanSettings existingSettings(AccountId id) {
+    return new FanSettings(id, "dark", "High (256 kbps)", "High (256 kbps)",
+        "Very high (320 kbps)", "Off", false, true, true, false, "Ghana", null);
+  }
+
   private static UpdateFanSettings.UpdateFanSettingsCommand emptyCommand() {
     return new UpdateFanSettings.UpdateFanSettingsCommand(
-        Optional.empty(), Optional.empty(), Optional.empty(),
-        Optional.empty(), Optional.empty());
+        Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(),
+        Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty(), Optional.empty());
   }
 }

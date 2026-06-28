@@ -12,7 +12,19 @@ public record FanSettingsPatch(
     @Pattern(regexp = "^(light|dark|system)$", message = "must be one of: light, dark, system")
     String theme,
 
+    @Size(max = 100, message = "must be at most 100 characters")
     String audioQuality,
+
+    @Size(max = 100, message = "must be at most 100 characters")
+    String streamingQuality,
+
+    @Size(max = 100, message = "must be at most 100 characters")
+    String downloadQuality,
+
+    @Size(max = 100, message = "must be at most 100 characters")
+    String crossfade,
+
+    Boolean dataSaver,
 
     NotificationsDto notifications,
 

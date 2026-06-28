@@ -88,6 +88,10 @@ public class MeResource {
     UpdateFanSettings.UpdateFanSettingsCommand command = new UpdateFanSettings.UpdateFanSettingsCommand(
         Optional.ofNullable(patch.theme()),
         Optional.ofNullable(patch.audioQuality()),
+        Optional.ofNullable(patch.streamingQuality()),
+        Optional.ofNullable(patch.downloadQuality()),
+        Optional.ofNullable(patch.crossfade()),
+        Optional.ofNullable(patch.dataSaver()),
         Optional.ofNullable(notifPrefs),
         Optional.ofNullable(patch.country()),
         Optional.ofNullable(patch.phone()));
