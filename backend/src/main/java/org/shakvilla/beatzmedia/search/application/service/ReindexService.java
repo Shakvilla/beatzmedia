@@ -34,6 +34,8 @@ class ReindexService implements ReindexUseCase {
   @Override
   @Transactional
   public ReindexReport reindex(EntityType type) {
+    // INV-10: AuditEntry on admin-triggered reindex — deferred until admin trigger lands (WU-CAT-3/WU-STO-1).
+    // When the privileged REST entry point is added, wrap this call with an AuditEntry write.
     var startedAt = clock.now();
     List<EntityType> types =
         type == null ? Arrays.asList(EntityType.values()) : List.of(type);
