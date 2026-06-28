@@ -1,15 +1,18 @@
 package org.shakvilla.beatzmedia.search.adapter.out.persistence;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.core.type.TypeReference;
-import com.fasterxml.jackson.databind.ObjectMapper;
+import java.util.Map;
+
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import java.util.Map;
+
 import org.shakvilla.beatzmedia.search.domain.EntityType;
 import org.shakvilla.beatzmedia.search.domain.IndexDocument;
 import org.shakvilla.beatzmedia.search.domain.Popularity;
 import org.shakvilla.beatzmedia.search.domain.SearchHit;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Maps between {@link IndexDocument}/{@link SearchHit} and {@link SearchDocumentEntity} (ADD §5.2).

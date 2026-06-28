@@ -1,6 +1,7 @@
 package org.shakvilla.beatzmedia.search.domain;
 
 import java.util.Objects;
+
 import org.shakvilla.beatzmedia.platform.domain.PageRequest;
 
 /**

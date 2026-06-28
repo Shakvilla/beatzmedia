@@ -1,10 +1,12 @@
 package org.shakvilla.beatzmedia.search.application.service;
 
+import java.util.Arrays;
+import java.util.List;
+
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
-import java.util.Arrays;
-import java.util.List;
+
 import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
 import org.shakvilla.beatzmedia.search.application.port.in.ReindexUseCase;
 import org.shakvilla.beatzmedia.search.application.port.out.IndexDocumentRepository;

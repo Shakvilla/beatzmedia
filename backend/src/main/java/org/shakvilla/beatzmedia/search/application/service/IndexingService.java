@@ -3,6 +3,7 @@ package org.shakvilla.beatzmedia.search.application.service;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
+
 import org.shakvilla.beatzmedia.search.application.port.in.IndexEntityUseCase;
 import org.shakvilla.beatzmedia.search.application.port.out.SearchIndex;
 import org.shakvilla.beatzmedia.search.domain.EntityType;

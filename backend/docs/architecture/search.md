@@ -137,7 +137,12 @@ public interface ReindexUseCase {
   scope when invoked via tooling. *Idempotency:* converges to current source state. *Satisfies:*
   LLFR-SEARCH-01.1 (recovery).
 
-**Internal event observers** (CDI `@Observes`, `AFTER_SUCCESS`; framework-free domain stays clean):
+**Internal event observers** (CDI `@Observes`, `AFTER_SUCCESS`; framework-free domain stays clean) —
+**WU-SRCH-1 deferral note:** observer wiring is omitted in WU-SRCH-1 because the source event types
+(`ReleaseWentLive`, `ContentTakenDown`, `StoreItemPublished`, etc.) do not yet exist in the codebase.
+They will be defined in WU-CAT-3/CAT-4, WU-STO-1, WU-POD-1, WU-EVT-1. Wire observers in those WUs
+by injecting `IndexEntityUseCase` and calling `index`/`deindex`; the `IndexingService` is already
+deployed. A stub comment (`IndexEventObserversStub.java`) marks the wiring point:
 
 ```java
 public interface IndexEventObservers {
@@ -232,7 +237,7 @@ catalog resource hydrates each hit's `payload` into the frontend type before ret
 ## 7. Persistence schema & migrations
 
 ```sql
--- V60__create_search_document.sql
+-- V801__create_search_document.sql   (band: V8xx search/store — V60 in earlier drafts)
 CREATE EXTENSION IF NOT EXISTS pg_trgm;
 
 CREATE TABLE search_document (
@@ -265,7 +270,7 @@ CREATE INDEX idx_search_document_popularity ON search_document (popularity DESC)
 stay consistent, INV-SRCH-4):
 
 ```sql
--- V61__search_document_tsv_trigger.sql
+-- V802__search_document_tsv_trigger.sql   (band: V8xx — V61 in earlier drafts)
 CREATE FUNCTION search_document_tsv_update() RETURNS trigger AS $$
 BEGIN
   NEW.tsv :=
@@ -283,8 +288,12 @@ CREATE TRIGGER trg_search_document_tsv
 ```
 
 **Flyway list** (forward-only, `src/main/resources/db/migration/`):
-- `V60__create_search_document.sql` — extension, table, GIN(tsv), GIN(title trgm), filter/sort indexes.
-- `V61__search_document_tsv_trigger.sql` — `tsv` trigger function + trigger.
+- `V801__create_search_document.sql` — extension, table, GIN(tsv), GIN(title trgm), filter/sort indexes.
+- `V802__search_document_tsv_trigger.sql` — `tsv` trigger function + trigger.
+
+> **Migration band note (WU-SRCH-1):** Earlier drafts showed V60/V61. The actual implementation uses
+> V801/V802 (V8xx band = search + store) to avoid collisions with existing migrations (V1xx platform,
+> V2xx identity, V3xx catalog, V9xx audit). V801 and V802 were confirmed free at time of implementation.
 - Repeatable: no `search` rows in `R__seed_dev_data.sql`; the index is **derived** — seed catalog/store,
   then run `ReindexUseCase.reindex(ALL)` (dev bootstrap) to populate.
 

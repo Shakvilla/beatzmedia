@@ -1,15 +1,15 @@
 package org.shakvilla.beatzmedia.search.adapter.out.persistence;
 
-import com.fasterxml.jackson.databind.ObjectMapper;
-import io.quarkus.hibernate.orm.panache.PanacheEntityBase;
-import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
-import jakarta.persistence.EntityManager;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import jakarta.persistence.EntityManager;
+
 import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
 import org.shakvilla.beatzmedia.platform.domain.PageRequest;
 import org.shakvilla.beatzmedia.search.application.port.out.IndexDocumentRepository;
@@ -22,6 +22,8 @@ import org.shakvilla.beatzmedia.search.domain.SearchQuery;
 import org.shakvilla.beatzmedia.search.domain.SearchResults;
 import org.shakvilla.beatzmedia.search.domain.SearchScope;
 import org.shakvilla.beatzmedia.search.domain.Sort;
+
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 /**
  * Postgres FTS + pg_trgm implementation of {@link SearchIndex} and {@link IndexDocumentRepository}.
@@ -109,7 +111,8 @@ class PostgresFtsSearchAdapter implements SearchIndex, IndexDocumentRepository {
     // Determine ORDER BY
     String orderBy = buildOrderBy(sort);
 
-    // Combined FTS + trgm query: match tsv OR title similarity
+    // Combined FTS + trgm query: match tsv OR title similarity.
+    // Cast :q to TEXT so pg_trgm % operator resolves (avoids character varying overload issue).
     String sql =
         """
         SELECT
@@ -119,12 +122,12 @@ class PostgresFtsSearchAdapter implements SearchIndex, IndexDocumentRepository {
             subtitle,
             payload::text,
             popularity,
-            COALESCE(ts_rank_cd(tsv, websearch_to_tsquery('simple', :q)), 0.0) AS rank
+            COALESCE(ts_rank_cd(tsv, websearch_to_tsquery('simple', CAST(:q AS text))), 0.0) AS rank
         FROM search_document
         WHERE visible = true
           AND (
-              tsv @@ websearch_to_tsquery('simple', :q)
-              OR title %% :q
+              tsv @@ websearch_to_tsquery('simple', CAST(:q AS text))
+              OR similarity(title, CAST(:q AS text)) > 0.2
           )
         """
             + typeClause
@@ -146,8 +149,8 @@ class PostgresFtsSearchAdapter implements SearchIndex, IndexDocumentRepository {
         FROM search_document
         WHERE visible = true
           AND (
-              tsv @@ websearch_to_tsquery('simple', :q)
-              OR title %% :q
+              tsv @@ websearch_to_tsquery('simple', CAST(:q AS text))
+              OR similarity(title, CAST(:q AS text)) > 0.2
           )
         """
             + typeClause;

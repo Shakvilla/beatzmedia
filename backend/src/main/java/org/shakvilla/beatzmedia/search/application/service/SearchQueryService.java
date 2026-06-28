@@ -2,6 +2,7 @@ package org.shakvilla.beatzmedia.search.application.service;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+
 import org.shakvilla.beatzmedia.search.application.port.in.QueryService;
 import org.shakvilla.beatzmedia.search.application.port.out.SearchIndex;
 import org.shakvilla.beatzmedia.search.domain.SearchQuery;
