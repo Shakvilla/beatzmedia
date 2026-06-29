@@ -74,4 +74,7 @@ public interface CatalogRepository {
 
   /** Check whether an idempotency key was already used; returns the saved view if so. */
   Optional<Release> findReleaseByIdempotencyKey(String idempotencyKey);
+
+  /** Save a release and associate it with the given idempotency key. */
+  void saveReleaseWithIdempotencyKey(Release release, String idempotencyKey);
 }

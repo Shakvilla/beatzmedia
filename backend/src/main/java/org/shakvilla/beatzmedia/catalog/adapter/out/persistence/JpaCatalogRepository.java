@@ -6,6 +6,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.UUID;
 import java.util.stream.Collectors;
 
 import jakarta.enterprise.context.ApplicationScoped;
@@ -23,10 +24,18 @@ import org.shakvilla.beatzmedia.catalog.domain.Lyrics;
 import org.shakvilla.beatzmedia.catalog.domain.OwnershipStatus;
 import org.shakvilla.beatzmedia.catalog.domain.Playlist;
 import org.shakvilla.beatzmedia.catalog.domain.PlaylistId;
+import org.shakvilla.beatzmedia.catalog.domain.Release;
+import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
+import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
+import org.shakvilla.beatzmedia.catalog.domain.ReleaseTrack;
+import org.shakvilla.beatzmedia.catalog.domain.ReleaseType;
 import org.shakvilla.beatzmedia.catalog.domain.Show;
 import org.shakvilla.beatzmedia.catalog.domain.Track;
 import org.shakvilla.beatzmedia.catalog.domain.TrackCredit;
 import org.shakvilla.beatzmedia.catalog.domain.TrackId;
+import org.shakvilla.beatzmedia.catalog.domain.Visibility;
+import org.shakvilla.beatzmedia.platform.domain.Page;
+import org.shakvilla.beatzmedia.platform.domain.PageRequest;
 
 /**
  * JPA/Panache implementation of {@link CatalogRepository}. Reads catalog tables only; no
@@ -299,6 +308,170 @@ public class JpaCatalogRepository implements CatalogRepository {
                 e.followers,
                 trackIdsByPlaylist.getOrDefault(e.id, Collections.emptyList()))));
     return ids.stream().map(byId::get).filter(p -> p != null).toList();
+  }
+
+  // ---- WU-CAT-3: studio release lifecycle ----
+
+  @Override
+  public Page<Release> releasesByArtist(
+      ArtistId owner, Optional<ReleaseStatus> status, PageRequest pageRequest) {
+    String baseJpql = "FROM ReleaseEntity r WHERE r.artistId = :aid"
+        + (status.isPresent() ? " AND r.status = :status" : "")
+        + " ORDER BY r.createdAt DESC";
+
+    var countQuery = em.createQuery("SELECT COUNT(r) " + baseJpql, Long.class)
+        .setParameter("aid", owner.value());
+    var listQuery = em.createQuery("SELECT r " + baseJpql, ReleaseEntity.class)
+        .setParameter("aid", owner.value())
+        .setFirstResult(pageRequest.page() * pageRequest.size())
+        .setMaxResults(pageRequest.size());
+
+    if (status.isPresent()) {
+      countQuery.setParameter("status", status.get().name());
+      listQuery.setParameter("status", status.get().name());
+    }
+
+    long total = countQuery.getSingleResult();
+    List<ReleaseEntity> entities = listQuery.getResultList();
+
+    List<String> releaseIds = entities.stream().map(e -> e.id).toList();
+    Map<String, List<ReleaseTrackEntity>> tracksByRelease =
+        releaseIds.isEmpty()
+            ? Map.of()
+            : em.createQuery(
+                    "SELECT rt FROM ReleaseTrackEntity rt WHERE rt.pk.releaseId IN :ids ORDER BY rt.pk.position",
+                    ReleaseTrackEntity.class)
+                .setParameter("ids", releaseIds)
+                .getResultList()
+                .stream()
+                .collect(Collectors.groupingBy(rt -> rt.pk.releaseId));
+
+    List<Release> items = entities.stream()
+        .map(e -> toReleaseDomain(e, tracksByRelease.getOrDefault(e.id, List.of())))
+        .toList();
+
+    return Page.of(items, pageRequest.page(), pageRequest.size(), total);
+  }
+
+  @Override
+  public Optional<Release> findRelease(ReleaseId id) {
+    ReleaseEntity e = em.find(ReleaseEntity.class, id.value());
+    if (e == null) return Optional.empty();
+    List<ReleaseTrackEntity> tracks = em.createQuery(
+            "SELECT rt FROM ReleaseTrackEntity rt WHERE rt.pk.releaseId = :rid ORDER BY rt.pk.position",
+            ReleaseTrackEntity.class)
+        .setParameter("rid", id.value())
+        .getResultList();
+    return Optional.of(toReleaseDomain(e, tracks));
+  }
+
+  @Override
+  public void saveRelease(Release release) {
+    ReleaseEntity e = em.find(ReleaseEntity.class, release.getId());
+    if (e == null) {
+      e = new ReleaseEntity();
+      e.id = release.getId();
+      e.createdAt = release.getCreatedAt();
+    }
+    // idempotencyKey is preserved on existing entity; not overwritten on updates.
+    e.artistId = release.getArtistId();
+    e.title = release.getTitle();
+    e.type = release.getType().name();
+    e.status = release.getStatus().name();
+    e.visibility = release.getVisibility().toDbValue();
+    e.scheduledAt = release.getScheduledAt();
+    e.wentLiveAt = release.getWentLiveAt();
+    e.listPriceMinor = release.getListPriceMinor();
+    e.updatedAt = release.getUpdatedAt();
+    em.merge(e);
+
+    // Upsert release_track rows
+    em.createQuery("DELETE FROM ReleaseTrackEntity rt WHERE rt.pk.releaseId = :rid")
+        .setParameter("rid", release.getId())
+        .executeUpdate();
+    for (ReleaseTrack rt : release.getTracks()) {
+      ReleaseTrackEntity rte = new ReleaseTrackEntity();
+      rte.pk = new ReleaseTrackEntity.ReleaseTrackId(release.getId(), rt.position());
+      rte.trackId = rt.trackId();
+      rte.priceMinor = rt.priceMinor();
+      em.persist(rte);
+    }
+  }
+
+  @Override
+  public void deleteRelease(ReleaseId id) {
+    em.createQuery("DELETE FROM ReleaseTrackEntity rt WHERE rt.pk.releaseId = :rid")
+        .setParameter("rid", id.value())
+        .executeUpdate();
+    ReleaseEntity e = em.find(ReleaseEntity.class, id.value());
+    if (e != null) em.remove(e);
+  }
+
+  @Override
+  public void saveTrack(Track track) {
+    TrackEntity e = new TrackEntity();
+    e.id = track.getId().value();
+    e.title = track.getTitle();
+    e.artistId = track.getArtistId().value();
+    e.artistName = track.getArtistName() != null ? track.getArtistName() : "";
+    e.albumId = track.getAlbumId().map(AlbumId::value).orElse(null);
+    e.albumTitle = track.getAlbumTitle().orElse(null);
+    e.durationSec = track.getDurationSec();
+    e.image = track.getImage();
+    e.ownership = track.getOwnership().name();
+    e.priceMinor = track.getPriceMinor().orElse(null);
+    e.plays = track.getPlays().orElse(0L);
+    e.audioUrl = track.getAudioUrl().orElse(null);
+    e.quality = track.getQuality().orElse(null);
+    e.year = track.getYear().orElse(null);
+    e.status = track.getStatus();
+    em.persist(e);
+  }
+
+  @Override
+  public void saveReleaseWithIdempotencyKey(Release release, String idempotencyKey) {
+    saveRelease(release);
+    if (idempotencyKey != null) {
+      em.createQuery("UPDATE ReleaseEntity r SET r.idempotencyKey = :key WHERE r.id = :id")
+          .setParameter("key", idempotencyKey)
+          .setParameter("id", release.getId())
+          .executeUpdate();
+    }
+  }
+
+  @Override
+  public Optional<Release> findReleaseByIdempotencyKey(String idempotencyKey) {
+    List<ReleaseEntity> results = em.createQuery(
+            "SELECT r FROM ReleaseEntity r WHERE r.idempotencyKey = :key", ReleaseEntity.class)
+        .setParameter("key", idempotencyKey)
+        .getResultList();
+    if (results.isEmpty()) return Optional.empty();
+    ReleaseEntity e = results.get(0);
+    List<ReleaseTrackEntity> tracks = em.createQuery(
+            "SELECT rt FROM ReleaseTrackEntity rt WHERE rt.pk.releaseId = :rid ORDER BY rt.pk.position",
+            ReleaseTrackEntity.class)
+        .setParameter("rid", e.id)
+        .getResultList();
+    return Optional.of(toReleaseDomain(e, tracks));
+  }
+
+  private Release toReleaseDomain(ReleaseEntity e, List<ReleaseTrackEntity> trackEntities) {
+    List<ReleaseTrack> tracks = trackEntities.stream()
+        .map(rt -> new ReleaseTrack(rt.trackId, rt.pk.position, rt.priceMinor))
+        .toList();
+    return Release.reconstitute(
+        e.id,
+        e.artistId,
+        e.title,
+        ReleaseType.valueOf(e.type),
+        ReleaseStatus.valueOf(e.status),
+        Visibility.fromDbValue(e.visibility),
+        e.scheduledAt,
+        e.wentLiveAt,
+        e.listPriceMinor,
+        e.createdAt,
+        e.updatedAt,
+        tracks);
   }
 
   // ---- Batch-mapping helpers ----

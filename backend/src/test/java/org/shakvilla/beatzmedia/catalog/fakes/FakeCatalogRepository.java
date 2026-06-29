@@ -16,8 +16,13 @@ import org.shakvilla.beatzmedia.catalog.domain.BrowseCategory;
 import org.shakvilla.beatzmedia.catalog.domain.Lyrics;
 import org.shakvilla.beatzmedia.catalog.domain.Playlist;
 import org.shakvilla.beatzmedia.catalog.domain.PlaylistId;
+import org.shakvilla.beatzmedia.catalog.domain.Release;
+import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
+import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
 import org.shakvilla.beatzmedia.catalog.domain.Track;
 import org.shakvilla.beatzmedia.catalog.domain.TrackId;
+import org.shakvilla.beatzmedia.platform.domain.Page;
+import org.shakvilla.beatzmedia.platform.domain.PageRequest;
 
 /** In-memory fake for unit tests. */
 public class FakeCatalogRepository implements CatalogRepository {
@@ -28,7 +33,13 @@ public class FakeCatalogRepository implements CatalogRepository {
   private final Map<String, Lyrics> lyrics = new HashMap<>();
   private final Map<String, Playlist> playlists = new HashMap<>();
   private final List<BrowseCategory> browseCategories = new ArrayList<>();
+  private final Map<String, Release> releases = new HashMap<>();
+  private final Map<String, String> idempotencyKeys = new HashMap<>(); // key → releaseId
   private int trendingLimit = 10;
+
+  public void addRelease(Release release) {
+    releases.put(release.getId(), release);
+  }
 
   public void addArtist(ArtistProfile artist) {
     artists.put(artist.getId().value(), artist);
@@ -152,5 +163,55 @@ public class FakeCatalogRepository implements CatalogRepository {
   public List<Playlist> playlistsByIds(List<String> ids) {
     if (ids == null) return List.of();
     return ids.stream().map(playlists::get).filter(p -> p != null).collect(Collectors.toList());
+  }
+
+  // ---- WU-CAT-3 ----
+
+  @Override
+  public Page<Release> releasesByArtist(
+      ArtistId owner, Optional<ReleaseStatus> status, PageRequest pageRequest) {
+    List<Release> filtered = releases.values().stream()
+        .filter(r -> r.getArtistId().equals(owner.value()))
+        .filter(r -> status.isEmpty() || r.getStatus() == status.get())
+        .toList();
+    int from = pageRequest.page() * pageRequest.size();
+    int to = Math.min(from + pageRequest.size(), filtered.size());
+    List<Release> page = from >= filtered.size() ? List.of() : filtered.subList(from, to);
+    return Page.of(page, pageRequest.page(), pageRequest.size(), filtered.size());
+  }
+
+  @Override
+  public Optional<Release> findRelease(ReleaseId id) {
+    return Optional.ofNullable(releases.get(id.value()));
+  }
+
+  @Override
+  public void saveRelease(Release release) {
+    releases.put(release.getId(), release);
+  }
+
+  @Override
+  public void deleteRelease(ReleaseId id) {
+    releases.remove(id.value());
+  }
+
+  @Override
+  public void saveTrack(Track track) {
+    tracks.put(track.getId().value(), track);
+  }
+
+  @Override
+  public Optional<Release> findReleaseByIdempotencyKey(String idempotencyKey) {
+    String releaseId = idempotencyKeys.get(idempotencyKey);
+    if (releaseId == null) return Optional.empty();
+    return Optional.ofNullable(releases.get(releaseId));
+  }
+
+  @Override
+  public void saveReleaseWithIdempotencyKey(Release release, String idempotencyKey) {
+    releases.put(release.getId(), release);
+    if (idempotencyKey != null) {
+      idempotencyKeys.put(idempotencyKey, release.getId());
+    }
   }
 }

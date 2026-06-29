@@ -15,8 +15,6 @@ import org.shakvilla.beatzmedia.catalog.application.port.out.CatalogRepository;
 import org.shakvilla.beatzmedia.catalog.domain.Release;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseTrack;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseType;
-import org.shakvilla.beatzmedia.catalog.domain.SplitConfirmation;
-import org.shakvilla.beatzmedia.catalog.domain.SplitEntry;
 import org.shakvilla.beatzmedia.catalog.domain.SplitOver100Exception;
 import org.shakvilla.beatzmedia.catalog.domain.TrackCountInvalidException;
 import org.shakvilla.beatzmedia.platform.application.port.out.PlatformSettingsProvider;
@@ -85,10 +83,7 @@ public class SubmitReleaseService implements SubmitRelease {
         tracks,
         bundleDiscountPct);
 
-    repo.saveRelease(release);
-
-    // Persist split entries (informational; no FK enforcement needed here)
-    // Split rows are saved via the persistence adapter through saveRelease
+    repo.saveReleaseWithIdempotencyKey(release, command.idempotencyKey());
 
     return toView(release);
   }
