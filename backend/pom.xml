@@ -34,7 +34,7 @@
              retained here as belt-and-suspenders so any future BOM downgrade
              cannot silently reintroduce a vulnerable driver.
              Applies to the runtime image and the Flyway Maven plugin classpath. -->
-        <postgresql.version>42.7.11</postgresql.version>
+        <postgresql.version>42.7.12</postgresql.version>
     </properties>
 
     <dependencyManagement>
