@@ -9,6 +9,7 @@ import java.util.List;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.shakvilla.beatzmedia.audit.fakes.FakeAuditWriter;
 import org.shakvilla.beatzmedia.catalog.application.port.in.StudioReleaseView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.SubmitRelease.SplitEntryCommand;
 import org.shakvilla.beatzmedia.catalog.application.port.in.SubmitRelease.SubmitReleaseCommand;
@@ -42,7 +43,8 @@ class SubmitReleaseServiceTest {
   void setUp() {
     repo = new FakeCatalogRepository();
     settingsProvider = new FakePlatformSettingsProvider(); // defaults: 24% bundle discount
-    service = new SubmitReleaseService(repo, settingsProvider, FakeIds.sequential("rel"), FakeClock.fixed());
+    service = new SubmitReleaseService(
+        repo, settingsProvider, FakeIds.sequential("rel"), FakeClock.fixed(), new FakeAuditWriter());
   }
 
   /** LLFR-CATALOG-02.2: single type with 2 tracks → 422 TRACK_COUNT_INVALID. */

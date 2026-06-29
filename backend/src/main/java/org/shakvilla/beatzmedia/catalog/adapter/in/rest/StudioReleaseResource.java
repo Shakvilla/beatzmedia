@@ -103,12 +103,18 @@ public class StudioReleaseResource {
     return listStudioReleases.list(artistId(), statusFilter, page, size);
   }
 
-  /** POST /v1/studio/releases — LLFR-CATALOG-02.2. */
+  /** POST /v1/studio/releases — LLFR-CATALOG-02.2. Requires Idempotency-Key header. */
   @POST
   @Consumes(MediaType.APPLICATION_JSON)
   public Response submit(
       @HeaderParam("Idempotency-Key") String idempotencyKey,
       SubmitReleaseBody body) {
+    if (idempotencyKey == null || idempotencyKey.isBlank()) {
+      return Response.status(400)
+          .entity("{\"error\":{\"code\":\"MISSING_IDEMPOTENCY_KEY\","
+              + "\"message\":\"Idempotency-Key header is required\"}}")
+          .build();
+    }
     SubmitReleaseCommand cmd = new SubmitReleaseCommand(
         idempotencyKey,
         artistId(),
@@ -175,15 +181,23 @@ public class StudioReleaseResource {
     long size = file.size();
 
     try (InputStream body = java.nio.file.Files.newInputStream(file.uploadedFile())) {
-      // Compute SHA-256 content hash for idempotency
       MessageDigest digest = MessageDigest.getInstance("SHA-256");
-      InputStream digestBody = new DigestInputStream(body, digest);
+      DigestInputStream digestBody = new DigestInputStream(body, digest);
 
-      AudioUpload upload = new AudioUpload(filename, contentType, size, digestBody, null);
-      UploadedTrackView view =
-          uploadReleaseTrack.upload(new ReleaseId(releaseId), artistId(), upload);
+      // Read the stream so the digest is computed before passing to the service
+      byte[] buf = new byte[8192];
+      //noinspection StatementWithEmptyBody
+      while (digestBody.read(buf) != -1) {}
 
-      return Response.status(Response.Status.CREATED).entity(view).build();
+      String contentHash = bytesToHex(digest.digest());
+
+      // Re-open the file for the actual upload command (the stream was consumed above)
+      try (InputStream uploadBody = java.nio.file.Files.newInputStream(file.uploadedFile())) {
+        AudioUpload upload = new AudioUpload(filename, contentType, size, uploadBody, contentHash);
+        UploadedTrackView view =
+            uploadReleaseTrack.upload(new ReleaseId(releaseId), artistId(), upload);
+        return Response.status(Response.Status.CREATED).entity(view).build();
+      }
     } catch (IOException | NoSuchAlgorithmException e) {
       throw new RuntimeException("Failed to read uploaded file", e);
     }
@@ -191,6 +205,14 @@ public class StudioReleaseResource {
 
   private ArtistId artistId() {
     return new ArtistId(jwt.getSubject());
+  }
+
+  private static String bytesToHex(byte[] bytes) {
+    StringBuilder sb = new StringBuilder(bytes.length * 2);
+    for (byte b : bytes) {
+      sb.append(String.format("%02x", b));
+    }
+    return sb.toString();
   }
 
   // ---- DTO types (inner records for JSON binding) ----

@@ -7,6 +7,9 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 
+import org.shakvilla.beatzmedia.audit.application.port.out.AuditWriter;
+import org.shakvilla.beatzmedia.audit.domain.AuditEntry;
+import org.shakvilla.beatzmedia.audit.domain.AuditType;
 import org.shakvilla.beatzmedia.catalog.application.port.in.MoneyView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.StudioReleaseView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.SubmitRelease;
@@ -32,14 +35,20 @@ public class SubmitReleaseService implements SubmitRelease {
   private final PlatformSettingsProvider settings;
   private final IdGenerator ids;
   private final Clock clock;
+  private final AuditWriter auditWriter;
 
   @Inject
   public SubmitReleaseService(
-      CatalogRepository repo, PlatformSettingsProvider settings, IdGenerator ids, Clock clock) {
+      CatalogRepository repo,
+      PlatformSettingsProvider settings,
+      IdGenerator ids,
+      Clock clock,
+      AuditWriter auditWriter) {
     this.repo = repo;
     this.settings = settings;
     this.ids = ids;
     this.clock = clock;
+    this.auditWriter = auditWriter;
   }
 
   @Override
@@ -91,6 +100,17 @@ public class SubmitReleaseService implements SubmitRelease {
         clock.now());
 
     repo.saveReleaseWithIdempotencyKey(release, command.idempotencyKey());
+
+    // INV-10: audit privileged mutation atomically in the same transaction
+    auditWriter.append(new AuditEntry(
+        ids.newId(),
+        command.artistId().value(),
+        "SUBMIT_RELEASE",
+        "Release",
+        release.getId(),
+        AuditType.CATALOG,
+        null,
+        clock.now()));
 
     return toView(release);
   }

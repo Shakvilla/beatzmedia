@@ -1,5 +1,7 @@
 package org.shakvilla.beatzmedia.catalog.application.service;
 
+import java.util.Set;
+
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
@@ -17,9 +19,11 @@ import org.shakvilla.beatzmedia.catalog.domain.Track;
 import org.shakvilla.beatzmedia.catalog.domain.TrackId;
 import org.shakvilla.beatzmedia.media.application.port.in.UploadCommand;
 import org.shakvilla.beatzmedia.media.application.port.in.UploadOriginalUseCase;
+import org.shakvilla.beatzmedia.media.domain.FileTooLargeException;
 import org.shakvilla.beatzmedia.media.domain.MediaHandle;
 import org.shakvilla.beatzmedia.media.domain.MediaKind;
 import org.shakvilla.beatzmedia.media.domain.OwnerRef;
+import org.shakvilla.beatzmedia.media.domain.UnsupportedFormatException;
 import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
 import org.shakvilla.beatzmedia.platform.domain.UnauthorizedException;
 
@@ -30,6 +34,11 @@ import org.shakvilla.beatzmedia.platform.domain.UnauthorizedException;
  */
 @ApplicationScoped
 public class UploadReleaseTrackService implements UploadReleaseTrack {
+
+  private static final Set<String> ALLOWED_TYPES = Set.of(
+      "audio/wav", "audio/x-wav", "audio/flac", "audio/x-flac");
+  /** 500 MB */
+  private static final long MAX_BYTES = 500L * 1024 * 1024;
 
   private final CatalogRepository repo;
   private final UploadOriginalUseCase uploadOriginalUseCase;
@@ -46,6 +55,15 @@ public class UploadReleaseTrackService implements UploadReleaseTrack {
   @Override
   @Transactional
   public UploadedTrackView upload(ReleaseId releaseId, ArtistId artistId, AudioUpload upload) {
+    // Validate format before touching persistence (LLFR-CATALOG-02.4)
+    String ct = upload.contentType() != null ? upload.contentType().toLowerCase() : "";
+    if (!ALLOWED_TYPES.contains(ct)) {
+      throw new UnsupportedFormatException("Only WAV/FLAC accepted, got: " + upload.contentType());
+    }
+    if (upload.sizeBytes() > MAX_BYTES) {
+      throw new FileTooLargeException("Upload exceeds 500 MB limit");
+    }
+
     Release release = repo.findRelease(releaseId)
         .orElseThrow(() -> new ReleaseNotFoundException(releaseId.value()));
     if (!release.getArtistId().equals(artistId.value())) {

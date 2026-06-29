@@ -4,6 +4,9 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 
+import org.shakvilla.beatzmedia.audit.application.port.out.AuditWriter;
+import org.shakvilla.beatzmedia.audit.domain.AuditEntry;
+import org.shakvilla.beatzmedia.audit.domain.AuditType;
 import org.shakvilla.beatzmedia.catalog.application.port.in.MoneyView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.StudioReleaseView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.UpdateRelease;
@@ -13,6 +16,7 @@ import org.shakvilla.beatzmedia.catalog.domain.Release;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseNotFoundException;
 import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
+import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
 import org.shakvilla.beatzmedia.platform.domain.UnauthorizedException;
 
 /**
@@ -24,11 +28,16 @@ public class UpdateReleaseService implements UpdateRelease {
 
   private final CatalogRepository repo;
   private final Clock clock;
+  private final IdGenerator ids;
+  private final AuditWriter auditWriter;
 
   @Inject
-  public UpdateReleaseService(CatalogRepository repo, Clock clock) {
+  public UpdateReleaseService(
+      CatalogRepository repo, Clock clock, IdGenerator ids, AuditWriter auditWriter) {
     this.repo = repo;
     this.clock = clock;
+    this.ids = ids;
+    this.auditWriter = auditWriter;
   }
 
   @Override
@@ -44,6 +53,18 @@ public class UpdateReleaseService implements UpdateRelease {
       release.updateTitle(command.title(), clock.now());
     }
     repo.saveRelease(release);
+
+    // INV-10: audit privileged mutation atomically in the same transaction
+    auditWriter.append(new AuditEntry(
+        ids.newId(),
+        requestingArtist.value(),
+        "UPDATE_RELEASE",
+        "Release",
+        id.value(),
+        AuditType.CATALOG,
+        null,
+        clock.now()));
+
     return toView(release);
   }
 
