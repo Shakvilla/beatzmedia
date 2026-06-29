@@ -17,6 +17,7 @@ import org.shakvilla.beatzmedia.catalog.domain.Album;
 import org.shakvilla.beatzmedia.catalog.domain.AlbumId;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistProfile;
+import org.shakvilla.beatzmedia.catalog.domain.BrowseCategory;
 import org.shakvilla.beatzmedia.catalog.domain.LyricLine;
 import org.shakvilla.beatzmedia.catalog.domain.Lyrics;
 import org.shakvilla.beatzmedia.catalog.domain.OwnershipStatus;
@@ -175,6 +176,129 @@ public class JpaCatalogRepository implements CatalogRepository {
       }
     }
     return ordered;
+  }
+
+  // ---- WU-CAT-2: home feed + browse ----
+
+  @Override
+  public List<BrowseCategory> browseCategories() {
+    return em.createQuery(
+            "SELECT b FROM BrowseCategoryEntity b ORDER BY b.id", BrowseCategoryEntity.class)
+        .getResultList()
+        .stream()
+        .map(e -> new BrowseCategory(e.id, e.title, e.colorClass))
+        .toList();
+  }
+
+  @Override
+  public List<Track> trendingTracks(int limit) {
+    List<TrackEntity> entities =
+        em.createQuery(
+                "SELECT t FROM TrackEntity t WHERE t.status = 'ready' ORDER BY t.plays DESC",
+                TrackEntity.class)
+            .setMaxResults(limit)
+            .getResultList();
+    return mapTracksWithBatchedCredits(entities);
+  }
+
+  @Override
+  public List<Track> top10Tracks(int limit) {
+    List<TrackEntity> entities =
+        em.createQuery(
+                "SELECT t FROM TrackEntity t WHERE t.status = 'ready' ORDER BY t.plays DESC",
+                TrackEntity.class)
+            .setMaxResults(limit)
+            .getResultList();
+    return mapTracksWithBatchedCredits(entities);
+  }
+
+  @Override
+  public List<Album> featuredAlbums(int limit) {
+    List<AlbumEntity> entities =
+        em.createQuery("SELECT a FROM AlbumEntity a ORDER BY a.id", AlbumEntity.class)
+            .setMaxResults(limit)
+            .getResultList();
+    return mapAlbumsWithBatchedTrackIds(entities);
+  }
+
+  @Override
+  public List<Album> albumsByIds(List<String> ids) {
+    if (ids == null || ids.isEmpty()) {
+      return Collections.emptyList();
+    }
+    List<AlbumEntity> entities =
+        em.createQuery("SELECT a FROM AlbumEntity a WHERE a.id IN :ids", AlbumEntity.class)
+            .setParameter("ids", ids)
+            .getResultList();
+    List<Album> mapped = mapAlbumsWithBatchedTrackIds(entities);
+    Map<String, Album> byId =
+        mapped.stream().collect(Collectors.toMap(a -> a.getId().value(), a -> a));
+    return ids.stream().map(byId::get).filter(a -> a != null).toList();
+  }
+
+  @Override
+  public List<ArtistProfile> artistsByIds(List<String> ids) {
+    if (ids == null || ids.isEmpty()) {
+      return Collections.emptyList();
+    }
+    List<ArtistProfileEntity> entities =
+        em.createQuery(
+                "SELECT a FROM ArtistProfileEntity a WHERE a.id IN :ids",
+                ArtistProfileEntity.class)
+            .setParameter("ids", ids)
+            .getResultList();
+    // Batch-load shows for these artists.
+    List<ArtistShowEntity> allShows =
+        em.createQuery(
+                "SELECT s FROM ArtistShowEntity s WHERE s.artistId IN :ids ORDER BY s.position",
+                ArtistShowEntity.class)
+            .setParameter("ids", ids)
+            .getResultList();
+    Map<String, List<ArtistShowEntity>> showsByArtist =
+        allShows.stream().collect(Collectors.groupingBy(s -> s.artistId));
+    Map<String, ArtistProfile> byId = entities.stream()
+        .collect(Collectors.toMap(
+            e -> e.id,
+            e -> toDomain(e, showsByArtist.getOrDefault(e.id, Collections.emptyList()))));
+    return ids.stream().map(byId::get).filter(a -> a != null).toList();
+  }
+
+  @Override
+  public List<Playlist> playlistsByIds(List<String> ids) {
+    if (ids == null || ids.isEmpty()) {
+      return Collections.emptyList();
+    }
+    List<PlaylistEntity> entities =
+        em.createQuery(
+                "SELECT p FROM PlaylistEntity p WHERE p.id IN :ids", PlaylistEntity.class)
+            .setParameter("ids", ids)
+            .getResultList();
+    List<PlaylistTrackEntity> allTracks =
+        em.createQuery(
+                "SELECT pt FROM PlaylistTrackEntity pt WHERE pt.playlistId IN :ids ORDER BY pt.position",
+                PlaylistTrackEntity.class)
+            .setParameter("ids", ids)
+            .getResultList();
+    Map<String, List<String>> trackIdsByPlaylist =
+        allTracks.stream()
+            .collect(
+                Collectors.groupingBy(
+                    pt -> pt.playlistId,
+                    Collectors.mapping(pt -> pt.trackId, Collectors.toList())));
+    Map<String, Playlist> byId = entities.stream()
+        .collect(Collectors.toMap(
+            e -> e.id,
+            e -> new Playlist(
+                new PlaylistId(e.id),
+                e.title,
+                e.description,
+                e.creator,
+                e.creatorAvatar,
+                e.image,
+                e.isPublic,
+                e.followers,
+                trackIdsByPlaylist.getOrDefault(e.id, Collections.emptyList()))));
+    return ids.stream().map(byId::get).filter(p -> p != null).toList();
   }
 
   // ---- Batch-mapping helpers ----

@@ -12,6 +12,7 @@ import org.shakvilla.beatzmedia.catalog.domain.Album;
 import org.shakvilla.beatzmedia.catalog.domain.AlbumId;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistProfile;
+import org.shakvilla.beatzmedia.catalog.domain.BrowseCategory;
 import org.shakvilla.beatzmedia.catalog.domain.Lyrics;
 import org.shakvilla.beatzmedia.catalog.domain.Playlist;
 import org.shakvilla.beatzmedia.catalog.domain.PlaylistId;
@@ -26,6 +27,8 @@ public class FakeCatalogRepository implements CatalogRepository {
   private final Map<String, Track> tracks = new HashMap<>();
   private final Map<String, Lyrics> lyrics = new HashMap<>();
   private final Map<String, Playlist> playlists = new HashMap<>();
+  private final List<BrowseCategory> browseCategories = new ArrayList<>();
+  private int trendingLimit = 10;
 
   public void addArtist(ArtistProfile artist) {
     artists.put(artist.getId().value(), artist);
@@ -45,6 +48,10 @@ public class FakeCatalogRepository implements CatalogRepository {
 
   public void addPlaylist(Playlist playlist) {
     playlists.put(playlist.getId().value(), playlist);
+  }
+
+  public void addBrowseCategory(BrowseCategory category) {
+    browseCategories.add(category);
   }
 
   @Override
@@ -103,5 +110,47 @@ public class FakeCatalogRepository implements CatalogRepository {
       }
     }
     return result;
+  }
+
+  @Override
+  public List<BrowseCategory> browseCategories() {
+    return List.copyOf(browseCategories);
+  }
+
+  @Override
+  public List<Track> trendingTracks(int limit) {
+    return tracks.values().stream()
+        .sorted((a, b) -> Long.compare(
+            b.getPlays().orElse(0L), a.getPlays().orElse(0L)))
+        .limit(limit)
+        .collect(Collectors.toList());
+  }
+
+  @Override
+  public List<Track> top10Tracks(int limit) {
+    return trendingTracks(limit);
+  }
+
+  @Override
+  public List<Album> featuredAlbums(int limit) {
+    return albums.values().stream().limit(limit).collect(Collectors.toList());
+  }
+
+  @Override
+  public List<Album> albumsByIds(List<String> ids) {
+    if (ids == null) return List.of();
+    return ids.stream().map(albums::get).filter(a -> a != null).collect(Collectors.toList());
+  }
+
+  @Override
+  public List<ArtistProfile> artistsByIds(List<String> ids) {
+    if (ids == null) return List.of();
+    return ids.stream().map(artists::get).filter(a -> a != null).collect(Collectors.toList());
+  }
+
+  @Override
+  public List<Playlist> playlistsByIds(List<String> ids) {
+    if (ids == null) return List.of();
+    return ids.stream().map(playlists::get).filter(p -> p != null).collect(Collectors.toList());
   }
 }

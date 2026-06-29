@@ -313,3 +313,17 @@ VALUES
   ('private-test-playlist', 'last-last', 0)
 ON CONFLICT (playlist_id, position) DO UPDATE
   SET track_id = EXCLUDED.track_id;
+
+
+-- Browse categories (WU-CAT-2: mock-data.ts browseCategories)
+INSERT INTO browse_category (id, title, color_class) VALUES
+  ('afrobeats',  'Afrobeats',  'from-orange-500 to-amber-400'),
+  ('hiplife',    'Hiplife',    'from-purple-500 to-pink-400'),
+  ('highlife',   'Highlife',   'from-green-500 to-teal-400'),
+  ('amapiano',   'Amapiano',   'from-blue-500 to-cyan-400'),
+  ('drill',      'Drill',      'from-red-500 to-rose-400'),
+  ('gospel',     'Gospel',     'from-yellow-500 to-lime-400'),
+  ('rb',         'R&B',        'from-indigo-500 to-violet-400'),
+  ('reggae',     'Reggae',     'from-emerald-500 to-green-400'),
+  ('jazz',       'Jazz',       'from-slate-500 to-gray-400')
+ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, color_class = EXCLUDED.color_class;

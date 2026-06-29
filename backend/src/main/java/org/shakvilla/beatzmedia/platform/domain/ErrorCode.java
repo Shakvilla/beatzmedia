@@ -35,5 +35,8 @@ public enum ErrorCode {
   ARTIST_NOT_FOUND,
   ALBUM_NOT_FOUND,
   TRACK_NOT_FOUND,
-  LYRICS_NOT_FOUND
+  LYRICS_NOT_FOUND,
+  PLAYLIST_NOT_FOUND,
+  // ---- Catalog codes (WU-CAT-2) ----
+  MISSING_QUERY
 }
