@@ -91,7 +91,7 @@
 # executables into the final image (multi-stage copy) — no extra RPM repos or
 # microdnf calls needed on UBI9, which lacks ffmpeg in the default content sets.
 # ADR (WU-MED-1 §2 / Dockerfile.jvm note).
-FROM mwader/static-ffmpeg:7.1.1 AS ffmpeg-stage
+FROM mwader/static-ffmpeg:8.1.2 AS ffmpeg-stage
 
 # ── Stage 2: Quarkus JVM runtime ─────────────────────────────────────────────
 FROM registry.access.redhat.com/ubi9/openjdk-25-runtime:1.24-2.1781533370
