@@ -16,13 +16,19 @@ import jakarta.ws.rs.core.MediaType;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.shakvilla.beatzmedia.catalog.application.port.in.AlbumView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.ArtistView;
+import org.shakvilla.beatzmedia.catalog.application.port.in.BrowseCategoryView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.GetAlbum;
 import org.shakvilla.beatzmedia.catalog.application.port.in.GetArtist;
+import org.shakvilla.beatzmedia.catalog.application.port.in.GetHomeFeed;
 import org.shakvilla.beatzmedia.catalog.application.port.in.GetLyrics;
 import org.shakvilla.beatzmedia.catalog.application.port.in.GetPlaylist;
 import org.shakvilla.beatzmedia.catalog.application.port.in.GetTrack;
+import org.shakvilla.beatzmedia.catalog.application.port.in.HomeFeedView;
+import org.shakvilla.beatzmedia.catalog.application.port.in.ListBrowseCategories;
 import org.shakvilla.beatzmedia.catalog.application.port.in.LyricsView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.PlaylistView;
+import org.shakvilla.beatzmedia.catalog.application.port.in.Search;
+import org.shakvilla.beatzmedia.catalog.application.port.in.SearchResultsView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.ShowView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.TrackView;
 import org.shakvilla.beatzmedia.catalog.domain.AlbumId;
@@ -55,6 +61,9 @@ public class PublicCatalogResource {
   private final GetTrack getTrack;
   private final GetLyrics getLyrics;
   private final GetPlaylist getPlaylist;
+  private final GetHomeFeed getHomeFeed;
+  private final Search search;
+  private final ListBrowseCategories listBrowseCategories;
   private final JsonWebToken jwt;
 
   @Inject
@@ -64,12 +73,18 @@ public class PublicCatalogResource {
       GetTrack getTrack,
       GetLyrics getLyrics,
       GetPlaylist getPlaylist,
+      GetHomeFeed getHomeFeed,
+      Search search,
+      ListBrowseCategories listBrowseCategories,
       JsonWebToken jwt) {
     this.getArtist = getArtist;
     this.getAlbum = getAlbum;
     this.getTrack = getTrack;
     this.getLyrics = getLyrics;
     this.getPlaylist = getPlaylist;
+    this.getHomeFeed = getHomeFeed;
+    this.search = search;
+    this.listBrowseCategories = listBrowseCategories;
     this.jwt = jwt;
   }
 
@@ -129,6 +144,27 @@ public class PublicCatalogResource {
   @Path("/playlists/{id}")
   public PlaylistView getPlaylist(@PathParam("id") String id) {
     return getPlaylist.get(new PlaylistId(id), callerId());
+  }
+
+  /** GET /v1/home — LLFR-CATALOG-01.1. */
+  @GET
+  @Path("/home")
+  public HomeFeedView getHomeFeed() {
+    return getHomeFeed.get(callerId());
+  }
+
+  /** GET /v1/search?q= — LLFR-CATALOG-01.2. Returns 422 MISSING_QUERY when q is blank. */
+  @GET
+  @Path("/search")
+  public SearchResultsView search(@QueryParam("q") String q) {
+    return search.search(q, callerId());
+  }
+
+  /** GET /v1/browse-categories — LLFR-CATALOG-01.3. */
+  @GET
+  @Path("/browse-categories")
+  public List<BrowseCategoryView> browseCategories() {
+    return listBrowseCategories.list();
   }
 
   /** Extract caller account id from JWT sub, if a valid token is present. */

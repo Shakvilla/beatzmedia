@@ -134,7 +134,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-CAT-1, WU-SRCH-1]
     llfrs: [LLFR-CATALOG-01.1, LLFR-CATALOG-01.2, LLFR-CATALOG-01.3]
-    status: todo
+    status: in_progress
   - id: WU-CAT-3
     title: Release wizard submit + manage + track upload
     phase: 1
