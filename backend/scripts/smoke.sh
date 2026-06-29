@@ -103,6 +103,15 @@ if ! DC up -d --build; then
   exit 1
 fi
 
+# Resolve the actual host port Docker bound to (Docker Desktop on macOS may remap 8080→8081).
+APP_HOST_PORT="$(docker port "$(DC ps -q app 2>/dev/null | head -1)" 8080/tcp 2>/dev/null \
+  | head -1 | sed 's/.*://')"
+if [ -n "$APP_HOST_PORT" ] && [ "$APP_HOST_PORT" != "8080" ]; then
+  warn "Docker mapped container :8080 to host :${APP_HOST_PORT} — adjusting probe URLs"
+  HEALTH_URL="http://localhost:${APP_HOST_PORT}/q/health/ready"
+  LIVE_URL="http://localhost:${APP_HOST_PORT}/q/health/live"
+fi
+
 section "Waiting for readiness ($HEALTH_URL, up to ${TIMEOUT}s)"
 deadline=$(( $(date +%s) + TIMEOUT ))
 ready=0
@@ -141,7 +150,7 @@ fi
 
 # Optional representative read endpoint. Treated as best-effort: a 404 on an
 # early project (endpoint not built yet) is a WARN, not a failure.
-CATALOG_URL="http://localhost:8080/v1/catalog/releases?page=1&size=1"
+CATALOG_URL="http://localhost:${APP_HOST_PORT:-8080}/v1/catalog/releases?page=1&size=1"
 code="$(curl -s -o /dev/null -w '%{http_code}' -H 'Accept: application/json' "$CATALOG_URL" 2>/dev/null || echo 000)"
 case "$code" in
   2*) status_row OK   "GET /v1/catalog/releases" "HTTP $code" ;;
