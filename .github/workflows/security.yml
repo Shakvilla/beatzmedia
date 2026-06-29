@@ -96,7 +96,7 @@ jobs:
 
       # --- Filesystem scan (source tree: deps, IaC, misconfig) ---
       - name: Trivy filesystem scan
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: fs
           scan-ref: backend
@@ -125,7 +125,7 @@ jobs:
       # Table format passes --severity/--exit-code straight to trivy, so the gate
       # is scoped correctly and the findings table is printed to the job log.
       - name: Trivy image scan (gate — fail on HIGH/CRITICAL)
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: image
           image-ref: beatzmedia:scan
@@ -137,7 +137,7 @@ jobs:
       # so MEDIUM/LOW surface in the Security tab without blocking the merge.
       - name: Trivy image scan (SARIF report)
         if: ${{ !cancelled() }}
-        uses: aquasecurity/trivy-action@0.35.0
+        uses: aquasecurity/trivy-action@v0.36.0
         with:
           scan-type: image
           image-ref: beatzmedia:scan
