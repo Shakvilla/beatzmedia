@@ -161,7 +161,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-IDN-1, WU-CAT-1]
     llfrs: [LLFR-LIBRARY-01.1, LLFR-LIBRARY-01.2, LLFR-LIBRARY-01.3, LLFR-LIBRARY-01.4, LLFR-LIBRARY-01.5, LLFR-LIBRARY-01.6]
-    status: todo
+    status: done
 
   # ---------------- Phase 2 — Commerce & Payments core ----------------
   - id: WU-PAY-1
