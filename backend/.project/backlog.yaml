@@ -125,7 +125,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-CAT-1]
     llfrs: [LLFR-SEARCH-01.1, LLFR-SEARCH-01.2]
-    status: in_progress
+    status: in_review
   - id: WU-CAT-2
     title: Home feed + browse + search read
     phase: 1
