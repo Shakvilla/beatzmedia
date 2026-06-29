@@ -190,14 +190,45 @@ class SchedulerRegistryIT {
   void registry_jobRunsExactlyOnce_underConcurrentThreads() throws Exception {
     // Stress test: N threads (simulating N cluster nodes) concurrently call runWithLock.
     // Advisory lock ensures exactly one thread wins and the job runs exactly once.
+    //
+    // What this proves and what it must NOT depend on: the advisory lock guarantees
+    // *at-most-one concurrent* execution — i.e. while one node holds the lock, no other node can
+    // run the job. It does NOT (and is not meant to) guarantee "exactly once for all time": if a
+    // late node attempts to acquire *after* the winner has already finished and released, it would
+    // legitimately run the job again (idempotency is each job's own responsibility — see
+    // SchedulerRegistry javadoc).
+    //
+    // The `start` latch only synchronises the *start* of each thread; the first thing each thread
+    // then does inside runWithLock is open a brand-new JDBC connection (this test's SimpleDataSource
+    // creates a fresh TCP+auth session per call). That connection-establishment latency is high and
+    // highly variable on some Docker hosts (observed 76–265 ms on macOS Docker Desktop vs a few ms
+    // on native-Linux CI). So a fixed "hold the lock for 50 ms" window is NOT a reliable way to
+    // force genuine contention: if a node's connection setup takes longer than the hold window, it
+    // reaches tryAcquire after the winner has released and runs the job a second time — a window
+    // race, not a lock failure.
+    //
+    // To test the actual invariant deterministically, the winner holds the lock until EVERY other
+    // node has completed its acquire attempt (and therefore necessarily skipped). This guarantees
+    // all N attempts overlap the winner's hold regardless of connection-setup jitter, so exactly one
+    // node ever sees the lock free. Result is independent of timing — passes on any host.
     int nodeCount = 8;
     AtomicInteger runCount = new AtomicInteger();
+    // Counts down once per node when its acquire attempt resolves. The winner (inside runOnce)
+    // counts its own attempt, then blocks until the remaining nodeCount-1 nodes have also attempted,
+    // holding the lock across all of them so every other node is forced to skip.
+    CountDownLatch allAttempted = new CountDownLatch(nodeCount);
     ScheduledJob job = new ScheduledJob() {
       @Override public String jobName() { return "stress.test.job"; }
       @Override public void runOnce() {
         runCount.incrementAndGet();
-        // Hold the lock briefly so other threads have a chance to contend
-        try { Thread.sleep(50); } catch (InterruptedException e) { Thread.currentThread().interrupt(); }
+        allAttempted.countDown();  // the winner's own attempt
+        try {
+          // Hold the lock until all other nodes have attempted (and skipped). Bounded so a bug
+          // can't hang the suite; under correct behaviour every other node skips quickly.
+          allAttempted.await(20, TimeUnit.SECONDS);
+        } catch (InterruptedException e) {
+          Thread.currentThread().interrupt();
+        }
       }
     };
 
@@ -215,6 +246,10 @@ class SchedulerRegistryIT {
         try {
           start.await();
           r.runWithLock("stress.test.job");
+          // A node that SKIPPED returns here without entering runOnce; record its attempt so the
+          // winner can stop holding. The winner reaches this only after its own runOnce returned,
+          // by which point the latch is already at 0 (countDown is then a harmless no-op).
+          allAttempted.countDown();
         } catch (InterruptedException e) {
           Thread.currentThread().interrupt();
         } finally {

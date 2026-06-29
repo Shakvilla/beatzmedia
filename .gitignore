@@ -9,3 +9,6 @@
 # Per-machine local Compose overrides (e.g. host port remaps)
 docker-compose.override.yml
 compose.override.yml
+
+# Graphify knowledge graph output (local tooling artifact)
+graphify-out/

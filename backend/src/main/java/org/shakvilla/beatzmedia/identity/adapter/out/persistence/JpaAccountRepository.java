@@ -12,6 +12,7 @@ import org.shakvilla.beatzmedia.identity.domain.Account;
 import org.shakvilla.beatzmedia.identity.domain.AccountId;
 import org.shakvilla.beatzmedia.identity.domain.AdminMember;
 import org.shakvilla.beatzmedia.identity.domain.AdminRole;
+import org.shakvilla.beatzmedia.identity.domain.FanSettings;
 
 /**
  * JPA/Panache-style implementation of {@link AccountRepository}. Persists the account aggregate
@@ -76,6 +77,21 @@ public class JpaAccountRepository implements AccountRepository {
     }
 
     return account;
+  }
+
+  // --- WU-IDN-3: fan-settings methods ---
+
+  @Override
+  public Optional<FanSettings> findSettings(AccountId id) {
+    FanSettingsEntity entity = em.find(FanSettingsEntity.class, id.value());
+    return Optional.ofNullable(entity).map(FanSettingsMapper::toDomain);
+  }
+
+  @Override
+  public FanSettings saveSettings(FanSettings settings) {
+    FanSettingsEntity entity = FanSettingsMapper.toEntity(settings);
+    em.merge(entity);
+    return settings;
   }
 
   // --- WU-IDN-4: admin-team methods ---

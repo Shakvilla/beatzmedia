@@ -43,6 +43,16 @@ public final class Account {
   }
 
   /**
+   * Returns a new Account with {@code isArtist=true} and {@code updatedAt} set to {@code now}.
+   * The Account is immutable so this returns a copy. Idempotent: callers should check
+   * {@code isArtist()} first and skip if already true (no-op success).
+   * Identity ADD §3 / LLFR-IDENTITY-02.2.
+   */
+  public Account upgradeToArtist(Instant now) {
+    return new Account(id, name, email, avatar, true, isAdmin, status, createdAt, now, credential);
+  }
+
+  /**
    * Factory for a new fan account. Sets isArtist=false, isAdmin=false, status=active. Identity ADD
    * §3 / LLFR-IDENTITY-01.1.
    */
