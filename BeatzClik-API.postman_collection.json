@@ -1,0 +1,346 @@
+{
+  "info": {
+    "name": "BeatzClik Media API",
+    "description": "BeatzClik buy-to-own music streaming & marketplace API.\n\n**Base URL:** `{{baseUrl}}`\n\nSet the `baseUrl` variable to `http://localhost:8081` for local Docker.\n\nAfter signup/login, copy the returned `token` into the `jwt` collection variable to authenticate protected endpoints.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "variable": [
+    { "key": "baseUrl", "value": "http://localhost:8081", "type": "string" },
+    { "key": "jwt",     "value": "",                      "type": "string" }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Signup",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/v1/auth/signup",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"name\": \"Kwame Mensah\",\n  \"email\": \"kwame@beatzclik.com\",\n  \"password\": \"Password123!\"\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "if (pm.response.code === 200 || pm.response.code === 201) {",
+              "  var json = pm.response.json();",
+              "  if (json.token) pm.collectionVariables.set('jwt', json.token);",
+              "}"
+            ], "type": "text/javascript" }
+          }]
+        },
+        {
+          "name": "Login",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/v1/auth/login",
+            "header": [{ "key": "Content-Type", "value": "application/json" }],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"kwame@beatzclik.com\",\n  \"password\": \"Password123!\"\n}"
+            }
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "if (pm.response.code === 200) {",
+              "  var json = pm.response.json();",
+              "  if (json.token) pm.collectionVariables.set('jwt', json.token);",
+              "}"
+            ], "type": "text/javascript" }
+          }]
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/v1/auth/logout",
+            "header": [{ "key": "Authorization", "value": "Bearer {{jwt}}" }]
+          }
+        }
+      ]
+    },
+    {
+      "name": "Home Feed & Browse (WU-CAT-2)",
+      "item": [
+        {
+          "name": "GET /v1/home",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/v1/home",
+            "description": "Returns trending tracks, top10 tracks, and featured albums. Public — no auth required."
+          }
+        },
+        {
+          "name": "GET /v1/browse-categories",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/v1/browse-categories",
+            "description": "Returns all browse category tiles (id, title, colorClass). Public."
+          }
+        },
+        {
+          "name": "GET /v1/search?q=black sherif",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/v1/search?q=black sherif",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "search"],
+              "query": [{ "key": "q", "value": "black sherif" }]
+            },
+            "description": "Full-text + trigram search across tracks, artists, albums, playlists. Public.\n\nTry also: `q=burna`, `q=afrobeats`, `q=love damini`"
+          }
+        },
+        {
+          "name": "GET /v1/search — 422 MISSING_QUERY",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/v1/search",
+            "description": "Omitting `q` returns 422 MISSING_QUERY."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Catalog — Artists (WU-CAT-1)",
+      "item": [
+        {
+          "name": "GET /v1/artists/:id — Black Sherif",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/v1/artists/black-sherif",
+            "description": "Artist profile. Seeded IDs: black-sherif, burna-boy, asake, king-promise, lasmid, stonebwoy, sarkodie, wizkid, davido, amaarae"
+          }
+        },
+        {
+          "name": "GET /v1/artists/:id/tracks",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/v1/artists/black-sherif/tracks"
+          }
+        },
+        {
+          "name": "GET /v1/artists/:id/albums",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/v1/artists/burna-boy/albums"
+          }
+        },
+        {
+          "name": "GET /v1/artists/:id/shows",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/v1/artists/black-sherif/shows"
+          }
+        },
+        {
+          "name": "GET /v1/artists/:id — 404 ARTIST_NOT_FOUND",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/v1/artists/unknown-artist-xyz"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Catalog — Albums (WU-CAT-1)",
+      "item": [
+        {
+          "name": "GET /v1/albums/:id",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/v1/albums/love-damini",
+            "description": "Album detail. Seeded IDs: love-damini, twice-as-tall, work-of-art, the-golden-ticket, friday-night-plan"
+          }
+        },
+        {
+          "name": "GET /v1/albums/:id?tracks=true",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/v1/albums/love-damini?tracks=true",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "albums", "love-damini"],
+              "query": [{ "key": "tracks", "value": "true" }]
+            },
+            "description": "Embeds full Track[] in the album response."
+          }
+        },
+        {
+          "name": "GET /v1/albums/:id — 404 ALBUM_NOT_FOUND",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/v1/albums/does-not-exist"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Catalog — Tracks (WU-CAT-1)",
+      "item": [
+        {
+          "name": "GET /v1/tracks/:id",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/v1/tracks/last-last",
+            "description": "Track detail with credits and quality. Seeded IDs: last-last, twice-as-tall, ye, dangerous-love, friday-night-plan, second-sermon, bleeding, cast, chemistry, until-now"
+          }
+        },
+        {
+          "name": "GET /v1/tracks/:id/lyrics",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/v1/tracks/last-last/lyrics",
+            "description": "Timed lyrics lines. Returns 404 LYRICS_NOT_FOUND if no lyrics exist for the track."
+          }
+        },
+        {
+          "name": "GET /v1/tracks/:id — 404 TRACK_NOT_FOUND",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/v1/tracks/no-such-track"
+          }
+        }
+      ]
+    },
+    {
+      "name": "Catalog — Playlists (WU-CAT-1)",
+      "item": [
+        {
+          "name": "GET /v1/playlists/:id",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/v1/playlists/afrobeats-heat",
+            "description": "Playlist with embedded tracks. Seeded IDs: afrobeats-heat, ghana-top-hits, west-africa-vibes. Private playlists by non-owner return 404."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Me / Identity (WU-IDN-1 + WU-IDN-3)",
+      "item": [
+        {
+          "name": "POST /v1/me/become-artist",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/v1/me/become-artist",
+            "header": [{ "key": "Authorization", "value": "Bearer {{jwt}}" }],
+            "description": "Upgrades a fan account to artist role. Requires login first."
+          }
+        },
+        {
+          "name": "PATCH /v1/me/settings",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/v1/me/settings",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{jwt}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"theme\": \"dark\",\n  \"audioQuality\": \"high\",\n  \"country\": \"GH\",\n  \"notifications\": {\n    \"newReleases\": true,\n    \"playlistUpdates\": false,\n    \"dropsOffers\": true\n  }\n}"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "Admin (WU-IDN-4 + WU-AUD-1)",
+      "item": [
+        {
+          "name": "GET /v1/admin/team",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/v1/admin/team",
+            "header": [{ "key": "Authorization", "value": "Bearer {{jwt}}" }],
+            "description": "List admin team members. Requires super-admin / finance / moderator / editor / support role."
+          }
+        },
+        {
+          "name": "POST /v1/admin/team/invite",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/v1/admin/team/invite",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{jwt}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"moderator@beatzclik.com\",\n  \"role\": \"moderator\"\n}"
+            },
+            "description": "Invite a new admin team member. Requires super-admin role."
+          }
+        },
+        {
+          "name": "PATCH /v1/admin/team/:id — change role",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/v1/admin/team/MEMBER_ID_HERE",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{jwt}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"role\": \"editor\"\n}"
+            }
+          }
+        },
+        {
+          "name": "DELETE /v1/admin/team/:id",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/v1/admin/team/MEMBER_ID_HERE",
+            "header": [{ "key": "Authorization", "value": "Bearer {{jwt}}" }]
+          }
+        },
+        {
+          "name": "GET /v1/admin/audit",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/v1/admin/audit?page=1&size=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "admin", "audit"],
+              "query": [
+                { "key": "page", "value": "1" },
+                { "key": "size", "value": "20" },
+                { "key": "actor", "value": "", "disabled": true },
+                { "key": "type",  "value": "", "disabled": true },
+                { "key": "q",     "value": "", "disabled": true }
+              ]
+            },
+            "header": [{ "key": "Authorization", "value": "Bearer {{jwt}}" }],
+            "description": "Paginated audit log. Requires super-admin role."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "GET /q/health/ready",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/q/health/ready"
+          }
+        },
+        {
+          "name": "GET /q/health/live",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/q/health/live"
+          }
+        }
+      ]
+    }
+  ]
+}

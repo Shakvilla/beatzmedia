@@ -33,19 +33,20 @@ public class DomainExceptionMapper implements ExceptionMapper<DomainException> {
   private int mapStatus(ErrorCode code) {
     return switch (code) {
       case VALIDATION, UNSUPPORTED_FORMAT, FILE_REJECTED, WEAK_PASSWORD, INVALID_ROLE,
-              MISSING_QUERY ->
+              MISSING_QUERY, TRACK_COUNT_INVALID, SPLIT_OVER_100 ->
           UNPROCESSABLE_ENTITY;
       case NOT_FOUND,
               ARTIST_NOT_FOUND,
               ALBUM_NOT_FOUND,
               TRACK_NOT_FOUND,
               LYRICS_NOT_FOUND,
-              PLAYLIST_NOT_FOUND ->
+              PLAYLIST_NOT_FOUND,
+              RELEASE_NOT_FOUND ->
           Response.Status.NOT_FOUND.getStatusCode();
       case UNAUTHENTICATED, INVALID_CREDENTIALS -> Response.Status.UNAUTHORIZED.getStatusCode();
       case UNAUTHORIZED, FEATURE_DISABLED, ACCOUNT_SUSPENDED ->
           Response.Status.FORBIDDEN.getStatusCode();
-      case CONFLICT, ILLEGAL_TRANSITION, EMAIL_TAKEN, LAST_SUPER_ADMIN ->
+      case CONFLICT, ILLEGAL_TRANSITION, EMAIL_TAKEN, LAST_SUPER_ADMIN, RELEASE_LIVE ->
           Response.Status.CONFLICT.getStatusCode();
       case METHOD_NOT_ALLOWED -> 405;
       case RATE_LIMITED -> Response.Status.TOO_MANY_REQUESTS.getStatusCode();
