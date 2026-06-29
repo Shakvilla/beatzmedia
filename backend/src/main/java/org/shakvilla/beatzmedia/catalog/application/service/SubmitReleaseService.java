@@ -2,7 +2,6 @@ package org.shakvilla.beatzmedia.catalog.application.service;
 
 import java.util.List;
 import java.util.Optional;
-import java.util.UUID;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -17,6 +16,8 @@ import org.shakvilla.beatzmedia.catalog.domain.ReleaseTrack;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseType;
 import org.shakvilla.beatzmedia.catalog.domain.SplitOver100Exception;
 import org.shakvilla.beatzmedia.catalog.domain.TrackCountInvalidException;
+import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
+import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
 import org.shakvilla.beatzmedia.platform.application.port.out.PlatformSettingsProvider;
 
 /**
@@ -29,11 +30,16 @@ public class SubmitReleaseService implements SubmitRelease {
 
   private final CatalogRepository repo;
   private final PlatformSettingsProvider settings;
+  private final IdGenerator ids;
+  private final Clock clock;
 
   @Inject
-  public SubmitReleaseService(CatalogRepository repo, PlatformSettingsProvider settings) {
+  public SubmitReleaseService(
+      CatalogRepository repo, PlatformSettingsProvider settings, IdGenerator ids, Clock clock) {
     this.repo = repo;
     this.settings = settings;
+    this.ids = ids;
+    this.clock = clock;
   }
 
   @Override
@@ -71,7 +77,7 @@ public class SubmitReleaseService implements SubmitRelease {
         .toList();
 
     int bundleDiscountPct = settings.current().bundleDiscountPct();
-    String id = UUID.randomUUID().toString();
+    String id = ids.newId();
 
     Release release = Release.create(
         id,
@@ -81,7 +87,8 @@ public class SubmitReleaseService implements SubmitRelease {
         command.visibility(),
         null, // scheduledAt — parsed later in WU-CAT-4
         tracks,
-        bundleDiscountPct);
+        bundleDiscountPct,
+        clock.now());
 
     repo.saveReleaseWithIdempotencyKey(release, command.idempotencyKey());
 

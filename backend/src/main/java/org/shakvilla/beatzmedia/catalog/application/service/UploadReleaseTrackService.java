@@ -1,7 +1,5 @@
 package org.shakvilla.beatzmedia.catalog.application.service;
 
-import java.util.UUID;
-
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
@@ -23,6 +21,7 @@ import org.shakvilla.beatzmedia.media.application.port.in.UploadOriginalUseCase;
 import org.shakvilla.beatzmedia.media.domain.MediaHandle;
 import org.shakvilla.beatzmedia.media.domain.MediaKind;
 import org.shakvilla.beatzmedia.media.domain.OwnerRef;
+import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
 import org.shakvilla.beatzmedia.platform.domain.UnauthorizedException;
 
 /**
@@ -35,12 +34,14 @@ public class UploadReleaseTrackService implements UploadReleaseTrack {
 
   private final CatalogRepository repo;
   private final UploadOriginalUseCase uploadOriginalUseCase;
+  private final IdGenerator ids;
 
   @Inject
   public UploadReleaseTrackService(
-      CatalogRepository repo, UploadOriginalUseCase uploadOriginalUseCase) {
+      CatalogRepository repo, UploadOriginalUseCase uploadOriginalUseCase, IdGenerator ids) {
     this.repo = repo;
     this.uploadOriginalUseCase = uploadOriginalUseCase;
+    this.ids = ids;
   }
 
   @Override
@@ -52,7 +53,7 @@ public class UploadReleaseTrackService implements UploadReleaseTrack {
       throw new UnauthorizedException("Not your release");
     }
 
-    String trackId = UUID.randomUUID().toString();
+    String trackId = ids.newId();
     String title = filenameWithoutExtension(upload.filename());
 
     OwnerRef ownerRef = new OwnerRef("catalog", trackId);

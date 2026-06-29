@@ -21,6 +21,8 @@ import org.shakvilla.beatzmedia.catalog.domain.SplitOver100Exception;
 import org.shakvilla.beatzmedia.catalog.domain.TrackCountInvalidException;
 import org.shakvilla.beatzmedia.catalog.domain.Visibility;
 import org.shakvilla.beatzmedia.catalog.fakes.FakeCatalogRepository;
+import org.shakvilla.beatzmedia.platform.fakes.FakeClock;
+import org.shakvilla.beatzmedia.platform.fakes.FakeIds;
 import org.shakvilla.beatzmedia.platform.fakes.FakePlatformSettingsProvider;
 
 /**
@@ -40,7 +42,7 @@ class SubmitReleaseServiceTest {
   void setUp() {
     repo = new FakeCatalogRepository();
     settingsProvider = new FakePlatformSettingsProvider(); // defaults: 24% bundle discount
-    service = new SubmitReleaseService(repo, settingsProvider);
+    service = new SubmitReleaseService(repo, settingsProvider, FakeIds.sequential("rel"), FakeClock.fixed());
   }
 
   /** LLFR-CATALOG-02.2: single type with 2 tracks → 422 TRACK_COUNT_INVALID. */

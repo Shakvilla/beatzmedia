@@ -12,6 +12,7 @@ import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
 import org.shakvilla.beatzmedia.catalog.domain.Release;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseNotFoundException;
+import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
 import org.shakvilla.beatzmedia.platform.domain.UnauthorizedException;
 
 /**
@@ -22,10 +23,12 @@ import org.shakvilla.beatzmedia.platform.domain.UnauthorizedException;
 public class UpdateReleaseService implements UpdateRelease {
 
   private final CatalogRepository repo;
+  private final Clock clock;
 
   @Inject
-  public UpdateReleaseService(CatalogRepository repo) {
+  public UpdateReleaseService(CatalogRepository repo, Clock clock) {
     this.repo = repo;
+    this.clock = clock;
   }
 
   @Override
@@ -38,7 +41,7 @@ public class UpdateReleaseService implements UpdateRelease {
       throw new UnauthorizedException("Not your release");
     }
     if (command.title() != null) {
-      release.updateTitle(command.title());
+      release.updateTitle(command.title(), clock.now());
     }
     repo.saveRelease(release);
     return toView(release);

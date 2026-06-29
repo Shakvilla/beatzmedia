@@ -57,6 +57,8 @@ public final class Release {
   /**
    * Factory for creating a new release submission. Computes list price via INV-5. Status is set to
    * {@code in_review} automatically.
+   *
+   * @param now current instant (supplied by caller via Clock port — never call Instant.now() here)
    */
   public static Release create(
       String id,
@@ -66,10 +68,10 @@ public final class Release {
       Visibility visibility,
       Instant scheduledAt,
       List<ReleaseTrack> tracks,
-      int bundleDiscountPct) {
+      int bundleDiscountPct,
+      Instant now) {
 
     long listPrice = computeListPrice(type, tracks, bundleDiscountPct);
-    Instant now = Instant.now();
     return new Release(
         id, artistId, title, type, ReleaseStatus.in_review, visibility,
         scheduledAt, null, listPrice, now, now, tracks);
@@ -107,13 +109,13 @@ public final class Release {
     return total.longValue();
   }
 
-  public void updateTitle(String newTitle) {
+  public void updateTitle(String newTitle, Instant now) {
     this.title = newTitle;
-    this.updatedAt = Instant.now();
+    this.updatedAt = now;
   }
 
-  public void markUpdated() {
-    this.updatedAt = Instant.now();
+  public void markUpdated(Instant now) {
+    this.updatedAt = now;
   }
 
   public String getId() { return id; }
