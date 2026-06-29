@@ -79,7 +79,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-IDN-1]
     llfrs: [LLFR-IDENTITY-02.2, LLFR-IDENTITY-02.3]
-    status: in_review
+    status: done
   - id: WU-IDN-4
     title: Admin members + RBAC scope enforcement
     phase: 1
@@ -125,7 +125,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-CAT-1]
     llfrs: [LLFR-SEARCH-01.1, LLFR-SEARCH-01.2]
-    status: todo
+    status: in_review
   - id: WU-CAT-2
     title: Home feed + browse + search read
     phase: 1
