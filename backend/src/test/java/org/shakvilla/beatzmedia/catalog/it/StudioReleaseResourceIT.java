@@ -106,8 +106,8 @@ class StudioReleaseResourceIT {
               "type": "ep",
               "visibility": "public",
               "tracks": [
-                { "trackId": "seed-track-1", "position": 1, "priceMinor": 1000, "splits": [] },
-                { "trackId": "seed-track-2", "position": 2, "priceMinor": 1000, "splits": [] }
+                { "trackId": "last-last", "position": 1, "priceMinor": 1000, "splits": [] },
+                { "trackId": "its-plenty", "position": 2, "priceMinor": 1000, "splits": [] }
               ]
             }
             """)
@@ -135,7 +135,7 @@ class StudioReleaseResourceIT {
               "type": "ep",
               "visibility": "public",
               "tracks": [
-                { "trackId": "seed-track-1", "position": 1, "priceMinor": 1000, "splits": [] }
+                { "trackId": "last-last", "position": 1, "priceMinor": 1000, "splits": [] }
               ]
             }
             """)
@@ -163,8 +163,8 @@ class StudioReleaseResourceIT {
               "type": "single",
               "visibility": "public",
               "tracks": [
-                { "trackId": "seed-track-1", "position": 1, "priceMinor": 500, "splits": [] },
-                { "trackId": "seed-track-2", "position": 2, "priceMinor": 500, "splits": [] }
+                { "trackId": "last-last", "position": 1, "priceMinor": 500, "splits": [] },
+                { "trackId": "its-plenty", "position": 2, "priceMinor": 500, "splits": [] }
               ]
             }
             """)
@@ -188,7 +188,7 @@ class StudioReleaseResourceIT {
               "visibility": "public",
               "tracks": [
                 {
-                  "trackId": "seed-track-1",
+                  "trackId": "last-last",
                   "position": 1,
                   "priceMinor": 500,
                   "splits": [
@@ -269,7 +269,7 @@ class StudioReleaseResourceIT {
               "type": "single",
               "visibility": "public",
               "tracks": [
-                { "trackId": "seed-track-1", "position": 1, "priceMinor": 500, "splits": [] }
+                { "trackId": "last-last", "position": 1, "priceMinor": 500, "splits": [] }
               ]
             }
             """)
@@ -357,7 +357,7 @@ class StudioReleaseResourceIT {
               "type": "single",
               "visibility": "public",
               "tracks": [
-                { "trackId": "seed-track-1", "position": 1, "priceMinor": 500, "splits": [] }
+                { "trackId": "last-last", "position": 1, "priceMinor": 500, "splits": [] }
               ]
             }
             """)
