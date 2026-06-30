@@ -8,6 +8,7 @@ import static org.hamcrest.Matchers.notNullValue;
 import java.sql.Connection;
 import java.sql.PreparedStatement;
 import java.sql.ResultSet;
+import java.util.Base64;
 
 import jakarta.inject.Inject;
 
@@ -387,12 +388,11 @@ class StudioReleaseResourceIT {
    * purposes only.
    */
   private void seedArtistProfile(String token) {
-    // Extract the subject (account id) from the JWT — it becomes the artist_profile id
-    String accountId = given()
-        .header("Authorization", "Bearer " + token)
-        .when().get("/v1/me")
-        .then().statusCode(200)
-        .extract().jsonPath().getString("id");
+    // Decode the JWT subject claim directly — avoids a /v1/me round-trip that doesn't exist yet
+    String payload = token.split("\\.")[1];
+    String json = new String(Base64.getUrlDecoder().decode(payload));
+    // Extract "sub":"<id>" from the JSON string without an extra library
+    String accountId = json.replaceAll(".*\"sub\"\\s*:\\s*\"([^\"]+)\".*", "$1");
 
     try (Connection conn = dataSource.getConnection();
         PreparedStatement check = conn.prepareStatement(
