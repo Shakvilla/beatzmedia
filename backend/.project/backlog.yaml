@@ -143,7 +143,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-CAT-1, WU-MED-1, WU-IDN-3]
     llfrs: [LLFR-CATALOG-02.1, LLFR-CATALOG-02.2, LLFR-CATALOG-02.3, LLFR-CATALOG-02.4]
-    status: in_review
+    status: done
   - id: WU-CAT-4
     title: Release state machine + scheduled go-live
     phase: 1
