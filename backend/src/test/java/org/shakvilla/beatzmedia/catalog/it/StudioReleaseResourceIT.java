@@ -5,6 +5,10 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.notNullValue;
 
+import java.sql.Connection;
+import java.sql.PreparedStatement;
+import java.sql.ResultSet;
+
 import jakarta.inject.Inject;
 
 import org.junit.jupiter.api.MethodOrderer;
@@ -15,6 +19,7 @@ import org.junit.jupiter.api.TestMethodOrder;
 import org.shakvilla.beatzmedia.platform.application.port.out.FeatureFlags;
 import org.shakvilla.beatzmedia.platform.domain.FeatureKey;
 
+import io.agroal.api.AgroalDataSource;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.http.ContentType;
 import io.restassured.response.Response;
@@ -42,6 +47,9 @@ class StudioReleaseResourceIT {
 
   @Inject
   FeatureFlags featureFlags;
+
+  @Inject
+  AgroalDataSource dataSource;
 
   /** Shared state between ordered tests. */
   private static String artistToken;
@@ -74,6 +82,10 @@ class StudioReleaseResourceIT {
 
     // Re-login to get artist-role JWT
     artistToken = login(ARTIST_EMAIL, ARTIST_PASSWORD);
+
+    // The ArtistUpgraded CDI observer (catalog module) that creates the artist_profile row
+    // is not yet implemented (WU-CAT-5). Seed the row directly so FK on release.artist_id holds.
+    seedArtistProfile(artistToken);
   }
 
   // ============================
@@ -367,5 +379,39 @@ class StudioReleaseResourceIT {
         .when().post(LOGIN_URL)
         .then().statusCode(200)
         .extract().jsonPath().getString("token");
+  }
+
+  /**
+   * Seeds an artist_profile row for the dynamically-created test artist. The ArtistUpgraded CDI
+   * observer that normally does this lives in a future WU; this helper bridges the gap for IT
+   * purposes only.
+   */
+  private void seedArtistProfile(String token) {
+    // Extract the subject (account id) from the JWT — it becomes the artist_profile id
+    String accountId = given()
+        .header("Authorization", "Bearer " + token)
+        .when().get("/v1/me")
+        .then().statusCode(200)
+        .extract().jsonPath().getString("id");
+
+    try (Connection conn = dataSource.getConnection();
+        PreparedStatement check = conn.prepareStatement(
+            "SELECT 1 FROM artist_profile WHERE id = ?")) {
+      check.setString(1, accountId);
+      try (ResultSet rs = check.executeQuery()) {
+        if (!rs.next()) {
+          try (PreparedStatement ins = conn.prepareStatement(
+              "INSERT INTO artist_profile (id, name, image, verified, monthly_listeners,"
+                  + " followers, genres, created_at, updated_at)"
+                  + " VALUES (?, ?, '/images/placeholder.jpg', false, 0, 0, '{}', now(), now())")) {
+            ins.setString(1, accountId);
+            ins.setString(2, ARTIST_NAME);
+            ins.executeUpdate();
+          }
+        }
+      }
+    } catch (Exception e) {
+      throw new RuntimeException("Failed to seed artist_profile for IT", e);
+    }
   }
 }
