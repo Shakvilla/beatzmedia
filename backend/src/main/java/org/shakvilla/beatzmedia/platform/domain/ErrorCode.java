@@ -38,5 +38,10 @@ public enum ErrorCode {
   LYRICS_NOT_FOUND,
   PLAYLIST_NOT_FOUND,
   // ---- Catalog codes (WU-CAT-2) ----
-  MISSING_QUERY
+  MISSING_QUERY,
+  // ---- Catalog codes (WU-CAT-3) ----
+  TRACK_COUNT_INVALID,
+  SPLIT_OVER_100,
+  RELEASE_LIVE,
+  RELEASE_NOT_FOUND
 }

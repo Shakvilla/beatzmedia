@@ -540,7 +540,7 @@ CREATE INDEX idx_release_draft_artist ON release_draft(artist_id);
 - `V10__catalog_read_entities.sql` — artist_profile, album, track, track_credit, lyrics, lyric_line,
   playlist, playlist_track, browse_category + indexes (WU-CAT-1).
 - `V11__catalog_search_indexes.sql` — `pg_trgm` extension, `search_tsv` GIN, trigram indexes (WU-SRCH-1/WU-CAT-2).
-- `V12__catalog_releases.sql` — release, release_track, split_entry, release_draft + indexes (WU-CAT-3).
+- `V305__catalog_releases.sql` — release, release_track, split_entry, release_draft + indexes + FK `track.release_id → release(id)` (WU-CAT-3).
 - `V13__catalog_golive_guard.sql` — `release.went_live_at`, partial due-index (WU-CAT-4).
 - Repeatable `R__seed_dev_data.sql` contributes the mock catalog (artists, albums, tracks, playlists,
   browse categories, a sample creator's releases) — dev/test profiles only.
@@ -632,7 +632,7 @@ stateDiagram-v2
 | **WU-SRCH-1** | Search index lifecycle, `pg_trgm`/FTS (SEARCH-01.*) — consumed by 01.2 | WU-CAT-1 | 2 |
 | **WU-CAT-2** | Home feed + browse + search read (CATALOG-01.1–01.3) | WU-CAT-1, WU-SRCH-1 | 3 |
 | **WU-MED-1** | Media upload→validate→transcode→signed URL (MEDIA-01.*) — used by track upload | WU-PLT-1 | parallel |
-| **WU-CAT-3** | Release wizard submit + manage + track upload (CATALOG-02.1–02.4) | WU-CAT-1, WU-MED-1, WU-IDN-3 | 4 |
+| **WU-CAT-3** ✅ | Release wizard submit + manage + track upload (CATALOG-02.1–02.4) | WU-CAT-1, WU-MED-1, WU-IDN-3 | 4 |
 | **WU-CAT-4** | Release state machine + scheduled go-live (CATALOG-02.5) | WU-CAT-3, WU-PLT-2 | 5 |
 
 Cross-reference PRD §8 / §8.1. Phase-1 order within catalog: WU-CAT-1 → WU-SRCH-1 → WU-CAT-2 ;
