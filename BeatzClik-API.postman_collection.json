@@ -5,8 +5,10 @@
     "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
   },
   "variable": [
-    { "key": "baseUrl", "value": "http://localhost:8081", "type": "string" },
-    { "key": "jwt",     "value": "",                      "type": "string" }
+    { "key": "baseUrl",         "value": "http://localhost:8081", "type": "string" },
+    { "key": "jwt",             "value": "",                      "type": "string" },
+    { "key": "releaseId",       "value": "",                      "type": "string" },
+    { "key": "uploadedTrackId", "value": "",                      "type": "string" }
   ],
   "item": [
     {
@@ -320,6 +322,119 @@
             "header": [{ "key": "Authorization", "value": "Bearer {{jwt}}" }],
             "description": "Paginated audit log. Requires super-admin role."
           }
+        }
+      ]
+    },
+    {
+      "name": "Studio — Releases (WU-CAT-3)",
+      "description": "Artist studio endpoints: release wizard submit, manage, and track upload. All require a JWT with the `artist` role — use Become Artist first, then re-login to get an artist-role token.",
+      "item": [
+        {
+          "name": "GET /v1/studio/releases",
+          "request": {
+            "method": "GET",
+            "url": {
+              "raw": "{{baseUrl}}/v1/studio/releases?status=&page=0&size=20",
+              "host": ["{{baseUrl}}"],
+              "path": ["v1", "studio", "releases"],
+              "query": [
+                { "key": "status", "value": "", "description": "Filter: live | scheduled | in_review | draft | takedown", "disabled": true },
+                { "key": "page",   "value": "0" },
+                { "key": "size",   "value": "20" }
+              ]
+            },
+            "header": [{ "key": "Authorization", "value": "Bearer {{jwt}}" }],
+            "description": "LLFR-CATALOG-02.1 — List the calling artist's releases, optionally filtered by status. Returns paginated { items, page, size, total }."
+          }
+        },
+        {
+          "name": "POST /v1/studio/releases",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/v1/studio/releases",
+            "header": [
+              { "key": "Authorization",   "value": "Bearer {{jwt}}" },
+              { "key": "Content-Type",    "value": "application/json" },
+              { "key": "Idempotency-Key", "value": "{{$guid}}", "description": "Required. Use a unique UUID per submission attempt." }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"My EP\",\n  \"type\": \"ep\",\n  \"visibility\": \"public\",\n  \"tracks\": [\n    {\n      \"trackId\": \"<uploaded-track-id-1>\",\n      \"position\": 1,\n      \"priceMinor\": 200,\n      \"splits\": [\n        { \"name\": \"Kwame Mensah\", \"email\": \"kwame@beatzclik.com\", \"role\": \"artist\", \"percent\": 100, \"confirmation\": \"self\" }\n      ]\n    },\n    {\n      \"trackId\": \"<uploaded-track-id-2>\",\n      \"position\": 2,\n      \"priceMinor\": 200,\n      \"splits\": []\n    }\n  ]\n}"
+            },
+            "description": "LLFR-CATALOG-02.2 — Submit a release draft. Creates the release with status=in_review. Album list price = round(Σ prices × 0.76) via INV-5. Idempotency-Key header is required (400 if missing)."
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "if (pm.response.code === 201) {",
+              "  var json = pm.response.json();",
+              "  if (json.id) pm.collectionVariables.set('releaseId', json.id);",
+              "}"
+            ], "type": "text/javascript" }
+          }]
+        },
+        {
+          "name": "GET /v1/studio/releases/:id",
+          "request": {
+            "method": "GET",
+            "url": "{{baseUrl}}/v1/studio/releases/{{releaseId}}",
+            "header": [{ "key": "Authorization", "value": "Bearer {{jwt}}" }],
+            "description": "LLFR-CATALOG-02.3 — Get a single release by ID. 404 if not found or not owned by caller."
+          }
+        },
+        {
+          "name": "PATCH /v1/studio/releases/:id",
+          "request": {
+            "method": "PATCH",
+            "url": "{{baseUrl}}/v1/studio/releases/{{releaseId}}",
+            "header": [
+              { "key": "Authorization", "value": "Bearer {{jwt}}" },
+              { "key": "Content-Type",  "value": "application/json" }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"title\": \"My EP (Revised)\"\n}"
+            },
+            "description": "LLFR-CATALOG-02.3 — Edit release metadata (title). Returns updated StudioRelease."
+          }
+        },
+        {
+          "name": "DELETE /v1/studio/releases/:id",
+          "request": {
+            "method": "DELETE",
+            "url": "{{baseUrl}}/v1/studio/releases/{{releaseId}}",
+            "header": [{ "key": "Authorization", "value": "Bearer {{jwt}}" }],
+            "description": "LLFR-CATALOG-02.3 — Delete a release. Only allowed for draft or in_review status. Returns 204. 409 RELEASE_LIVE if status is live/scheduled/takedown."
+          }
+        },
+        {
+          "name": "POST /v1/studio/releases/:id/tracks  (WAV upload)",
+          "request": {
+            "method": "POST",
+            "url": "{{baseUrl}}/v1/studio/releases/{{releaseId}}/tracks",
+            "header": [{ "key": "Authorization", "value": "Bearer {{jwt}}" }],
+            "body": {
+              "mode": "formdata",
+              "formdata": [
+                {
+                  "key": "file",
+                  "type": "file",
+                  "src": "",
+                  "description": "Select a WAV or FLAC audio file. Max 500 MB. Non-WAV/FLAC → 422 UNSUPPORTED_FORMAT."
+                }
+              ]
+            },
+            "description": "LLFR-CATALOG-02.4 — Upload a WAV or FLAC audio file for a release track. Delegates to the media pipeline (validate → transcode → HLS + 30s preview). Returns 201 UploadedTrack { id, title, duration, status: uploading|ready|error, progress, src, price, explicit }."
+          },
+          "event": [{
+            "listen": "test",
+            "script": { "exec": [
+              "if (pm.response.code === 201) {",
+              "  var json = pm.response.json();",
+              "  if (json.id) pm.collectionVariables.set('uploadedTrackId', json.id);",
+              "}"
+            ], "type": "text/javascript" }
+          }]
         }
       ]
     },
