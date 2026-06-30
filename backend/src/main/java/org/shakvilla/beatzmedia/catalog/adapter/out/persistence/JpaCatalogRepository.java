@@ -314,15 +314,15 @@ public class JpaCatalogRepository implements CatalogRepository {
   @Override
   public Page<Release> releasesByArtist(
       ArtistId owner, Optional<ReleaseStatus> status, PageRequest pageRequest) {
-    String baseJpql = "FROM ReleaseEntity r WHERE r.artistId = :aid"
-        + (status.isPresent() ? " AND r.status = :status" : "")
-        + " ORDER BY r.createdAt DESC";
+    String whereJpql = "FROM ReleaseEntity r WHERE r.artistId = :aid"
+        + (status.isPresent() ? " AND r.status = :status" : "");
 
-    var countQuery = em.createQuery("SELECT COUNT(r) " + baseJpql, Long.class)
+    var countQuery = em.createQuery("SELECT COUNT(r) " + whereJpql, Long.class)
         .setParameter("aid", owner.value());
-    var listQuery = em.createQuery("SELECT r " + baseJpql, ReleaseEntity.class)
+    var listQuery = em.createQuery(
+            "SELECT r " + whereJpql + " ORDER BY r.createdAt DESC", ReleaseEntity.class)
         .setParameter("aid", owner.value())
-        .setFirstResult(pageRequest.page() * pageRequest.size())
+        .setFirstResult(pageRequest.offset())
         .setMaxResults(pageRequest.size());
 
     if (status.isPresent()) {
@@ -384,10 +384,17 @@ public class JpaCatalogRepository implements CatalogRepository {
     e.updatedAt = release.getUpdatedAt();
     em.merge(e);
 
-    // Upsert release_track rows
-    em.createQuery("DELETE FROM ReleaseTrackEntity rt WHERE rt.pk.releaseId = :rid")
+    // Upsert release_track rows. Remove existing managed entities (rather than a bulk JPQL
+    // DELETE) so the persistence context stays in sync — a bulk DELETE bypasses the L1 cache and
+    // leaves stale managed ReleaseTrackEntity instances behind, causing a NonUniqueObjectException
+    // when persisting new rows with the same composite id.
+    List<ReleaseTrackEntity> existingTracks = em.createQuery(
+            "SELECT rt FROM ReleaseTrackEntity rt WHERE rt.pk.releaseId = :rid",
+            ReleaseTrackEntity.class)
         .setParameter("rid", release.getId())
-        .executeUpdate();
+        .getResultList();
+    existingTracks.forEach(em::remove);
+    em.flush();
     for (ReleaseTrack rt : release.getTracks()) {
       ReleaseTrackEntity rte = new ReleaseTrackEntity();
       rte.pk = new ReleaseTrackEntity.ReleaseTrackId(release.getId(), rt.position());
