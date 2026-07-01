@@ -38,6 +38,7 @@ class AuthResourceIT {
   private static final String SIGNUP_URL = "/v1/auth/signup";
   private static final String LOGIN_URL = "/v1/auth/login";
   private static final String LOGOUT_URL = "/v1/auth/logout";
+  private static final String SOCIAL_URL = "/v1/auth/social";
 
   private static final String ALICE_EMAIL = "alice-it@example.com";
   private static final String ALICE_PASSWORD = "securepassword123";
@@ -225,6 +226,110 @@ class AuthResourceIT {
         .then()
         .statusCode(403)
         .body("error.code", equalTo("ACCOUNT_SUSPENDED"));
+  }
+
+  // ---- LLFR-IDENTITY-01.3: social login ----
+  // StubSocialVerifier fixture token format: "<providerUid>|<email>|<name>|<avatar-or-empty>"
+
+  @Test
+  @Order(16)
+  void social_login_valid_google_token_for_new_email_creates_fan_account() {
+    String email = "social-new-it@example.com";
+    String fixtureToken = "google-uid-social-1|" + email + "|Social New User|";
+
+    given()
+        .contentType(ContentType.JSON)
+        .body("""
+            { "provider": "google", "token": "%s" }
+            """.formatted(fixtureToken))
+        .when()
+        .post(SOCIAL_URL)
+        .then()
+        .statusCode(200)
+        .body("token", notNullValue())
+        .body("account.email", equalTo(email))
+        .body("account.name", equalTo("Social New User"))
+        .body("account.isArtist", equalTo(false))
+        .body("account.isAdmin", equalTo(false))
+        .body("account.id", notNullValue());
+  }
+
+  @Test
+  @Order(17)
+  void social_login_repeat_with_same_token_logs_into_same_account() {
+    String email = "social-repeat-it@example.com";
+    String fixtureToken = "google-uid-social-2|" + email + "|Social Repeat User|";
+
+    String firstId = given()
+        .contentType(ContentType.JSON)
+        .body("""
+            { "provider": "google", "token": "%s" }
+            """.formatted(fixtureToken))
+        .when()
+        .post(SOCIAL_URL)
+        .then()
+        .statusCode(200)
+        .extract().jsonPath().getString("account.id");
+
+    given()
+        .contentType(ContentType.JSON)
+        .body("""
+            { "provider": "google", "token": "%s" }
+            """.formatted(fixtureToken))
+        .when()
+        .post(SOCIAL_URL)
+        .then()
+        .statusCode(200)
+        .body("account.id", equalTo(firstId));
+  }
+
+  @Test
+  @Order(18)
+  void social_login_invalid_token_returns_401_SOCIAL_TOKEN_INVALID() {
+    given()
+        .contentType(ContentType.JSON)
+        .body("""
+            { "provider": "google", "token": "not-a-valid-fixture-token-format" }
+            """)
+        .when()
+        .post(SOCIAL_URL)
+        .then()
+        .statusCode(401)
+        .body("error.code", equalTo("SOCIAL_TOKEN_INVALID"));
+  }
+
+  @Test
+  @Order(19)
+  void social_login_unrecognised_provider_returns_401_SOCIAL_TOKEN_INVALID() {
+    given()
+        .contentType(ContentType.JSON)
+        .body("""
+            { "provider": "myspace", "token": "uid|myspace-it@example.com|Name|" }
+            """)
+        .when()
+        .post(SOCIAL_URL)
+        .then()
+        .statusCode(401)
+        .body("error.code", equalTo("SOCIAL_TOKEN_INVALID"));
+  }
+
+  @Test
+  @Order(20)
+  void social_login_links_to_existing_password_account_by_verified_email() {
+    // ALICE_EMAIL already exists (signed up with a password in Order(1))
+    String fixtureToken = "google-uid-alice|" + ALICE_EMAIL + "|Alice Social|";
+
+    given()
+        .contentType(ContentType.JSON)
+        .body("""
+            { "provider": "google", "token": "%s" }
+            """.formatted(fixtureToken))
+        .when()
+        .post(SOCIAL_URL)
+        .then()
+        .statusCode(200)
+        .body("account.email", equalTo(ALICE_EMAIL))
+        .body("account.name", equalTo(ALICE_NAME)); // name is NOT overwritten by social link
   }
 
   // ---- LLFR-IDENTITY-01.4: logout ----
