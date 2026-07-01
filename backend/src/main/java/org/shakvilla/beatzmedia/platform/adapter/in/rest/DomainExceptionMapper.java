@@ -19,6 +19,9 @@ public class DomainExceptionMapper implements ExceptionMapper<DomainException> {
   /** HTTP 422 — not present in {@link Response.Status}, so referenced by its numeric code. */
   private static final int UNPROCESSABLE_ENTITY = 422;
 
+  /** HTTP 502 — upstream payment provider failure. */
+  private static final int BAD_GATEWAY = 502;
+
   @Override
   public Response toResponse(DomainException ex) {
     int status = mapStatus(ex.getErrorCode());
@@ -41,14 +44,22 @@ public class DomainExceptionMapper implements ExceptionMapper<DomainException> {
               TRACK_NOT_FOUND,
               LYRICS_NOT_FOUND,
               PLAYLIST_NOT_FOUND,
-              RELEASE_NOT_FOUND ->
+              RELEASE_NOT_FOUND,
+              PAYMENT_INTENT_NOT_FOUND ->
           Response.Status.NOT_FOUND.getStatusCode();
       case UNAUTHENTICATED, INVALID_CREDENTIALS, SOCIAL_TOKEN_INVALID ->
         Response.Status.UNAUTHORIZED.getStatusCode();
       case UNAUTHORIZED, FEATURE_DISABLED, ACCOUNT_SUSPENDED ->
           Response.Status.FORBIDDEN.getStatusCode();
-      case CONFLICT, ILLEGAL_TRANSITION, EMAIL_TAKEN, LAST_SUPER_ADMIN, RELEASE_LIVE ->
+      case CONFLICT,
+              ILLEGAL_TRANSITION,
+              EMAIL_TAKEN,
+              LAST_SUPER_ADMIN,
+              RELEASE_LIVE,
+              IDEMPOTENCY_KEY_CONFLICT ->
           Response.Status.CONFLICT.getStatusCode();
+      case MISSING_IDEMPOTENCY_KEY -> Response.Status.BAD_REQUEST.getStatusCode();
+      case PROVIDER_ERROR -> BAD_GATEWAY;
       case METHOD_NOT_ALLOWED -> 405;
       case RATE_LIMITED -> Response.Status.TOO_MANY_REQUESTS.getStatusCode();
       case MAINTENANCE -> Response.Status.SERVICE_UNAVAILABLE.getStatusCode();
