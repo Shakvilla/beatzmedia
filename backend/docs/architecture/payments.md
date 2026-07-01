@@ -300,7 +300,9 @@ each posting/clear inside the same transaction.
 
 ```java
 public interface InitiateCharge {
-    PaymentIntent charge(OrderRef orderRef, Money amount, PaymentMethodRef method, IdempotencyKey key);
+    // WU-PAY-1 returns a PaymentIntentView (read-model DTO), not the aggregate, so no domain type
+    // leaks across the port boundary; the aggregate stays inside the application layer.
+    PaymentIntentView charge(OrderRef orderRef, Money amount, PaymentMethodRef method, IdempotencyKey key);
 }
 public interface HandleProviderWebhook {
     WebhookResult handle(Provider provider, String signature, byte[] rawBody);
@@ -397,9 +399,13 @@ public interface LedgerRepository {
     CreatorBalance balanceOf(AccountId creator);
     Page<LedgerEntry> find(LedgerType type, String q, PageRequest page);
 }
-public interface PayoutRepository {
-    PaymentIntent saveIntent(PaymentIntent intent);
+// WU-PAY-1 implements payment-intent persistence behind PaymentRepository (below); the remaining
+// methods (methods/withdrawals/batches/disputes) stay under PayoutRepository as later WUs land them.
+public interface PaymentRepository {                           // WU-PAY-1
+    PaymentIntent save(PaymentIntent intent);
     Optional<PaymentIntent> findByIdempotencyKey(IdempotencyKey key);
+}
+public interface PayoutRepository {
     boolean recordEvent(PaymentEvent event);                   // false if providerEventId seen
     PayoutMethod saveMethod(PayoutMethod m);
     WithdrawalRequest saveWithdrawal(WithdrawalRequest w);
@@ -433,7 +439,17 @@ public interface IdGenerator { String newId(); }
 
 | Method | Path | Auth/scope | Request DTO | Response DTO | Success | Error codes | LLFR |
 |---|---|---|---|---|---|---|---|
+| POST | `/v1/payments/intents` | authenticated (fan / internal commerce); `Idempotency-Key` | `{ orderRef, amount: Money, provider, methodKind, paymentToken }` | `PaymentIntent` | 200 | 400 `MISSING_IDEMPOTENCY_KEY`, 409 `IDEMPOTENCY_KEY_CONFLICT`, 422 `VALIDATION`, 502 `PROVIDER_ERROR` | 01.1 |
 | POST | `/v1/payments/webhooks/:provider` | public, **signature-verified** (`BEATZ_PAYMENT_WEBHOOK_SECRET`) | raw provider payload + signature header | — | 200 (handled), 202 (unknown ref, ignored) | 401 invalid signature | 01.2 |
+
+> **WU-PAY-1 note.** `/v1/payments/intents` is the inbound surface for `InitiateCharge`. It is an
+> internal money endpoint the commerce checkout (WU-COM-2) drives; it is exposed directly so the
+> idempotency contract (§9.2) is independently testable. Every money POST **must** carry an
+> `Idempotency-Key` header: same key + same request → the same intent (no second provider charge);
+> same key + different request → `409 IDEMPOTENCY_KEY_CONFLICT` (matched via a SHA-256
+> `request_fingerprint` over `orderRef|amount_minor|currency|provider|method_kind`, excluding the raw
+> payment token so a token re-issue does not spuriously conflict). Decimal cedis → minor units
+> conversion happens only at this boundary (INV-11).
 | GET | `/v1/studio/payouts` | artist (own) | — | `Payouts` | 200 | 401, 403 | 02.2 |
 | POST | `/v1/studio/payouts/withdraw` | artist (own); `Idempotency-Key` | `{ amount, methodId }` | `WithdrawalRequest` `{ status, fee, arrival }` | 202 | 422 `BELOW_MIN_PAYOUT`, 409 `INSUFFICIENT_BALANCE`, 403 `KYC_REQUIRED` | 03.2 |
 | POST | `/v1/studio/payout-methods` | artist (own) | `{ label, detail, kind }` | `PayoutMethod` | 201 | 422 | 03.1 |
@@ -483,18 +499,29 @@ CREATE TYPE ledger_direction AS ENUM ('DEBIT','CREDIT');
 CREATE TYPE kyc_status AS ENUM ('none','pending','verified','rejected');
 CREATE TYPE dispute_status AS ENUM ('open','refunded','rejected','escalated');
 
+-- Implemented in V701 (WU-PAY-1). Ids are UUIDv7 strings (TEXT, matching the rest of the codebase),
+-- not the UUID type; status/provider/method_kind use TEXT + CHECK rather than PG enums for additive
+-- evolution. currency, method_kind, failure_reason, request_fingerprint, updated_at added for
+-- WU-PAY-1's idempotency + failure semantics.
 CREATE TABLE payment_intent (
-  id              UUID PRIMARY KEY,
-  order_ref       TEXT NOT NULL,
-  amount_minor    BIGINT NOT NULL CHECK (amount_minor >= 0),
-  provider        TEXT NOT NULL,
-  provider_ref    TEXT,
-  status          payment_status NOT NULL DEFAULT 'pending',
-  idempotency_key TEXT NOT NULL,
-  created_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
-  CONSTRAINT uq_intent_idem UNIQUE (idempotency_key)
+  id                  TEXT PRIMARY KEY,
+  order_ref           TEXT NOT NULL,
+  amount_minor        BIGINT NOT NULL CHECK (amount_minor >= 0),
+  currency            TEXT NOT NULL DEFAULT 'GHS',
+  provider            TEXT NOT NULL CHECK (provider IN ('mtn','telecel','airteltigo','card','bank')),
+  method_kind         TEXT NOT NULL CHECK (method_kind IN ('momo','bank','card')),
+  provider_ref        TEXT,
+  status              TEXT NOT NULL DEFAULT 'pending'
+                          CHECK (status IN ('pending','settled','failed','timeout')),
+  failure_reason      TEXT,
+  idempotency_key     TEXT NOT NULL,
+  request_fingerprint TEXT NOT NULL,
+  created_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at          TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT uq_payment_intent_idem UNIQUE (idempotency_key)
 );
-CREATE INDEX ix_intent_status_created ON payment_intent(status, created_at);
+CREATE INDEX idx_payment_intent_status_created ON payment_intent(status, created_at);
+CREATE INDEX idx_payment_intent_order_ref ON payment_intent(order_ref);
 
 CREATE TABLE payment_event (
   id                UUID PRIMARY KEY,
@@ -622,11 +649,12 @@ CREATE TABLE refund (
 
 **Flyway migration list (forward-only):**
 
-- `V20__payments_payment_intent.sql` (WU-PAY-1)
-- `V21__payments_payment_event.sql` (WU-PAY-2)
-- `V22__payments_ledger.sql` (ledger_account, ledger_entry, balance trigger, creator_balance — WU-PAY-3)
-- `V23__payments_payouts.sql` (payout_method, withdrawal_request, payout_batch, payout_txn, kyc_record — WU-PAY-4)
-- `V24__payments_disputes.sql` (dispute, dispute_event, refund — WU-PAY-5)
+- `V701__create_payment_intent.sql` (WU-PAY-1) — **implemented**; payments band is `V7xx`
+  (data-and-migrations §4.1), not `V2x`.
+- `V702__payments_payment_event.sql` (WU-PAY-2)
+- `V703__payments_ledger.sql` (ledger_account, ledger_entry, balance trigger, creator_balance — WU-PAY-3)
+- `V704__payments_payouts.sql` (payout_method, withdrawal_request, payout_batch, payout_txn, kyc_record — WU-PAY-4)
+- `V705__payments_disputes.sql` (dispute, dispute_event, refund — WU-PAY-5)
 - `R__seed_dev_data.sql` (dev only): seed `ledger_account` singletons (platform_revenue, payout_clearing, provider_clearing per provider) and sample KYC records.
 
 ## 8. Key flows
