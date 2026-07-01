@@ -11,7 +11,6 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
-import io.quarkus.security.Authenticated;
 import org.shakvilla.beatzmedia.payments.application.port.in.InitiateCharge;
 import org.shakvilla.beatzmedia.payments.application.port.in.PaymentIntentView;
 import org.shakvilla.beatzmedia.payments.domain.IdempotencyKey;
@@ -23,6 +22,8 @@ import org.shakvilla.beatzmedia.payments.domain.Provider;
 import org.shakvilla.beatzmedia.platform.domain.Currency;
 import org.shakvilla.beatzmedia.platform.domain.Money;
 import org.shakvilla.beatzmedia.platform.domain.ValidationException;
+
+import io.quarkus.security.Authenticated;
 
 /**
  * REST resource for initiating a payment charge (LLFR-PAYMENTS-01.1). Thin: DTO in → command →
