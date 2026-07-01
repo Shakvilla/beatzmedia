@@ -301,8 +301,12 @@ each posting/clear inside the same transaction.
 ```java
 public interface InitiateCharge {
     // WU-PAY-1 returns a PaymentIntentView (read-model DTO), not the aggregate, so no domain type
-    // leaks across the port boundary; the aggregate stays inside the application layer.
-    PaymentIntentView charge(OrderRef orderRef, Money amount, PaymentMethodRef method, IdempotencyKey key);
+    // leaks across the port boundary; the aggregate stays inside the application layer. The acting
+    // AccountId is threaded in so the AuditEntry records WHO acted (INV-10) and the intent is bound
+    // to the authenticated caller. Order/cart-ownership authz (orderRef+amount belong to the
+    // caller's own pending order) is NOT done here — the order table lands in WU-COM-2 and the
+    // intended caller is the commerce checkout orchestration, which owns that check (§8a).
+    PaymentIntentView charge(AccountId actor, OrderRef orderRef, Money amount, PaymentMethodRef method, IdempotencyKey key);
 }
 public interface HandleProviderWebhook {
     WebhookResult handle(Provider provider, String signature, byte[] rawBody);
@@ -402,6 +406,7 @@ public interface LedgerRepository {
 // WU-PAY-1 implements payment-intent persistence behind PaymentRepository (below); the remaining
 // methods (methods/withdrawals/batches/disputes) stay under PayoutRepository as later WUs land them.
 public interface PaymentRepository {                           // WU-PAY-1
+    void lockForIdempotencyKey(IdempotencyKey key);            // txn-scoped advisory lock (concurrency)
     PaymentIntent save(PaymentIntent intent);
     Optional<PaymentIntent> findByIdempotencyKey(IdempotencyKey key);
 }
@@ -450,6 +455,14 @@ public interface IdGenerator { String newId(); }
 > `request_fingerprint` over `orderRef|amount_minor|currency|provider|method_kind`, excluding the raw
 > payment token so a token re-issue does not spuriously conflict). Decimal cedis → minor units
 > conversion happens only at this boundary (INV-11).
+>
+> The resource is `@Authenticated`; the JWT subject is bound to the intent as `account_id` and used as
+> the `AuditEntry` actor (INV-10 — the audit records WHO acted). **Order/cart-ownership authorization**
+> (verifying `orderRef` + `amount` belong to the caller's own pending order) is **not** performed here —
+> the order table lands in WU-COM-2, and per §8(a) the intended caller of `InitiateCharge` is the
+> commerce **checkout** orchestration, which owns that check before calling in. Concurrent same-key
+> requests are serialised by a transaction-scoped advisory lock (see §9 Idempotency) so a race cannot
+> double-charge the provider or surface a 500.
 | GET | `/v1/studio/payouts` | artist (own) | — | `Payouts` | 200 | 401, 403 | 02.2 |
 | POST | `/v1/studio/payouts/withdraw` | artist (own); `Idempotency-Key` | `{ amount, methodId }` | `WithdrawalRequest` `{ status, fee, arrival }` | 202 | 422 `BELOW_MIN_PAYOUT`, 409 `INSUFFICIENT_BALANCE`, 403 `KYC_REQUIRED` | 03.2 |
 | POST | `/v1/studio/payout-methods` | artist (own) | `{ label, detail, kind }` | `PayoutMethod` | 201 | 422 | 03.1 |
@@ -501,10 +514,11 @@ CREATE TYPE dispute_status AS ENUM ('open','refunded','rejected','escalated');
 
 -- Implemented in V701 (WU-PAY-1). Ids are UUIDv7 strings (TEXT, matching the rest of the codebase),
 -- not the UUID type; status/provider/method_kind use TEXT + CHECK rather than PG enums for additive
--- evolution. currency, method_kind, failure_reason, request_fingerprint, updated_at added for
--- WU-PAY-1's idempotency + failure semantics.
+-- evolution. account_id, currency, method_kind, failure_reason, request_fingerprint, updated_at
+-- added for WU-PAY-1's actor-binding + idempotency + failure semantics.
 CREATE TABLE payment_intent (
   id                  TEXT PRIMARY KEY,
+  account_id          TEXT NOT NULL,   -- authenticated principal that initiated the charge (INV-10)
   order_ref           TEXT NOT NULL,
   amount_minor        BIGINT NOT NULL CHECK (amount_minor >= 0),
   currency            TEXT NOT NULL DEFAULT 'GHS',
@@ -522,6 +536,7 @@ CREATE TABLE payment_intent (
 );
 CREATE INDEX idx_payment_intent_status_created ON payment_intent(status, created_at);
 CREATE INDEX idx_payment_intent_order_ref ON payment_intent(order_ref);
+CREATE INDEX idx_payment_intent_account ON payment_intent(account_id);
 
 CREATE TABLE payment_event (
   id                UUID PRIMARY KEY,
@@ -791,6 +806,14 @@ stateDiagram-v2
   `payment_event` — replays are no-ops), `RequestWithdrawal` (`idempotency_key` UNIQUE on
   `withdrawal_request`), `RunWeeklyPayouts`/`SendSinglePayout`/`RefundDispute` (`Idempotency-Key` header,
   one effect per key). §9.2.
+  - **Concurrency (WU-PAY-1).** `InitiateCharge` takes a **transaction-scoped Postgres advisory lock**
+    (`pg_advisory_xact_lock` keyed on the idempotency key) before the read→provider→save window, so two
+    truly-simultaneous same-key requests serialise: only one thread ever reaches `PaymentGateway.initiate`
+    (no double charge), the loser blocks then returns the winner's intent (or 409 on a different body) —
+    never a raw unique-violation 500. The `idempotency_key` UNIQUE constraint remains the durable
+    backstop. Idempotency is matched via a SHA-256 `request_fingerprint` over
+    `orderRef|amount_minor|currency|provider|method_kind` (the raw payment token is excluded so a token
+    re-issue for the same charge is not a spurious conflict).
 - **Webhook signature verification** over the **raw** request bytes using `BEATZ_PAYMENT_WEBHOOK_SECRET`
   (per-provider scheme via `PaymentGateway.verifySignature`); invalid → 401; unknown/untrusted ref →
   202 (accept-and-ignore to avoid a provider retry storm).
