@@ -27,7 +27,8 @@ public class GetCurrentAccountService implements GetCurrentAccount {
 
   @Override
   public AccountView current(AccountId account) {
-    Account found = accountRepository.findById(account).orElseThrow(AccountNotFoundException::new);
+    Account found = accountRepository.findById(account)
+        .orElseThrow(() -> new AccountNotFoundException(account.value()));
     return toView(found);
   }
 
