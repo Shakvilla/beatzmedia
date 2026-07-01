@@ -11,6 +11,9 @@ import org.shakvilla.beatzmedia.identity.domain.AccountId;
 import org.shakvilla.beatzmedia.identity.domain.AdminMember;
 import org.shakvilla.beatzmedia.identity.domain.AdminRole;
 import org.shakvilla.beatzmedia.identity.domain.FanSettings;
+import org.shakvilla.beatzmedia.identity.domain.PasswordResetToken;
+import org.shakvilla.beatzmedia.identity.domain.SocialIdentity;
+import org.shakvilla.beatzmedia.identity.domain.SocialProvider;
 
 /**
  * In-memory fake for {@link AccountRepository}. Returns deterministic data for unit tests without
@@ -21,6 +24,8 @@ public class FakeAccountRepository implements AccountRepository {
   private final List<Account> store = new ArrayList<>();
   private final List<AdminMember> adminStore = new ArrayList<>();
   private final List<FanSettings> settingsStore = new ArrayList<>();
+  private final List<SocialIdentity> socialIdentityStore = new ArrayList<>();
+  private final List<PasswordResetToken> resetTokenStore = new ArrayList<>();
 
   @Override
   public Optional<Account> findById(AccountId id) {
@@ -44,6 +49,55 @@ public class FakeAccountRepository implements AccountRepository {
     store.removeIf(a -> a.getId().equals(account.getId()));
     store.add(account);
     return account;
+  }
+
+  // --- WU-IDN-2 social login + password reset methods ---
+
+  @Override
+  public Optional<Account> findBySocialIdentity(SocialProvider provider, String providerUid) {
+    return socialIdentityStore.stream()
+        .filter(s -> s.getProvider() == provider && s.getProviderUid().equals(providerUid))
+        .findFirst()
+        .flatMap(s -> findById(s.getAccountId()));
+  }
+
+  @Override
+  public SocialIdentity saveSocialIdentity(SocialIdentity identity) {
+    socialIdentityStore.removeIf(s -> s.getId().equals(identity.getId()));
+    socialIdentityStore.add(identity);
+    return identity;
+  }
+
+  @Override
+  public Optional<PasswordResetToken> findResetTokenByHash(String tokenHash) {
+    return resetTokenStore.stream()
+        .filter(t -> t.tokenHash().equals(tokenHash))
+        .findFirst();
+  }
+
+  @Override
+  public PasswordResetToken saveResetToken(PasswordResetToken token) {
+    resetTokenStore.removeIf(t -> t.tokenHash().equals(token.tokenHash()));
+    resetTokenStore.add(token);
+    return token;
+  }
+
+  @Override
+  public void markResetTokenUsed(String tokenHash) {
+    resetTokenStore.stream()
+        .filter(t -> t.tokenHash().equals(tokenHash))
+        .findFirst()
+        .ifPresent(PasswordResetToken::markUsed);
+  }
+
+  /** Returns all stored social identities (for test assertions). */
+  public List<SocialIdentity> allSocialIdentities() {
+    return List.copyOf(socialIdentityStore);
+  }
+
+  /** Returns all stored password reset tokens (for test assertions). */
+  public List<PasswordResetToken> allResetTokens() {
+    return List.copyOf(resetTokenStore);
   }
 
   // --- WU-IDN-3 fan-settings methods ---
