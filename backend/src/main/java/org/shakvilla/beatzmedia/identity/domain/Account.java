@@ -63,6 +63,14 @@ public final class Account {
   }
 
   /**
+   * Factory for a new fan account created via social login (no password credential). Sets
+   * isArtist=false, isAdmin=false, status=active. Identity ADD §3 / LLFR-IDENTITY-01.3.
+   */
+  public static Account createSocialFan(AccountId id, String name, String email, String avatar, Instant now) {
+    return new Account(id, name, email, avatar, false, false, AccountStatus.active, now, now, null);
+  }
+
+  /**
    * Reconstitution factory used by the persistence adapter to rebuild the aggregate from stored
    * state. Does not enforce creation invariants (they were enforced on first creation).
    */

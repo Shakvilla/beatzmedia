@@ -31,6 +31,8 @@ public enum ErrorCode {
   // ---- Identity codes (WU-IDN-4) ----
   INVALID_ROLE,
   LAST_SUPER_ADMIN,
+  // ---- Identity codes (WU-IDN-2) ----
+  SOCIAL_TOKEN_INVALID,
   // ---- Catalog codes (WU-CAT-1) ----
   ARTIST_NOT_FOUND,
   ALBUM_NOT_FOUND,
