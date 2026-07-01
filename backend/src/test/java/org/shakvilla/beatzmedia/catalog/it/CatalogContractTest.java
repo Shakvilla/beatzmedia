@@ -1,14 +1,25 @@
 package org.shakvilla.beatzmedia.catalog.it;
 
 import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.anyOf;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.isA;
 import static org.hamcrest.Matchers.notNullValue;
 
+import java.util.Base64;
+
+import jakarta.inject.Inject;
+import jakarta.persistence.EntityManager;
+import jakarta.transaction.Transactional;
+
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.shakvilla.beatzmedia.platform.application.port.out.FeatureFlags;
+import org.shakvilla.beatzmedia.platform.domain.FeatureKey;
 
 import io.quarkus.test.junit.QuarkusTest;
+import io.restassured.http.ContentType;
+import io.restassured.response.Response;
 
 /**
  * Contract conformance test: validates that responses match the shapes defined in
@@ -19,6 +30,12 @@ import io.quarkus.test.junit.QuarkusTest;
 @QuarkusTest
 @Tag("integration")
 class CatalogContractTest {
+
+  @Inject
+  FeatureFlags featureFlags;
+
+  @Inject
+  EntityManager em;
 
   // --- Artist contract: { id, name, image, coverImage?, verified?, monthlyListeners?,
   //                        followers?, bio?, location?, genres? }
@@ -153,5 +170,178 @@ class CatalogContractTest {
         .body("error", notNullValue())
         .body("error.code", equalTo("ARTIST_NOT_FOUND"))
         .body("error.message", isA(String.class));
+  }
+
+  // --- WU-CAT-4: StudioRelease.status enum + ILLEGAL_TRANSITION error code (LLFR-CATALOG-02.5) ---
+
+  @Test
+  void studio_release_status_enum_conforms_to_contract() {
+    // API-CONTRACT.md §"Releases": status: live|scheduled|in_review|draft|takedown
+    String artistToken = provisionArtist();
+    Response created = given()
+        .header("Authorization", "Bearer " + artistToken)
+        .header("Idempotency-Key", "contract-status-key")
+        .contentType(ContentType.JSON)
+        .body("""
+            {
+              "title": "Contract Status Release",
+              "type": "single",
+              "visibility": "public",
+              "tracks": [
+                { "trackId": "contract-status-track", "position": 1, "priceMinor": 500, "splits": [] }
+              ]
+            }
+            """)
+        .when().post("/v1/studio/releases")
+        .then().statusCode(201).extract().response();
+
+    created.then().body("status",
+        anyOf(equalTo("draft"), equalTo("in_review"), equalTo("scheduled"),
+            equalTo("live"), equalTo("takedown")));
+    created.then().body("status", equalTo("in_review"));
+  }
+
+  @Test
+  void admin_approve_on_illegal_status_returns_ILLEGAL_TRANSITION_error_code() {
+    String artistToken = provisionArtist();
+    String moderatorToken = provisionModerator();
+
+    String releaseId = given()
+        .header("Authorization", "Bearer " + artistToken)
+        .header("Idempotency-Key", "contract-illegal-key")
+        .contentType(ContentType.JSON)
+        .body("""
+            {
+              "title": "Contract Illegal Transition Release",
+              "type": "single",
+              "visibility": "public",
+              "tracks": [
+                { "trackId": "contract-illegal-track", "position": 1, "priceMinor": 500, "splits": [] }
+              ]
+            }
+            """)
+        .when().post("/v1/studio/releases")
+        .then().statusCode(201).extract().jsonPath().getString("id");
+
+    // Approve once: in_review -> live
+    given()
+        .header("Authorization", "Bearer " + moderatorToken)
+        .contentType(ContentType.JSON)
+        .body("{}")
+        .when().post("/v1/admin/catalog/" + releaseId + "/approve")
+        .then().statusCode(200).body("status", equalTo("live"));
+
+    // Approve again: live -> live is illegal
+    given()
+        .header("Authorization", "Bearer " + moderatorToken)
+        .contentType(ContentType.JSON)
+        .body("{}")
+        .when().post("/v1/admin/catalog/" + releaseId + "/approve")
+        .then()
+        .statusCode(409)
+        .body("error", notNullValue())
+        .body("error.code", equalTo("ILLEGAL_TRANSITION"))
+        .body("error.message", isA(String.class));
+  }
+
+  // ---- helpers ----
+
+  private String provisionArtist() {
+    String email = "contract-artist-" + System.nanoTime() + "@example.com";
+    String password = "password123";
+    given()
+        .contentType(ContentType.JSON)
+        .body("""
+            { "name": "Contract Artist", "email": "%s", "password": "%s" }
+            """.formatted(email, password))
+        .when().post("/v1/auth/signup")
+        .then().statusCode(201);
+
+    featureFlags.set(FeatureKey.ARTIST_SIGNUPS, true);
+    String firstToken = login(email, password);
+    given()
+        .header("Authorization", "Bearer " + firstToken)
+        .when().post("/v1/me/become-artist")
+        .then().statusCode(200);
+
+    String artistToken = login(email, password);
+    seedArtistProfile(artistToken);
+    seedTracksForArtist(artistToken, "contract-status-track", "contract-illegal-track");
+    return artistToken;
+  }
+
+  private String provisionModerator() {
+    String email = "contract-moderator-" + System.nanoTime() + "@example.com";
+    String password = "modpassword123";
+    Response resp = given()
+        .contentType(ContentType.JSON)
+        .body("""
+            {"name":"Contract Moderator","email":"%s","password":"%s"}
+            """.formatted(email, password))
+        .post("/v1/auth/signup")
+        .then().statusCode(201).extract().response();
+    String accountId = resp.jsonPath().getString("account.id");
+    promoteToModerator(accountId);
+    return login(email, password);
+  }
+
+  private String login(String email, String password) {
+    return given()
+        .contentType(ContentType.JSON)
+        .body("""
+            { "email": "%s", "password": "%s" }
+            """.formatted(email, password))
+        .when().post("/v1/auth/login")
+        .then().statusCode(200)
+        .extract().jsonPath().getString("token");
+  }
+
+  private void seedArtistProfile(String token) {
+    String accountId = subjectOf(token);
+    inTransaction(() -> em.createNativeQuery(
+            "INSERT INTO artist_profile (id, name, image, verified, monthly_listeners, "
+                + "followers, genres, created_at, updated_at) "
+                + "VALUES (:id, 'Contract Artist', '/images/placeholder.jpg', false, 0, 0, "
+                + "'{}', now(), now()) ON CONFLICT (id) DO NOTHING")
+        .setParameter("id", accountId)
+        .executeUpdate());
+  }
+
+  private void seedTracksForArtist(String token, String... trackIds) {
+    String artistId = subjectOf(token);
+    for (String trackId : trackIds) {
+      inTransaction(() -> em.createNativeQuery(
+              "INSERT INTO track (id, title, artist_id, artist_name, duration_sec, image, "
+                  + "ownership, price_minor, plays, status) "
+                  + "VALUES (:id, :id, :artistId, 'Artist', 180, '/images/placeholder.jpg', "
+                  + "'for-sale', 500, 0, 'uploading') ON CONFLICT (id) DO NOTHING")
+          .setParameter("id", trackId)
+          .setParameter("artistId", artistId)
+          .executeUpdate());
+    }
+  }
+
+  @Transactional
+  void promoteToModerator(String accountId) {
+    em.createQuery("UPDATE AccountEntity a SET a.isAdmin = true WHERE a.id = :id")
+        .setParameter("id", accountId)
+        .executeUpdate();
+    em.createNativeQuery(
+            "INSERT INTO admin_member (id, account_id, role, last_active_at) "
+                + "VALUES (:memberId, :accountId, 'moderator', now())")
+        .setParameter("memberId", "contract-moderator-" + accountId)
+        .setParameter("accountId", accountId)
+        .executeUpdate();
+  }
+
+  @Transactional
+  void inTransaction(Runnable r) {
+    r.run();
+  }
+
+  private String subjectOf(String token) {
+    String payload = token.split("\\.")[1];
+    String json = new String(Base64.getUrlDecoder().decode(payload));
+    return json.replaceAll(".*\"sub\"\\s*:\\s*\"([^\"]+)\".*", "$1");
   }
 }
