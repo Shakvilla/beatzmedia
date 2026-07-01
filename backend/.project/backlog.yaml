@@ -172,7 +172,7 @@ work_units:
     owner: payments-specialist
     depends_on: [WU-PLT-1]
     llfrs: [LLFR-PAYMENTS-01.1]
-    status: in_review
+    status: done
   - id: WU-PAY-2
     title: Provider webhooks + timeout poll + reconciliation
     phase: 2
@@ -222,6 +222,13 @@ work_units:
     # creates the order table + order_ref column, so the fix lands here: DB-backed sequence (or
     # seed-from-max at startup) AND a UNIQUE constraint on order_ref, plus a collision test. Source
     # of the unsafe impl: platform/adapter/out/persistence/Uuidv7IdGenerator.java:24,33 (PR #10).
+    # Carryover from WU-PAY-1 review (PR #54, security + code sign-off): InitiateCharge deliberately
+    # does NOT verify orderRef/amount ownership — that authz is THIS WU's hard requirement. Checkout
+    # is the intended caller of InitiateCharge (payments ADD §8a); before calling it, verify the
+    # orderRef + amount belong to the authenticated caller's own pending order/cart, else 404 (§2.2).
+    # Also add per-account rate limiting (429 + Retry-After) to the checkout/charge money path
+    # (security-authz §6) and an upper-bound validation on charge amount (avoid unmapped 500 on absurd
+    # values; bound from PlatformSettings). See PaymentIntentResource / InitiateChargeService.
   - id: WU-PLY-1
     title: Stream URL (ownership-aware) + record play
     phase: 2
