@@ -1,5 +1,6 @@
 package org.shakvilla.beatzmedia.catalog.adapter.out.persistence;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
@@ -11,6 +12,7 @@ import java.util.stream.Collectors;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
+import jakarta.persistence.LockModeType;
 
 import org.shakvilla.beatzmedia.catalog.application.port.out.CatalogRepository;
 import org.shakvilla.beatzmedia.catalog.domain.Album;
@@ -459,6 +461,77 @@ public class JpaCatalogRepository implements CatalogRepository {
         .setParameter("rid", e.id)
         .getResultList();
     return Optional.of(toReleaseDomain(e, tracks));
+  }
+
+  // ---- WU-CAT-4: release state machine + scheduled go-live ----
+
+  @Override
+  public boolean hasPendingSplits(ReleaseId releaseId) {
+    List<String> trackIds = em.createQuery(
+            "SELECT rt.trackId FROM ReleaseTrackEntity rt WHERE rt.pk.releaseId = :rid",
+            String.class)
+        .setParameter("rid", releaseId.value())
+        .getResultList();
+    if (trackIds.isEmpty()) {
+      return false;
+    }
+    Long pendingCount = em.createQuery(
+            "SELECT COUNT(s) FROM SplitEntryEntity s "
+                + "WHERE s.trackId IN :trackIds AND s.confirmation = 'pending'",
+            Long.class)
+        .setParameter("trackIds", trackIds)
+        .getSingleResult();
+    return pendingCount != null && pendingCount > 0;
+  }
+
+  @Override
+  public List<Release> dueScheduled(Instant now) {
+    // Row-lock the due candidates so a concurrent sweep (e.g. overlapping instances despite the
+    // scheduler advisory lock) cannot pick up the same release twice. PESSIMISTIC_WRITE is safe
+    // under Postgres READ COMMITTED: a second transaction blocks until the first commits, then
+    // re-reads the now-updated row and finds it no longer 'scheduled'.
+    List<ReleaseEntity> entities = em.createQuery(
+            "SELECT r FROM ReleaseEntity r WHERE r.status = 'scheduled' AND r.scheduledAt <= :now",
+            ReleaseEntity.class)
+        .setParameter("now", now)
+        .setLockMode(LockModeType.PESSIMISTIC_WRITE)
+        .getResultList();
+
+    List<String> releaseIds = entities.stream().map(e -> e.id).toList();
+    Map<String, List<ReleaseTrackEntity>> tracksByRelease =
+        releaseIds.isEmpty()
+            ? Map.of()
+            : em.createQuery(
+                    "SELECT rt FROM ReleaseTrackEntity rt WHERE rt.pk.releaseId IN :ids "
+                        + "ORDER BY rt.pk.position",
+                    ReleaseTrackEntity.class)
+                .setParameter("ids", releaseIds)
+                .getResultList()
+                .stream()
+                .collect(Collectors.groupingBy(rt -> rt.pk.releaseId));
+
+    return entities.stream()
+        .map(e -> toReleaseDomain(e, tracksByRelease.getOrDefault(e.id, List.of())))
+        .toList();
+  }
+
+  @Override
+  public void markReleaseTracksReady(ReleaseId releaseId) {
+    // Join through release_track (authoritative link, always populated on submit) rather than
+    // relying solely on track.release_id, which upload-time stub tracks may not yet carry.
+    List<String> trackIds = em.createQuery(
+            "SELECT rt.trackId FROM ReleaseTrackEntity rt WHERE rt.pk.releaseId = :rid",
+            String.class)
+        .setParameter("rid", releaseId.value())
+        .getResultList();
+    if (trackIds.isEmpty()) {
+      return;
+    }
+    em.createQuery(
+            "UPDATE TrackEntity t SET t.status = 'ready' "
+                + "WHERE t.id IN :ids AND t.status <> 'ready'")
+        .setParameter("ids", trackIds)
+        .executeUpdate();
   }
 
   private Release toReleaseDomain(ReleaseEntity e, List<ReleaseTrackEntity> trackEntities) {

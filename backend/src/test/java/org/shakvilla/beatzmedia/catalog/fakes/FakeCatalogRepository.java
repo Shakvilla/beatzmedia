@@ -1,10 +1,13 @@
 package org.shakvilla.beatzmedia.catalog.fakes;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.shakvilla.beatzmedia.catalog.application.port.out.CatalogRepository;
@@ -35,7 +38,23 @@ public class FakeCatalogRepository implements CatalogRepository {
   private final List<BrowseCategory> browseCategories = new ArrayList<>();
   private final Map<String, Release> releases = new HashMap<>();
   private final Map<String, String> idempotencyKeys = new HashMap<>(); // key → releaseId
+  private final Set<String> releasesWithPendingSplits = new HashSet<>();
+  private final Map<String, Integer> markReadyCallCounts = new HashMap<>();
   private int trendingLimit = 10;
+
+  /** Test helper: mark a release as having at least one pending SplitEntry (INV-12). */
+  public void setHasPendingSplits(String releaseId, boolean pending) {
+    if (pending) {
+      releasesWithPendingSplits.add(releaseId);
+    } else {
+      releasesWithPendingSplits.remove(releaseId);
+    }
+  }
+
+  /** Test helper: number of times markReleaseTracksReady was called for a release (idempotency). */
+  public int markReadyCallCount(String releaseId) {
+    return markReadyCallCounts.getOrDefault(releaseId, 0);
+  }
 
   public void addRelease(Release release) {
     releases.put(release.getId(), release);
@@ -213,5 +232,55 @@ public class FakeCatalogRepository implements CatalogRepository {
     if (idempotencyKey != null) {
       idempotencyKeys.put(idempotencyKey, release.getId());
     }
+  }
+
+  // ---- WU-CAT-4 ----
+
+  @Override
+  public boolean hasPendingSplits(ReleaseId releaseId) {
+    return releasesWithPendingSplits.contains(releaseId.value());
+  }
+
+  @Override
+  public List<Release> dueScheduled(Instant now) {
+    return releases.values().stream()
+        .filter(r -> r.getStatus() == ReleaseStatus.scheduled)
+        .filter(r -> r.getScheduledAt() != null && !r.getScheduledAt().isAfter(now))
+        .collect(Collectors.toList());
+  }
+
+  @Override
+  public void markReleaseTracksReady(ReleaseId releaseId) {
+    markReadyCallCounts.merge(releaseId.value(), 1, Integer::sum);
+    Release release = releases.get(releaseId.value());
+    if (release == null) {
+      return;
+    }
+    for (var releaseTrack : release.getTracks()) {
+      Track t = tracks.get(releaseTrack.trackId());
+      if (t != null && !"ready".equals(t.getStatus())) {
+        tracks.put(t.getId().value(), withStatus(t, "ready"));
+      }
+    }
+  }
+
+  private static Track withStatus(Track t, String newStatus) {
+    return new Track(
+        t.getId(),
+        t.getTitle(),
+        t.getArtistId(),
+        t.getArtistName(),
+        t.getAlbumId().orElse(null),
+        t.getAlbumTitle().orElse(null),
+        t.getDurationSec(),
+        t.getImage(),
+        t.getOwnership(),
+        t.getPriceMinor().orElse(null),
+        t.getPlays().orElse(null),
+        t.getAudioUrl().orElse(null),
+        t.getCredits().orElse(null),
+        t.getQuality().orElse(null),
+        t.getYear().orElse(null),
+        newStatus);
   }
 }

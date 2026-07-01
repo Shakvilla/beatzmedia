@@ -1,5 +1,6 @@
 package org.shakvilla.beatzmedia.catalog.application.port.out;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -77,4 +78,26 @@ public interface CatalogRepository {
 
   /** Save a release and associate it with the given idempotency key. */
   void saveReleaseWithIdempotencyKey(Release release, String idempotencyKey);
+
+  // ---- WU-CAT-4: release state machine + scheduled go-live ----
+
+  /**
+   * True if any {@code split_entry} row for a track on this release is still
+   * {@code confirmation = 'pending'}. Guards the {@code live} transition (INV-12): a release
+   * cannot go live while any split is unconfirmed.
+   */
+  boolean hasPendingSplits(ReleaseId releaseId);
+
+  /**
+   * Returns all releases in status {@code scheduled} whose {@code scheduled_at <= now}. Used by
+   * the go-live sweep (INV-7). Backed by {@code idx_release_due} (V305).
+   */
+  List<Release> dueScheduled(Instant now);
+
+  /**
+   * Flips every track belonging to this release from {@code uploading}/{@code error} to
+   * {@code ready} so they become publicly streamable, as part of the go-live / immediate-approve
+   * transition. A no-op for tracks already {@code ready}.
+   */
+  void markReleaseTracksReady(ReleaseId releaseId);
 }

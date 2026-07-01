@@ -30,9 +30,9 @@ WU-SRCH-1), payment/ledger effects of a sale (`payments`), and moderation actor/
 ```mermaid
 flowchart LR
   subgraph catalog[catalog module]
-    IN[Inbound REST adapters\nPublicCatalogResource\nStudioReleaseResource]
-    SCHED[Scheduled go-live trigger\n@Scheduled]
-    APP[Application use cases\nGetHomeFeed · Search · GetArtist\nGetAlbum · GetTrack · GetLyrics\nSubmitRelease · UpdateRelease\nUploadReleaseTrack · PublishRelease]
+    IN[Inbound REST adapters\nPublicCatalogResource\nStudioReleaseResource\nAdminCatalogResource]
+    SCHED[GoLiveJob\nadapter.in.job\nimplements platform ScheduledJob\njob name catalog.go-live]
+    APP[Application use cases\nGetHomeFeed · Search · GetArtist\nGetAlbum · GetTrack · GetLyrics\nSubmitRelease · UpdateRelease\nUploadReleaseTrack · PublishRelease\nRunGoLiveSweep]
     DOM[Domain\nRelease aggregate · Track · Album\nSplitEntry · ReleaseStatus FSM\nINV-5 / INV-7 / INV-12 guards]
     OUTP[Outbound adapters]
   end
@@ -50,11 +50,17 @@ flowchart LR
   BUS -.ContentTakenDown.-> AUD[audit / notifications]
 ```
 
-**Dependency rule.** `adapter.in.rest` / `adapter.in.scheduler` → `application` → `domain`; outbound
+**Dependency rule.** `adapter.in.rest` / `adapter.in.job` → `application` → `domain`; outbound
 adapters implement `application` output ports; inbound never imports outbound (ArchUnit-enforced).
-**Cross-module calls** are via input ports only: `media` (`UploadReleaseTrack` → `MediaService`),
-`commerce`/`library` (per-caller `ownership`/`price` decoration via `OwnershipReader`), and `admin`
-(approve/takedown invoke `PublishRelease` transitions). **Persistence is never shared**: `catalog`
+`GoLiveJob` (`adapter.in.job`, WU-CAT-4) is the concrete inbound scheduler adapter: it implements the
+platform kernel's `ScheduledJob` SPI (`platform.application.port.in.ScheduledJob`), is discovered and
+ticked every 60 s by the platform `SchedulerRegistry` (WU-PLT-2) under the job name
+`catalog.go-live`, and calls only the `RunGoLiveSweep` application input port — it does not touch
+persistence directly. **Cross-module calls** are via input ports only: `media` (`UploadReleaseTrack`
+→ `MediaService`), `commerce`/`library` (per-caller `ownership`/`price` decoration via
+`OwnershipReader`), and `admin` — for WU-CAT-4, `AdminCatalogResource` (`catalog.adapter.in.rest`)
+hosts the approve/takedown/reinstate REST surface directly (no separate `admin` module REST layer
+exists yet), calling `PublishRelease` and requiring the `moderator`/`editor` admin scope. **Persistence is never shared**: `catalog`
 reads/writes only its own tables; other modules reference its rows by id. **Events published:**
 `ReleaseApproved`, `ReleaseWentLive`, `ContentTakenDown` (after-commit, ids + minimal snapshot).
 
@@ -266,18 +272,35 @@ public interface UploadReleaseTrack {               // LLFR-CATALOG-02.4 (delega
 }
 
 public interface PublishRelease {                    // LLFR-CATALOG-02.5 (the FSM driver; called by admin + scheduler)
-    StudioReleaseView transition(ReleaseId id, ReleaseTransition action, ActorRef actor);
+    StudioReleaseView transition(
+        ReleaseId id, ReleaseTransition action, String actorId, Optional<Instant> scheduledAt);
+    // Overload used by TAKEDOWN, which the contract requires a free-text reason for; the reason
+    // is carried on the AuditEntry and the ContentTakenDown event.
+    default StudioReleaseView transition(
+        ReleaseId id, ReleaseTransition action, String actorId,
+        Optional<Instant> scheduledAt, String reason) { ... }
     enum ReleaseTransition { APPROVE_IMMEDIATE, APPROVE_SCHEDULED, GO_LIVE, TAKEDOWN, REINSTATE }
+}
+
+public interface RunGoLiveSweep {                    // LLFR-PLATFORM-01.2 (WU-CAT-4) — sweep entry point
+    int run();  // returns count of releases transitioned to live this sweep
 }
 ```
 
 For each: **trigger** REST resource or scheduler; **authorization** public reads are anonymous-OK,
 all `Studio*`/`*Release` require `artist` + owner re-check, `PublishRelease` (approve/takedown/
-reinstate) requires the admin `moderator`/`editor` scope, `GO_LIVE` is system-only (scheduler).
-**Idempotency** reads are nat. idempotent; `SubmitRelease` is keyed by `Idempotency-Key`; FSM
-transitions are guard-idempotent (re-issuing a settled transition is a no-op or 409). **Emitted
-events** `SubmitRelease` → none public; `APPROVE_*` → `ReleaseApproved`; `GO_LIVE`/immediate approve
-→ `ReleaseWentLive`; `TAKEDOWN` → `ContentTakenDown`.
+reinstate) requires the admin `moderator`/`editor` scope (`@RolesAllowed({"moderator","editor"})` on
+`AdminCatalogResource`, `POST /v1/admin/catalog/:id/{approve,takedown,reinstate}` — WU-CAT-4),
+`GO_LIVE` is system-only (scheduler, never exposed on an HTTP path). **Idempotency** reads are nat.
+idempotent; `SubmitRelease` is keyed by `Idempotency-Key`; FSM transitions are guard-idempotent
+(re-issuing a settled transition throws `IllegalTransitionException` → 409 `ILLEGAL_TRANSITION`
+rather than repeating a side effect). **Emitted events** (CDI `Event<T>.fire()`, mirroring the
+`AccountRegistered` pattern — no separate `EventPublisher` port yet exists in the codebase):
+`SubmitRelease` → none public; `APPROVE_*` → `ReleaseApproved`; `GO_LIVE`/immediate approve →
+`ReleaseWentLive`; `TAKEDOWN` → `ContentTakenDown`. **Audit (INV-10):** `PublishReleaseService`
+appends exactly one `AuditEntry` (type `MODERATION`) per admin-triggered transition
+(`APPROVE_SCHEDULED`, `APPROVE_IMMEDIATE`, `TAKEDOWN`, `REINSTATE`); `GO_LIVE` is system-initiated
+and does not audit (no admin actor).
 
 ### 4.2 Output ports
 
@@ -296,7 +319,9 @@ public interface CatalogRepository {   // Postgres + Panache adapter (adapter.ou
     Optional<Release> findRelease(ReleaseId id);
     void save(Release release);
     void delete(ReleaseId id);
-    List<Release> dueScheduled(Instant now);   // INV-7 go-live sweep
+    List<Release> dueScheduled(Instant now);   // INV-7 go-live sweep; row-locked (PESSIMISTIC_WRITE)
+    boolean hasPendingSplits(ReleaseId releaseId);      // WU-CAT-4 — INV-12 live-transition guard
+    void markReleaseTracksReady(ReleaseId releaseId);   // WU-CAT-4 — flips constituent tracks 'ready'
 }
 
 public interface SearchIndex {         // pg_trgm / full-text adapter (WU-SRCH-1)
@@ -349,11 +374,20 @@ role; public reads accept anonymous (token, if present, decorates `ownership`/`p
 | PATCH | `/studio/releases/:id` | artist (owner) | `UpdateReleaseRequest` | `StudioRelease` | 200 | 409 `ILLEGAL_TRANSITION`, 409 `RELEASE_LIVE` | 02.3 |
 | DELETE | `/studio/releases/:id` | artist (owner) | — | — | 204 | 409 `RELEASE_LIVE` | 02.3 |
 | POST | `/studio/releases/:id/tracks` | artist (owner) | multipart audio (WAV/FLAC) | `UploadedTrack` | 201 | 422 `UNSUPPORTED_FORMAT`, 413 | 02.4 |
+| POST | `/admin/catalog/:id/approve` | `moderator`\|`editor` | `{ date?: ISO-8601 }` | `StudioRelease` | 200 | 409 `ILLEGAL_TRANSITION` | 02.5 |
+| POST | `/admin/catalog/:id/takedown` | `moderator`\|`editor` | `{ reason }` | `StudioRelease` | 200 | 409 `ILLEGAL_TRANSITION` | 02.5 |
+| POST | `/admin/catalog/:id/reinstate` | `moderator`\|`editor` | — | `StudioRelease` | 200 | 409 `ILLEGAL_TRANSITION` | 02.5 |
 
-Admin-driven transitions (approve/takedown/reinstate) and the scheduler `GO_LIVE` invoke
-`PublishRelease` (02.5); their REST surface is owned by the `admin` module (which writes audit) — this
-module exposes the input port only. Resources are thin: DTO → command → input port → DTO. No business
-logic in resources (conventions §5).
+**WU-CAT-4 note on the admin surface.** `API-CONTRACT.md` §"Catalog moderation" lists
+`POST /admin/catalog/:id/{approve|flag|takedown}` under the (not-yet-built) `admin` module; this WU
+implements `approve`/`takedown` (as specified) plus `reinstate` (the FSM's `takedown → live` edge,
+called out in this ADD's §8 state diagram and PRD R6) directly inside `catalog.adapter.in.rest`
+(`AdminCatalogResource`), since no separate `admin` REST module exists yet to own them. `flag` is out
+of scope for WU-CAT-4 (belongs to the broader admin catalog-moderation work unit). A future
+`admin`-module WU may relocate these three endpoints and/or add `flag`; the underlying
+`PublishRelease` input port does not change. The scheduler's `GO_LIVE` transition is system-only and
+is never exposed on an HTTP path — it is driven exclusively by `GoLiveJob` via `RunGoLiveSweep`.
+Resources are thin: DTO → command → input port → DTO. No business logic in resources (conventions §5).
 
 ### 5.2 Outbound — persistence & integrations
 
@@ -537,11 +571,16 @@ CREATE INDEX idx_release_draft_artist ON release_draft(artist_id);
 
 **Flyway migrations** (forward-only, `src/main/resources/db/migration/`):
 
-- `V10__catalog_read_entities.sql` — artist_profile, album, track, track_credit, lyrics, lyric_line,
-  playlist, playlist_track, browse_category + indexes (WU-CAT-1).
-- `V11__catalog_search_indexes.sql` — `pg_trgm` extension, `search_tsv` GIN, trigram indexes (WU-SRCH-1/WU-CAT-2).
-- `V305__catalog_releases.sql` — release, release_track, split_entry, release_draft + indexes + FK `track.release_id → release(id)` (WU-CAT-3).
-- `V13__catalog_golive_guard.sql` — `release.went_live_at`, partial due-index (WU-CAT-4).
+- `V301__create_artist_profile_album.sql`, `V302__create_track_credit_lyrics.sql`,
+  `V303__create_playlist.sql`, `V304__catalog_browse_category.sql` — read entities + indexes
+  (WU-CAT-1/WU-CAT-2).
+- `V305__catalog_releases.sql` — release, release_track, split_entry, release_draft + indexes,
+  **including `release.went_live_at` and the partial due-index
+  `idx_release_due ON release(scheduled_at) WHERE status='scheduled'`**, + FK
+  `track.release_id → release(id)` (WU-CAT-3).
+- **WU-CAT-4 added no new migration** — the go-live guard column and due-index needed by the
+  `dueScheduled` sweep already shipped in `V305`; the FSM and sweep are pure application/domain
+  logic over the existing schema. The next free catalog-band version remains `V306`.
 - Repeatable `R__seed_dev_data.sql` contributes the mock catalog (artists, albums, tracks, playlists,
   browse categories, a sample creator's releases) — dev/test profiles only.
 
@@ -608,19 +647,40 @@ stateDiagram-v2
 - **Auth/scope.** `studio.*` endpoints require the `artist` role (enforced at the REST adapter) **and**
   an owner re-check in the application layer (an artist touches only their own releases — else 403/404).
   Public reads accept anonymous; a present token only decorates `ownership`/`price`. `PublishRelease`
-  approve/takedown/reinstate require admin `moderator`/`editor` scope (invoked from the `admin`
-  module); `GO_LIVE` is system-only (scheduler).
+  approve/takedown/reinstate require admin `moderator`/`editor` scope, enforced via
+  `@RolesAllowed({"moderator","editor"})` on `AdminCatalogResource` (WU-CAT-4 — see §5.1 note on why
+  this lives in `catalog` rather than a separate `admin` module for now); `GO_LIVE` is system-only
+  (scheduler, `GoLiveJob`), never exposed on an HTTP path.
 - **Idempotency.** `SubmitRelease` honors `Idempotency-Key`; FSM transitions are guard-idempotent
-  (`went_live_at` makes go-live fire exactly once).
-- **Audit (INV-10).** Approve / takedown / reinstate are privileged mutations — the **admin** module
-  appends the `AuditEntry`; this module emits the domain events (`ReleaseApproved`, `ReleaseWentLive`,
-  `ContentTakenDown`) the audit/notifications/analytics modules consume after commit.
+  (`went_live_at` makes go-live fire exactly once; a repeat call throws `IllegalTransitionException`
+  rather than re-firing side effects — verified by `RunGoLiveSweepServiceTest` and
+  `AdminCatalogResourceIT`).
+- **Audit (INV-10).** Approve / takedown / reinstate are privileged mutations — `PublishReleaseService`
+  appends exactly one `AuditEntry` (type `MODERATION`) per admin-triggered transition, atomically in
+  the same transaction as the state change, via the `AuditWriter` output port (not the audit table
+  directly). `GO_LIVE` is system-initiated (no admin actor) and does not audit. This module also emits
+  the domain events (`ReleaseApproved`, `ReleaseWentLive`, `ContentTakenDown`) the
+  audit/notifications/analytics modules consume after commit.
 - **Error model.** Uniform envelope `{ error: { code, message, field? } }`. Codes used here:
   `ARTIST_NOT_FOUND` (404), `ALBUM_NOT_FOUND` (404), `TRACK_NOT_FOUND` (404), `LYRICS_NOT_FOUND`
   (404), `PLAYLIST_NOT_FOUND` (404), `MISSING_QUERY` (422), `TRACK_COUNT_INVALID` (422),
   `SPLIT_OVER_100` (422, INV-12), `RELEASE_LIVE` (409, delete of live), `ILLEGAL_TRANSITION`
   (409, FSM), `UNSUPPORTED_FORMAT` (422, non-WAV/FLAC). Private/`in_review` resources are hidden as 404.
-- **Domain events.** `ReleaseApproved`, `ReleaseWentLive`, `ContentTakenDown` (ids + snapshot, after-commit).
+- **Domain events.** `ReleaseApproved`, `ReleaseWentLive`, `ContentTakenDown` (ids + snapshot,
+  after-commit; fired via CDI `Event<T>.fire()` from `PublishReleaseService`, mirroring the
+  `AccountRegistered` pattern already used by `identity` — no separate `EventPublisher` port exists in
+  the codebase yet, so this ADD's illustrative `EventPublisher` output port is aspirational, not
+  implemented; update if/when a cross-cutting event-bus port is introduced).
+- **Known gap — split persistence (tracked, not blocking WU-CAT-4).** `SubmitRelease` (WU-CAT-3)
+  validates that per-track split percentages sum to ≤100 (INV-12, `SPLIT_OVER_100`) but does not
+  persist `SplitEntry` rows to `split_entry` — they are validated in memory and discarded. WU-CAT-4's
+  `CatalogRepository.hasPendingSplits` guard is implemented and unit/integration-tested against the
+  `split_entry` table, but with no rows ever written the guard is currently always "no pending
+  splits" (a real block against real pending data, not a silent gap for INV-12's *current* enforced
+  scope: no split can be pending if none are persisted). This is safe (never falsely blocks or
+  falsely allows a real pending split) but does not yet let an admin observe/confirm splits before
+  go-live. A future WU should extend `SubmitRelease`/`UpdateRelease` to persist `SplitEntry` rows so
+  the guard has real data to act on.
 - **Observability.** Micrometer counters: releases by status, go-live job runs/failures, search QPS;
   spans on submit and the go-live sweep. Structured logs, no PII.
 
@@ -633,7 +693,7 @@ stateDiagram-v2
 | **WU-CAT-2** | Home feed + browse + search read (CATALOG-01.1–01.3) | WU-CAT-1, WU-SRCH-1 | 3 |
 | **WU-MED-1** | Media upload→validate→transcode→signed URL (MEDIA-01.*) — used by track upload | WU-PLT-1 | parallel |
 | **WU-CAT-3** ✅ | Release wizard submit + manage + track upload (CATALOG-02.1–02.4) | WU-CAT-1, WU-MED-1, WU-IDN-3 | 4 |
-| **WU-CAT-4** | Release state machine + scheduled go-live (CATALOG-02.5) | WU-CAT-3, WU-PLT-2 | 5 |
+| **WU-CAT-4** ✅ | Release state machine + scheduled go-live (CATALOG-02.5, PLATFORM-01.2) | WU-CAT-3, WU-PLT-2 | 5 |
 
 Cross-reference PRD §8 / §8.1. Phase-1 order within catalog: WU-CAT-1 → WU-SRCH-1 → WU-CAT-2 ;
 WU-CAT-3 → WU-CAT-4 (WU-MED-1 lands in Phase 0 foundations).

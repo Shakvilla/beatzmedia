@@ -20,7 +20,7 @@ public final class Release {
   private final ReleaseType type;
   private ReleaseStatus status;
   private final Visibility visibility;
-  private final Instant scheduledAt;
+  private Instant scheduledAt;
   private Instant wentLiveAt;
   private final long listPriceMinor;
   private final Instant createdAt;
@@ -115,6 +115,99 @@ public final class Release {
   }
 
   public void markUpdated(Instant now) {
+    this.updatedAt = now;
+  }
+
+  // -------------------------------------------------------------------------
+  // Release lifecycle FSM — LLFR-CATALOG-02.5 / catalog ADD §3, §8.
+  //
+  // draft --submit--> in_review
+  // in_review --approve(future date)--> scheduled
+  // in_review --approve(immediate)--> live
+  // scheduled --go-live (scheduler, INV-7)--> live
+  // live --takedown--> takedown
+  // takedown --reinstate--> live
+  //
+  // Any other edge throws IllegalTransitionException (409 ILLEGAL_TRANSITION).
+  // -------------------------------------------------------------------------
+
+  /**
+   * Admin approves an {@code in_review} release for a future go-live instant. Legal only from
+   * {@code in_review}. The release becomes {@code scheduled}; it must not be publicly
+   * readable/streamable before {@code scheduledAt} (INV-7).
+   *
+   * @throws IllegalTransitionException if not currently {@code in_review}
+   * @throws IllegalArgumentException if {@code scheduledAt} is not strictly in the future of {@code now}
+   */
+  public void approveScheduled(Instant scheduledAt, Instant now) {
+    if (this.status != ReleaseStatus.in_review) {
+      throw new IllegalTransitionException(this.status, "APPROVE_SCHEDULED");
+    }
+    if (scheduledAt == null || !scheduledAt.isAfter(now)) {
+      throw new IllegalArgumentException("scheduledAt must be strictly in the future");
+    }
+    this.status = ReleaseStatus.scheduled;
+    this.scheduledAt = scheduledAt;
+    this.updatedAt = now;
+  }
+
+  /**
+   * Admin approves an {@code in_review} release for immediate publication. Legal only from
+   * {@code in_review}. The release becomes {@code live} and {@code wentLiveAt} is stamped once.
+   *
+   * @throws IllegalTransitionException if not currently {@code in_review}
+   */
+  public void approveImmediate(Instant now) {
+    if (this.status != ReleaseStatus.in_review) {
+      throw new IllegalTransitionException(this.status, "APPROVE_IMMEDIATE");
+    }
+    this.status = ReleaseStatus.live;
+    this.wentLiveAt = now;
+    this.updatedAt = now;
+  }
+
+  /**
+   * System/scheduler transition: a {@code scheduled} release whose {@code scheduledAt} has passed
+   * becomes {@code live}. Legal only from {@code scheduled}. Idempotent by construction at the
+   * call site: once {@code wentLiveAt} is set the release is no longer {@code scheduled}, so a
+   * repeat call throws {@link IllegalTransitionException} rather than re-firing side effects
+   * (INV-7 exactly-once).
+   *
+   * @throws IllegalTransitionException if not currently {@code scheduled}
+   */
+  public void goLive(Instant now) {
+    if (this.status != ReleaseStatus.scheduled) {
+      throw new IllegalTransitionException(this.status, "GO_LIVE");
+    }
+    this.status = ReleaseStatus.live;
+    this.wentLiveAt = now;
+    this.updatedAt = now;
+  }
+
+  /**
+   * Admin takes a {@code live} release down. Legal only from {@code live}.
+   *
+   * @throws IllegalTransitionException if not currently {@code live}
+   */
+  public void takedown(Instant now) {
+    if (this.status != ReleaseStatus.live) {
+      throw new IllegalTransitionException(this.status, "TAKEDOWN");
+    }
+    this.status = ReleaseStatus.takedown;
+    this.updatedAt = now;
+  }
+
+  /**
+   * Admin reinstates a {@code takedown} release back to {@code live}. Legal only from
+   * {@code takedown}.
+   *
+   * @throws IllegalTransitionException if not currently {@code takedown}
+   */
+  public void reinstate(Instant now) {
+    if (this.status != ReleaseStatus.takedown) {
+      throw new IllegalTransitionException(this.status, "REINSTATE");
+    }
+    this.status = ReleaseStatus.live;
     this.updatedAt = now;
   }
 
