@@ -56,7 +56,9 @@ public class DomainExceptionMapper implements ExceptionMapper<DomainException> {
               EMAIL_TAKEN,
               LAST_SUPER_ADMIN,
               RELEASE_LIVE,
-              IDEMPOTENCY_KEY_CONFLICT ->
+              IDEMPOTENCY_KEY_CONFLICT,
+              ALREADY_OWNED,
+              NOT_STACKABLE ->
           Response.Status.CONFLICT.getStatusCode();
       case MISSING_IDEMPOTENCY_KEY -> Response.Status.BAD_REQUEST.getStatusCode();
       case PROVIDER_ERROR -> BAD_GATEWAY;
