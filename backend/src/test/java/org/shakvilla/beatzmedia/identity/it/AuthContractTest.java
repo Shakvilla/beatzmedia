@@ -1,6 +1,7 @@
 package org.shakvilla.beatzmedia.identity.it;
 
 import static io.restassured.RestAssured.given;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -28,6 +29,8 @@ class AuthContractTest {
 
   private static final String SIGNUP_URL = "/v1/auth/signup";
   private static final String LOGIN_URL = "/v1/auth/login";
+  private static final String SOCIAL_URL = "/v1/auth/social";
+  private static final String ME_URL = "/v1/me";
 
   @Test
   void signup_response_matches_api_contract_account_shape() throws Exception {
@@ -122,6 +125,107 @@ class AuthContractTest {
     assertTrue(account.has("avatar"), "account.avatar must be present (nullable)");
     assertTrue(account.get("isArtist").isBoolean());
     assertTrue(account.get("isAdmin").isBoolean());
+  }
+
+  @Test
+  void social_response_matches_api_contract_account_shape() throws Exception {
+    String fixtureToken = "contract-google-uid|social-contract@example.com|Social Contract Fan|";
+
+    String rawBody = given()
+        .contentType(ContentType.JSON)
+        .body("""
+            { "provider": "google", "token": "%s" }
+            """.formatted(fixtureToken))
+        .when()
+        .post(SOCIAL_URL)
+        .then()
+        .statusCode(200)
+        .extract().asString();
+
+    ObjectMapper mapper = new ObjectMapper();
+    JsonNode root = mapper.readTree(rawBody);
+
+    assertNotNull(root.get("token"), "Response must have 'token'");
+    assertTrue(root.get("token").isTextual() && !root.get("token").asText().isBlank());
+
+    JsonNode account = root.get("account");
+    assertNotNull(account, "Response must have 'account'");
+    assertNotNull(account.get("id"));
+    assertNotNull(account.get("name"));
+    assertNotNull(account.get("email"));
+    assertTrue(account.has("avatar"), "account.avatar must be present (nullable)");
+    assertTrue(account.get("isArtist").isBoolean());
+    assertFalse(account.get("isArtist").asBoolean(), "New social fan isArtist must be false");
+    assertTrue(account.get("isAdmin").isBoolean());
+    assertFalse(account.get("isAdmin").asBoolean(), "New social fan isAdmin must be false");
+  }
+
+  @Test
+  void get_me_response_matches_api_contract_account_shape() throws Exception {
+    String email = "contract-me@example.com";
+    String password = "password123";
+
+    given()
+        .contentType(ContentType.JSON)
+        .body("""
+            { "name": "Contract Me", "email": "%s", "password": "%s" }
+            """.formatted(email, password))
+        .when()
+        .post(SIGNUP_URL)
+        .then()
+        .statusCode(201);
+
+    String token = given()
+        .contentType(ContentType.JSON)
+        .body("""
+            { "email": "%s", "password": "%s" }
+            """.formatted(email, password))
+        .when()
+        .post(LOGIN_URL)
+        .then()
+        .statusCode(200)
+        .extract().jsonPath().getString("token");
+
+    String rawBody = given()
+        .header("Authorization", "Bearer " + token)
+        .when()
+        .get(ME_URL)
+        .then()
+        .statusCode(200)
+        .extract().asString();
+
+    ObjectMapper mapper = new ObjectMapper();
+    JsonNode account = mapper.readTree(rawBody);
+
+    // GET /v1/me returns the bare Account shape (no {token, account} envelope) per API-CONTRACT §2.
+    assertNotNull(account.get("id"));
+    assertNotNull(account.get("name"));
+    assertNotNull(account.get("email"));
+    assertTrue(account.has("avatar"), "avatar must be present (nullable)");
+    assertTrue(account.get("isArtist").isBoolean());
+    assertTrue(account.get("isAdmin").isBoolean());
+  }
+
+  @Test
+  void social_invalid_token_error_matches_envelope_shape() throws Exception {
+    String rawBody = given()
+        .contentType(ContentType.JSON)
+        .body("""
+            { "provider": "google", "token": "not-a-fixture-token" }
+            """)
+        .when()
+        .post(SOCIAL_URL)
+        .then()
+        .statusCode(401)
+        .extract().asString();
+
+    ObjectMapper mapper = new ObjectMapper();
+    JsonNode root = mapper.readTree(rawBody);
+
+    JsonNode error = root.get("error");
+    assertNotNull(error, "Error response must have 'error' field");
+    assertEquals("SOCIAL_TOKEN_INVALID", error.get("code").asText());
+    assertNotNull(error.get("message"));
   }
 
   @Test
