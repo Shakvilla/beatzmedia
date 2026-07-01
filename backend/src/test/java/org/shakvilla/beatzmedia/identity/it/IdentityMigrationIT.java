@@ -80,4 +80,68 @@ class IdentityMigrationIT {
       // Expected: account_status_chk violated
     }
   }
+
+  // ---- V204: social_identity + password_reset_token (WU-IDN-2) ----
+
+  @Test
+  @Transactional
+  void social_identity_table_exists() {
+    Number result = (Number) em.createNativeQuery("SELECT COUNT(*) FROM social_identity")
+        .getSingleResult();
+    assertTrue(result.longValue() >= 0, "social_identity table must exist");
+  }
+
+  @Test
+  @Transactional
+  void password_reset_token_table_exists() {
+    Number result = (Number) em.createNativeQuery("SELECT COUNT(*) FROM password_reset_token")
+        .getSingleResult();
+    assertTrue(result.longValue() >= 0, "password_reset_token table must exist");
+  }
+
+  @Test
+  @Transactional
+  void social_identity_provider_uid_unique_constraint_exists() {
+    // Seed an account to satisfy the FK
+    em.createNativeQuery(
+            "INSERT INTO account (id, name, email, is_artist, is_admin, status, created_at, updated_at) "
+                + "VALUES ('mig-social-acc', 'Social', 'mig-social@example.com', false, false, 'active', now(), now())")
+        .executeUpdate();
+
+    em.createNativeQuery(
+            "INSERT INTO social_identity (id, account_id, provider, provider_uid) "
+                + "VALUES ('mig-social-1', 'mig-social-acc', 'google', 'dup-uid')")
+        .executeUpdate();
+
+    try {
+      em.createNativeQuery(
+              "INSERT INTO social_identity (id, account_id, provider, provider_uid) "
+                  + "VALUES ('mig-social-2', 'mig-social-acc', 'google', 'dup-uid')")
+          .executeUpdate();
+      em.flush();
+      throw new AssertionError("Expected unique constraint violation on (provider, provider_uid)");
+    } catch (Exception e) {
+      // Expected: social_identity_provider_uk violated
+    }
+  }
+
+  @Test
+  @Transactional
+  void password_reset_token_account_fk_and_defaults() {
+    em.createNativeQuery(
+            "INSERT INTO account (id, name, email, is_artist, is_admin, status, created_at, updated_at) "
+                + "VALUES ('mig-reset-acc', 'Reset', 'mig-reset@example.com', false, false, 'active', now(), now())")
+        .executeUpdate();
+
+    em.createNativeQuery(
+            "INSERT INTO password_reset_token (token_hash, account_id, expires_at) "
+                + "VALUES ('mig-reset-hash', 'mig-reset-acc', now() + interval '30 minutes')")
+        .executeUpdate();
+    em.flush();
+
+    Boolean used = (Boolean) em.createNativeQuery(
+            "SELECT used FROM password_reset_token WHERE token_hash = 'mig-reset-hash'")
+        .getSingleResult();
+    assertTrue(Boolean.FALSE.equals(used), "used must default to FALSE");
+  }
 }

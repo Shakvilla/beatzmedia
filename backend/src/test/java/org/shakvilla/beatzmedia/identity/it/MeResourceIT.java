@@ -33,8 +33,10 @@ class MeResourceIT {
 
   private static final String SIGNUP_URL = "/v1/auth/signup";
   private static final String LOGIN_URL = "/v1/auth/login";
+  private static final String ME_URL = "/v1/me";
   private static final String BECOME_ARTIST_URL = "/v1/me/become-artist";
   private static final String SETTINGS_URL = "/v1/me/settings";
+  private static final String PASSWORD_RESET_URL = "/v1/me/password/reset";
 
   private static final String USER_EMAIL = "me-it-user@example.com";
   private static final String USER_PASSWORD = "password123";
@@ -60,6 +62,47 @@ class MeResourceIT {
         .post(SIGNUP_URL)
         .then()
         .statusCode(201);
+  }
+
+  // ---- LLFR-IDENTITY-02.1: GET /v1/me ----
+
+  @Test
+  @Order(0)
+  void get_me_without_token_returns_401() {
+    given()
+        .when()
+        .get(ME_URL)
+        .then()
+        .statusCode(401);
+  }
+
+  @Test
+  @Order(0)
+  void get_me_with_expired_or_garbage_token_returns_401() {
+    given()
+        .header("Authorization", "Bearer not-a-real-jwt")
+        .when()
+        .get(ME_URL)
+        .then()
+        .statusCode(401);
+  }
+
+  @Test
+  @Order(6)
+  void get_me_with_valid_token_returns_200_account_shape() {
+    String token = login(USER_EMAIL, USER_PASSWORD);
+
+    given()
+        .header("Authorization", "Bearer " + token)
+        .when()
+        .get(ME_URL)
+        .then()
+        .statusCode(200)
+        .body("id", notNullValue())
+        .body("name", equalTo(USER_NAME))
+        .body("email", equalTo(USER_EMAIL))
+        .body("isArtist", notNullValue())
+        .body("isAdmin", equalTo(false));
   }
 
   // ---- LLFR-IDENTITY-02.2: become-artist ----
@@ -263,7 +306,77 @@ class MeResourceIT {
         .body("notifications.dropsOffers", equalTo(true));
   }
 
-  // ---- Migration: fan_settings table exists ----
+  // ---- LLFR-IDENTITY-01.5: password reset request (always 204, no enumeration) ----
+
+  @Test
+  @Order(30)
+  void password_reset_unknown_email_returns_204() {
+    given()
+        .contentType(ContentType.JSON)
+        .body("""
+            { "email": "definitely-not-registered@example.com" }
+            """)
+        .when()
+        .post(PASSWORD_RESET_URL)
+        .then()
+        .statusCode(204);
+  }
+
+  @Test
+  @Order(31)
+  void password_reset_existing_email_returns_204() {
+    given()
+        .contentType(ContentType.JSON)
+        .body("""
+            { "email": "%s" }
+            """.formatted(USER_EMAIL))
+        .when()
+        .post(PASSWORD_RESET_URL)
+        .then()
+        .statusCode(204);
+  }
+
+  @Test
+  @Order(32)
+  @Transactional
+  void password_reset_existing_email_persists_a_hashed_single_use_token() {
+    given()
+        .contentType(ContentType.JSON)
+        .body("""
+            { "email": "%s" }
+            """.formatted(USER_EMAIL))
+        .when()
+        .post(PASSWORD_RESET_URL)
+        .then()
+        .statusCode(204);
+
+    Number count = (Number) em.createNativeQuery(
+            "SELECT COUNT(*) FROM password_reset_token t "
+                + "JOIN account a ON a.id = t.account_id WHERE lower(a.email) = lower(:email)")
+        .setParameter("email", USER_EMAIL)
+        .getSingleResult();
+    org.junit.jupiter.api.Assertions.assertTrue(count.longValue() >= 1,
+        "A password_reset_token row must be persisted for the existing email");
+  }
+
+  @Test
+  @Order(33)
+  void password_reset_no_body_field_leak_in_response() {
+    // The 204 response body must be empty — no leaking of token/account existence.
+    String body = given()
+        .contentType(ContentType.JSON)
+        .body("""
+            { "email": "%s" }
+            """.formatted(USER_EMAIL))
+        .when()
+        .post(PASSWORD_RESET_URL)
+        .then()
+        .statusCode(204)
+        .extract().asString();
+    org.junit.jupiter.api.Assertions.assertTrue(body == null || body.isBlank());
+  }
+
+  // ---- Migration: fan_settings / social_identity / password_reset_token tables exist ----
 
   @Test
   @Order(20)
@@ -274,6 +387,22 @@ class MeResourceIT {
         .getSingleResult();
     org.junit.jupiter.api.Assertions.assertTrue(count.longValue() >= 0,
         "fan_settings table must exist");
+  }
+
+  @Test
+  @Order(21)
+  @Transactional
+  void social_identity_and_password_reset_token_tables_exist() {
+    Number socialCount = (Number) em.createNativeQuery(
+            "SELECT COUNT(*) FROM social_identity")
+        .getSingleResult();
+    Number resetCount = (Number) em.createNativeQuery(
+            "SELECT COUNT(*) FROM password_reset_token")
+        .getSingleResult();
+    org.junit.jupiter.api.Assertions.assertTrue(socialCount.longValue() >= 0,
+        "social_identity table must exist");
+    org.junit.jupiter.api.Assertions.assertTrue(resetCount.longValue() >= 0,
+        "password_reset_token table must exist");
   }
 
   // ---- Helpers ----

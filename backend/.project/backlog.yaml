@@ -70,7 +70,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-IDN-1]
     llfrs: [LLFR-IDENTITY-01.3, LLFR-IDENTITY-01.5, LLFR-IDENTITY-02.1]
-    status: todo
+    status: in_review
   - id: WU-IDN-3
     title: Become-artist + fan settings
     phase: 1

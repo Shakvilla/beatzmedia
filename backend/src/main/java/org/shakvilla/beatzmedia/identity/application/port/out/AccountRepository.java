@@ -8,6 +8,9 @@ import org.shakvilla.beatzmedia.identity.domain.AccountId;
 import org.shakvilla.beatzmedia.identity.domain.AdminMember;
 import org.shakvilla.beatzmedia.identity.domain.AdminRole;
 import org.shakvilla.beatzmedia.identity.domain.FanSettings;
+import org.shakvilla.beatzmedia.identity.domain.PasswordResetToken;
+import org.shakvilla.beatzmedia.identity.domain.SocialIdentity;
+import org.shakvilla.beatzmedia.identity.domain.SocialProvider;
 
 /**
  * Output port for account persistence. WU-IDN-1 declares only the methods it needs; later WUs
@@ -29,6 +32,29 @@ public interface AccountRepository {
    * aggregate.
    */
   Account save(Account account);
+
+  // --- WU-IDN-2 additions (social login, password reset) ---
+
+  /** Finds an account linked to the given provider identity, if any. Identity ADD §4.2. */
+  Optional<Account> findBySocialIdentity(SocialProvider provider, String providerUid);
+
+  /**
+   * Persists a new social identity link for an existing or newly created account. Idempotent:
+   * callers should check {@link #findBySocialIdentity} first to avoid duplicate links.
+   */
+  SocialIdentity saveSocialIdentity(SocialIdentity identity);
+
+  /**
+   * Finds a password reset token by its SHA-256 hash (the plaintext token is never persisted or
+   * queried directly). Returns empty if no such token exists.
+   */
+  Optional<PasswordResetToken> findResetTokenByHash(String tokenHash);
+
+  /** Persists a newly issued password reset token. */
+  PasswordResetToken saveResetToken(PasswordResetToken token);
+
+  /** Marks a password reset token as used (single-use enforcement), matched by its hash. */
+  void markResetTokenUsed(String tokenHash);
 
   // --- WU-IDN-3 additions (fan settings) ---
 
