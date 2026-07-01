@@ -42,9 +42,9 @@ class PaymentsMigrationIT {
   void idempotency_key_unique_constraint_is_enforced() throws SQLException {
     String insert =
         "INSERT INTO payment_intent "
-            + "(id, order_ref, amount_minor, currency, provider, method_kind, status, "
+            + "(id, account_id, order_ref, amount_minor, currency, provider, method_kind, status, "
             + " idempotency_key, request_fingerprint, created_at, updated_at) "
-            + "VALUES (?, 'BZ-2026-70001', 1000, 'GHS', 'mtn', 'momo', 'pending', "
+            + "VALUES (?, 'acct-mig', 'BZ-2026-70001', 1000, 'GHS', 'mtn', 'momo', 'pending', "
             + " 'dup-key', 'fp', now(), now())";
 
     try (Connection c = dataSource.getConnection()) {

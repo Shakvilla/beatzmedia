@@ -1,5 +1,6 @@
 package org.shakvilla.beatzmedia.payments.application.port.in;
 
+import org.shakvilla.beatzmedia.payments.domain.AccountId;
 import org.shakvilla.beatzmedia.payments.domain.IdempotencyKey;
 import org.shakvilla.beatzmedia.payments.domain.OrderRef;
 import org.shakvilla.beatzmedia.payments.domain.PaymentMethodRef;
@@ -15,13 +16,23 @@ import org.shakvilla.beatzmedia.platform.domain.Money;
  * {@link IdempotencyKey} with the same request returns the <em>same</em> intent and issues no
  * second provider charge; the same key with a different request is a conflict (409
  * {@code IDEMPOTENCY_KEY_CONFLICT}).
+ *
+ * <p><strong>Actor binding (INV-10).</strong> The initiating {@link AccountId} is threaded through
+ * so the audit trail records WHO acted and the intent is bound to the authenticated caller. The
+ * LLFR-PAYMENTS-01.1 illustrative signature {@code (orderRef, amount, method, idemKey)} is extended
+ * with the acting account for this reason. Note that <em>order/cart-ownership authorization</em>
+ * (verifying {@code orderRef} + {@code amount} belong to the caller's own pending order) is NOT
+ * done here — the order table does not exist until WU-COM-2, and per payments ADD §8(a) the intended
+ * caller of this use case is the commerce <strong>checkout</strong> orchestration, which performs
+ * that ownership check before calling in.
  */
 public interface InitiateCharge {
 
   /**
-   * Create or return the payment intent for {@code (orderRef, amount, method)} under
+   * Create or return the payment intent for {@code (accountId, orderRef, amount, method)} under
    * {@code idempotencyKey}.
    *
+   * @param accountId the authenticated principal initiating the charge (audit actor + intent owner)
    * @param orderRef commerce order reference the charge settles against (id only)
    * @param amount charge amount in minor units (INV-11)
    * @param method the instrument/rail to charge
@@ -29,5 +40,9 @@ public interface InitiateCharge {
    * @return the (possibly pre-existing) payment intent
    */
   PaymentIntentView charge(
-      OrderRef orderRef, Money amount, PaymentMethodRef method, IdempotencyKey idempotencyKey);
+      AccountId accountId,
+      OrderRef orderRef,
+      Money amount,
+      PaymentMethodRef method,
+      IdempotencyKey idempotencyKey);
 }

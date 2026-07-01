@@ -8,6 +8,7 @@
 
 CREATE TABLE payment_intent (
     id                  TEXT PRIMARY KEY,
+    account_id          TEXT NOT NULL,
     order_ref           TEXT NOT NULL,
     amount_minor        BIGINT NOT NULL CHECK (amount_minor >= 0),
     currency            TEXT NOT NULL DEFAULT 'GHS',
@@ -29,3 +30,7 @@ CREATE INDEX idx_payment_intent_status_created ON payment_intent (status, create
 
 -- Reconciliation and order lookups join by order reference.
 CREATE INDEX idx_payment_intent_order_ref ON payment_intent (order_ref);
+
+-- account_id binds the intent to the authenticated principal that initiated it (INV-10 audit actor
+-- + owner); cross-module reference by id only. Index for per-account lookups (studio/admin finance).
+CREATE INDEX idx_payment_intent_account ON payment_intent (account_id);

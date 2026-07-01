@@ -27,6 +27,7 @@ class PaymentIntentTest {
   private static PaymentIntent newPending() {
     return PaymentIntent.create(
         "pi-1",
+        new AccountId("acct-1"),
         new OrderRef("BZ-2026-00001"),
         Money.ofMinor(1000, Currency.GHS),
         new PaymentMethodRef(Provider.mtn, MethodKind.momo, "tok-123"),
@@ -43,6 +44,23 @@ class PaymentIntentTest {
     assertEquals(1000, intent.getAmount().minor());
     assertEquals(Provider.mtn, intent.getProvider());
     assertEquals(MethodKind.momo, intent.getMethodKind());
+    assertEquals("acct-1", intent.getAccountId().value());
+  }
+
+  @Test
+  void create_rejects_null_account() {
+    assertThrows(
+        NullPointerException.class,
+        () ->
+            PaymentIntent.create(
+                "pi-n",
+                null,
+                new OrderRef("BZ-2026-00003"),
+                Money.ofMinor(500, Currency.GHS),
+                new PaymentMethodRef(Provider.mtn, MethodKind.momo, "tok"),
+                new IdempotencyKey("idem-n"),
+                "fp-n",
+                T0));
   }
 
   @Test
@@ -52,6 +70,7 @@ class PaymentIntentTest {
         () ->
             PaymentIntent.create(
                 "pi-x",
+                new AccountId("acct-1"),
                 new OrderRef("BZ-2026-00002"),
                 Money.ofMinor(-1, Currency.GHS),
                 new PaymentMethodRef(Provider.card, MethodKind.card, "tok"),

@@ -16,6 +16,20 @@ public class FakePaymentRepository implements PaymentRepository {
 
   private final Map<String, PaymentIntent> byId = new HashMap<>();
   private final Map<String, String> idByIdemKey = new HashMap<>();
+  private int lockCalls = 0;
+
+  @Override
+  public void lockForIdempotencyKey(IdempotencyKey key) {
+    // No-op in the in-memory fake: single-threaded unit tests need no serialisation. The real JPA
+    // adapter takes a transaction-scoped Postgres advisory lock; concurrent behaviour is covered by
+    // the integration test.
+    lockCalls++;
+  }
+
+  /** How many times the idempotency lock was requested (for assertions). */
+  public int lockCalls() {
+    return lockCalls;
+  }
 
   @Override
   public Optional<PaymentIntent> findByIdempotencyKey(IdempotencyKey key) {

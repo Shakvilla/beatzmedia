@@ -19,6 +19,9 @@ public class PaymentIntentEntity {
   @Column(name = "id", nullable = false)
   public String id;
 
+  @Column(name = "account_id", nullable = false)
+  public String accountId;
+
   @Column(name = "order_ref", nullable = false)
   public String orderRef;
 

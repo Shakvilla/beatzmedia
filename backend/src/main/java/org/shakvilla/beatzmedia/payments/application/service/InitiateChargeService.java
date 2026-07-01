@@ -18,6 +18,7 @@ import org.shakvilla.beatzmedia.payments.application.port.in.PaymentIntentView;
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway;
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway.ChargeHandle;
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentRepository;
+import org.shakvilla.beatzmedia.payments.domain.AccountId;
 import org.shakvilla.beatzmedia.payments.domain.IdempotencyConflictException;
 import org.shakvilla.beatzmedia.payments.domain.IdempotencyKey;
 import org.shakvilla.beatzmedia.payments.domain.OrderRef;
@@ -34,6 +35,10 @@ import org.shakvilla.beatzmedia.platform.domain.Money;
  * <p>Flow (payments ADD §8a):
  *
  * <ol>
+ *   <li>Acquire a transaction-scoped advisory lock keyed on the idempotency key so concurrent
+ *       same-key requests serialise (code review BLOCKER 2 — a same-key double charge must not slip
+ *       past the read, must not double-call the provider, and must never surface as a raw
+ *       unique-violation 500).
  *   <li>Compute a stable fingerprint of the request {@code (orderRef, amount, provider, kind)}.
  *   <li>Look up the idempotency key. On a hit: same fingerprint ⇒ return the existing intent (no
  *       second provider charge, INV — exactly one charge per key); different fingerprint ⇒ 409
@@ -42,11 +47,17 @@ import org.shakvilla.beatzmedia.platform.domain.Money;
  *       {@code failed} intent (so the key is consumed and the failure is auditable) and surface the
  *       error.
  *   <li>Persist the {@code pending} intent and append an {@link AuditEntry} (INV-10) in the same
- *       transaction.
+ *       transaction, with the initiating {@link AccountId} as the audit actor (WHO acted).
  * </ol>
  *
  * <p>No value is granted here — ownership is granted only on settlement (INV-1), which happens in
  * WU-PAY-2. Money stays in minor units throughout (INV-11).
+ *
+ * <p><strong>Authorization boundary.</strong> This service binds the intent to the authenticated
+ * caller ({@code accountId}) but does NOT verify that {@code orderRef}/{@code amount} belong to the
+ * caller's own pending order — the order table does not exist until WU-COM-2, and per payments ADD
+ * §8(a) the intended caller is the commerce <strong>checkout</strong> orchestration, which performs
+ * that cart/order-ownership check before invoking this use case.
  */
 @ApplicationScoped
 public class InitiateChargeService implements InitiateCharge {
@@ -74,7 +85,17 @@ public class InitiateChargeService implements InitiateCharge {
   @Override
   @Transactional
   public PaymentIntentView charge(
-      OrderRef orderRef, Money amount, PaymentMethodRef method, IdempotencyKey idempotencyKey) {
+      AccountId accountId,
+      OrderRef orderRef,
+      Money amount,
+      PaymentMethodRef method,
+      IdempotencyKey idempotencyKey) {
+
+    // Serialise concurrent same-key requests before the read/provider/save window. The loser blocks
+    // here until the winner commits, then finds the winner's intent below and returns it — so only
+    // one thread ever reaches gateway.initiate, and a same-key double charge is an idempotent replay
+    // (or a 409), never a raw unique-violation 500 (code review BLOCKER 2).
+    repository.lockForIdempotencyKey(idempotencyKey);
 
     String fingerprint = fingerprint(orderRef, amount, method);
 
@@ -91,7 +112,8 @@ public class InitiateChargeService implements InitiateCharge {
 
     PaymentIntent intent =
         PaymentIntent.create(
-            ids.newId(), orderRef, amount, method, idempotencyKey, fingerprint, clock.now());
+            ids.newId(), accountId, orderRef, amount, method, idempotencyKey, fingerprint,
+            clock.now());
 
     try {
       ChargeHandle handle =
@@ -113,11 +135,12 @@ public class InitiateChargeService implements InitiateCharge {
   }
 
   private void audit(PaymentIntent intent, String action) {
-    // INV-10: every privileged money mutation appends exactly one AuditEntry, atomically.
+    // INV-10: every privileged money mutation appends exactly one AuditEntry, atomically. The actor
+    // is the initiating account (WHO acted), never the orderRef (security review HIGH-1).
     auditWriter.append(
         new AuditEntry(
             ids.newId(),
-            intent.getOrderRef().value(),
+            intent.getAccountId().value(),
             action,
             "PaymentIntent",
             intent.getId(),

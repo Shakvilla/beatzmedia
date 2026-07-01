@@ -10,6 +10,7 @@ import org.junit.jupiter.api.Test;
 import org.shakvilla.beatzmedia.audit.fakes.FakeAuditWriter;
 import org.shakvilla.beatzmedia.payments.application.port.in.PaymentIntentView;
 import org.shakvilla.beatzmedia.payments.application.service.InitiateChargeService;
+import org.shakvilla.beatzmedia.payments.domain.AccountId;
 import org.shakvilla.beatzmedia.payments.domain.IdempotencyConflictException;
 import org.shakvilla.beatzmedia.payments.domain.IdempotencyKey;
 import org.shakvilla.beatzmedia.payments.domain.MethodKind;
@@ -36,6 +37,7 @@ class InitiateChargeServiceTest {
   private FakeAuditWriter audit;
   private InitiateChargeService service;
 
+  private static final AccountId ACCOUNT = new AccountId("acct-42");
   private static final OrderRef ORDER = new OrderRef("BZ-2026-00001");
   private static final Money TEN_CEDIS = Money.ofMinor(1000, Currency.GHS);
   private static final PaymentMethodRef MTN_MOMO =
@@ -54,7 +56,7 @@ class InitiateChargeServiceTest {
   @Test
   void initiates_a_pending_intent_and_audits() {
     PaymentIntentView view =
-        service.charge(ORDER, TEN_CEDIS, MTN_MOMO, new IdempotencyKey("idem-1"));
+        service.charge(ACCOUNT, ORDER, TEN_CEDIS, MTN_MOMO, new IdempotencyKey("idem-1"));
 
     assertEquals("pending", view.status());
     assertEquals("BZ-2026-00001", view.orderRef());
@@ -64,15 +66,20 @@ class InitiateChargeServiceTest {
     assertEquals(1, repo.count());
     assertEquals(1, audit.size(), "exactly one AuditEntry per mutation (INV-10)");
     assertEquals("FINANCE", audit.all().get(0).getType().name());
+    // HIGH-1: the audit actor is the initiating account, NOT the orderRef.
+    assertEquals("acct-42", audit.all().get(0).getActor());
+    assertEquals("PaymentIntent", audit.all().get(0).getTargetType());
+    assertEquals(view.id(), audit.all().get(0).getTargetId());
+    assertTrue(repo.lockCalls() >= 1, "idempotency lock is taken before the read/provider window");
   }
 
   /** AC: same idempotency key twice -> exactly one provider charge and one intent. */
   @Test
   void same_key_same_body_returns_same_intent_no_double_charge() {
     PaymentIntentView first =
-        service.charge(ORDER, TEN_CEDIS, MTN_MOMO, new IdempotencyKey("idem-1"));
+        service.charge(ACCOUNT, ORDER, TEN_CEDIS, MTN_MOMO, new IdempotencyKey("idem-1"));
     PaymentIntentView second =
-        service.charge(ORDER, TEN_CEDIS, MTN_MOMO, new IdempotencyKey("idem-1"));
+        service.charge(ACCOUNT, ORDER, TEN_CEDIS, MTN_MOMO, new IdempotencyKey("idem-1"));
 
     assertEquals(first.id(), second.id());
     assertEquals(1, gateway.initiateCalls(), "no second provider charge on replay");
@@ -83,12 +90,12 @@ class InitiateChargeServiceTest {
   /** AC: same key, different body -> 409 IDEMPOTENCY_KEY_CONFLICT. */
   @Test
   void same_key_different_body_conflicts() {
-    service.charge(ORDER, TEN_CEDIS, MTN_MOMO, new IdempotencyKey("idem-1"));
+    service.charge(ACCOUNT, ORDER, TEN_CEDIS, MTN_MOMO, new IdempotencyKey("idem-1"));
 
     Money differentAmount = Money.ofMinor(2000, Currency.GHS);
     assertThrows(
         IdempotencyConflictException.class,
-        () -> service.charge(ORDER, differentAmount, MTN_MOMO, new IdempotencyKey("idem-1")));
+        () -> service.charge(ACCOUNT, ORDER, differentAmount, MTN_MOMO, new IdempotencyKey("idem-1")));
 
     assertEquals(1, gateway.initiateCalls(), "conflicting replay never charges the provider");
     assertEquals(1, repo.count());
@@ -97,9 +104,9 @@ class InitiateChargeServiceTest {
   @Test
   void different_keys_create_distinct_intents() {
     PaymentIntentView a =
-        service.charge(ORDER, TEN_CEDIS, MTN_MOMO, new IdempotencyKey("idem-1"));
+        service.charge(ACCOUNT, ORDER, TEN_CEDIS, MTN_MOMO, new IdempotencyKey("idem-1"));
     PaymentIntentView b =
-        service.charge(ORDER, TEN_CEDIS, MTN_MOMO, new IdempotencyKey("idem-2"));
+        service.charge(ACCOUNT, ORDER, TEN_CEDIS, MTN_MOMO, new IdempotencyKey("idem-2"));
 
     assertTrue(!a.id().equals(b.id()));
     assertEquals(2, gateway.initiateCalls());
@@ -109,12 +116,12 @@ class InitiateChargeServiceTest {
   /** A differing payment token for the same money-affecting fields must NOT conflict. */
   @Test
   void differing_token_same_money_fields_does_not_conflict() {
-    service.charge(ORDER, TEN_CEDIS, MTN_MOMO, new IdempotencyKey("idem-1"));
+    service.charge(ACCOUNT, ORDER, TEN_CEDIS, MTN_MOMO, new IdempotencyKey("idem-1"));
     PaymentMethodRef reissuedToken =
         new PaymentMethodRef(Provider.mtn, MethodKind.momo, "tok-REISSUED");
 
     PaymentIntentView replay =
-        service.charge(ORDER, TEN_CEDIS, reissuedToken, new IdempotencyKey("idem-1"));
+        service.charge(ACCOUNT, ORDER, TEN_CEDIS, reissuedToken, new IdempotencyKey("idem-1"));
 
     assertEquals("pending", replay.status());
     assertEquals(1, repo.count());
@@ -128,13 +135,13 @@ class InitiateChargeServiceTest {
 
     assertThrows(
         ProviderException.class,
-        () -> service.charge(ORDER, TEN_CEDIS, MTN_MOMO, new IdempotencyKey("idem-1")));
+        () -> service.charge(ACCOUNT, ORDER, TEN_CEDIS, MTN_MOMO, new IdempotencyKey("idem-1")));
 
     assertEquals(1, repo.count(), "failed intent persisted so key is consumed");
     assertEquals(1, audit.size(), "failure is audited");
     // Replay with same key + same body returns the failed intent, no second charge.
     PaymentIntentView replay =
-        service.charge(ORDER, TEN_CEDIS, MTN_MOMO, new IdempotencyKey("idem-1"));
+        service.charge(ACCOUNT, ORDER, TEN_CEDIS, MTN_MOMO, new IdempotencyKey("idem-1"));
     assertEquals("failed", replay.status());
     assertEquals(1, gateway.initiateCalls(), "no re-charge on replay of a failed intent");
   }

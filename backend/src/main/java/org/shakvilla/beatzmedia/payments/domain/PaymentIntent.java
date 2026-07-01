@@ -31,6 +31,7 @@ import org.shakvilla.beatzmedia.platform.domain.Money;
 public final class PaymentIntent {
 
   private final String id;
+  private final AccountId accountId;
   private final OrderRef orderRef;
   private final Money amount;
   private final Provider provider;
@@ -45,6 +46,7 @@ public final class PaymentIntent {
 
   private PaymentIntent(
       String id,
+      AccountId accountId,
       OrderRef orderRef,
       Money amount,
       Provider provider,
@@ -57,6 +59,7 @@ public final class PaymentIntent {
       Instant createdAt,
       Instant updatedAt) {
     this.id = id;
+    this.accountId = accountId;
     this.orderRef = orderRef;
     this.amount = amount;
     this.provider = provider;
@@ -78,6 +81,7 @@ public final class PaymentIntent {
    */
   public static PaymentIntent create(
       String id,
+      AccountId accountId,
       OrderRef orderRef,
       Money amount,
       PaymentMethodRef method,
@@ -85,6 +89,7 @@ public final class PaymentIntent {
       String requestFingerprint,
       Instant now) {
     Objects.requireNonNull(id, "id");
+    Objects.requireNonNull(accountId, "accountId");
     Objects.requireNonNull(orderRef, "orderRef");
     Objects.requireNonNull(amount, "amount");
     Objects.requireNonNull(method, "method");
@@ -96,6 +101,7 @@ public final class PaymentIntent {
     }
     return new PaymentIntent(
         id,
+        accountId,
         orderRef,
         amount,
         method.provider(),
@@ -112,6 +118,7 @@ public final class PaymentIntent {
   /** Reconstitute from persistence. No validation/normalisation — trusts stored state. */
   public static PaymentIntent reconstitute(
       String id,
+      AccountId accountId,
       OrderRef orderRef,
       Money amount,
       Provider provider,
@@ -124,7 +131,7 @@ public final class PaymentIntent {
       Instant createdAt,
       Instant updatedAt) {
     return new PaymentIntent(
-        id, orderRef, amount, provider, methodKind, providerRef, status, failureReason,
+        id, accountId, orderRef, amount, provider, methodKind, providerRef, status, failureReason,
         idempotencyKey, requestFingerprint, createdAt, updatedAt);
   }
 
@@ -203,6 +210,10 @@ public final class PaymentIntent {
 
   public String getId() {
     return id;
+  }
+
+  public AccountId getAccountId() {
+    return accountId;
   }
 
   public OrderRef getOrderRef() {

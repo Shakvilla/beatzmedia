@@ -13,6 +13,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.shakvilla.beatzmedia.payments.application.port.in.MoneyView;
 import org.shakvilla.beatzmedia.payments.application.port.in.PaymentIntentView;
+import org.shakvilla.beatzmedia.payments.domain.AccountId;
 import org.shakvilla.beatzmedia.payments.domain.IdempotencyKey;
 import org.shakvilla.beatzmedia.payments.domain.MethodKind;
 import org.shakvilla.beatzmedia.payments.domain.OrderRef;
@@ -44,6 +45,7 @@ class PaymentIntentContractTest {
   private static PaymentIntent intent() {
     return PaymentIntent.create(
         "pi-1",
+        new AccountId("acct-1"),
         new OrderRef("BZ-2026-00001"),
         Money.ofMinor(1050, Currency.GHS),
         new PaymentMethodRef(Provider.mtn, MethodKind.momo, "tok"),

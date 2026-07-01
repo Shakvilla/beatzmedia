@@ -11,8 +11,10 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
+import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.shakvilla.beatzmedia.payments.application.port.in.InitiateCharge;
 import org.shakvilla.beatzmedia.payments.application.port.in.PaymentIntentView;
+import org.shakvilla.beatzmedia.payments.domain.AccountId;
 import org.shakvilla.beatzmedia.payments.domain.IdempotencyKey;
 import org.shakvilla.beatzmedia.payments.domain.MethodKind;
 import org.shakvilla.beatzmedia.payments.domain.MissingIdempotencyKeyException;
@@ -31,10 +33,16 @@ import io.quarkus.security.Authenticated;
  *
  * <p>This is an internal money surface consumed by the commerce checkout flow (WU-COM-2); it is
  * exposed under {@code /v1/payments/intents} so the idempotency contract can be exercised directly.
- * Any authenticated principal (a fan) may call it. Every money POST requires an
+ * Any authenticated principal (a fan) may call it — the intent is bound to that principal's
+ * {@link AccountId} (from the JWT subject) for audit (INV-10). Every money POST requires an
  * {@code Idempotency-Key} header: the same key + same body returns the same intent (200); the same
  * key + different body is a 409 {@code IDEMPOTENCY_KEY_CONFLICT}; a missing key is a 400
  * {@code MISSING_IDEMPOTENCY_KEY} (payments ADD §9.2 / PRD §9.2).
+ *
+ * <p><strong>Authorization scope.</strong> This resource authenticates and binds the caller, but
+ * does NOT verify {@code orderRef}/{@code amount} ownership — the order table lands in WU-COM-2 and
+ * the intended caller is the commerce checkout orchestration, which owns that check (payments ADD
+ * §8(a)).
  */
 @Path("/v1/payments/intents")
 @Produces(MediaType.APPLICATION_JSON)
@@ -42,10 +50,12 @@ import io.quarkus.security.Authenticated;
 public class PaymentIntentResource {
 
   private final InitiateCharge initiateCharge;
+  private final JsonWebToken jwt;
 
   @Inject
-  public PaymentIntentResource(InitiateCharge initiateCharge) {
+  public PaymentIntentResource(InitiateCharge initiateCharge, JsonWebToken jwt) {
     this.initiateCharge = initiateCharge;
+    this.jwt = jwt;
   }
 
   /** POST /v1/payments/intents — initiate a charge. Requires an {@code Idempotency-Key} header. */
@@ -70,9 +80,15 @@ public class PaymentIntentResource {
             requireField(body.paymentToken(), "paymentToken"));
 
     PaymentIntentView view =
-        initiateCharge.charge(orderRef, amount, method, new IdempotencyKey(idempotencyKey));
+        initiateCharge.charge(
+            caller(), orderRef, amount, method, new IdempotencyKey(idempotencyKey));
 
     return Response.ok(view).build();
+  }
+
+  /** The authenticated principal initiating the charge (JWT subject → payments AccountId). */
+  private AccountId caller() {
+    return new AccountId(jwt.getSubject());
   }
 
   private static String requireField(String value, String field) {

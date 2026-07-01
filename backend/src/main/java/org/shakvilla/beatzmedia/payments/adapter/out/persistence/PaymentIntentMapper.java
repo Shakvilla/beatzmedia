@@ -1,5 +1,6 @@
 package org.shakvilla.beatzmedia.payments.adapter.out.persistence;
 
+import org.shakvilla.beatzmedia.payments.domain.AccountId;
 import org.shakvilla.beatzmedia.payments.domain.MethodKind;
 import org.shakvilla.beatzmedia.payments.domain.OrderRef;
 import org.shakvilla.beatzmedia.payments.domain.PaymentIntent;
@@ -19,6 +20,7 @@ final class PaymentIntentMapper {
   static PaymentIntentEntity toEntity(PaymentIntent intent) {
     PaymentIntentEntity e = new PaymentIntentEntity();
     e.id = intent.getId();
+    e.accountId = intent.getAccountId().value();
     e.orderRef = intent.getOrderRef().value();
     e.amountMinor = intent.getAmount().minor();
     e.currency = intent.getAmount().currency().name();
@@ -37,6 +39,7 @@ final class PaymentIntentMapper {
   static PaymentIntent toDomain(PaymentIntentEntity e) {
     return PaymentIntent.reconstitute(
         e.id,
+        new AccountId(e.accountId),
         new OrderRef(e.orderRef),
         Money.ofMinor(e.amountMinor, Currency.valueOf(e.currency)),
         Provider.valueOf(e.provider),

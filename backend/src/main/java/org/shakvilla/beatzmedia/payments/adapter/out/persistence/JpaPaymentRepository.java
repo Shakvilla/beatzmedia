@@ -27,6 +27,18 @@ public class JpaPaymentRepository implements PaymentRepository {
   }
 
   @Override
+  public void lockForIdempotencyKey(IdempotencyKey key) {
+    // Transaction-scoped advisory lock on the caller's current connection/transaction. Two 63-bit
+    // keys (pg_advisory_xact_lock(int8)) derived from the idempotency-key hash serialise concurrent
+    // same-key requests; the lock auto-releases at COMMIT/ROLLBACK. Runs on the same EntityManager
+    // connection so it participates in the current transaction (code review BLOCKER 2).
+    long lockKey = advisoryKey(key.value());
+    em.createNativeQuery("SELECT pg_advisory_xact_lock(:k)")
+        .setParameter("k", lockKey)
+        .getSingleResult();
+  }
+
+  @Override
   public Optional<PaymentIntent> findByIdempotencyKey(IdempotencyKey key) {
     List<PaymentIntentEntity> rows =
         em.createQuery(
@@ -48,5 +60,17 @@ public class JpaPaymentRepository implements PaymentRepository {
       em.merge(entity);
     }
     return intent;
+  }
+
+  /**
+   * Derive a stable non-zero {@code int8} advisory-lock key from the idempotency-key string. Mixes
+   * the 32-bit hash into the full {@code long} range (same scheme as the scheduler's
+   * {@code AdvisoryLockService}). Collisions only cause two unrelated keys to serialise briefly —
+   * harmless for correctness; the {@code idempotency_key} UNIQUE constraint remains the durable
+   * backstop.
+   */
+  private static long advisoryKey(String idempotencyKey) {
+    int h = idempotencyKey.hashCode();
+    return ((long) h << 32) | Integer.toUnsignedLong(h);
   }
 }
