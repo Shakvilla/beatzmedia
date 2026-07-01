@@ -15,7 +15,9 @@ import org.shakvilla.beatzmedia.identity.application.port.in.AuthResult;
 import org.shakvilla.beatzmedia.identity.application.port.in.Login;
 import org.shakvilla.beatzmedia.identity.application.port.in.Logout;
 import org.shakvilla.beatzmedia.identity.application.port.in.RegisterFan;
+import org.shakvilla.beatzmedia.identity.application.port.in.SocialLogin;
 import org.shakvilla.beatzmedia.identity.domain.AccountId;
+import org.shakvilla.beatzmedia.identity.domain.SocialProvider;
 
 import io.quarkus.security.Authenticated;
 
@@ -26,6 +28,7 @@ import io.quarkus.security.Authenticated;
  * <ul>
  *   <li>POST /v1/auth/signup → 201 AuthResponse (LLFR-IDENTITY-01.1)
  *   <li>POST /v1/auth/login → 200 AuthResponse (LLFR-IDENTITY-01.2)
+ *   <li>POST /v1/auth/social → 200 AuthResponse (LLFR-IDENTITY-01.3)
  *   <li>POST /v1/auth/logout → 204 (LLFR-IDENTITY-01.4)
  * </ul>
  */
@@ -35,14 +38,20 @@ public class AuthResource {
 
   private final RegisterFan registerFanPort;
   private final Login loginPort;
+  private final SocialLogin socialLoginPort;
   private final Logout logoutPort;
   private final JsonWebToken jwt;
 
   @Inject
   public AuthResource(
-      RegisterFan registerFanPort, Login loginPort, Logout logoutPort, JsonWebToken jwt) {
+      RegisterFan registerFanPort,
+      Login loginPort,
+      SocialLogin socialLoginPort,
+      Logout logoutPort,
+      JsonWebToken jwt) {
     this.registerFanPort = registerFanPort;
     this.loginPort = loginPort;
+    this.socialLoginPort = socialLoginPort;
     this.logoutPort = logoutPort;
     this.jwt = jwt;
   }
@@ -68,6 +77,23 @@ public class AuthResource {
   public Response login(@Valid LoginRequest request) {
     AuthResult result = loginPort.login(
         new Login.LoginCommand(request.email(), request.password()));
+    return Response.ok(new AuthResponse(result.token(), result.account())).build();
+  }
+
+  /**
+   * POST /v1/auth/social — LLFR-IDENTITY-01.3. Verifies the provider token, links to an existing
+   * account by verified email or creates a new fan account, and returns 200 with token + account.
+   * Invalid/unrecognised provider token → 401 SOCIAL_TOKEN_INVALID (thrown by the application
+   * layer / {@code SocialProvider.fromWireValue}, mapped by {@code DomainExceptionMapper}).
+   */
+  @POST
+  @Path("/social")
+  @PermitAll
+  @Consumes(MediaType.APPLICATION_JSON)
+  public Response social(@Valid SocialRequest request) {
+    SocialProvider provider = SocialProvider.fromWireValue(request.provider());
+    AuthResult result = socialLoginPort.socialLogin(
+        new SocialLogin.SocialLoginCommand(provider, request.token()));
     return Response.ok(new AuthResponse(result.token(), result.account())).build();
   }
 
