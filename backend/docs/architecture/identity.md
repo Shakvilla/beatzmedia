@@ -31,7 +31,7 @@ flowchart LR
     IN[Inbound REST adapters<br/>AuthResource · MeResource · AdminTeamResource]
     APP[Application use cases<br/>RegisterFan · Login · SocialLogin · Logout<br/>GetCurrentAccount · UpgradeToArtist · UpdateFanSettings<br/>RequestPasswordReset · Invite/Change/Remove/ListAdmin]
     DOM[Domain<br/>Account · Credential · SocialIdentity<br/>FanSettings · AdminMember · AccountStatus]
-    OUT[Outbound adapters<br/>JpaAccountRepository · Argon2CredentialHasher<br/>JwtTokenIssuer · OidcSocialVerifier · QuarkusMailer]
+    OUT[Outbound adapters<br/>JpaAccountRepository · Argon2CredentialHasher<br/>JwtTokenIssuer · StubSocialVerifier · LoggingMailer]
   end
   IN --> APP --> DOM
   APP --> OUT
@@ -235,10 +235,12 @@ public interface AccountRepository {                       // adapter: JpaAccoun
     boolean existsByEmail(String email);
     Account save(Account account);                          // upsert aggregate (account + credential)
 
-    // --- WU-IDN-2 additions (social login, password reset) ---
-    // Optional<Account> findBySocialIdentity(SocialProvider provider, String providerUid);
-    // Optional<PasswordResetToken> findResetToken(String token);
-    // PasswordResetToken saveResetToken(PasswordResetToken token);
+    // --- WU-IDN-2 additions (social login, password reset) — live ---
+    Optional<Account> findBySocialIdentity(SocialProvider provider, String providerUid);
+    SocialIdentity saveSocialIdentity(SocialIdentity identity);
+    Optional<PasswordResetToken> findResetTokenByHash(String tokenHash);  // keyed by SHA-256 hash, not plaintext
+    PasswordResetToken saveResetToken(PasswordResetToken token);
+    void markResetTokenUsed(String tokenHash);
 
     // --- WU-IDN-3 additions (fan settings) ---
     // Optional<FanSettings> findSettings(AccountId id);
@@ -264,12 +266,12 @@ public interface TokenIssuer {                             // adapter: JwtTokenI
     String issue(AccountId subject, Set<String> roles);    // roles: fan/artist + admin scopes
 }
 
-public interface SocialVerifier {                          // adapter: OidcSocialVerifier (provider token introspection)
-    VerifiedIdentity verify(SocialProvider provider, String providerToken); // throws on invalid token
+public interface SocialVerifier {                          // adapter: StubSocialVerifier (WU-IDN-2 — see OQ note below)
+    VerifiedIdentity verify(SocialProvider provider, String providerToken); // throws SocialTokenInvalidException
     record VerifiedIdentity(String providerUid, String email, String name, String avatar) {}
 }
 
-public interface Mailer {                                  // adapter: QuarkusMailer (quarkus-mailer → SMTP/Mailpit)
+public interface Mailer {                                  // adapter: LoggingMailer (WU-IDN-2 — see OQ note below)
     void sendPasswordReset(String email, String resetToken);
 }
 
@@ -314,10 +316,16 @@ envelope `{ error: { code, message, field? } }`. Hibernate Validator on request 
 - **`Argon2CredentialHasher`** — Argon2id (per §3 conventions); tuning params in config.
 - **`JwtTokenIssuer`** — builds short-lived RS256 JWT with `sub` and `roles` claims via
   `quarkus-smallrye-jwt-build`; refresh is re-login for v1 (OQ-3).
-- **`OidcSocialVerifier`** — `quarkus-rest-client` adapters per provider verifying the provider token
-  and returning a `VerifiedIdentity`; invalid → throws → `SOCIAL_TOKEN_INVALID`.
-- **`QuarkusMailer`** — `quarkus-mailer`; sends the single-use reset link (captured by Mailpit
-  locally).
+- **`StubSocialVerifier`** (WU-IDN-2, **OQ note**) — a config-driven dev/test fixture-token
+  adapter: parses `"<providerUid>|<email>|<name>|<avatar-or-empty>"`; any other format, blank
+  token, or unrecognised provider → `SocialTokenInvalidException` → 401 `SOCIAL_TOKEN_INVALID`.
+  Real provider SDK token introspection (Google tokeninfo, Facebook Graph debug_token, Twitter
+  OAuth2 userinfo) is **out of scope for v1**; swapping this adapter for a real one requires no
+  application/domain changes (same `SocialVerifier` port).
+- **`LoggingMailer`** (WU-IDN-2, **OQ note**) — a config-driven dev/test capture stub: logs that a
+  reset was dispatched (never the token itself) instead of sending real SMTP. No `quarkus-mailer`
+  dependency was added for v1 — swapping for a real SMTP/provider adapter (e.g. `quarkus-mailer` →
+  Mailpit/SES) requires no application/domain changes (same `Mailer` port).
 
 ## 6. DTOs & API shapes
 
@@ -362,7 +370,7 @@ CREATE TABLE credential (
     algo          TEXT NOT NULL DEFAULT 'argon2id'
 );
 
--- V2__identity_social_and_settings.sql
+-- V204__identity_social_and_password_reset.sql (WU-IDN-2 — actual filename/version, see table below)
 CREATE TABLE social_identity (
     id           TEXT PRIMARY KEY,
     account_id   TEXT NOT NULL REFERENCES account(id) ON DELETE CASCADE,
@@ -371,6 +379,16 @@ CREATE TABLE social_identity (
     CONSTRAINT social_identity_provider_uk UNIQUE (provider, provider_uid)
 );
 CREATE INDEX social_identity_account_idx ON social_identity (account_id);
+
+-- password_reset_token is keyed by SHA-256(token) — the plaintext token is generated by
+-- RequestPasswordResetService, mailed once, and never persisted (security note, §9).
+CREATE TABLE password_reset_token (
+    token_hash TEXT PRIMARY KEY,
+    account_id TEXT NOT NULL REFERENCES account(id) ON DELETE CASCADE,
+    expires_at TIMESTAMPTZ NOT NULL,
+    used       BOOLEAN NOT NULL DEFAULT FALSE
+);
+CREATE INDEX password_reset_token_account_idx ON password_reset_token (account_id);
 
 CREATE TABLE fan_settings (
     account_id    TEXT PRIMARY KEY REFERENCES account(id) ON DELETE CASCADE,
@@ -381,7 +399,7 @@ CREATE TABLE fan_settings (
     phone         TEXT
 );
 
--- V3__identity_admin_and_reset.sql
+-- V202__create_admin_member.sql (WU-IDN-4 — actual filename/version)
 CREATE TABLE admin_member (
     id             TEXT PRIMARY KEY,
     account_id     TEXT NOT NULL REFERENCES account(id) ON DELETE CASCADE,
@@ -390,14 +408,6 @@ CREATE TABLE admin_member (
     CONSTRAINT admin_member_account_uk UNIQUE (account_id)
 );
 CREATE INDEX admin_member_role_idx ON admin_member (role);
-
-CREATE TABLE password_reset_token (
-    token      TEXT PRIMARY KEY,
-    account_id TEXT NOT NULL REFERENCES account(id) ON DELETE CASCADE,
-    expires_at TIMESTAMPTZ NOT NULL,
-    used       BOOLEAN NOT NULL DEFAULT FALSE
-);
-CREATE INDEX password_reset_token_account_idx ON password_reset_token (account_id);
 ```
 
 **Money:** n/a for this module. **Flyway migrations** (forward-only, `db/migration/`):
@@ -405,13 +415,14 @@ CREATE INDEX password_reset_token_account_idx ON password_reset_token (account_i
 | Migration | Scope | WU |
 |---|---|---|
 | `V201__create_account.sql` | `account` + `credential` tables + indexes/constraints | WU-IDN-1 ✅ |
-| Next V2xx | `social_identity` + `fan_settings` | WU-IDN-2 |
 | `V202__create_admin_member.sql` | `admin_member` table + role/account-uk constraints + role index | WU-IDN-4 ✅ |
-| Next V2xx | `password_reset_token` | WU-IDN-2 |
+| `V203__create_fan_settings.sql` | `fan_settings` table (lazy-created 1-1 with account) | WU-IDN-3 ✅ |
+| `V204__identity_social_and_password_reset.sql` | `social_identity` (provider link, unique per provider+uid) + `password_reset_token` (PK = SHA-256 hash of the opaque token, never the plaintext) | WU-IDN-2 ✅ |
 
-The identity module uses the **V2xx Flyway band** (data-and-migrations §4.1). Note: the original
-design showed three files `V1/V2/V3` — those were pre-band-allocation placeholder names. The actual
-files use the V2xx band (`V201`, etc.) to avoid collisions with platform migrations.
+The identity module uses the **V2xx Flyway band** (data-and-migrations §4.1); V201-V204 are the
+actual, merged filenames. Note: an earlier draft of this ADD sketched three placeholder files
+(`V1/V2/V3`) before band allocation — those names were never built; the real history above is
+authoritative.
 
 The shared repeatable `R__seed_dev_data.sql` contributes a sample fan, a sample artist, and the seeded
 admin team (with ≥ 1 `super-admin`) so the API returns the data the UI was built against (to be added
@@ -507,7 +518,7 @@ stateDiagram-v2
 | WU | Scope (LLFR coverage) | Ports introduced | Tables | Deps | Order |
 |---|---|---|---|---|---|
 | **WU-IDN-1** | Account model, signup, login, password hashing, JWT issue, logout (01.1, 01.2, 01.4) | `RegisterFan`, `Login`, `Logout`; `AccountRepository`, `CredentialHasher`, `TokenIssuer` | `account`, `credential` | WU-PLT-1 (kernel) | 1 |
-| **WU-IDN-2** | `/me`, social login, password reset (02.1, 01.3, 01.5) | `GetCurrentAccount`, `SocialLogin`, `RequestPasswordReset`; `SocialVerifier`, `Mailer` | `account`, `social_identity`, `password_reset_token` | WU-IDN-1 | 2 |
+| **WU-IDN-2** ✅ | `/me`, social login, password reset (02.1, 01.3, 01.5) | `GetCurrentAccount`, `SocialLogin`, `RequestPasswordReset`; `SocialVerifier`, `Mailer` | `account`, `social_identity`, `password_reset_token` | WU-IDN-1 | 2 |
 | **WU-IDN-3** | Become-artist + fan settings (02.2, 02.3) | `UpgradeToArtist`, `UpdateFanSettings` | `account`, `fan_settings`, (`artist_profile` shell via catalog port) | WU-IDN-1 | 3 |
 | **WU-IDN-4** ✅ | Admin members + RBAC scope enforcement (03.1, 03.2, 03.3) | `ListAdminTeam`, `InviteAdmin`, `ChangeAdminRole`, `RemoveAdmin`; RBAC filter | `admin_member` | WU-IDN-1, WU-PLT-1; AuditWriter (audit write stub, full read in WU-AUD-1) | 4 |
 
@@ -564,5 +575,7 @@ Global DoD (PRD §8 / conventions §11) **plus**:
 6. Auth endpoints are rate-limited with `429` + `Retry-After`; `UpgradeToArtist` honors
    `flags.artistSignups`.
 7. Responses validate against the frontend `Account`/`AdminMember`/`FanSettings` shapes (contract test
-   green); ArchUnit confirms the hexagonal dependency rule; Spotless clean; Flyway `V1`–`V3` apply
+   green); ArchUnit confirms the hexagonal dependency rule; Spotless clean; Flyway `V201`–`V204` apply
    cleanly on an empty DB.
+8. Password reset tokens are single-use, time-boxed, and stored as a SHA-256 hash only — never the
+   plaintext (WU-IDN-2 / LLFR-IDENTITY-01.5).
