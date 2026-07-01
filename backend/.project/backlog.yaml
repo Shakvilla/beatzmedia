@@ -172,7 +172,7 @@ work_units:
     owner: payments-specialist
     depends_on: [WU-PLT-1]
     llfrs: [LLFR-PAYMENTS-01.1]
-    status: todo
+    status: in_review
   - id: WU-PAY-2
     title: Provider webhooks + timeout poll + reconciliation
     phase: 2
