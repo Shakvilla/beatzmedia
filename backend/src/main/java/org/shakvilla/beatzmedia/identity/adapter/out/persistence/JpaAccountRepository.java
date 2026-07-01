@@ -13,6 +13,9 @@ import org.shakvilla.beatzmedia.identity.domain.AccountId;
 import org.shakvilla.beatzmedia.identity.domain.AdminMember;
 import org.shakvilla.beatzmedia.identity.domain.AdminRole;
 import org.shakvilla.beatzmedia.identity.domain.FanSettings;
+import org.shakvilla.beatzmedia.identity.domain.PasswordResetToken;
+import org.shakvilla.beatzmedia.identity.domain.SocialIdentity;
+import org.shakvilla.beatzmedia.identity.domain.SocialProvider;
 
 /**
  * JPA/Panache-style implementation of {@link AccountRepository}. Persists the account aggregate
@@ -77,6 +80,49 @@ public class JpaAccountRepository implements AccountRepository {
     }
 
     return account;
+  }
+
+  // --- WU-IDN-2: social login + password reset methods ---
+
+  @Override
+  public Optional<Account> findBySocialIdentity(SocialProvider provider, String providerUid) {
+    return em.createQuery(
+            "SELECT s FROM SocialIdentityEntity s WHERE s.provider = :provider "
+                + "AND s.providerUid = :providerUid",
+            SocialIdentityEntity.class)
+        .setParameter("provider", provider.wireValue())
+        .setParameter("providerUid", providerUid)
+        .getResultStream()
+        .findFirst()
+        .flatMap(link -> findById(new AccountId(link.accountId)));
+  }
+
+  @Override
+  public SocialIdentity saveSocialIdentity(SocialIdentity identity) {
+    SocialIdentityEntity entity = AccountMapper.toSocialIdentityEntity(identity);
+    em.merge(entity);
+    return identity;
+  }
+
+  @Override
+  public Optional<PasswordResetToken> findResetTokenByHash(String tokenHash) {
+    PasswordResetTokenEntity entity = em.find(PasswordResetTokenEntity.class, tokenHash);
+    return Optional.ofNullable(entity).map(AccountMapper::toDomain);
+  }
+
+  @Override
+  public PasswordResetToken saveResetToken(PasswordResetToken token) {
+    PasswordResetTokenEntity entity = AccountMapper.toResetTokenEntity(token);
+    em.merge(entity);
+    return token;
+  }
+
+  @Override
+  public void markResetTokenUsed(String tokenHash) {
+    em.createQuery(
+            "UPDATE PasswordResetTokenEntity t SET t.used = true WHERE t.tokenHash = :tokenHash")
+        .setParameter("tokenHash", tokenHash)
+        .executeUpdate();
   }
 
   // --- WU-IDN-3: fan-settings methods ---
