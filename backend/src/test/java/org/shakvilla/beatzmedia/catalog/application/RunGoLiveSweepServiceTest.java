@@ -2,16 +2,14 @@ package org.shakvilla.beatzmedia.catalog.application;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
+import java.lang.annotation.Annotation;
 import java.time.Instant;
 import java.util.List;
+import java.util.concurrent.CompletionStage;
 
 import jakarta.enterprise.event.Event;
 import jakarta.enterprise.event.NotificationOptions;
 import jakarta.enterprise.util.TypeLiteral;
-
-import java.lang.annotation.Annotation;
-import java.util.ArrayList;
-import java.util.concurrent.CompletionStage;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -19,14 +17,11 @@ import org.junit.jupiter.api.Test;
 import org.shakvilla.beatzmedia.audit.fakes.FakeAuditWriter;
 import org.shakvilla.beatzmedia.catalog.application.service.PublishReleaseService;
 import org.shakvilla.beatzmedia.catalog.application.service.RunGoLiveSweepService;
-import org.shakvilla.beatzmedia.catalog.domain.ContentTakenDown;
 import org.shakvilla.beatzmedia.catalog.domain.Release;
-import org.shakvilla.beatzmedia.catalog.domain.ReleaseApproved;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseTrack;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseType;
-import org.shakvilla.beatzmedia.catalog.domain.ReleaseWentLive;
 import org.shakvilla.beatzmedia.catalog.domain.Visibility;
 import org.shakvilla.beatzmedia.catalog.fakes.FakeCatalogRepository;
 import org.shakvilla.beatzmedia.platform.fakes.FakeClock;
