@@ -1,16 +1,23 @@
 package org.shakvilla.beatzmedia.payments.fakes;
 
+import java.time.Instant;
+import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentRepository;
 import org.shakvilla.beatzmedia.payments.domain.IdempotencyKey;
 import org.shakvilla.beatzmedia.payments.domain.PaymentIntent;
+import org.shakvilla.beatzmedia.payments.domain.PaymentIntentStatus;
 
 /**
  * In-memory fake for {@link PaymentRepository}. Enforces the idempotency-key uniqueness backstop so
- * unit tests exercise the same race semantics as the DB constraint. Testing-strategy §2.
+ * unit tests exercise the same race semantics as the DB constraint. The WU-PAY-2 read methods
+ * ({@code findById}, {@code findByProviderRef}, {@code findPendingOlderThan},
+ * {@code findForReconciliation}) scan the in-memory store. Testing-strategy §2.
  */
 public class FakePaymentRepository implements PaymentRepository {
 
@@ -48,8 +55,56 @@ public class FakePaymentRepository implements PaymentRepository {
     return intent;
   }
 
+  @Override
+  public Optional<PaymentIntent> findById(String id) {
+    return Optional.ofNullable(byId.get(id));
+  }
+
+  @Override
+  public Optional<PaymentIntent> findByProviderRef(String providerRef) {
+    if (providerRef == null || providerRef.isBlank()) {
+      return Optional.empty();
+    }
+    return byId.values().stream()
+        .filter(i -> providerRef.equals(i.getProviderRef()))
+        .findFirst();
+  }
+
+  @Override
+  public List<PaymentIntent> findPendingOlderThan(Instant cutoff) {
+    List<PaymentIntent> out = new ArrayList<>();
+    for (PaymentIntent i : byId.values()) {
+      if (i.getStatus() == PaymentIntentStatus.pending
+          && !i.getCreatedAt().isAfter(cutoff)) {
+        out.add(i);
+      }
+    }
+    out.sort(Comparator.comparing(PaymentIntent::getCreatedAt));
+    return out;
+  }
+
+  @Override
+  public List<PaymentIntent> findForReconciliation(Instant from, Instant to) {
+    List<PaymentIntent> out = new ArrayList<>();
+    for (PaymentIntent i : byId.values()) {
+      Instant created = i.getCreatedAt();
+      if (i.getProviderRef() != null
+          && !created.isBefore(from)
+          && created.isBefore(to)) {
+        out.add(i);
+      }
+    }
+    out.sort(Comparator.comparing(PaymentIntent::getCreatedAt));
+    return out;
+  }
+
   /** Number of distinct intents persisted (for assertions on "exactly one intent"). */
   public int count() {
     return byId.size();
+  }
+
+  /** Seed an intent directly (bypasses idempotency-key bookkeeping) for poll/recon tests. */
+  public void seed(PaymentIntent intent) {
+    byId.put(intent.getId(), intent);
   }
 }

@@ -1,5 +1,7 @@
 package org.shakvilla.beatzmedia.payments.application.port.out;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 import org.shakvilla.beatzmedia.payments.domain.IdempotencyKey;
@@ -31,4 +33,34 @@ public interface PaymentRepository {
 
   /** Insert a new intent. Throws on idempotency-key uniqueness violation (race backstop). */
   PaymentIntent save(PaymentIntent intent);
+
+  /**
+   * Look up an intent by its id. Used by the settlement applier to re-load the current row inside its
+   * own transaction before an idempotent state transition, so a webhook and the timeout poll racing
+   * on the same intent both observe the freshest status (and the guarded state machine transitions at
+   * most once).
+   */
+  Optional<PaymentIntent> findById(String id);
+
+  /**
+   * Look up an intent by the provider's opaque charge reference. Used by the webhook handler
+   * (LLFR-PAYMENTS-01.2) to resolve which intent a callback settles; a miss means an unknown/untrusted
+   * ref → the webhook is accepted and ignored (202). Returns the first match (provider_ref is
+   * effectively unique per successful charge).
+   */
+  Optional<PaymentIntent> findByProviderRef(String providerRef);
+
+  /**
+   * All {@code pending} intents created at or before {@code cutoff}, oldest first. Drives the timeout
+   * poll (LLFR-PAYMENTS-01.3) — only intents past the {@code olderThan} grace period are re-queried,
+   * so a just-initiated charge is not raced.
+   */
+  List<PaymentIntent> findPendingOlderThan(Instant cutoff);
+
+  /**
+   * Intents with a non-null {@code provider_ref} created within {@code [from, to)}, for the daily
+   * reconciliation compare (LLFR-PAYMENTS-01.4). Only charges the provider actually accepted (have a
+   * ref) can be reconciled against provider truth.
+   */
+  List<PaymentIntent> findForReconciliation(Instant from, Instant to);
 }

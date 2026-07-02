@@ -438,6 +438,22 @@ public interface IdGenerator { String newId(); }
 | `EventPublisher` | In-process event bus (`AFTER_SUCCESS`). |
 | `Clock` / `IdGenerator` | Kernel adapters (UTC clock; UUIDv7/ULID). |
 
+> **WU-PAY-2 implementation notes (as-built).**
+> - **Idempotency backstop is its own port.** `recordEvent(PaymentEvent)` is implemented behind a
+>   dedicated `PaymentEventRepository` (not `PayoutRepository`, which stays reserved for the payout
+>   WUs), via an atomic `INSERT … ON CONFLICT (provider_event_id) DO NOTHING` so a duplicate webhook
+>   is a clean `false` return, never a tx-poisoning constraint violation.
+> - **Reconciliation discrepancies are persisted** to a payments-owned `reconciliation_discrepancy`
+>   table behind a `DiscrepancyRepository` (atomic upsert-by-natural-key). At this WU's scope the
+>   ledger does not exist yet, so reconciliation compares provider truth (`queryStatus`) against the
+>   intent's own status; a `PENDING` provider response is inconclusive (never a discrepancy). The
+>   provider-vs-ledger-credit comparison (INV-6) completes in/after WU-PAY-3. Surfacing these as an
+>   admin `AttentionItem` is a later admin-module concern; see ADR (§9 of the system architecture doc).
+> - **Domain events use CDI `Event<T>`** (`PaymentSettled`/`PaymentFailed`) fired `AFTER_SUCCESS`,
+>   the platform-wide convention, rather than a bespoke `EventPublisher` port.
+> - **Timeout poll + reconciliation share the platform `payments.payment-recon` scheduler tick**
+>   (every 30 s) via a single `ScheduledJob` bean; both operations are idempotent.
+
 ## 5. Adapters
 
 ### 5.1 Inbound — REST resources
@@ -538,15 +554,35 @@ CREATE INDEX idx_payment_intent_status_created ON payment_intent(status, created
 CREATE INDEX idx_payment_intent_order_ref ON payment_intent(order_ref);
 CREATE INDEX idx_payment_intent_account ON payment_intent(account_id);
 
+-- Implemented in V702 (WU-PAY-2). Ids are UUIDv7 TEXT (matching payment_intent.id), not UUID type.
 CREATE TABLE payment_event (
-  id                UUID PRIMARY KEY,
-  intent_id         UUID NOT NULL REFERENCES payment_intent(id),
+  id                TEXT PRIMARY KEY,
+  intent_id         TEXT NOT NULL REFERENCES payment_intent(id),
   provider_event_id TEXT NOT NULL,
-  type              TEXT NOT NULL,
+  type              TEXT NOT NULL CHECK (type IN ('SETTLED','FAILED','PENDING')),
   payload           JSONB NOT NULL,
   received_at       TIMESTAMPTZ NOT NULL DEFAULT now(),
   CONSTRAINT uq_event_provider UNIQUE (provider_event_id)
 );
+CREATE INDEX idx_payment_event_intent ON payment_event(intent_id);
+
+-- Implemented in V702 (WU-PAY-2). Finance risk signals from the daily reconciliation (LLFR-01.4).
+-- UNIQUE (intent_id, kind, as_of_day) makes the daily job idempotent. Scoped to provider-vs-intent
+-- mismatches until the ledger lands (WU-PAY-3); see the ADR in §9 of the system architecture doc.
+CREATE TABLE reconciliation_discrepancy (
+  id              TEXT PRIMARY KEY,
+  intent_id       TEXT NOT NULL REFERENCES payment_intent(id),
+  order_ref       TEXT NOT NULL,
+  kind            TEXT NOT NULL
+                      CHECK (kind IN ('PROVIDER_SETTLED_INTENT_NOT','PROVIDER_FAILED_INTENT_SETTLED')),
+  amount_minor    BIGINT NOT NULL CHECK (amount_minor >= 0),
+  provider_status TEXT NOT NULL,
+  intent_status   TEXT NOT NULL,
+  as_of_day       TEXT NOT NULL,   -- ISO yyyy-MM-dd reconciliation window
+  detected_at     TIMESTAMPTZ NOT NULL DEFAULT now(),
+  CONSTRAINT uq_recon_discrepancy UNIQUE (intent_id, kind, as_of_day)
+);
+CREATE INDEX idx_recon_discrepancy_day ON reconciliation_discrepancy(as_of_day);
 
 CREATE TABLE ledger_account (
   id               UUID PRIMARY KEY,
@@ -666,7 +702,8 @@ CREATE TABLE refund (
 
 - `V701__create_payment_intent.sql` (WU-PAY-1) — **implemented**; payments band is `V7xx`
   (data-and-migrations §4.1), not `V2x`.
-- `V702__payments_payment_event.sql` (WU-PAY-2)
+- `V702__payments_payment_event.sql` (WU-PAY-2) — **implemented**; adds `payment_event` and
+  `reconciliation_discrepancy`.
 - `V703__payments_ledger.sql` (ledger_account, ledger_entry, balance trigger, creator_balance — WU-PAY-3)
 - `V704__payments_payouts.sql` (payout_method, withdrawal_request, payout_batch, payout_txn, kyc_record — WU-PAY-4)
 - `V705__payments_disputes.sql` (dispute, dispute_event, refund — WU-PAY-5)
