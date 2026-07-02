@@ -394,9 +394,12 @@ CREATE INDEX ix_grant_source_order ON ownership_grant (source_order_id);
 CREATE INDEX ix_grant_account ON ownership_grant (account_id);
 ```
 
-**Flyway list:** `V20__commerce_cart.sql`, `V21__commerce_order.sql`,
-`V22__commerce_ownership_grant.sql`. Forward-only; dev seed contributes sample cart/orders to
-`R__seed_dev_data.sql` (dev/test only).
+**Flyway list (illustrative version numbers — see §13 for the actual allocated version):**
+`V20__commerce_cart.sql`, `V21__commerce_order.sql`, `V22__commerce_ownership_grant.sql`.
+Forward-only; dev seed contributes sample cart/orders to `R__seed_dev_data.sql` (dev/test only).
+**WU-COM-1 shipped `cart`/`cart_item` as `V943__commerce_cart.sql`** — always allocate the real next
+version with `backend/scripts/next-migration-version.sh` at PR time rather than assuming the
+`V2x` numbers shown above.
 
 ## 8. Key flows
 
@@ -526,3 +529,57 @@ Global DoD (conventions §11 / PRD §8) **plus**:
    the order to `refunded`, restoring re-purchase eligibility.
 5. **Album/season expansion (INV-2):** album/season-pass lines fan out to all constituent
    track/episode grants on settle.
+
+## 13. WU-COM-1 implementation notes (cart shipped)
+
+WU-COM-1 shipped the cart slice only (`GetCart`, `AddCartItem`, `UpdateCartItem`, `RemoveCartItem`;
+LLFR-COMMERCE-01.1–01.3). The following notes record decisions made while implementing to this ADD
+and should guide WU-COM-2 (checkout/order/ownership-grant), which reuses the same `cart`/`cart_item`
+tables and clears them on settlement.
+
+- **Migration filename/version.** §7's `V20__commerce_cart.sql` example predates the repo's global
+  Flyway sequencing convention (`backend/scripts/next-migration-version.sh` allocates the next free
+  version across *all* modules, not a per-module band). The cart/cart_item tables actually shipped as
+  **`V943__commerce_cart.sql`**. WU-COM-2 must allocate its own next-free version for `order`,
+  `order_line`, `ownership_grant` at PR time rather than assuming `V21`/`V22`.
+- **Id columns are `TEXT`, not native Postgres `UUID`.** `cart.id` and `cart_item.id` are `TEXT`
+  primary keys populated by the platform `IdGenerator` (UUIDv7 strings), matching the
+  codebase-wide convention for entity ids (e.g. `track.id`, `album.id`) rather than the native
+  `UUID` column type used nowhere else in the schema. Using `UUID` caused a Postgres
+  `operator does not exist: uuid = character varying` error on `EntityManager#find` lookups by
+  string id — a real bug caught by `CommerceIT` against Testcontainers Postgres.
+- **`CartLineId` is the natural key, not a separate identity.** `cart_item.line_id` (`kind:refId`,
+  e.g. `track:last-last`) is UNIQUE per `cart_id` (`uq_cart_item_cart_line`) and is what
+  PATCH/DELETE `:lineId` path segments address; `cart_item.id` is only the JPA/db surrogate key.
+  This is what makes non-stackable re-add collapse to a no-op (`Cart.addItem` looks up by
+  `CartItem.lineIdFor(kind, refId)` before deciding to no-op vs. increment vs. insert).
+- **`PricingService` (output port, `CatalogPricingServiceAdapter`).** `track`/`album`/`album-rest`
+  resolve authoritatively from catalog's own JPA entities (`TrackEntity`/`AlbumEntity`) via an
+  in-process adapter reading the same schema — mirroring the established pattern in
+  `library.adapter.out.persistence.CatalogReaderAdapter` (no cross-module FK, no cross-module input
+  port needed for a same-process read-only lookup). `episode`/`season-pass`/`ticket`/`store` have
+  **no backing module yet** — `podcasts` (WU-POD-1), `events` (WU-EVT-1), and `store` (WU-STO-1) are
+  Phase 4 work units that ship long after this Phase-2 WU. For those four kinds the adapter requires
+  and validates caller-supplied `metadata.title` (string) and `metadata.priceMinor` (positive
+  integer), rejecting missing/invalid values with 404/422 rather than inventing a price. **When
+  WU-POD-1/WU-EVT-1/WU-STO-1 ship, replace this interim metadata-echo branch with real price-lookup
+  input ports** (`podcasts`/`events`/`store` `application.port.in`), per the hexagonal cross-module
+  rule — do not keep trusting client-supplied prices for those kinds once the owning module exists.
+- **`OwnershipReader` (output port, `LibraryOwnershipReaderAdapter`).** Delegates to library's
+  existing `GetOwnedTrackIds` input port (WU-LIB-1) for the `ALREADY_OWNED` (409) check — but
+  `GetOwnedTrackIds` only enumerates **track** ids today, so only `kind=track` adds can be rejected
+  as already-owned in this WU; album/episode/season-pass/ticket/store ownership checks are no-ops
+  until WU-COM-2 introduces `ownership_grant` and library's `LibraryOwnershipReader` output port is
+  repointed from `StubLibraryOwnershipReaderAdapter` to a real commerce-backed adapter (as already
+  flagged in that stub's own Javadoc). Because `StubLibraryOwnershipReaderAdapter` always returns
+  `List.of()` in this environment, the `ALREADY_OWNED` HTTP path (409) is exercised only at the
+  application-service unit-test layer (`AddCartItemServiceTest`, `FakeOwnershipReader`) — end-to-end
+  REST coverage of a real 409 lands with WU-COM-2's ownership_grant data.
+- **PATCH clamps rather than rejects out-of-range `qty`.** Per §4.1's port table and this section's
+  "clamp `1..99`" wording, `UpdateCartItemService`/`Cart.updateQuantity` clamp silently (matching
+  `AddCartItem`'s clamp behavior) rather than returning a validation error for `qty<1` or `qty>99`;
+  only a non-stackable target line returns `NOT_STACKABLE` (409).
+- **Shared `ErrorCode` catalog.** `ALREADY_OWNED` and `NOT_STACKABLE` were added to the platform
+  `ErrorCode` enum and mapped to HTTP 409 in the shared `DomainExceptionMapper`
+  (`platform.adapter.in.rest`), following the same pattern as identity/catalog/payments codes —
+  commerce does **not** have its own local exception mapper.
