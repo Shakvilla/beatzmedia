@@ -1,5 +1,6 @@
 package org.shakvilla.beatzmedia.payments.adapter.out.persistence;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -60,6 +61,61 @@ public class JpaPaymentRepository implements PaymentRepository {
       em.merge(entity);
     }
     return intent;
+  }
+
+  @Override
+  public Optional<PaymentIntent> findById(String id) {
+    PaymentIntentEntity entity = em.find(PaymentIntentEntity.class, id);
+    return Optional.ofNullable(entity).map(PaymentIntentMapper::toDomain);
+  }
+
+  @Override
+  public Optional<PaymentIntent> findByProviderRef(String providerRef) {
+    if (providerRef == null || providerRef.isBlank()) {
+      return Optional.empty();
+    }
+    return em
+        .createQuery(
+            "SELECT p FROM PaymentIntentEntity p WHERE p.providerRef = :ref",
+            PaymentIntentEntity.class)
+        .setParameter("ref", providerRef)
+        .setMaxResults(1)
+        .getResultList()
+        .stream()
+        .findFirst()
+        .map(PaymentIntentMapper::toDomain);
+  }
+
+  @Override
+  public List<PaymentIntent> findPendingOlderThan(Instant cutoff) {
+    return em
+        .createQuery(
+            "SELECT p FROM PaymentIntentEntity p "
+                + "WHERE p.status = 'pending' AND p.createdAt <= :cutoff "
+                + "ORDER BY p.createdAt ASC",
+            PaymentIntentEntity.class)
+        .setParameter("cutoff", cutoff)
+        .getResultList()
+        .stream()
+        .map(PaymentIntentMapper::toDomain)
+        .toList();
+  }
+
+  @Override
+  public List<PaymentIntent> findForReconciliation(Instant from, Instant to) {
+    return em
+        .createQuery(
+            "SELECT p FROM PaymentIntentEntity p "
+                + "WHERE p.providerRef IS NOT NULL "
+                + "AND p.createdAt >= :from AND p.createdAt < :to "
+                + "ORDER BY p.createdAt ASC",
+            PaymentIntentEntity.class)
+        .setParameter("from", from)
+        .setParameter("to", to)
+        .getResultList()
+        .stream()
+        .map(PaymentIntentMapper::toDomain)
+        .toList();
   }
 
   /**

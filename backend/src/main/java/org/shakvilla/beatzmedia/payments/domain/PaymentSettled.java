@@ -22,4 +22,21 @@ public record PaymentSettled(
     String currency,
     String provider,
     String providerRef,
-    Instant settledAt) {}
+    Instant settledAt) {
+
+  /**
+   * Build the event from a just-settled intent. Centralises the intent→event snapshot so the webhook
+   * handler and the reconciliation poll emit an identical shape (minor units, INV-11).
+   */
+  public static PaymentSettled from(PaymentIntent intent, Instant settledAt) {
+    return new PaymentSettled(
+        intent.getId(),
+        intent.getOrderRef().value(),
+        intent.getAccountId().value(),
+        intent.getAmount().minor(),
+        intent.getAmount().currency().name(),
+        intent.getProvider().name(),
+        intent.getProviderRef(),
+        settledAt);
+  }
+}

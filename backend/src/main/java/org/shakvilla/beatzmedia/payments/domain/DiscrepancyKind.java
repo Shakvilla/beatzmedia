@@ -13,22 +13,22 @@ package org.shakvilla.beatzmedia.payments.domain;
 public enum DiscrepancyKind {
 
   /**
-   * The provider reports the charge SETTLED, but our {@code payment_intent} is not {@code settled}
-   * (e.g. a lost/never-delivered webhook the poll also missed). We owe a settlement we have not
-   * recorded — finance must reconcile.
+   * The provider <em>definitively</em> reports the charge SETTLED, but our {@code payment_intent} is
+   * not {@code settled} (e.g. a lost/never-delivered webhook the poll also missed, or an intent that
+   * timed out before a late settlement). We owe a settlement we have not recorded — in ledger terms
+   * (WU-PAY-3) this is the "provider-settled charge with no matching credit" of the
+   * LLFR-PAYMENTS-01.4 acceptance criterion. Finance must reconcile.
    */
   PROVIDER_SETTLED_INTENT_NOT,
 
   /**
-   * Our {@code payment_intent} is {@code settled}, but the provider does not report it settled (e.g.
-   * a spoofed/duplicated event, or a provider-side reversal). We may have granted value the rail did
-   * not fund — a risk signal.
-   */
-  INTENT_SETTLED_PROVIDER_NOT,
-
-  /**
-   * The provider reports the charge FAILED, but our {@code payment_intent} is {@code settled} — a
-   * potential over-grant that finance must review.
+   * The provider <em>definitively</em> reports the charge FAILED, but our {@code payment_intent} is
+   * {@code settled} — we may have granted value the rail did not fund (e.g. acted on a spoofed or
+   * premature webhook). A potential over-grant that finance must review.
+   *
+   * <p>Note: a provider response of {@code PENDING} is treated as <em>inconclusive</em> (the rail has
+   * not given a terminal answer), so it never produces a discrepancy — only a definitive provider
+   * terminal status that conflicts with our record is flagged.
    */
   PROVIDER_FAILED_INTENT_SETTLED
 }

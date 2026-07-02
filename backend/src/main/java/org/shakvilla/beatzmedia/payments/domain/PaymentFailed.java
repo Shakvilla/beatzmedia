@@ -19,4 +19,22 @@ public record PaymentFailed(
     String currency,
     String provider,
     String reason,
-    Instant failedAt) {}
+    Instant failedAt) {
+
+  /**
+   * Build the event from a just-failed/timed-out intent, taking {@code reason} from the intent's
+   * recorded failure reason (e.g. {@code "timeout"} or a provider decline code). Centralises the
+   * intent→event snapshot so the webhook handler and the reconciliation poll emit an identical shape.
+   */
+  public static PaymentFailed from(PaymentIntent intent, Instant failedAt) {
+    return new PaymentFailed(
+        intent.getId(),
+        intent.getOrderRef().value(),
+        intent.getAccountId().value(),
+        intent.getAmount().minor(),
+        intent.getAmount().currency().name(),
+        intent.getProvider().name(),
+        intent.getFailureReason(),
+        failedAt);
+  }
+}
