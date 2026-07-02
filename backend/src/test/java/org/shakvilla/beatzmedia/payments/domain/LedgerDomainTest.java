@@ -9,7 +9,6 @@ import java.time.Instant;
 
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-
 import org.shakvilla.beatzmedia.platform.domain.Currency;
 import org.shakvilla.beatzmedia.platform.domain.Money;
 

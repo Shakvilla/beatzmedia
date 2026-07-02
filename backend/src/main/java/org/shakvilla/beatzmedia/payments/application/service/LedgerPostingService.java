@@ -9,7 +9,6 @@ import jakarta.inject.Inject;
 import org.shakvilla.beatzmedia.payments.application.port.out.LedgerRepository;
 import org.shakvilla.beatzmedia.payments.domain.AccountId;
 import org.shakvilla.beatzmedia.payments.domain.Direction;
-import org.shakvilla.beatzmedia.payments.domain.LedgerAccount;
 import org.shakvilla.beatzmedia.payments.domain.LedgerAccountId;
 import org.shakvilla.beatzmedia.payments.domain.LedgerAccountKind;
 import org.shakvilla.beatzmedia.payments.domain.LedgerEntry;

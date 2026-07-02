@@ -454,6 +454,48 @@ public interface IdGenerator { String newId(); }
 > - **Timeout poll + reconciliation share the platform `payments.payment-recon` scheduler tick**
 >   (every 30 s) via a single `ScheduledJob` bean; both operations are idempotent.
 
+> **WU-PAY-3 implementation notes (as-built).**
+> - **Double-entry ledger behind `LedgerRepository`.** `postBalanced(TxnId, List<LedgerEntry>)`
+>   asserts Σ DEBIT = Σ CREDIT **in-app** (throwing `UnbalancedLedgerException`) before any DB write;
+>   the DB **deferred constraint trigger** `assert_txn_balanced` (V703, `DEFERRABLE INITIALLY DEFERRED`)
+>   is the durable backstop that rejects an unbalanced `txn_id` at COMMIT (INV-6). Both layers are
+>   proven by integration tests. The `creator_balance` projection is refreshed **inside the same
+>   transaction** on every posting/clear so it never drifts (available = Σ cleared creator_payable
+>   CREDIT − Σ cleared DEBIT; pending = Σ uncleared CREDIT; lifetime = Σ all CREDIT).
+> - **Split rounding rule (load-bearing, documented in `RevenueSplit`).** Platform fee = half-up
+>   percentage of gross (`Money.percentage(pct)`); creator share = the **exact remainder**
+>   (`gross − fee`). This guarantees `creatorShare + platformFee == gross` for **every** amount —
+>   no pesewa lost or invented (INV-6/INV-11). The remainder accrues to the creator (the party the
+>   platform owes). Percentages are **never** hard-coded: `platformFeePct` (sales, default 30 → creator
+>   70%) and `tipFeePct` (tips, default 10 → creator 90%) come from `PlatformSettings` (INV-4; OQ-2
+>   default — awaits human prod confirmation). A ₵0 fee/share row is simply omitted (only positive rows
+>   posted); the txn still balances.
+> - **Sale posting deferred to WU-COM-2; tips self-carry their creator (ADR-21).** `PaymentSettled`
+>   carries the payer + orderRef but **not** the recipient creator. A **sale** creator mapping is
+>   commerce's concern (WU-COM-2), so `LedgerPostingService.postSaleSplit` is built as a reusable
+>   balanced primitive but is **not** wired to the settlement event yet — WU-COM-2 resolves the creator
+>   and calls it. A **tip** encodes its recipient into the intent's opaque `OrderRef` as
+>   `TIP:<creatorAccountId>` (`TipRef`); a **synchronous** `@Observes PaymentSettled` subscriber
+>   (`TipSettlementSubscriber`) recovers the creator and posts the 90/10 split **inside the settlement
+>   transaction** (atomic; no cross-module read). Non-tip settlements are ignored. INV-1 preserved: the
+>   encoded ref is inert until settlement.
+> - **Tips reuse the WU-PAY-1 charge mechanism.** `IssueTip` (`IssueTipService`) creates a
+>   `payment_intent` exactly like a purchase — same txn-scoped advisory lock + `idempotency_key` UNIQUE
+>   + SHA-256 request fingerprint — so a duplicate tip is a no-op replay (one provider charge). Exactly
+>   one `AuditEntry` per tip (INV-10, actor = the fan). On settlement the ledger split posts and a
+>   `TipReceived` domain event fires. Inbound surface: `POST /v1/payments/tips` (Idempotency-Key
+>   required); the public `POST /podcasts/:id/tip` surface is wired by WU-POD-2 over this same use case.
+> - **Reads.** `GET /v1/studio/payouts` (`GetPayouts`, artist-own) serves the `Payouts` shape from the
+>   ledger projection; payout **methods** are `[]` and cash-outs absent (WU-PAY-4, never stubbed).
+>   `GET /v1/admin/finance/ledger` (`GetLedger`, finance/super-admin) serves `Page<LedgerEntry>` from
+>   the creator-payable + platform-revenue CREDIT lines (Sale/Tip/Fee). **Royalty lines resolve to ₵0**
+>   — OQ-4 resolved to no royalty model (ADR-20); a `?type=Royalty` filter returns an empty page.
+> - **As-built deviations from the ADD §7 illustrative DDL.** `ledger_account.id` / `ledger_entry.id`
+>   are `TEXT` UUIDv7 (matching `payment_intent.id` from V701), **not** the `UUID` type the ADD
+>   sketched; `direction` uses `TEXT + CHECK` rather than the `ledger_direction` PG enum — consistent
+>   with the WU-PAY-1/2 as-built convention (additive evolution). Partial unique indexes on
+>   `ledger_account` make get-or-create idempotent under concurrency.
+
 ## 5. Adapters
 
 ### 5.1 Inbound — REST resources
@@ -704,7 +746,10 @@ CREATE TABLE refund (
   (data-and-migrations §4.1), not `V2x`.
 - `V702__payments_payment_event.sql` (WU-PAY-2) — **implemented**; adds `payment_event` and
   `reconciliation_discrepancy`.
-- `V703__payments_ledger.sql` (ledger_account, ledger_entry, balance trigger, creator_balance — WU-PAY-3)
+- `V703__payments_ledger.sql` (WU-PAY-3) — **implemented**; adds `ledger_account`, `ledger_entry`
+  (with the `assert_txn_balanced` deferred constraint trigger, INV-6) and the `creator_balance`
+  projection. Ids are UUIDv7 `TEXT`; `direction` is `TEXT + CHECK` (as-built deviation from the ADD §7
+  illustrative `UUID`/enum DDL — see the WU-PAY-3 as-built note above).
 - `V704__payments_payouts.sql` (payout_method, withdrawal_request, payout_batch, payout_txn, kyc_record — WU-PAY-4)
 - `V705__payments_disputes.sql` (dispute, dispute_event, refund — WU-PAY-5)
 - `R__seed_dev_data.sql` (dev only): seed `ledger_account` singletons (platform_revenue, payout_clearing, provider_clearing per provider) and sample KYC records.
