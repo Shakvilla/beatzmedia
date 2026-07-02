@@ -53,6 +53,25 @@ public interface LedgerRepository {
   CreatorBalance balanceOf(AccountId creator);
 
   /**
+   * The recent ledger rows crediting a creator's payable account (their sales/tips), newest first,
+   * for the studio payouts transaction list (LLFR-PAYMENTS-02.2). Only the creator's own entries.
+   */
+  List<CreatorLedgerRow> findForCreator(AccountId creator, int limit);
+
+  /**
+   * A creator-facing ledger row for the payouts screen: the gross settled amount, the creator's net
+   * share, the business {@link LedgerType} (Sale/Tip), and whether the funds have cleared.
+   */
+  record CreatorLedgerRow(
+      String id,
+      Instant postedAt,
+      LedgerType type,
+      long grossMinor,
+      long netMinor,
+      boolean cleared,
+      String currency) {}
+
+  /**
    * Page over ledger entries for the admin finance ledger read (LLFR-PAYMENTS-02.3), newest first,
    * optionally filtered by business {@link LedgerType} and a free-text query over party/ref.
    */
