@@ -62,6 +62,14 @@ public interface LedgerRepository {
   LedgerAccountId idOf(LedgerAccount account);
 
   /**
+   * True if any ledger entry already exists for the given source reference ({@code refType}/{@code
+   * refId}). A defensive idempotency guard so a re-delivered settlement (webhook replay + poll race)
+   * never double-posts a split for the same intent — the settlement state machine already fires once,
+   * this is belt-and-braces for INV-6.
+   */
+  boolean existsPostingFor(String refType, String refId);
+
+  /**
    * A denormalised ledger row for the admin read, already resolved to its business {@link LedgerType},
    * counterparty {@code party}, source {@code ref}, and signed cedis-minor {@code amountMinor} (credit
    * to a creator is positive; a fee/payout/refund debit is negative in the admin view). The adapter
