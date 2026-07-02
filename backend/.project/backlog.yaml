@@ -200,7 +200,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-PLT-1, WU-CAT-1]
     llfrs: [LLFR-COMMERCE-01.1, LLFR-COMMERCE-01.2, LLFR-COMMERCE-01.3]
-    status: in_review
+    status: done
     # Carryover from WU-PLT-1 review (PR #10): Uuidv7IdGenerator.newOrderRef() uses an in-memory
     # AtomicLong (orderRefSeq) that resets to 0 on JVM restart and wraps at % 100000. Before order
     # refs are exposed in production, replace it with a collision-safe source — a DB-backed sequence
@@ -229,6 +229,17 @@ work_units:
     # Also add per-account rate limiting (429 + Retry-After) to the checkout/charge money path
     # (security-authz §6) and an upper-bound validation on charge amount (avoid unmapped 500 on absurd
     # values; bound from PlatformSettings). See PaymentIntentResource / InitiateChargeService.
+    # Carryover from WU-COM-1 review (PR #56, code + security sign-off): the cart persists prices but
+    # checkout MUST re-price server-side and never trust cart-stored amounts (G1 — DoD item 2; add a
+    # tampered-price test; grant ownership only on settlement, INV-1). (G2) Replace the interim
+    # CatalogPricingServiceAdapter.priceFromMetadata echo (client-supplied metadata.priceMinor for
+    # episode/season-pass/ticket/store) with authoritative price-lookup input ports when WU-POD-1 /
+    # WU-EVT-1 / WU-STO-1 ship. (G3 — payments-security decision, security-reviewer sign-off REQUIRED)
+    # WU-COM-2 does NOT depend on POD-1/EVT-1/STO-1, so checkout could charge real money on
+    # client-supplied ticket/store/episode/season-pass prices: checkout must EITHER gate/reject those
+    # kinds until the owning module exists, OR explicitly accept the residual spoofing risk with a
+    # documented ceiling (cap trusted priceMinor / ops allowlist). Do not ship real-money checkout for
+    # those kinds without an explicit decision.
   - id: WU-PLY-1
     title: Stream URL (ownership-aware) + record play
     phase: 2
