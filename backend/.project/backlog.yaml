@@ -200,7 +200,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-PLT-1, WU-CAT-1]
     llfrs: [LLFR-COMMERCE-01.1, LLFR-COMMERCE-01.2, LLFR-COMMERCE-01.3]
-    status: todo
+    status: in_review
     # Carryover from WU-PLT-1 review (PR #10): Uuidv7IdGenerator.newOrderRef() uses an in-memory
     # AtomicLong (orderRefSeq) that resets to 0 on JVM restart and wraps at % 100000. Before order
     # refs are exposed in production, replace it with a collision-safe source — a DB-backed sequence
