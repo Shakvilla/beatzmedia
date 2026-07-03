@@ -583,3 +583,75 @@ tables and clears them on settlement.
   `ErrorCode` enum and mapped to HTTP 409 in the shared `DomainExceptionMapper`
   (`platform.adapter.in.rest`), following the same pattern as identity/catalog/payments codes —
   commerce does **not** have its own local exception mapper.
+
+## 14. WU-COM-2 implementation notes (checkout + settlement→ownership shipped)
+
+WU-COM-2 shipped the checkout/order/ownership-grant slice (LLFR-COMMERCE-02.1–02.4; 02.5 ticket
+issuance is deferred, see G3 below). As-built decisions on top of this ADD:
+
+- **Migration `V944__commerce_order_and_ownership.sql`.** Allocated via
+  `scripts/next-migration-version.sh` (next free global slot after `V943`). Creates `"order"`
+  (quoted — reserved word), `order_line`, `ownership_grant`, the `order_grant_posting` exactly-once
+  claim header, and the `order_ref_seq` SEQUENCE. Ids are `TEXT` UUIDv7 (codebase convention).
+- **`order_ref` collision-safety (WU-PLT-1 / WU-COM-1 carryover, PR #10) — FIXED HERE.** The unsafe
+  in-memory `AtomicLong` in `Uuidv7IdGenerator.newOrderRef()` is superseded by
+  `SequenceOrderRefGenerator` (output port `OrderRefGenerator`), which draws `NNNNN` from the DB
+  `order_ref_seq` SEQUENCE (monotonic across JVM restarts + horizontally-scaled instances). A
+  `uq_order_reference` UNIQUE constraint on `"order".reference` is the durable loud backstop. The
+  `Uuidv7IdGenerator.newOrderRef()` method is left in place (still referenced by nothing on the
+  checkout path) but is no longer the source of order references; it can be removed once no caller
+  remains. Proven by `CheckoutFlowIT.orderReferences_areUnique_acrossCheckouts` (format + distinctness)
+  and the `uq_order_reference` constraint.
+- **Ownership grant is INV-1 exactly-once (reuses the WU-PAY-3 pattern).** `GrantOwnershipService`
+  (the ONLY creator of an `OwnershipGrant`; no REST caller — guarded by `GrantOwnershipCallerTest`) is
+  invoked solely by `PaymentSettledSubscriber`, which `@Observes(AFTER_SUCCESS) PaymentSettled` — the
+  sanctioned cross-module link (commerce consumes payments' domain event; it never reads payments'
+  tables). The grant runs in a `REQUIRES_NEW` transaction and takes a per-order exactly-once claim on
+  `order_grant_posting` (PRIMARY KEY on `order_id`, atomic `INSERT … ON CONFLICT DO NOTHING`) BEFORE
+  any grant/credit — a re-delivered settlement (webhook replay + poll race) loses the claim and the
+  whole fan-out is skipped. The `ux_grant_account_track/episode` partial-unique indexes are the
+  per-target durable backstop. Proven by
+  `GrantOwnershipServiceTest.grant_redeliveredSettlement_grantsExactlyOnce_idempotent` (unit) and
+  `CheckoutFlowIT.redeliveredSettlement_grantsOnce_creditsOnce` (integration, two webhooks / one grant
+  / one credit).
+- **INV-2 album expansion + INV-4 sale split.** On settlement, `CatalogExpansionReader`
+  (`CatalogExpansionReaderAdapter`, in-process read over catalog's own `track`/`album` entities)
+  expands an `album`/`album-rest` line to every constituent track id, and resolves the recipient
+  creator (artist) for each line. The 70/30 split is posted via `SaleLedgerPoster`
+  (`PaymentsSaleLedgerPosterAdapter` → payments `LedgerPostingService.postSaleSplit`, the WU-PAY-3
+  reusable primitive, ADR-21); the fee % comes from `PlatformSettings.platformFeePct` inside payments,
+  never hard-coded. Season-pass→episode expansion is inert (gated — see G3). Proven by
+  `GrantOwnershipServiceTest.grant_albumPurchase_expandsToAllConstituentTracks_INV2` and
+  `CheckoutFlowIT.checkout_albumThenSettle_expandsToAllTracks_INV2`.
+- **Server-side authoritative re-pricing (G1 / DoD 2).** `CheckoutService` re-resolves every unit
+  price from `PricingService` at checkout and computes totals from the re-priced lines — the
+  cart-stored price is NEVER trusted. Proven by
+  `CheckoutServiceTest.checkout_tamperedCartPrice_chargesTrueServerPrice_notClientAmount` /
+  `checkout_inflatedCartPrice_stillChargesTrueServerPrice` (unit) and
+  `CheckoutFlowIT.checkout_tamperedCartPrice_chargesTrueServerPrice` (integration — forges the
+  persisted cart amount to 1 pesewa, asserts the charge is the true 550).
+- **G3 kind gate (ADR-23) — SAFE default, security-reviewer sign-off REQUIRED.** Checkout GATES
+  `episode`/`season-pass`/`ticket`/`store` (409 `CHECKOUT_KIND_UNSUPPORTED`) because their price comes
+  from the interim client-supplied metadata echo (`CatalogPricingServiceAdapter.priceFromMetadata`,
+  `// G2`) and would let a fan spoof a real-money price; only `track`/`album`/`album-rest` (priced
+  authoritatively from catalog) may be purchased. Consequently **ticket issuance (LLFR-COMMERCE-02.5)
+  is deferred to WU-EVT-1** and `OrderSnapshot.tickets` is always absent in this WU. Proven by
+  `CheckoutServiceTest.checkout_ticketKind_isGated_G3` / `checkout_episodeAndSeasonPassAndStore_areGated_G3`
+  / `checkout_albumKind_isAllowed_G3` and `CheckoutFlowIT.checkout_ticketKind_isGated_409`.
+- **Money-path hardening (WU-PAY-1 carryover).** `POST /v1/checkout` requires an `Idempotency-Key`
+  header (422 if missing; same key → same order+intent, no second charge — `uq_order_account_idem`).
+  Per-account token-bucket rate limiting (`CheckoutRateLimiter`) → 429 + `Retry-After`. A charge
+  ceiling from `PlatformSettings.maxChargeMinor()` rejects an absurd re-priced total with a bounded
+  422 `CHARGE_AMOUNT_EXCEEDED` (never an unmapped 500). Ownership authz is structural: the cart/order
+  are keyed by the authenticated account, so there is no cross-account checkout. Exactly one
+  `AuditEntry` per checkout and per grant (INV-10).
+- **Library repoint.** `commerce.adapter.out.integration.CommerceLibraryOwnershipReaderAdapter` now
+  supplies library's `LibraryOwnershipReader` output port from real `ownership_grant` rows (via
+  commerce's `OwnershipRepository`); the WU-LIB-1 `StubLibraryOwnershipReaderAdapter` becomes an
+  inactive `@Alternative`. `/me/owned` and library collection now reflect commerce grants. Hexagonal
+  boundary preserved — library sees only track-id strings, never a commerce entity.
+- **New `ErrorCode`s (WU-COM-2).** `CART_EMPTY` (409), `CHECKOUT_KIND_UNSUPPORTED` (409),
+  `CHARGE_AMOUNT_EXCEEDED` (422) added to the platform `ErrorCode` enum + `DomainExceptionMapper`.
+- **PaymentFailed handling (LLFR-COMMERCE-02.3).** `PaymentSettledSubscriber.onFailed`
+  `@Observes(AFTER_SUCCESS) PaymentFailed` marks the order `failed` with the reason and **preserves the
+  cart** for retry; no grant is created (INV-1).
