@@ -152,6 +152,17 @@ kernel.
 Resources are thin: extract `caller` from JWT `sub` if present, map path/body → command, call the
 input port, map result → DTO. **No business logic in resources.**
 
+**Routing note (as-built).** `PlaybackResource` is `@Path("/v1")` at the class level with the full
+`tracks/{id}/stream` / `tracks/{id}/play` sub-paths on each method — **not** `@Path("/v1/tracks")` at
+the class level with `{id}/stream` on the method. The latter was tried first and, combined with
+`PublicCatalogResource`'s separate `@Path("/v1")` class root + `tracks/{id}` method path, produced a
+RESTEasy Reactive routing ambiguity: two different resource classes both contributing path segments
+under the literal `/v1/tracks` prefix caused `GET /v1/tracks/{id}` (catalog's track-detail endpoint)
+to 404 instead of reaching `PublicCatalogResource`. Found via `CatalogContractTest` regressing on this
+branch. Fix/convention going forward: **one `@Path` class-level root per bounded context, full
+sub-path per method** — matching `PublicCatalogResource`'s own pattern — rather than a resource class
+claiming a multi-segment root that another class's method path also produces.
+
 ### 5.2 Outbound — persistence & integrations
 
 - **`PlayEventPanacheRepository`** (persistence adapter, `adapter/out/persistence`) — implements

@@ -36,7 +36,7 @@ import org.shakvilla.beatzmedia.playback.domain.PlaySource;
  * preview for a for-sale track and full audio for a free one; an authenticated caller's identity
  * is always derived from the verified JWT subject — never from a client-supplied body/query field.
  */
-@Path("/v1/tracks")
+@Path("/v1")
 @Produces(MediaType.APPLICATION_JSON)
 @Consumes(MediaType.APPLICATION_JSON)
 @PermitAll
@@ -61,7 +61,7 @@ public class PlaybackResource {
 
   /** GET /v1/tracks/:id/stream — LLFR-PLAYBACK-01.1. */
   @GET
-  @Path("/{id}/stream")
+  @Path("/tracks/{id}/stream")
   public StreamUrlResponse getStreamUrl(@PathParam("id") String id) {
     StreamUrlResult result = getStreamUrl.getStreamUrl(new TrackId(id), callerId());
     return new StreamUrlResponse(
@@ -70,7 +70,7 @@ public class PlaybackResource {
 
   /** POST /v1/tracks/:id/play — LLFR-PLAYBACK-01.2. */
   @POST
-  @Path("/{id}/play")
+  @Path("/tracks/{id}/play")
   public Response recordPlay(@PathParam("id") String id, RecordPlayRequest request) {
     Optional<AccountId> caller = callerId();
     rateLimiter.check(caller.map(AccountId::value).orElse(id));
