@@ -1,11 +1,13 @@
 package org.shakvilla.beatzmedia.media.application.port.out;
 
 import java.time.Duration;
+import java.util.Optional;
 
 import org.shakvilla.beatzmedia.media.application.port.in.UploadCommand;
 import org.shakvilla.beatzmedia.media.domain.DeliveryVariant;
 import org.shakvilla.beatzmedia.media.domain.MediaAssetId;
 import org.shakvilla.beatzmedia.media.domain.MediaHandle;
+import org.shakvilla.beatzmedia.media.domain.OwnerRef;
 import org.shakvilla.beatzmedia.media.domain.SignedUrl;
 
 /**
@@ -37,4 +39,11 @@ public interface MediaService {
    * @param ttl      signed URL time-to-live
    */
   SignedUrl issueSignedUrl(MediaAssetId assetId, DeliveryVariant variant, Duration ttl);
+
+  /**
+   * Resolve the current asset id for a consuming module's owner reference (e.g. a catalog track),
+   * so the caller need not persist or otherwise learn the internal {@link MediaAssetId} itself.
+   * WU-PLY-1 / ADD §4.1.
+   */
+  Optional<MediaAssetId> findAssetIdForOwner(OwnerRef ownerRef);
 }

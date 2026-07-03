@@ -37,4 +37,11 @@ public class MediaAssetPanacheRepository
         .firstResultOptional()
         .map(MediaAssetMapper::toDomain);
   }
+
+  @Override
+  public Optional<MediaAsset> findCurrentByOwnerRef(OwnerRef ownerRef) {
+    return find("ownerRef = ?1 order by createdAt desc", ownerRef.toStorageString())
+        .firstResultOptional()
+        .map(MediaAssetMapper::toDomain);
+  }
 }
