@@ -12,6 +12,8 @@ import org.junit.jupiter.api.Test;
 import org.shakvilla.beatzmedia.catalog.domain.TrackId;
 import org.shakvilla.beatzmedia.catalog.domain.TrackNotFoundException;
 import org.shakvilla.beatzmedia.identity.domain.AccountId;
+import org.shakvilla.beatzmedia.platform.fakes.FakeClock;
+import org.shakvilla.beatzmedia.platform.fakes.FakeIds;
 import org.shakvilla.beatzmedia.playback.application.service.RecordPlayService;
 import org.shakvilla.beatzmedia.playback.domain.PlayRecorded;
 import org.shakvilla.beatzmedia.playback.domain.PlaySource;
@@ -19,8 +21,6 @@ import org.shakvilla.beatzmedia.playback.domain.TrackOwnership;
 import org.shakvilla.beatzmedia.playback.fakes.FakeCatalogReader;
 import org.shakvilla.beatzmedia.playback.fakes.FakePlayEventRepository;
 import org.shakvilla.beatzmedia.playback.fakes.RecordingEvent;
-import org.shakvilla.beatzmedia.platform.fakes.FakeClock;
-import org.shakvilla.beatzmedia.platform.fakes.FakeIds;
 
 /**
  * Unit tests for {@link RecordPlayService} (LLFR-PLAYBACK-01.2): appends a play_event, de-dupes
