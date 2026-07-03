@@ -4,6 +4,13 @@ package org.shakvilla.beatzmedia.platform.domain;
  * Platform-wide economic constants and operational settings. All monetary thresholds are in minor
  * units (pesewas). Economic constants must never be hard-coded elsewhere — always read from this
  * aggregate. INV-11, conventions §2, ADD §3.3.
+ *
+ * <p><strong>{@code bundleDiscountPct} is a catalog-<em>authoring</em> constant, not a checkout-time
+ * one (finding F2).</strong> The release wizard bakes the 24% into an album's stored {@code
+ * list_price_minor} = {@code sum(track prices) × (1 − bundleDiscountPct)} when the album is created.
+ * Checkout therefore charges the stored album price directly for a full-album purchase and must NEVER
+ * re-apply this discount. {@code album-rest} ("buy the rest") is charged at the sum of the caller's
+ * remaining individual track prices with <em>no</em> discount at all.
  */
 public record PlatformSettings(
     int platformFeePct,

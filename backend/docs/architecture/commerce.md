@@ -655,3 +655,46 @@ issuance is deferred, see G3 below). As-built decisions on top of this ADD:
 - **PaymentFailed handling (LLFR-COMMERCE-02.3).** `PaymentSettledSubscriber.onFailed`
   `@Observes(AFTER_SUCCESS) PaymentFailed` marks the order `failed` with the reason and **preserves the
   cart** for retry; no grant is created (INV-1).
+
+### 14.1 Adversarial-review fixes (F1/F2/F3)
+
+- **F1 — per-creator sale split (multi-artist orders).** The settlement→grant service originally posted
+  one ledger split per order *line* using the same `paymentIntentId` as the source ref. Because payments
+  keys `ledger_posting` on `(ref_type, ref_id)` (PK), a ≥2-distinct-creator order collided on the second
+  creator's claim (23505 → `DuplicatePostingException`), and — since the post ran inside the grant
+  transaction — poisoned it: the *entire* settlement→grant rolled back (grants, credit, `pending→paid`,
+  cart clear, `order_grant_posting` claim, audit, event). Buyer charged, nothing granted, deterministic
+  on re-delivery. A two-artist cart is normal, so this was CRITICAL. **Fix:** `GrantOwnershipService`
+  now aggregates line grosses **per creator** (`LinkedHashMap`) and posts **one** split per creator with
+  a **per-creator-unique** ref `paymentIntentId + ":" + creatorAccountId` — distinct creators never
+  collide; same-creator lines sum into one balanced posting. `PaymentsSaleLedgerPosterAdapter.postSaleSplit`
+  now runs `REQUIRES_NEW` (crossing the CDI proxy from `GrantOwnershipService`), so a *genuine* duplicate
+  rolls back only that split's transaction and can never poison the grant transaction. Idempotency across
+  re-deliveries stays guaranteed by the order-level `order_grant_posting` claim (a re-delivered settlement
+  returns before any posting). Proven by `GrantOwnershipServiceTest.grant_multiCreatorOrder_creditsEachCreatorOnce_grantsAllTracks_F1`,
+  `grant_multiLineSameCreator_postsOneAggregatedSplit_F1`, `grant_multiCreatorRedelivery_creditsEachOnce_F1`
+  (unit; `FakeSaleLedgerPoster` now throws on a duplicate `(intent, refId)` so a regression fails), and
+  `CheckoutFlowIT.checkout_twoDistinctArtists_settle_creditsBothOnce_grantsAllTracks` (integration: both
+  creators credited exactly once, all tracks granted, ledger balanced `INV-6`, idempotent on re-delivery).
+- **F2 — `album-rest` ownership-aware pricing.** Full `album` purchase is unchanged and correct: the
+  album `list_price_minor` already bakes in the 24% bundle discount at authoring (release wizard sets it
+  to `sum(track prices) × (1 − bundleDiscountPct)`), so checkout must NOT re-apply `bundleDiscountPct`
+  (it stays a catalog-authoring constant; a note to that effect is on `PlatformSettings.bundleDiscountPct`).
+  `album-rest` ("buy the rest"), however, must match the frontend (`album/$albumId.tsx` `buyRest`): the
+  price is the **sum of the caller's not-yet-owned, for-sale album tracks at each track's individual
+  price, NO bundle discount**, and exactly those tracks are granted. **Fix:** `CatalogExpansionReader`
+  gains `remainingForSaleTracks(account, albumId)` (ownership-aware, via commerce's `OwnershipRepository`
+  + catalog's `track` rows filtered to `for-sale`, positive price, not-owned); `CheckoutService` prices
+  the `album-rest` line as their sum (rejecting with 404 `PriceUnavailable` if the caller owns everything —
+  nothing to buy); album-rest expansion (`tracksToGrant`) returns only the album's for-sale tracks so the
+  grant fan-out (with its per-track already-owned guard) grants exactly the remaining tracks. Proven by
+  `CheckoutServiceTest.checkout_albumRest_partialOwnership_chargesSumOfRemainingTracks_notAlbumPrice`,
+  `checkout_albumRest_ownsEverything_rejected` (unit), and
+  `CheckoutFlowIT.checkout_albumRest_partialOwnership_chargesRemainingTracks_grantsRemaining` (integration).
+- **F3 — corrected comments.** The "REQUIRES_NEW rolls back / benign no-op" comments in
+  `LedgerPostingService.claimPosting` and `PaymentsSaleLedgerPosterAdapter` were corrected to state that
+  the DB 23505 marks the *current* transaction rollback-only, so isolation is the CALLER's responsibility
+  (the caller must invoke on a `REQUIRES_NEW` boundary and pass a per-source-unique `refId`).
+
+**ADR:** the per-creator ledger source ref + album-rest ownership-aware pricing are recorded as
+**ADR-24** in `backend/docs/00-system-architecture.md` §9.

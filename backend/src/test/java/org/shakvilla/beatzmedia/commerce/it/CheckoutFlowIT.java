@@ -51,6 +51,15 @@ class CheckoutFlowIT {
   private String albumTrack1;
   private String albumTrack2;
 
+  // Second artist + track for the multi-distinct-creator order (F1).
+  private String artist2Id;
+  private String track2Id;
+
+  // Priced album with for-sale tracks for album-rest ownership-aware pricing (F2).
+  private String restAlbumId;
+  private String restTrack1; // priced 700
+  private String restTrack2; // priced 300
+
   @BeforeEach
   @Transactional
   void seed() {
@@ -77,17 +86,47 @@ class CheckoutFlowIT {
         .executeUpdate();
     seedTrack(albumTrack1, "CO2 Album Track 1", 0, albumId);
     seedTrack(albumTrack2, "CO2 Album Track 2", 0, albumId);
+
+    // Second artist + track (distinct creator) for the multi-creator order (F1).
+    artist2Id = "co2-artist2-" + n;
+    track2Id = "co2-track2-" + n;
+    em.createNativeQuery(
+            "INSERT INTO artist_profile (id, name, image, verified)"
+                + " VALUES (:id, 'CO2 Artist 2', 'av.jpg', false) ON CONFLICT (id) DO NOTHING")
+        .setParameter("id", artist2Id)
+        .executeUpdate();
+    seedTrackBy(track2Id, "CO2 Track 2", 700, null, artist2Id, "CO2 Artist 2");
+
+    // Priced album with two for-sale tracks (700, 300) for album-rest pricing (F2).
+    restAlbumId = "co2-restalbum-" + n;
+    restTrack1 = "co2-resttrack1-" + n;
+    restTrack2 = "co2-resttrack2-" + n;
+    em.createNativeQuery(
+            "INSERT INTO album (id, title, artist_id, artist_name, year, cover_image, list_price_minor)"
+                + " VALUES (:id, 'CO2 Rest Album', :aid, 'CO2 Artist', 2024, 'img.jpg', 800)"
+                + " ON CONFLICT (id) DO NOTHING")
+        .setParameter("id", restAlbumId)
+        .setParameter("aid", artistId)
+        .executeUpdate();
+    seedTrack(restTrack1, "Rest Track 1", 700, restAlbumId);
+    seedTrack(restTrack2, "Rest Track 2", 300, restAlbumId);
   }
 
   private void seedTrack(String id, String title, long priceMinor, String album) {
+    seedTrackBy(id, title, priceMinor, album, artistId, "CO2 Artist");
+  }
+
+  private void seedTrackBy(
+      String id, String title, long priceMinor, String album, String aid, String artistName) {
     em.createNativeQuery(
             "INSERT INTO track (id, title, artist_id, artist_name, album_id, duration_sec, image,"
                 + " ownership, price_minor)"
-                + " VALUES (:id, :title, :aid, 'CO2 Artist', :album, 180, 'img.jpg', 'for-sale', :price)"
+                + " VALUES (:id, :title, :aid, :aname, :album, 180, 'img.jpg', 'for-sale', :price)"
                 + " ON CONFLICT (id) DO NOTHING")
         .setParameter("id", id)
         .setParameter("title", title)
-        .setParameter("aid", artistId)
+        .setParameter("aid", aid)
+        .setParameter("aname", artistName)
         .setParameter("album", album)
         .setParameter("price", priceMinor)
         .executeUpdate();
@@ -187,6 +226,71 @@ class CheckoutFlowIT {
         .header("Authorization", "Bearer " + token)
         .when().get("/v1/me/owned")
         .then().statusCode(200);
+  }
+
+  // ---- F1 : multi-distinct-creator order credits each creator once ------------
+
+  @Test
+  void checkout_twoDistinctArtists_settle_creditsBothOnce_grantsAllTracks() {
+    // A completely normal two-artist cart: track by artist 1 (500) + track by artist 2 (700). The
+    // original F1 bug rolled the whole grant back (same paymentIntentId ref collided on the payments
+    // ledger_posting PK) — buyer charged, nothing granted. With the per-creator ref fix both creators
+    // are credited exactly once, both tracks granted, ledger balanced.
+    String token = signUp("co2-multi-" + System.nanoTime() + "@example.com");
+    addToCart(token, "track", trackId); // artist 1, 500
+    addToCart(token, "track", track2Id); // artist 2, 700
+
+    Response co = checkout(token, "co2-multikey-" + System.nanoTime());
+    String intentId = co.then().statusCode(202).extract().jsonPath().getString("paymentIntentId");
+    String account = intentToAccount(intentId);
+
+    settle(intentId, "co2-multi-ev-" + System.nanoTime());
+
+    // Both tracks granted (INV-2), both creators credited exactly once (INV-4).
+    assertEquals(1, activeGrantCount(account, trackId));
+    assertEquals(1, activeGrantCount(account, track2Id));
+    assertEquals(350, availableFor(artistId), "artist 1 nets 70% of 500");
+    assertEquals(490, availableFor(artist2Id), "artist 2 nets 70% of 700");
+    // Re-delivery: still exactly once.
+    settle(intentId, "co2-multi-ev2-" + System.nanoTime());
+    assertEquals(350, availableFor(artistId), "artist 1 still credited once after re-delivery");
+    assertEquals(490, availableFor(artist2Id), "artist 2 still credited once after re-delivery");
+    assertEquals(1, activeGrantCount(account, trackId));
+    assertEquals(1, activeGrantCount(account, track2Id));
+    // Ledger stays balanced across all postings (INV-6).
+    assertEquals(0, ledgerImbalance(), "Sum(DEBIT) == Sum(CREDIT) across all ledger entries");
+  }
+
+  // ---- F2 : album-rest ownership-aware pricing -------------------------------
+
+  @Test
+  void checkout_albumRest_partialOwnership_chargesRemainingTracks_grantsRemaining() {
+    // Rest album has two for-sale tracks: restTrack1 (700), restTrack2 (300). First the fan buys
+    // restTrack1 and settles it (now owns 1 of 2). Then buys album-rest: must be charged only the
+    // remaining track (300) + fee (50) = 350 — NOT the album list price (800) — and granted only
+    // restTrack2 (F2).
+    String email = "co2-rest-" + System.nanoTime() + "@example.com";
+    String token = signUp(email);
+    String account = accountIdOf(email);
+
+    addToCart(token, "track", restTrack1);
+    Response buy1 = checkout(token, "co2-restkey1-" + System.nanoTime());
+    String intent1 = buy1.then().statusCode(202).extract().jsonPath().getString("paymentIntentId");
+    settle(intent1, "co2-rest-ev1-" + System.nanoTime());
+    assertEquals(1, activeGrantCount(account, restTrack1), "owns restTrack1 after first purchase");
+
+    // Now buy the rest.
+    addToCart(token, "album-rest", restAlbumId);
+    Response buyRest = checkout(token, "co2-restkey2-" + System.nanoTime());
+    String restRef = buyRest.then().statusCode(202).extract().jsonPath().getString("reference");
+    // Charged the remaining track (300) + service fee (50), not the album price (800).
+    assertEquals(350, orderTotalMinor(restRef), "album-rest charges remaining track (300) + fee (50)");
+
+    String intent2 = buyRest.jsonPath().getString("paymentIntentId");
+    settle(intent2, "co2-rest-ev2-" + System.nanoTime());
+    // Only the remaining track is newly granted; restTrack1 was already owned.
+    assertEquals(1, activeGrantCount(account, restTrack2), "restTrack2 now granted");
+    assertEquals(1, activeGrantCount(account, restTrack1), "restTrack1 still owned (single active grant)");
   }
 
   // ---- G1 : server-side re-pricing (tampered cart price ignored) ---------------
@@ -396,6 +500,17 @@ class CheckoutFlowIT {
             .stream()
             .findFirst()
             .orElse(0L);
+    return ((Number) v).longValue();
+  }
+
+  /** Global ledger imbalance: Sum(DEBIT) − Sum(CREDIT) across all entries; must be 0 (INV-6). */
+  @Transactional
+  long ledgerImbalance() {
+    Object v =
+        em.createNativeQuery(
+                "SELECT COALESCE(SUM(CASE WHEN direction='DEBIT' THEN amount_minor"
+                    + " ELSE -amount_minor END), 0) FROM ledger_entry")
+            .getSingleResult();
     return ((Number) v).longValue();
   }
 
