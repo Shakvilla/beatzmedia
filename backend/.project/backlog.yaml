@@ -258,7 +258,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-MED-1, WU-CAT-1, WU-COM-2]
     llfrs: [LLFR-PLAYBACK-01.1, LLFR-PLAYBACK-01.2]
-    status: todo
+    status: in_progress
 
   # ---------------- Phase 3 — Money completion ----------------
   - id: WU-PAY-4
