@@ -51,4 +51,17 @@ public class JpaCartRepository implements CartRepository {
     em.flush();
     return mapper.toDomain(updated);
   }
+
+  @Override
+  public void deleteByAccount(AccountId account) {
+    em.createQuery("SELECT c FROM CartEntity c WHERE c.accountId = :accountId", CartEntity.class)
+        .setParameter("accountId", account.value())
+        .getResultStream()
+        .findFirst()
+        .ifPresent(
+            entity -> {
+              em.remove(entity); // cart_item rows cascade (ON DELETE CASCADE + orphanRemoval)
+              em.flush();
+            });
+  }
 }

@@ -35,6 +35,7 @@ public final class Order {
   private final Money total;
   private String paymentIntentId;
   private String failureReason;
+  private String idempotencyKey;
   private final List<OrderLine> lines;
   private final Instant createdAt;
 
@@ -48,6 +49,7 @@ public final class Order {
       Money total,
       String paymentIntentId,
       String failureReason,
+      String idempotencyKey,
       List<OrderLine> lines,
       Instant createdAt) {
     this.id = id;
@@ -59,6 +61,7 @@ public final class Order {
     this.total = total;
     this.paymentIntentId = paymentIntentId;
     this.failureReason = failureReason;
+    this.idempotencyKey = idempotencyKey;
     this.lines = new ArrayList<>(lines);
     this.createdAt = createdAt;
   }
@@ -86,13 +89,22 @@ public final class Order {
     Money fee = serviceFee;
     Money total = subtotal.plus(fee);
     return new Order(
-        id, accountId, reference, OrderStatus.pending, subtotal, fee, total, null, null, lines,
-        createdAt);
+        id, accountId, reference, OrderStatus.pending, subtotal, fee, total, null, null, null,
+        lines, createdAt);
   }
 
   /** Record the payment intent id returned by {@code InitiateCharge} on the pending order. */
   public void attachPaymentIntent(String paymentIntentId) {
     this.paymentIntentId = paymentIntentId;
+  }
+
+  /** Record the checkout idempotency key on the pending order (INV-1 / §9.2 short-circuit). */
+  public void setIdempotencyKey(String idempotencyKey) {
+    this.idempotencyKey = idempotencyKey;
+  }
+
+  public String getIdempotencyKey() {
+    return idempotencyKey;
   }
 
   /**

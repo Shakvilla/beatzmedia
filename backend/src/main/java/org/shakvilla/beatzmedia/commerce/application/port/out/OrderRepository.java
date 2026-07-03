@@ -27,10 +27,17 @@ public interface OrderRepository {
   Optional<Order> findByReference(String reference);
 
   /**
-   * Load an order for update ({@code SELECT … FOR UPDATE}) — used by the settlement handler so two
-   * concurrent settlements for the same order serialise on the row before the grant fan-out.
+   * Load an order by reference for update ({@code SELECT … FOR UPDATE}) — used by the settlement
+   * handler so two concurrent settlements for the same order serialise on the row before the grant
+   * fan-out (defense-in-depth alongside the exactly-once grant claim).
    */
-  Optional<Order> findByIdForUpdate(OrderId id);
+  Optional<Order> findByReferenceForUpdate(String reference);
+
+  /**
+   * Find the caller's existing order for a checkout idempotency key (INV-1 / §9.2). Scoped by account
+   * so a replayed checkout returns the same order/intent with no second charge.
+   */
+  Optional<Order> findByAccountAndIdempotencyKey(AccountId account, String idempotencyKey);
 
   /** Newest-first page of the account's own orders (LLFR-COMMERCE-02.4). */
   Page<Order> findByAccount(AccountId account, PageRequest page);

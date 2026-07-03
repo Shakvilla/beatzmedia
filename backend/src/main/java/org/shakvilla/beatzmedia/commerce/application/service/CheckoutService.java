@@ -1,0 +1,210 @@
+package org.shakvilla.beatzmedia.commerce.application.service;
+
+import java.time.ZoneOffset;
+import java.util.ArrayList;
+import java.util.List;
+
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import jakarta.transaction.Transactional;
+
+import org.shakvilla.beatzmedia.audit.application.port.out.AuditWriter;
+import org.shakvilla.beatzmedia.audit.domain.AuditEntry;
+import org.shakvilla.beatzmedia.audit.domain.AuditType;
+import org.shakvilla.beatzmedia.commerce.application.port.in.Checkout;
+import org.shakvilla.beatzmedia.commerce.application.port.in.CheckoutResult;
+import org.shakvilla.beatzmedia.commerce.application.port.out.CartRepository;
+import org.shakvilla.beatzmedia.commerce.application.port.out.ChargeGateway;
+import org.shakvilla.beatzmedia.commerce.application.port.out.OrderRefGenerator;
+import org.shakvilla.beatzmedia.commerce.application.port.out.OrderRepository;
+import org.shakvilla.beatzmedia.commerce.application.port.out.PricedItem;
+import org.shakvilla.beatzmedia.commerce.application.port.out.PricingService;
+import org.shakvilla.beatzmedia.commerce.domain.Cart;
+import org.shakvilla.beatzmedia.commerce.domain.CartEmptyException;
+import org.shakvilla.beatzmedia.commerce.domain.CartItem;
+import org.shakvilla.beatzmedia.commerce.domain.CartItemKind;
+import org.shakvilla.beatzmedia.commerce.domain.ChargeAmountExceededException;
+import org.shakvilla.beatzmedia.commerce.domain.CheckoutKindUnsupportedException;
+import org.shakvilla.beatzmedia.commerce.domain.Order;
+import org.shakvilla.beatzmedia.commerce.domain.OrderId;
+import org.shakvilla.beatzmedia.commerce.domain.OrderLine;
+import org.shakvilla.beatzmedia.identity.domain.AccountId;
+import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
+import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
+import org.shakvilla.beatzmedia.platform.application.port.out.PlatformSettingsProvider;
+import org.shakvilla.beatzmedia.platform.domain.Currency;
+import org.shakvilla.beatzmedia.platform.domain.Money;
+import org.shakvilla.beatzmedia.platform.domain.PlatformSettings;
+import org.shakvilla.beatzmedia.platform.domain.ValidationException;
+
+/**
+ * Application service for {@code POST /v1/checkout} ({@link Checkout}, LLFR-COMMERCE-02.1). Commerce
+ * ADD §8.
+ *
+ * <p>Flow:
+ *
+ * <ol>
+ *   <li>Idempotency short-circuit: an existing order for {@code (account, idempotencyKey)} is
+ *       returned verbatim (same order + intent, no second charge). Commerce ADD §9.2.
+ *   <li>Load the caller's OWN cart (409 {@code CART_EMPTY} if empty/absent) — the cart is keyed by
+ *       {@code account}, so there is no cross-account checkout (WU-PAY-1 authz carryover).
+ *   <li><strong>G3 gate:</strong> reject any line whose authoritative pricing module is not live yet
+ *       ({@code episode}/{@code season-pass}/{@code ticket}/{@code store}) — 409
+ *       {@code CHECKOUT_KIND_UNSUPPORTED}. Only {@code track}/{@code album}/{@code album-rest} (priced
+ *       from catalog) proceed. (ADR-23).
+ *   <li><strong>G1 authoritative re-pricing:</strong> re-resolve every unit price server-side via
+ *       {@link PricingService} — the cart-stored price is NEVER trusted (INV-11).
+ *   <li>Compute totals, enforce the {@code PlatformSettings} charge ceiling (422
+ *       {@code CHARGE_AMOUNT_EXCEEDED} — bounded, never an unmapped 500).
+ *   <li>Persist a {@code pending} {@link Order} with a collision-safe reference; initiate the charge
+ *       via {@link ChargeGateway} (idempotency key forwarded to payments); attach the intent id.
+ *   <li>Append exactly one {@link AuditEntry} (INV-10, actor = the fan). No ownership is granted here
+ *       — that happens only on settlement (INV-1).
+ * </ol>
+ */
+@ApplicationScoped
+public class CheckoutService implements Checkout {
+
+  private final CartRepository cartRepository;
+  private final OrderRepository orderRepository;
+  private final PricingService pricingService;
+  private final OrderRefGenerator orderRefGenerator;
+  private final ChargeGateway chargeGateway;
+  private final PlatformSettingsProvider settingsProvider;
+  private final AuditWriter auditWriter;
+  private final IdGenerator ids;
+  private final Clock clock;
+
+  @Inject
+  public CheckoutService(
+      CartRepository cartRepository,
+      OrderRepository orderRepository,
+      PricingService pricingService,
+      OrderRefGenerator orderRefGenerator,
+      ChargeGateway chargeGateway,
+      PlatformSettingsProvider settingsProvider,
+      AuditWriter auditWriter,
+      IdGenerator ids,
+      Clock clock) {
+    this.cartRepository = cartRepository;
+    this.orderRepository = orderRepository;
+    this.pricingService = pricingService;
+    this.orderRefGenerator = orderRefGenerator;
+    this.chargeGateway = chargeGateway;
+    this.settingsProvider = settingsProvider;
+    this.auditWriter = auditWriter;
+    this.ids = ids;
+    this.clock = clock;
+  }
+
+  @Override
+  @Transactional
+  public CheckoutResult checkout(AccountId account, String idempotencyKey, String paymentMethodId) {
+    if (idempotencyKey == null || idempotencyKey.isBlank()) {
+      throw new ValidationException("Idempotency-Key is required", "Idempotency-Key");
+    }
+    if (paymentMethodId == null || paymentMethodId.isBlank()) {
+      throw new ValidationException("paymentMethodId is required", "paymentMethodId");
+    }
+
+    // 1. Idempotency short-circuit: same (account, key) -> same order + intent, no second charge.
+    Order existing =
+        orderRepository.findByAccountAndIdempotencyKey(account, idempotencyKey).orElse(null);
+    if (existing != null) {
+      return toResult(existing);
+    }
+
+    // 2. Load the caller's OWN cart (no cross-account checkout — cart is keyed by account).
+    Cart cart =
+        cartRepository.findByAccount(account).orElseThrow(CartEmptyException::new);
+    if (cart.isEmpty()) {
+      throw new CartEmptyException();
+    }
+
+    PlatformSettings settings = settingsProvider.current();
+    Currency currency = settings.defaultCurrency();
+
+    // 3 + 4. Gate unsupported kinds (G3) and re-price authoritatively server-side (G1).
+    List<OrderLine> lines = new ArrayList<>(cart.getItems().size());
+    for (CartItem item : cart.getItems()) {
+      CartItemKind kind = item.getKind();
+      gateKind(kind);
+      // Authoritative server-side re-price — the cart-stored price is NEVER trusted (INV-11 / G1).
+      PricedItem priced = pricingService.priceFor(kind, item.getRefId(), item.getMetadata());
+      lines.add(
+          new OrderLine(
+              ids.newId(),
+              kind,
+              item.getRefId(),
+              priced.title(),
+              priced.unitPrice(),
+              item.getQty()));
+    }
+
+    // 5. Build the order (totals computed from re-priced lines) + enforce the charge ceiling.
+    Money serviceFee = Money.ofMinor(settings.serviceFeeMinor(), currency);
+    String reference =
+        orderRefGenerator.nextReference(clock.now().atZone(ZoneOffset.UTC).getYear());
+    Order order =
+        Order.create(
+            new OrderId(ids.newId()), account, reference, lines, serviceFee, currency, clock.now());
+
+    long maxCharge = settings.maxChargeMinor();
+    if (order.getTotal().minor() > maxCharge) {
+      throw new ChargeAmountExceededException(order.getTotal().minor(), maxCharge);
+    }
+
+    order.setIdempotencyKey(idempotencyKey);
+    orderRepository.save(order);
+
+    // 6. Initiate the charge for the caller's OWN order total (idempotency key forwarded to payments).
+    ChargeGateway.ChargeResult charge =
+        chargeGateway.initiateCharge(
+            account, reference, order.getTotal(), paymentMethodId, idempotencyKey);
+    order.attachPaymentIntent(charge.paymentIntentId());
+    orderRepository.save(order);
+
+    // 7. Audit exactly once (INV-10, actor = the fan).
+    audit(account, order, "CHECKOUT");
+
+    return new CheckoutResult(
+        order.getId().value(), reference, charge.paymentIntentId(), order.getStatus().wireValue());
+  }
+
+  /**
+   * G3 gate: only {@code track}/{@code album}/{@code album-rest} have authoritative catalog pricing at
+   * this WU's scope. {@code episode}/{@code season-pass}/{@code ticket}/{@code store} are priced from
+   * client-supplied metadata by the interim adapter (// G2), so charging real money on them would be a
+   * spoofing vector — reject until the owning module (WU-POD-1/EVT-1/STO-1) ships a real price port.
+   */
+  private void gateKind(CartItemKind kind) {
+    switch (kind) {
+      case track, album, album_rest -> {
+        // authoritative catalog pricing — allowed
+      }
+      case episode, season_pass, ticket, store ->
+          throw new CheckoutKindUnsupportedException(kind.wireValue());
+    }
+  }
+
+  private CheckoutResult toResult(Order order) {
+    return new CheckoutResult(
+        order.getId().value(),
+        order.getReference(),
+        order.getPaymentIntentId(),
+        order.getStatus().wireValue());
+  }
+
+  private void audit(AccountId actor, Order order, String action) {
+    auditWriter.append(
+        new AuditEntry(
+            ids.newId(),
+            actor.value(),
+            action,
+            "Order",
+            order.getId().value(),
+            AuditType.FINANCE,
+            null,
+            clock.now()));
+  }
+}
