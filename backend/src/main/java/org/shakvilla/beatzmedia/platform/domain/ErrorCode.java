@@ -57,5 +57,7 @@ public enum ErrorCode {
   // ---- Commerce codes (WU-COM-2) ----
   CART_EMPTY,
   CHECKOUT_KIND_UNSUPPORTED,
-  CHARGE_AMOUNT_EXCEEDED
+  CHARGE_AMOUNT_EXCEEDED,
+  // ---- Playback codes (WU-PLY-1) ----
+  MEDIA_UNAVAILABLE
 }
