@@ -181,7 +181,7 @@ work_units:
     owner: payments-specialist
     depends_on: [WU-PAY-1, WU-PLT-2]
     llfrs: [LLFR-PAYMENTS-01.2, LLFR-PAYMENTS-01.3, LLFR-PAYMENTS-01.4]
-    status: in_review
+    status: done
   - id: WU-PAY-3
     title: Double-entry ledger + creator balance + split posting + tips
     phase: 2
