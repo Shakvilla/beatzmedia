@@ -1,7 +1,9 @@
 package org.shakvilla.beatzmedia.commerce.application.service;
 
 import java.util.ArrayList;
+import java.util.LinkedHashMap;
 import java.util.List;
+import java.util.Map;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
@@ -135,6 +137,13 @@ public class GrantOwnershipService implements GrantOwnership {
     List<String> grantedTrackIds = new ArrayList<>();
     List<String> grantedEpisodeIds = new ArrayList<>();
 
+    // Accumulate each creator's gross across ALL their lines so we post exactly ONE sale split per
+    // creator (finding F1). A per-line posting keyed on paymentIntentId collides on the payments
+    // ledger_posting PK for a ≥2-creator order; aggregating per creator + a per-creator-unique ref
+    // (below) makes distinct-creator postings independent and same-creator lines sum into one txn.
+    // LinkedHashMap keeps a deterministic posting order (stable for tests / trace).
+    Map<String, Long> grossByCreator = new LinkedHashMap<>();
+
     for (OrderLine line : order.getLines()) {
       // INV-2: album/season-pass lines expand to every constituent track/episode id.
       List<String> trackIds = expansionReader.tracksToGrant(line.getKind(), line.getRefId());
@@ -147,17 +156,23 @@ public class GrantOwnershipService implements GrantOwnership {
         grantedTrackIds.add(trackId);
       }
 
-      // INV-4: post the 70/30 sale split crediting this line's creator (percentage from
-      // PlatformSettings inside payments). Line gross = unitPrice x qty.
+      // INV-4: attribute this line's gross (unitPrice × qty) to its recipient creator for the split.
       expansionReader
           .creatorOf(line.getKind(), line.getRefId())
           .ifPresent(
               creator ->
-                  saleLedgerPoster.postSaleSplit(
-                      provider,
-                      new AccountId(creator),
-                      Money.ofMinor(line.lineTotal().minor(), currency),
-                      paymentIntentId));
+                  grossByCreator.merge(creator, line.lineTotal().minor(), Long::sum));
+    }
+
+    // Post ONE 70/30 sale split per creator (percentage from PlatformSettings inside payments), with a
+    // per-creator-unique source ref so distinct creators never collide on the ledger_posting PK, and
+    // each runs in its own REQUIRES_NEW transaction so a duplicate can't poison this grant txn (F1).
+    for (Map.Entry<String, Long> e : grossByCreator.entrySet()) {
+      saleLedgerPoster.postSaleSplit(
+          provider,
+          new AccountId(e.getKey()),
+          Money.ofMinor(e.getValue(), currency),
+          saleRef(paymentIntentId, e.getKey()));
     }
 
     // Clear the caller's cart on a successful purchase (idempotent).
@@ -186,5 +201,16 @@ public class GrantOwnershipService implements GrantOwnership {
             AuditType.FINANCE,
             null,
             clock.now()));
+  }
+
+  /**
+   * The per-creator-unique ledger source ref for a sale split (finding F1):
+   * {@code paymentIntentId + ":" + creatorAccountId}. This makes each creator's posting a distinct
+   * {@code (ref_type="intent", ref_id)} key in the payments {@code ledger_posting} PK, so a multi-
+   * creator order posts one balanced split per creator with no PK collision. Re-delivery idempotency
+   * is handled by commerce's order-level {@code order_grant_posting} claim, not by this ref.
+   */
+  private static String saleRef(String paymentIntentId, String creatorAccountId) {
+    return paymentIntentId + ":" + creatorAccountId;
   }
 }
