@@ -1,0 +1,198 @@
+package org.shakvilla.beatzmedia.commerce.application;
+
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.List;
+
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
+import org.shakvilla.beatzmedia.audit.domain.AuditType;
+import org.shakvilla.beatzmedia.audit.fakes.FakeAuditWriter;
+import org.shakvilla.beatzmedia.commerce.application.port.in.CheckoutResult;
+import org.shakvilla.beatzmedia.commerce.application.service.CheckoutService;
+import org.shakvilla.beatzmedia.commerce.domain.Cart;
+import org.shakvilla.beatzmedia.commerce.domain.CartEmptyException;
+import org.shakvilla.beatzmedia.commerce.domain.CartId;
+import org.shakvilla.beatzmedia.commerce.domain.CartItem;
+import org.shakvilla.beatzmedia.commerce.domain.CartItemKind;
+import org.shakvilla.beatzmedia.commerce.domain.ChargeAmountExceededException;
+import org.shakvilla.beatzmedia.commerce.domain.CheckoutKindUnsupportedException;
+import org.shakvilla.beatzmedia.commerce.fakes.FakeCartRepository;
+import org.shakvilla.beatzmedia.commerce.fakes.FakeChargeGateway;
+import org.shakvilla.beatzmedia.commerce.fakes.FakeOrderRefGenerator;
+import org.shakvilla.beatzmedia.commerce.fakes.FakeOrderRepository;
+import org.shakvilla.beatzmedia.commerce.fakes.FakePricingService;
+import org.shakvilla.beatzmedia.identity.domain.AccountId;
+import org.shakvilla.beatzmedia.platform.domain.Currency;
+import org.shakvilla.beatzmedia.platform.domain.Money;
+import org.shakvilla.beatzmedia.platform.domain.ValidationException;
+import org.shakvilla.beatzmedia.platform.fakes.FakeClock;
+import org.shakvilla.beatzmedia.platform.fakes.FakeIds;
+import org.shakvilla.beatzmedia.platform.fakes.FakePlatformSettingsProvider;
+
+/**
+ * Unit tests for {@link CheckoutService} (LLFR-COMMERCE-02.1). Proves the load-bearing money-safety
+ * behaviours: server-side authoritative re-pricing (G1 — the client/cart-stored price is ignored),
+ * the G3 kind gate, idempotency (one charge per key), the PlatformSettings charge ceiling, empty-cart
+ * rejection, and INV-10 audit.
+ */
+@Tag("unit")
+class CheckoutServiceTest {
+
+  private static final AccountId ACCOUNT = new AccountId("acct-1");
+  private static final String KEY = "idem-key-1";
+
+  FakeCartRepository carts;
+  FakeOrderRepository orders;
+  FakePricingService pricing;
+  FakeOrderRefGenerator refs;
+  FakeChargeGateway gateway;
+  FakePlatformSettingsProvider settings;
+  FakeAuditWriter audit;
+  CheckoutService service;
+
+  @BeforeEach
+  void setUp() {
+    carts = new FakeCartRepository();
+    orders = new FakeOrderRepository();
+    pricing = new FakePricingService();
+    refs = new FakeOrderRefGenerator();
+    gateway = new FakeChargeGateway();
+    settings = new FakePlatformSettingsProvider();
+    audit = new FakeAuditWriter();
+    service =
+        new CheckoutService(
+            carts, orders, pricing, refs, gateway, settings, audit,
+            FakeIds.sequential("com"), FakeClock.fixed());
+  }
+
+  /** Seed a cart with a line whose STORED price differs from the authoritative catalog price. */
+  private void seedCartWithStoredPrice(CartItemKind kind, String refId, long storedMinor) {
+    CartItem item =
+        new CartItem(
+            CartItem.lineIdFor(kind, refId),
+            kind,
+            refId,
+            "Stored Title",
+            "sub",
+            "img.jpg",
+            Money.ofMinor(storedMinor, Currency.GHS),
+            1,
+            kind.isStackable(),
+            null);
+    carts.save(new Cart(new CartId("cart-1"), ACCOUNT, List.of(item)));
+  }
+
+  @Test
+  void checkout_tamperedCartPrice_chargesTrueServerPrice_notClientAmount() {
+    // The cart stores an absurdly LOW price (client tampered the persisted amount to pay ₵0.01)...
+    seedCartWithStoredPrice(CartItemKind.track, "t1", 1);
+    // ...but catalog's authoritative price is ₵5.00 = 500 pesewas.
+    pricing.seed(CartItemKind.track, "t1", "Real Track", 500);
+
+    service.checkout(ACCOUNT, KEY, "mtn");
+
+    // The charge MUST use the server price (500) + fee (50) = 550, NOT the tampered 1 (G1/INV-11).
+    assertEquals(1, gateway.count(), "exactly one charge");
+    assertEquals(550, gateway.last().amountMinor(), "server re-priced total, cart amount ignored");
+    // The persisted order line snapshots the TRUE price too.
+    assertEquals(500, orders.all().get(0).getLines().get(0).getUnitPrice().minor());
+  }
+
+  @Test
+  void checkout_inflatedCartPrice_stillChargesTrueServerPrice() {
+    // Cart stores an inflated price; server must still charge only the authoritative price.
+    seedCartWithStoredPrice(CartItemKind.track, "t1", 999_999);
+    pricing.seed(CartItemKind.track, "t1", "Real Track", 500);
+
+    service.checkout(ACCOUNT, KEY, "mtn");
+
+    assertEquals(550, gateway.last().amountMinor(), "inflated cart amount ignored (G1)");
+  }
+
+  @Test
+  void checkout_emptyCart_throwsCartEmpty() {
+    assertThrows(CartEmptyException.class, () -> service.checkout(ACCOUNT, KEY, "mtn"));
+  }
+
+  @Test
+  void checkout_ticketKind_isGated_G3() {
+    // A ticket is priced from client metadata (spoofable) and its module does not exist — reject.
+    seedCartWithStoredPrice(CartItemKind.ticket, "tk1", 100);
+    pricing.seed(CartItemKind.ticket, "tk1", "Concert", 100);
+
+    assertThrows(
+        CheckoutKindUnsupportedException.class, () -> service.checkout(ACCOUNT, KEY, "mtn"));
+    assertEquals(0, gateway.count(), "no charge is initiated for a gated kind (G3)");
+  }
+
+  @Test
+  void checkout_episodeAndSeasonPassAndStore_areGated_G3() {
+    for (CartItemKind kind : List.of(CartItemKind.episode, CartItemKind.season_pass, CartItemKind.store)) {
+      carts.deleteByAccount(ACCOUNT);
+      seedCartWithStoredPrice(kind, "ref", 100);
+      pricing.seed(kind, "ref", "Item", 100);
+      assertThrows(
+          CheckoutKindUnsupportedException.class,
+          () -> service.checkout(ACCOUNT, "k-" + kind, "mtn"),
+          kind + " must be gated (G3)");
+    }
+  }
+
+  @Test
+  void checkout_albumKind_isAllowed_G3() {
+    seedCartWithStoredPrice(CartItemKind.album, "al1", 2000);
+    pricing.seed(CartItemKind.album, "al1", "Album", 2000);
+
+    CheckoutResult result = service.checkout(ACCOUNT, KEY, "mtn");
+    assertEquals(2050, gateway.last().amountMinor(), "album (2000) + fee (50)");
+    assertTrue(result.reference().startsWith("BZ-"));
+  }
+
+  @Test
+  void checkout_sameIdempotencyKey_returnsSameOrder_oneCharge() {
+    seedCartWithStoredPrice(CartItemKind.track, "t1", 500);
+    pricing.seed(CartItemKind.track, "t1", "Track", 500);
+
+    CheckoutResult first = service.checkout(ACCOUNT, KEY, "mtn");
+    CheckoutResult second = service.checkout(ACCOUNT, KEY, "mtn");
+
+    assertEquals(first.orderId(), second.orderId(), "same key -> same order");
+    assertEquals(1, gateway.count(), "same key -> exactly one provider charge (§9.2)");
+    assertEquals(1, orders.all().size(), "same key -> one order persisted");
+  }
+
+  @Test
+  void checkout_exceedsChargeCeiling_throwsBounded422() {
+    // Force the total above the PlatformSettings ceiling by pricing the line absurdly high.
+    long ceiling = settings.current().maxChargeMinor();
+    seedCartWithStoredPrice(CartItemKind.track, "t1", 1);
+    pricing.seed(CartItemKind.track, "t1", "Whale Track", ceiling + 1);
+
+    assertThrows(
+        ChargeAmountExceededException.class, () -> service.checkout(ACCOUNT, KEY, "mtn"));
+    assertEquals(0, gateway.count(), "no charge on an out-of-bounds total");
+  }
+
+  @Test
+  void checkout_missingIdempotencyKey_throwsValidation() {
+    seedCartWithStoredPrice(CartItemKind.track, "t1", 500);
+    pricing.seed(CartItemKind.track, "t1", "Track", 500);
+    assertThrows(ValidationException.class, () -> service.checkout(ACCOUNT, null, "mtn"));
+  }
+
+  @Test
+  void checkout_appendsExactlyOneFinanceAudit_INV10() {
+    seedCartWithStoredPrice(CartItemKind.track, "t1", 500);
+    pricing.seed(CartItemKind.track, "t1", "Track", 500);
+
+    service.checkout(ACCOUNT, KEY, "mtn");
+
+    assertEquals(1, audit.size(), "exactly one audit entry (INV-10)");
+    assertEquals(AuditType.FINANCE, audit.all().get(0).getType());
+    assertEquals(ACCOUNT.value(), audit.all().get(0).getActor(), "actor is the fan");
+  }
+}

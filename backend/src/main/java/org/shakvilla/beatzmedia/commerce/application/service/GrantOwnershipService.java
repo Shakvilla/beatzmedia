@@ -18,6 +18,7 @@ import org.shakvilla.beatzmedia.commerce.application.port.out.CatalogExpansionRe
 import org.shakvilla.beatzmedia.commerce.application.port.out.OrderRepository;
 import org.shakvilla.beatzmedia.commerce.application.port.out.OwnershipRepository;
 import org.shakvilla.beatzmedia.commerce.application.port.out.SaleLedgerPoster;
+import org.shakvilla.beatzmedia.commerce.domain.IllegalOrderTransitionException;
 import org.shakvilla.beatzmedia.commerce.domain.Order;
 import org.shakvilla.beatzmedia.commerce.domain.OrderLine;
 import org.shakvilla.beatzmedia.commerce.domain.OwnershipGrant;
@@ -99,8 +100,21 @@ public class GrantOwnershipService implements GrantOwnership {
       return;
     }
 
-    // INV-1: transition pending -> paid; a failed/refunded order throws, an already-paid one no-ops.
-    boolean transitioned = order.markPaid();
+    // INV-1: transition pending -> paid. An already-paid order is a benign no-op (sequential replay).
+    // A failed/refunded order must NEVER become paid — the aggregate throws; we treat that anomalous
+    // late-settlement as a logged no-op so the (AFTER_SUCCESS) settlement path never blows up AND no
+    // ownership is ever granted off a non-pending order (INV-1). This is defence-in-depth: a
+    // PaymentFailed and a PaymentSettled for the same intent should never both fire (the payments
+    // state machine transitions once), but if they race, no value is granted here.
+    boolean transitioned;
+    try {
+      transitioned = order.markPaid();
+    } catch (IllegalOrderTransitionException e) {
+      LOG.warnf(
+          "settlement for order %s in status %s cannot grant (INV-1); ignoring",
+          order.getReference(), order.getStatus().wireValue());
+      return;
+    }
     if (!transitioned) {
       // Already paid (sequential replay fast-path) — the claim below would also reject it.
       LOG.debugf("order %s already paid; skipping duplicate grant", order.getReference());
