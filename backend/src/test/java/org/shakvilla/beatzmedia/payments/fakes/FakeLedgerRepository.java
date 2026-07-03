@@ -3,10 +3,13 @@ package org.shakvilla.beatzmedia.payments.fakes;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 
+import org.shakvilla.beatzmedia.payments.application.port.out.DuplicatePostingException;
 import org.shakvilla.beatzmedia.payments.application.port.out.LedgerRepository;
 import org.shakvilla.beatzmedia.payments.application.port.out.UnbalancedLedgerException;
 import org.shakvilla.beatzmedia.payments.domain.AccountId;
@@ -29,6 +32,7 @@ public class FakeLedgerRepository implements LedgerRepository {
 
   public final List<LedgerEntry> entries = new ArrayList<>();
   private final Map<String, LedgerAccount> accounts = new HashMap<>();
+  private final Set<String> claims = new HashSet<>();
   private final AtomicInteger seq = new AtomicInteger();
 
   @Override
@@ -96,6 +100,15 @@ public class FakeLedgerRepository implements LedgerRepository {
   public boolean existsPostingFor(String refType, String refId) {
     return entries.stream()
         .anyMatch(e -> e.getRefType().equals(refType) && e.getRefId().equals(refId));
+  }
+
+  @Override
+  public void claimPosting(TxnId txn, String refType, String refId) {
+    // Mirror the DB PK (ref_type, ref_id): first claim wins, a repeat throws — so unit tests can
+    // exercise the exactly-once no-op path deterministically (the real race is proven by the IT).
+    if (!claims.add(refType + "|" + refId)) {
+      throw new DuplicatePostingException(refType, refId, null);
+    }
   }
 
   private LedgerAccount accountById(LedgerAccountId id) {

@@ -173,6 +173,45 @@ public class JpaLedgerRepository implements LedgerRepository {
   }
 
   @Override
+  public void claimPosting(TxnId txn, String refType, String refId) {
+    // Exactly-once claim: insert the ledger_posting header (PK (ref_type, ref_id)) and FLUSH so a
+    // duplicate surfaces NOW as a constraint violation, not silently at commit. The first concurrent
+    // poster inserts; the second fails on the PK and we translate it to DuplicatePostingException so
+    // the caller's REQUIRES_NEW txn rolls back (finding F1). ON CONFLICT is deliberately NOT used —
+    // we WANT the violation so the loser aborts rather than proceeding to double-post.
+    try {
+      em.createNativeQuery(
+              "INSERT INTO ledger_posting (ref_type, ref_id, txn_id, posted_at) "
+                  + "VALUES (:rt, :ri, :txn, :now)")
+          .setParameter("rt", refType)
+          .setParameter("ri", refId)
+          .setParameter("txn", txn.value())
+          .setParameter("now", clock.now())
+          .executeUpdate();
+      em.flush();
+    } catch (jakarta.persistence.PersistenceException e) {
+      if (isUniqueViolation(e)) {
+        throw new org.shakvilla.beatzmedia.payments.application.port.out.DuplicatePostingException(
+            refType, refId, e);
+      }
+      throw e;
+    }
+  }
+
+  /** True if the throwable chain is a Postgres unique/PK violation (SQLState 23505). */
+  private static boolean isUniqueViolation(Throwable e) {
+    for (Throwable t = e; t != null; t = t.getCause()) {
+      if (t instanceof java.sql.SQLException sql && "23505".equals(sql.getSQLState())) {
+        return true;
+      }
+      if (t instanceof org.hibernate.exception.ConstraintViolationException) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  @Override
   public CreatorBalance balanceOf(AccountId creator) {
     CreatorBalanceEntity row = em.find(CreatorBalanceEntity.class, creator.value());
     if (row == null) {

@@ -54,7 +54,11 @@ public class PaymentSettlementService {
    */
   @Transactional
   public boolean settle(String intentId, String providerRef) {
-    PaymentIntent intent = repository.findById(intentId).orElse(null);
+    // Pessimistic row lock so two concurrent settlements for the SAME intent serialise: the loser
+    // blocks until the winner commits pending → settled, then re-reads a terminal status and no-ops
+    // — exactly one PaymentSettled is fired (finding F1 defense-in-depth; the ledger_posting claim in
+    // LedgerPostingService is the primary DB-level exactly-once guard for the credit).
+    PaymentIntent intent = repository.findByIdForUpdate(intentId).orElse(null);
     if (intent == null || intent.getStatus().isTerminal()) {
       return false;
     }

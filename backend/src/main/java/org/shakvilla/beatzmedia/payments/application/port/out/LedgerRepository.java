@@ -85,8 +85,31 @@ public interface LedgerRepository {
    * refId}). A defensive idempotency guard so a re-delivered settlement (webhook replay + poll race)
    * never double-posts a split for the same intent — the settlement state machine already fires once,
    * this is belt-and-braces for INV-6.
+   *
+   * <p><strong>Not sufficient alone under concurrency.</strong> This is a check-then-act SELECT with
+   * no backing constraint, so two concurrent posters in sibling transactions can both observe
+   * {@code false} (TOCTOU) and both post. The exactly-once guarantee comes from
+   * {@link #claimPosting(TxnId, String, String)} (a UNIQUE header insert); this method remains a cheap
+   * fast-path for the common sequential replay.
    */
   boolean existsPostingFor(String refType, String refId);
+
+  /**
+   * Claim the <strong>exactly-once</strong> right to post a settlement for {@code (refType, refId)} by
+   * inserting a row into the {@code ledger_posting} header table (PRIMARY KEY {@code (ref_type,
+   * ref_id)}). The FIRST caller succeeds; a concurrent SECOND caller for the same reference fails on
+   * the UNIQUE violation and this method throws {@link DuplicatePostingException} — its enclosing
+   * (REQUIRES_NEW) transaction then rolls back, so exactly one balanced posting (and one credit) ever
+   * lands per intent (INV-1/INV-6). This closes the TOCTOU race that {@link #existsPostingFor} alone
+   * cannot (finding F1). Call this BEFORE writing the ledger entries so the claim and the entries
+   * commit atomically in the same transaction.
+   *
+   * @param txn the ledger transaction the posting will create (recorded on the header for trace)
+   * @param refType the posting kind ({@code tip} | {@code intent})
+   * @param refId the source reference (the settlement's payment-intent id)
+   * @throws DuplicatePostingException if a posting for {@code (refType, refId)} already exists
+   */
+  void claimPosting(TxnId txn, String refType, String refId);
 
   /**
    * A denormalised ledger row for the admin read, already resolved to its business {@link LedgerType},

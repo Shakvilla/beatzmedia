@@ -96,3 +96,30 @@ CREATE TABLE creator_balance (
     lifetime_minor  BIGINT NOT NULL DEFAULT 0,
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT now()
 );
+
+-- ---------------------------------------------------------------------------
+-- ledger_posting — the exactly-once idempotency header for a settlement posting (INV-1/INV-6).
+--
+-- A single balanced posting writes MULTIPLE ledger_entry rows (a debit + a creator-share credit + a
+-- platform-fee credit) that all share the same (ref_type, ref_id) — so the uniqueness that makes a
+-- posting exactly-once CANNOT live on ledger_entry (it would wrongly reject the 2nd/3rd rows of the
+-- SAME legitimate txn). It lives here, at the TRANSACTION/header level: one row per posting, keyed by
+-- the source reference. The settlement ref is the per-intent id, so at most ONE posting per intent is
+-- possible.
+--
+-- Why this matters (adversarial finding F1): two provider webhooks for the SAME intent but DIFFERENT
+-- provider_event_id, delivered concurrently, can both pass the payment_event UNIQUE check, both read
+-- the intent as pending, and both fire PaymentSettled. Their tip-split observers run in REQUIRES_NEW
+-- transactions; a check-then-act SELECT guard (existsPostingFor) is a TOCTOU race — neither sibling
+-- has committed, so both see "no posting" and both post → the creator is double-credited. The
+-- assert_txn_balanced trigger does NOT catch this (each txn is internally balanced; it is duplication,
+-- not imbalance). This UNIQUE constraint makes the losing poster FAIL ON INSERT: its REQUIRES_NEW
+-- transaction rolls back, leaving exactly one settlement posting and one credit.
+-- ---------------------------------------------------------------------------
+CREATE TABLE ledger_posting (
+    ref_type   TEXT NOT NULL,   -- 'tip' | 'intent' (sale, WU-COM-2) | ...
+    ref_id     TEXT NOT NULL,   -- the source reference; for a settlement this is the payment-intent id
+    txn_id     TEXT NOT NULL,   -- the ledger transaction the posting created
+    posted_at  TIMESTAMPTZ NOT NULL DEFAULT now(),
+    CONSTRAINT pk_ledger_posting PRIMARY KEY (ref_type, ref_id)
+);

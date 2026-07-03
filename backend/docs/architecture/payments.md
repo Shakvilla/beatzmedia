@@ -475,10 +475,20 @@ public interface IdGenerator { String newId(); }
 >   commerce's concern (WU-COM-2), so `LedgerPostingService.postSaleSplit` is built as a reusable
 >   balanced primitive but is **not** wired to the settlement event yet — WU-COM-2 resolves the creator
 >   and calls it. A **tip** encodes its recipient into the intent's opaque `OrderRef` as
->   `TIP:<creatorAccountId>` (`TipRef`); a **synchronous** `@Observes PaymentSettled` subscriber
->   (`TipSettlementSubscriber`) recovers the creator and posts the 90/10 split **inside the settlement
->   transaction** (atomic; no cross-module read). Non-tip settlements are ignored. INV-1 preserved: the
->   encoded ref is inert until settlement.
+>   `TIP:<creatorAccountId>` (`TipRef`); an `@Observes(AFTER_SUCCESS) PaymentSettled` subscriber
+>   (`TipSettlementSubscriber`) recovers the creator and posts the 90/10 split with no cross-module
+>   read. Non-tip settlements are ignored. INV-1 preserved: the encoded ref is inert until settlement.
+> - **Exactly-once settlement posting (ADR-22, finding F1).** The posting runs in a dedicated
+>   `TipLedgerPoster.postTip` (`REQUIRES_NEW`) and takes a DB-level exactly-once claim on the
+>   `ledger_posting` UNIQUE header (`PRIMARY KEY (ref_type, ref_id)`, keyed by the intent id) BEFORE
+>   writing any entry. A concurrent second settlement for the same intent (two webhooks with different
+>   `provider_event_id` racing) fails on that PK, throws `DuplicatePostingException`, and its
+>   `REQUIRES_NEW` txn rolls back — the creator is credited exactly once (not twice). The uniqueness is
+>   on the transaction/header table, NOT on `ledger_entry` (whose 3 rows share one `(ref_type, ref_id)`).
+>   The subscriber swallows the duplicate as a benign no-op; `existsPostingFor` remains only a
+>   sequential-replay fast-path. Defense-in-depth: `settle` takes `SELECT … FOR UPDATE`
+>   (`findByIdForUpdate`) so the settle transition itself fires once. Proven by `ConcurrentSettlementIT`
+>   (fails-before / passes-after).
 > - **Tips reuse the WU-PAY-1 charge mechanism.** `IssueTip` (`IssueTipService`) creates a
 >   `payment_intent` exactly like a purchase — same txn-scoped advisory lock + `idempotency_key` UNIQUE
 >   + SHA-256 request fingerprint — so a duplicate tip is a no-op replay (one provider charge). Exactly
@@ -747,9 +757,10 @@ CREATE TABLE refund (
 - `V702__payments_payment_event.sql` (WU-PAY-2) — **implemented**; adds `payment_event` and
   `reconciliation_discrepancy`.
 - `V703__payments_ledger.sql` (WU-PAY-3) — **implemented**; adds `ledger_account`, `ledger_entry`
-  (with the `assert_txn_balanced` deferred constraint trigger, INV-6) and the `creator_balance`
-  projection. Ids are UUIDv7 `TEXT`; `direction` is `TEXT + CHECK` (as-built deviation from the ADD §7
-  illustrative `UUID`/enum DDL — see the WU-PAY-3 as-built note above).
+  (with the `assert_txn_balanced` deferred constraint trigger, INV-6), the `creator_balance`
+  projection, and the `ledger_posting` exactly-once header (`PRIMARY KEY (ref_type, ref_id)`, finding
+  F1 / ADR-22). Ids are UUIDv7 `TEXT`; `direction` is `TEXT + CHECK` (as-built deviation from the
+  ADD §7 illustrative `UUID`/enum DDL — see the WU-PAY-3 as-built note above).
 - `V704__payments_payouts.sql` (payout_method, withdrawal_request, payout_batch, payout_txn, kyc_record — WU-PAY-4)
 - `V705__payments_disputes.sql` (dispute, dispute_event, refund — WU-PAY-5)
 - `R__seed_dev_data.sql` (dev only): seed `ledger_account` singletons (platform_revenue, payout_clearing, provider_clearing per provider) and sample KYC records.

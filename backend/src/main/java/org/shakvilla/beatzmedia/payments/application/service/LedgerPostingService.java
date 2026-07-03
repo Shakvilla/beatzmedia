@@ -105,6 +105,13 @@ public class LedgerPostingService {
 
     TxnId txn = new TxnId(ids.newId());
 
+    // Exactly-once claim BEFORE any entry: insert the ledger_posting header keyed by (refType, refId).
+    // A concurrent second poster for the same settlement fails on the UNIQUE header here and throws
+    // DuplicatePostingException (its REQUIRES_NEW txn rolls back) — so a same-intent double-delivery
+    // yields exactly ONE balanced posting and ONE credit (finding F1 / INV-1 / INV-6). The claim and
+    // the entries below commit atomically in the same transaction.
+    ledger.claimPosting(txn, refType, refId);
+
     // DEBIT provider_clearing (gross) = CREDIT creator_payable (share) + CREDIT platform_revenue (fee).
     // Only positive-amount rows are posted, so a ₵0 creator share or ₵0 fee (edge percentages) is
     // simply omitted; the remaining rows still balance because omitting a 0 changes nothing.

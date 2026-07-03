@@ -61,6 +61,13 @@ public class FakePaymentRepository implements PaymentRepository {
   }
 
   @Override
+  public Optional<PaymentIntent> findByIdForUpdate(String id) {
+    // The in-memory fake has no row locks; single-threaded unit tests don't race. The DB adapter's
+    // SELECT ... FOR UPDATE is exercised by the concurrent integration test.
+    return Optional.ofNullable(byId.get(id));
+  }
+
+  @Override
   public Optional<PaymentIntent> findByProviderRef(String providerRef) {
     if (providerRef == null || providerRef.isBlank()) {
       return Optional.empty();
