@@ -2,6 +2,7 @@ package org.shakvilla.beatzmedia.commerce.application;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Instant;
@@ -185,6 +186,45 @@ class GrantOwnershipServiceTest {
 
     assertEquals(2, ownership.activeTrackCount(BUYER), "each track granted once");
     assertEquals(2, ledger.count(), "each creator credited exactly once despite re-delivery");
+  }
+
+  @Test
+  void grant_multiCreatorPartialSplitFailureThenRetry_noDoubleCredit_grantedOnce_B() {
+    // FINDING B — partial-failure atomicity. Delivery 1: creator-A's split commits (own REQUIRES_NEW
+    // txn), then creator-B's split throws a NON-duplicate transient error → it propagates out of
+    // grantForSettledOrder → the outer grant transaction rolls back (order pending, grants removed,
+    // grant-posting claim released) BUT creator-A's committed credit survives (an orphaned credit).
+    // Delivery 2 (retry): the claim is free so the grant runs again; creator-A's split now hits its
+    // ALREADY-COMMITTED ledger_posting PK (intentId:creator-A) → DuplicatePostingException → swallowed
+    // (benign) → creator-A is NOT double-credited; creator-B's transient failure has cleared so it
+    // posts once. End state: each creator credited exactly once, both tracks granted once, order paid.
+    pendingOrder("BZ-2026-00013", trackLine("ta", 1000), trackLine("tb", 500));
+    expansion.seedTrack("ta", "creator-A");
+    expansion.seedTrack("tb", "creator-B");
+    ledger.failOnceForCreator("creator-B"); // creator-B fails on delivery 1 only
+
+    // Delivery 1 — creator-B's transient failure propagates out (models the outer txn rollback).
+    OrderId orderId = new OrderId("o-BZ-2026-00013");
+    // A non-duplicate split failure propagates so the outer grant transaction rolls back.
+    assertThrows(
+        IllegalStateException.class,
+        () -> service.grantForSettledOrder("BZ-2026-00013", "intent-BZ-2026-00013", "mtn"));
+    // Reproduce the container rollback of the OUTER grant transaction on the in-memory fakes: the
+    // claim + grants are undone; the order reverts to pending. Creator-A's committed split is NOT
+    // rolled back (separate REQUIRES_NEW that already committed) — the orphaned credit.
+    ownership.rollbackGrant(orderId);
+    pendingOrder("BZ-2026-00013", trackLine("ta", 1000), trackLine("tb", 500)); // order back to pending
+    assertEquals(1, ledger.countForCreator("creator-A"), "creator-A already credited once (orphaned)");
+    assertEquals(0, ledger.countForCreator("creator-B"), "creator-B not credited on the failed delivery");
+
+    // Delivery 2 (retry) — succeeds; creator-A's re-post is a benign duplicate (no double-credit).
+    service.grantForSettledOrder("BZ-2026-00013", "intent-BZ-2026-00013", "mtn");
+
+    assertEquals(1, ledger.countForCreator("creator-A"), "creator-A credited EXACTLY ONCE (no double)");
+    assertEquals(1, ledger.countForCreator("creator-B"), "creator-B credited exactly once after retry");
+    assertEquals(2, ledger.count(), "exactly two committed splits total — ledger balanced (INV-6)");
+    assertEquals(2, ownership.activeTrackCount(BUYER), "both tracks granted once");
+    assertEquals(OrderStatus.paid, orders.findByReference("BZ-2026-00013").orElseThrow().getStatus());
   }
 
   @Test

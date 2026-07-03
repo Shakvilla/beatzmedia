@@ -25,6 +25,18 @@ public class FakeOwnershipRepository implements OwnershipRepository {
     return claimedOrders.add(orderId.value()); // false if already claimed (re-delivery)
   }
 
+  /**
+   * Model the outer settlement→grant transaction ROLLING BACK (finding B): undo the grant-posting
+   * claim and remove every grant created for the order. Used by the atomicity test to reproduce what
+   * the {@code @Transactional(REQUIRES_NEW)} container rollback of {@code grantForSettledOrder} does
+   * to these tables when a non-duplicate split failure propagates out. NOTE: this does NOT touch
+   * committed ledger splits — those are the separate REQUIRES_NEW transactions that already committed.
+   */
+  public void rollbackGrant(OrderId orderId) {
+    claimedOrders.remove(orderId.value());
+    grants.removeIf(g -> g.getSourceOrderId().value().equals(orderId.value()));
+  }
+
   @Override
   public OwnershipGrant save(OwnershipGrant grant) {
     grants.add(grant);

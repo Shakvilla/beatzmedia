@@ -698,3 +698,35 @@ issuance is deferred, see G3 below). As-built decisions on top of this ADD:
 
 **ADR:** the per-creator ledger source ref + album-rest ownership-aware pricing are recorded as
 **ADR-24** in `backend/docs/00-system-architecture.md` §9.
+
+### 14.2 Code-review fixes (idempotency-key reuse; partial-split atomicity)
+
+- **Review-A — same-key-different-body → 409.** The checkout idempotency short-circuit previously
+  returned the stored order UNCONDITIONALLY on a key match. Per `api-and-contract.md §5.2` (every money
+  POST), a replayed `Idempotency-Key` with a *different* request must be **409
+  `IDEMPOTENCY_KEY_CONFLICT`**, never a silent stale-order return or a re-charge. `CheckoutService` now
+  computes a SHA-256 `request_hash` over the idempotency-relevant fields — the cart contents (each line's
+  `kind:refId:qty`, sorted so ordering is irrelevant) plus `paymentMethodId` — persists it on the order
+  (`request_hash` column, V944), and on a key match compares it: **same hash → idempotent replay**
+  (return the stored order, one charge); **different hash → 409** (`commerce.domain.IdempotencyConflictException`,
+  reusing the existing `IDEMPOTENCY_KEY_CONFLICT` code, 409). The re-priced amount is intentionally NOT
+  hashed (server-side re-pricing means the client never supplies it; the cart contents + method fully
+  identify the request). Mirrors payments' `InitiateChargeService`. Proven by
+  `CheckoutServiceTest.checkout_sameKeyDifferentPaymentMethod_throwsConflict409`,
+  `checkout_sameKeyDifferentCart_throwsConflict409` (unit) and
+  `CheckoutFlowIT.checkout_sameKeyDifferentBody_returns409_IdempotencyReuse` (integration).
+- **Review-B — per-creator-split partial-failure atomicity (no double-credit; KEPT design).** Reviewers
+  asked what happens if creator #2's split fails with a NON-duplicate error after creator #1's
+  `REQUIRES_NEW` split committed. A regression test proves it: the outer grant transaction rolls back
+  (order stays `pending`, grants + `order_grant_posting` claim released) while creator #1's credit
+  survives; on re-delivery the grant re-runs and creator #1's re-post hits its already-committed
+  `ledger_posting` PK → `DuplicatePostingException` → swallowed by the adapter → **creator #1 is NOT
+  double-credited**; creator #2 (transient failure cleared) posts once. **End state: each creator
+  credited exactly once, both tracks granted once, order `paid`, ledger balanced — no double-credit, no
+  imbalance.** The design is KEPT; the only residual is an *orphaned creator credit* on a PERMANENT split
+  failure (mitigation — SAVEPOINT-per-split or an outbox/compensation — deferred, see ADR-24 addendum).
+  Proven by `GrantOwnershipServiceTest.grant_multiCreatorPartialSplitFailureThenRetry_noDoubleCredit_grantedOnce_B`.
+  Note: `FakeSaleLedgerPoster` was corrected to model the port contract precisely — a duplicate
+  `(intent, refId)` is a benign no-op the CALLER never sees (matching the real adapter's swallow), so the
+  F1 same-ref regression now surfaces as a missing posting (distinct-ref count assertion fails) rather
+  than a thrown exception.
