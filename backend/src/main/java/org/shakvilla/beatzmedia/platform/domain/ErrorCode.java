@@ -53,5 +53,9 @@ public enum ErrorCode {
   PROVIDER_ERROR,
   // ---- Commerce codes (WU-COM-1) ----
   ALREADY_OWNED,
-  NOT_STACKABLE
+  NOT_STACKABLE,
+  // ---- Commerce codes (WU-COM-2) ----
+  CART_EMPTY,
+  CHECKOUT_KIND_UNSUPPORTED,
+  CHARGE_AMOUNT_EXCEEDED
 }

@@ -36,7 +36,7 @@ public class DomainExceptionMapper implements ExceptionMapper<DomainException> {
   private int mapStatus(ErrorCode code) {
     return switch (code) {
       case VALIDATION, UNSUPPORTED_FORMAT, FILE_REJECTED, WEAK_PASSWORD, INVALID_ROLE,
-              MISSING_QUERY, TRACK_COUNT_INVALID, SPLIT_OVER_100 ->
+              MISSING_QUERY, TRACK_COUNT_INVALID, SPLIT_OVER_100, CHARGE_AMOUNT_EXCEEDED ->
           UNPROCESSABLE_ENTITY;
       case NOT_FOUND,
               ARTIST_NOT_FOUND,
@@ -58,7 +58,9 @@ public class DomainExceptionMapper implements ExceptionMapper<DomainException> {
               RELEASE_LIVE,
               IDEMPOTENCY_KEY_CONFLICT,
               ALREADY_OWNED,
-              NOT_STACKABLE ->
+              NOT_STACKABLE,
+              CART_EMPTY,
+              CHECKOUT_KIND_UNSUPPORTED ->
           Response.Status.CONFLICT.getStatusCode();
       case MISSING_IDEMPOTENCY_KEY -> Response.Status.BAD_REQUEST.getStatusCode();
       case PROVIDER_ERROR -> BAD_GATEWAY;
