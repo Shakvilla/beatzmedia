@@ -26,6 +26,8 @@ CREATE TABLE "order" (
     payment_intent_id VARCHAR(64),
     failure_reason    VARCHAR(256),
     idempotency_key   VARCHAR(128) NOT NULL,           -- checkout Idempotency-Key (INV-1 / §9.2)
+    request_hash      VARCHAR(64)  NOT NULL,           -- SHA-256 of the idempotency-relevant request;
+                                                       -- same key + different hash => 409 (api-and-contract §5.2)
     created_at        TIMESTAMPTZ  NOT NULL DEFAULT now(),
     CONSTRAINT ck_order_status CHECK (status IN ('pending', 'paid', 'fulfilled', 'refunded', 'failed')),
     CONSTRAINT ck_order_subtotal_non_negative CHECK (subtotal_minor >= 0),

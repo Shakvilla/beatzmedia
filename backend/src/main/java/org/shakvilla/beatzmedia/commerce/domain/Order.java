@@ -36,6 +36,7 @@ public final class Order {
   private String paymentIntentId;
   private String failureReason;
   private String idempotencyKey;
+  private String requestHash;
   private final List<OrderLine> lines;
   private final Instant createdAt;
 
@@ -50,6 +51,7 @@ public final class Order {
       String paymentIntentId,
       String failureReason,
       String idempotencyKey,
+      String requestHash,
       List<OrderLine> lines,
       Instant createdAt) {
     this.id = id;
@@ -62,6 +64,7 @@ public final class Order {
     this.paymentIntentId = paymentIntentId;
     this.failureReason = failureReason;
     this.idempotencyKey = idempotencyKey;
+    this.requestHash = requestHash;
     this.lines = new ArrayList<>(lines);
     this.createdAt = createdAt;
   }
@@ -89,7 +92,7 @@ public final class Order {
     Money fee = serviceFee;
     Money total = subtotal.plus(fee);
     return new Order(
-        id, accountId, reference, OrderStatus.pending, subtotal, fee, total, null, null, null,
+        id, accountId, reference, OrderStatus.pending, subtotal, fee, total, null, null, null, null,
         lines, createdAt);
   }
 
@@ -98,9 +101,18 @@ public final class Order {
     this.paymentIntentId = paymentIntentId;
   }
 
-  /** Record the checkout idempotency key on the pending order (INV-1 / §9.2 short-circuit). */
-  public void setIdempotencyKey(String idempotencyKey) {
+  /**
+   * Record the checkout idempotency key + the SHA-256 request hash on the pending order (INV-1 / §9.2).
+   * The hash is what a replayed key is compared against: same hash → idempotent replay, different hash
+   * → 409 {@code IDEMPOTENCY_KEY_CONFLICT} (api-and-contract §5.2).
+   */
+  public void bindIdempotency(String idempotencyKey, String requestHash) {
     this.idempotencyKey = idempotencyKey;
+    this.requestHash = requestHash;
+  }
+
+  public String getRequestHash() {
+    return requestHash;
   }
 
   public String getIdempotencyKey() {

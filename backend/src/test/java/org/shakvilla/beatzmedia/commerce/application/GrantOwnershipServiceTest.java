@@ -77,7 +77,7 @@ class GrantOwnershipServiceTest {
             Money.ofMinor(50, Currency.GHS),
             Currency.GHS,
             NOW);
-    order.setIdempotencyKey("key-" + ref);
+    order.bindIdempotency("key-" + ref, "hash-" + ref);
     order.attachPaymentIntent("intent-" + ref);
     return orders.save(order);
   }

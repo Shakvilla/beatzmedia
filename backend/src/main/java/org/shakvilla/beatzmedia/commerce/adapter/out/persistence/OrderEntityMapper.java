@@ -48,6 +48,7 @@ public class OrderEntityMapper {
         e.paymentIntentId,
         e.failureReason,
         e.idempotencyKey,
+        e.requestHash,
         lines,
         e.createdAt);
   }
@@ -65,6 +66,7 @@ public class OrderEntityMapper {
     entity.paymentIntentId = order.getPaymentIntentId();
     entity.failureReason = order.getFailureReason();
     entity.idempotencyKey = order.getIdempotencyKey();
+    entity.requestHash = order.getRequestHash();
     entity.createdAt = order.getCreatedAt();
 
     Map<String, OrderLineEntity> existingById =

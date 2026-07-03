@@ -53,6 +53,9 @@ public class OrderEntity {
   @Column(name = "idempotency_key", nullable = false)
   public String idempotencyKey;
 
+  @Column(name = "request_hash", nullable = false)
+  public String requestHash;
+
   @Column(name = "created_at", nullable = false)
   public Instant createdAt;
 

@@ -26,6 +26,7 @@ import org.shakvilla.beatzmedia.commerce.domain.CartItem;
 import org.shakvilla.beatzmedia.commerce.domain.CartItemKind;
 import org.shakvilla.beatzmedia.commerce.domain.ChargeAmountExceededException;
 import org.shakvilla.beatzmedia.commerce.domain.CheckoutKindUnsupportedException;
+import org.shakvilla.beatzmedia.commerce.domain.IdempotencyConflictException;
 import org.shakvilla.beatzmedia.commerce.domain.Order;
 import org.shakvilla.beatzmedia.commerce.domain.OrderId;
 import org.shakvilla.beatzmedia.commerce.domain.OrderLine;
@@ -112,18 +113,27 @@ public class CheckoutService implements Checkout {
       throw new ValidationException("paymentMethodId is required", "paymentMethodId");
     }
 
-    // 1. Idempotency short-circuit: same (account, key) -> same order + intent, no second charge.
-    Order existing =
-        orderRepository.findByAccountAndIdempotencyKey(account, idempotencyKey).orElse(null);
-    if (existing != null) {
-      return toResult(existing);
-    }
-
     // 2. Load the caller's OWN cart (no cross-account checkout — cart is keyed by account).
     Cart cart =
         cartRepository.findByAccount(account).orElseThrow(CartEmptyException::new);
     if (cart.isEmpty()) {
       throw new CartEmptyException();
+    }
+
+    // 1. Idempotency (api-and-contract §5.2). The request hash covers the idempotency-relevant fields:
+    // the cart contents (each line's kind:refId:qty, order-independent) and the paymentMethodId. On a
+    // key match: SAME hash → true idempotent replay (return the stored order, no second charge);
+    // DIFFERENT hash → 409 IDEMPOTENCY_KEY_CONFLICT (a client bug reusing a key for a different request
+    // — never silently return the stale order or re-charge). Mirrors payments' InitiateChargeService.
+    String requestHash = requestHash(cart, paymentMethodId);
+    Order existing =
+        orderRepository.findByAccountAndIdempotencyKey(account, idempotencyKey).orElse(null);
+    if (existing != null) {
+      if (!requestHash.equals(existing.getRequestHash())) {
+        throw new IdempotencyConflictException(
+            "Idempotency-Key already used with a different checkout request");
+      }
+      return toResult(existing);
     }
 
     PlatformSettings settings = settingsProvider.current();
@@ -166,7 +176,7 @@ public class CheckoutService implements Checkout {
       throw new ChargeAmountExceededException(order.getTotal().minor(), maxCharge);
     }
 
-    order.setIdempotencyKey(idempotencyKey);
+    order.bindIdempotency(idempotencyKey, requestHash);
     orderRepository.save(order);
 
     // 6. Initiate the charge for the caller's OWN order total (idempotency key forwarded to payments).
@@ -247,5 +257,32 @@ public class CheckoutService implements Checkout {
             AuditType.FINANCE,
             null,
             clock.now()));
+  }
+
+  /**
+   * SHA-256 over the idempotency-relevant fields of the checkout request (api-and-contract §5.2): the
+   * cart contents — each line's {@code kind:refId:qty}, sorted so ordering is irrelevant — plus the
+   * {@code paymentMethodId}. Two checkouts under the same key must carry the same hash to be treated
+   * as the same operation; a different hash (e.g. a changed cart or a different rail) is a 409 conflict.
+   * The re-priced amount is intentionally NOT part of the hash: server-side re-pricing (G1) means the
+   * client never supplies it, and a legitimate replay of the same cart must not spuriously conflict if
+   * a background price change occurred — the cart contents + method fully identify the intended request.
+   */
+  private static String requestHash(Cart cart, String paymentMethodId) {
+    String canonical =
+        cart.getItems().stream()
+                .map(i -> i.getKind().wireValue() + ":" + i.getRefId() + ":" + i.getQty())
+                .sorted()
+                .collect(java.util.stream.Collectors.joining("|"))
+            + "#"
+            + paymentMethodId;
+    try {
+      byte[] hash =
+          java.security.MessageDigest.getInstance("SHA-256")
+              .digest(canonical.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+      return java.util.HexFormat.of().formatHex(hash);
+    } catch (java.security.NoSuchAlgorithmException e) {
+      throw new IllegalStateException("SHA-256 unavailable", e);
+    }
   }
 }

@@ -156,11 +156,15 @@ class CheckoutFlowIT {
   }
 
   private Response checkout(String token, String idemKey) {
+    return checkoutWith(token, idemKey, "mtn");
+  }
+
+  private Response checkoutWith(String token, String idemKey, String paymentMethodId) {
     return given()
         .header("Authorization", "Bearer " + token)
         .header("Idempotency-Key", idemKey)
         .contentType(ContentType.JSON)
-        .body("{ \"paymentMethodId\": \"mtn\" }")
+        .body("{ \"paymentMethodId\": \"" + paymentMethodId + "\" }")
         .when().post("/v1/checkout")
         .then().extract().response();
   }
@@ -332,6 +336,21 @@ class CheckoutFlowIT {
         first.jsonPath().getString("paymentIntentId"),
         second.jsonPath().getString("paymentIntentId"),
         "same key -> same intent, no second charge");
+  }
+
+  @Test
+  void checkout_sameKeyDifferentBody_returns409_IdempotencyReuse() {
+    // api-and-contract §5.2: same Idempotency-Key + a DIFFERENT request (different paymentMethodId)
+    // must be 409 IDEMPOTENCY_KEY_CONFLICT — never a silent stale-order return or a second charge.
+    String token = signUp("co2-idemconf-" + System.nanoTime() + "@example.com");
+    addToCart(token, "track", trackId);
+    String key = "co2-idemconfkey-" + System.nanoTime();
+
+    checkoutWith(token, key, "mtn").then().statusCode(202);
+    checkoutWith(token, key, "card")
+        .then()
+        .statusCode(409)
+        .body("error.code", equalTo("IDEMPOTENCY_KEY_CONFLICT"));
   }
 
   // ---- idempotent settlement (re-delivered webhook grants once) ----------------

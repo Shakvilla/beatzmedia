@@ -21,6 +21,7 @@ import org.shakvilla.beatzmedia.commerce.domain.CartItem;
 import org.shakvilla.beatzmedia.commerce.domain.CartItemKind;
 import org.shakvilla.beatzmedia.commerce.domain.ChargeAmountExceededException;
 import org.shakvilla.beatzmedia.commerce.domain.CheckoutKindUnsupportedException;
+import org.shakvilla.beatzmedia.commerce.domain.IdempotencyConflictException;
 import org.shakvilla.beatzmedia.commerce.domain.PriceUnavailableException;
 import org.shakvilla.beatzmedia.commerce.fakes.FakeCartRepository;
 import org.shakvilla.beatzmedia.commerce.fakes.FakeCatalogExpansionReader;
@@ -89,6 +90,17 @@ class CheckoutServiceTest {
             kind.isStackable(),
             null);
     carts.save(new Cart(new CartId("cart-1"), ACCOUNT, List.of(item)));
+  }
+
+  /** Append a line to the caller's existing cart (keeps existing items). */
+  private void seedCartAppend(CartItemKind kind, String refId, long storedMinor) {
+    Cart existing = carts.findByAccount(ACCOUNT).orElseThrow();
+    java.util.List<CartItem> items = new java.util.ArrayList<>(existing.getItems());
+    items.add(
+        new CartItem(
+            CartItem.lineIdFor(kind, refId), kind, refId, "Stored Title 2", "sub", "img.jpg",
+            Money.ofMinor(storedMinor, Currency.GHS), 1, kind.isStackable(), null));
+    carts.save(new Cart(existing.getId(), ACCOUNT, items));
   }
 
   @Test
@@ -204,6 +216,38 @@ class CheckoutServiceTest {
     assertEquals(first.orderId(), second.orderId(), "same key -> same order");
     assertEquals(1, gateway.count(), "same key -> exactly one provider charge (§9.2)");
     assertEquals(1, orders.all().size(), "same key -> one order persisted");
+  }
+
+  @Test
+  void checkout_sameKeyDifferentPaymentMethod_throwsConflict409() {
+    // api-and-contract §5.2: same Idempotency-Key + a DIFFERENT request body -> 409, never a silent
+    // stale-order return or a second charge. Here the second call reuses the key with a different
+    // paymentMethodId, so the request hash differs.
+    seedCartWithStoredPrice(CartItemKind.track, "t1", 500);
+    pricing.seed(CartItemKind.track, "t1", "Track", 500);
+
+    service.checkout(ACCOUNT, KEY, "mtn");
+
+    assertThrows(
+        IdempotencyConflictException.class, () -> service.checkout(ACCOUNT, KEY, "card"));
+    assertEquals(1, gateway.count(), "conflict -> no second charge");
+    assertEquals(1, orders.all().size(), "conflict -> no second order");
+  }
+
+  @Test
+  void checkout_sameKeyDifferentCart_throwsConflict409() {
+    // Same key but the cart contents changed (a different track added) -> different request hash -> 409.
+    seedCartWithStoredPrice(CartItemKind.track, "t1", 500);
+    pricing.seed(CartItemKind.track, "t1", "Track", 500);
+    pricing.seed(CartItemKind.track, "t2", "Track 2", 700);
+
+    service.checkout(ACCOUNT, KEY, "mtn");
+
+    // Add a second item to the (now-cleared? no — checkout doesn't clear the cart until settlement)
+    // cart, then replay the same key: the hash now covers two lines, so it conflicts.
+    seedCartAppend(CartItemKind.track, "t2", 700);
+    assertThrows(
+        IdempotencyConflictException.class, () -> service.checkout(ACCOUNT, KEY, "mtn"));
   }
 
   @Test
