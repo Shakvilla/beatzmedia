@@ -106,10 +106,16 @@ public class LedgerPostingService {
     TxnId txn = new TxnId(ids.newId());
 
     // Exactly-once claim BEFORE any entry: insert the ledger_posting header keyed by (refType, refId).
-    // A concurrent second poster for the same settlement fails on the UNIQUE header here and throws
-    // DuplicatePostingException (its REQUIRES_NEW txn rolls back) — so a same-intent double-delivery
-    // yields exactly ONE balanced posting and ONE credit (finding F1 / INV-1 / INV-6). The claim and
-    // the entries below commit atomically in the same transaction.
+    // A second poster for the same (refType, refId) fails on the PK (23505) and this method throws
+    // DuplicatePostingException — so a duplicate settlement yields exactly ONE balanced posting and ONE
+    // credit (INV-1 / INV-6). The claim and the entries below commit atomically in THIS transaction.
+    //
+    // NOTE (finding F1): the DB 23505 marks the CURRENT transaction rollback-only, so this method does
+    // NOT provide isolation by itself — the CALLER must invoke it on a REQUIRES_NEW boundary if it does
+    // not want a duplicate to poison its own transaction. The tip path (TipLedgerPoster) and the
+    // commerce sale path (PaymentsSaleLedgerPosterAdapter, REQUIRES_NEW) both establish that boundary
+    // before calling in. Callers must also pass a per-source-unique refId (the commerce sale path uses
+    // paymentIntentId:creatorId so a multi-creator order does not collide distinct creators here).
     ledger.claimPosting(txn, refType, refId);
 
     // DEBIT provider_clearing (gross) = CREDIT creator_payable (share) + CREDIT platform_revenue (fee).

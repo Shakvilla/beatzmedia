@@ -16,4 +16,10 @@ public interface CartRepository {
   Optional<Cart> findByAccount(AccountId account);
 
   Cart save(Cart cart);
+
+  /**
+   * Remove the account's cart (and its lines) — called by the {@code PaymentSettled} handler after a
+   * successful purchase so the cart is emptied (Commerce ADD §8). Idempotent: a no-op if absent.
+   */
+  void deleteByAccount(AccountId account);
 }

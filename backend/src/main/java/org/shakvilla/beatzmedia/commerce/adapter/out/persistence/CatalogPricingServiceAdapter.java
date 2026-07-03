@@ -78,6 +78,14 @@ public class CatalogPricingServiceAdapter implements PricingService {
    * Interim resolution for kinds without a live backing module (episode/season-pass/ticket/store).
    * Requires {@code metadata.title} and a positive {@code metadata.priceMinor} integer; otherwise
    * rejects with 404/422 rather than silently defaulting a price.
+   *
+   * <p>// G2 — this echo of client-supplied {@code metadata.priceMinor} is used ONLY on the
+   * add-to-cart path (no money moves there). WU-COM-2 checkout GATES these four kinds
+   * (409 {@code CHECKOUT_KIND_UNSUPPORTED}, ADR-23) so a spoofed price can never reach a real charge.
+   * REPLACE this branch with authoritative price-lookup input ports
+   * ({@code podcasts}/{@code events}/{@code store} {@code application.port.in}) when WU-POD-1 /
+   * WU-EVT-1 / WU-STO-1 ship, then relax the checkout gate per-kind. Do NOT start trusting these
+   * prices for checkout before the owning module exists.
    */
   private PricedItem priceFromMetadata(CartItemKind kind, String refId, Map<String, Object> metadata) {
     if (metadata == null) {

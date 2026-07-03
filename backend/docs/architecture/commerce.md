@@ -583,3 +583,150 @@ tables and clears them on settlement.
   `ErrorCode` enum and mapped to HTTP 409 in the shared `DomainExceptionMapper`
   (`platform.adapter.in.rest`), following the same pattern as identity/catalog/payments codes —
   commerce does **not** have its own local exception mapper.
+
+## 14. WU-COM-2 implementation notes (checkout + settlement→ownership shipped)
+
+WU-COM-2 shipped the checkout/order/ownership-grant slice (LLFR-COMMERCE-02.1–02.4; 02.5 ticket
+issuance is deferred, see G3 below). As-built decisions on top of this ADD:
+
+- **Migration `V944__commerce_order_and_ownership.sql`.** Allocated via
+  `scripts/next-migration-version.sh` (next free global slot after `V943`). Creates `"order"`
+  (quoted — reserved word), `order_line`, `ownership_grant`, the `order_grant_posting` exactly-once
+  claim header, and the `order_ref_seq` SEQUENCE. Ids are `TEXT` UUIDv7 (codebase convention).
+- **`order_ref` collision-safety (WU-PLT-1 / WU-COM-1 carryover, PR #10) — FIXED HERE.** The unsafe
+  in-memory `AtomicLong` in `Uuidv7IdGenerator.newOrderRef()` is superseded by
+  `SequenceOrderRefGenerator` (output port `OrderRefGenerator`), which draws `NNNNN` from the DB
+  `order_ref_seq` SEQUENCE (monotonic across JVM restarts + horizontally-scaled instances). A
+  `uq_order_reference` UNIQUE constraint on `"order".reference` is the durable loud backstop. The
+  `Uuidv7IdGenerator.newOrderRef()` method is left in place (still referenced by nothing on the
+  checkout path) but is no longer the source of order references; it can be removed once no caller
+  remains. Proven by `CheckoutFlowIT.orderReferences_areUnique_acrossCheckouts` (format + distinctness)
+  and the `uq_order_reference` constraint.
+- **Ownership grant is INV-1 exactly-once (reuses the WU-PAY-3 pattern).** `GrantOwnershipService`
+  (the ONLY creator of an `OwnershipGrant`; no REST caller — guarded by `GrantOwnershipCallerTest`) is
+  invoked solely by `PaymentSettledSubscriber`, which `@Observes(AFTER_SUCCESS) PaymentSettled` — the
+  sanctioned cross-module link (commerce consumes payments' domain event; it never reads payments'
+  tables). The grant runs in a `REQUIRES_NEW` transaction and takes a per-order exactly-once claim on
+  `order_grant_posting` (PRIMARY KEY on `order_id`, atomic `INSERT … ON CONFLICT DO NOTHING`) BEFORE
+  any grant/credit — a re-delivered settlement (webhook replay + poll race) loses the claim and the
+  whole fan-out is skipped. The `ux_grant_account_track/episode` partial-unique indexes are the
+  per-target durable backstop. Proven by
+  `GrantOwnershipServiceTest.grant_redeliveredSettlement_grantsExactlyOnce_idempotent` (unit) and
+  `CheckoutFlowIT.redeliveredSettlement_grantsOnce_creditsOnce` (integration, two webhooks / one grant
+  / one credit).
+- **INV-2 album expansion + INV-4 sale split.** On settlement, `CatalogExpansionReader`
+  (`CatalogExpansionReaderAdapter`, in-process read over catalog's own `track`/`album` entities)
+  expands an `album`/`album-rest` line to every constituent track id, and resolves the recipient
+  creator (artist) for each line. The 70/30 split is posted via `SaleLedgerPoster`
+  (`PaymentsSaleLedgerPosterAdapter` → payments `LedgerPostingService.postSaleSplit`, the WU-PAY-3
+  reusable primitive, ADR-21); the fee % comes from `PlatformSettings.platformFeePct` inside payments,
+  never hard-coded. Season-pass→episode expansion is inert (gated — see G3). Proven by
+  `GrantOwnershipServiceTest.grant_albumPurchase_expandsToAllConstituentTracks_INV2` and
+  `CheckoutFlowIT.checkout_albumThenSettle_expandsToAllTracks_INV2`.
+- **Server-side authoritative re-pricing (G1 / DoD 2).** `CheckoutService` re-resolves every unit
+  price from `PricingService` at checkout and computes totals from the re-priced lines — the
+  cart-stored price is NEVER trusted. Proven by
+  `CheckoutServiceTest.checkout_tamperedCartPrice_chargesTrueServerPrice_notClientAmount` /
+  `checkout_inflatedCartPrice_stillChargesTrueServerPrice` (unit) and
+  `CheckoutFlowIT.checkout_tamperedCartPrice_chargesTrueServerPrice` (integration — forges the
+  persisted cart amount to 1 pesewa, asserts the charge is the true 550).
+- **G3 kind gate (ADR-23) — SAFE default, security-reviewer sign-off REQUIRED.** Checkout GATES
+  `episode`/`season-pass`/`ticket`/`store` (409 `CHECKOUT_KIND_UNSUPPORTED`) because their price comes
+  from the interim client-supplied metadata echo (`CatalogPricingServiceAdapter.priceFromMetadata`,
+  `// G2`) and would let a fan spoof a real-money price; only `track`/`album`/`album-rest` (priced
+  authoritatively from catalog) may be purchased. Consequently **ticket issuance (LLFR-COMMERCE-02.5)
+  is deferred to WU-EVT-1** and `OrderSnapshot.tickets` is always absent in this WU. Proven by
+  `CheckoutServiceTest.checkout_ticketKind_isGated_G3` / `checkout_episodeAndSeasonPassAndStore_areGated_G3`
+  / `checkout_albumKind_isAllowed_G3` and `CheckoutFlowIT.checkout_ticketKind_isGated_409`.
+- **Money-path hardening (WU-PAY-1 carryover).** `POST /v1/checkout` requires an `Idempotency-Key`
+  header (422 if missing; same key → same order+intent, no second charge — `uq_order_account_idem`).
+  Per-account token-bucket rate limiting (`CheckoutRateLimiter`) → 429 + `Retry-After`. A charge
+  ceiling from `PlatformSettings.maxChargeMinor()` rejects an absurd re-priced total with a bounded
+  422 `CHARGE_AMOUNT_EXCEEDED` (never an unmapped 500). Ownership authz is structural: the cart/order
+  are keyed by the authenticated account, so there is no cross-account checkout. Exactly one
+  `AuditEntry` per checkout and per grant (INV-10).
+- **Library repoint.** `commerce.adapter.out.integration.CommerceLibraryOwnershipReaderAdapter` now
+  supplies library's `LibraryOwnershipReader` output port from real `ownership_grant` rows (via
+  commerce's `OwnershipRepository`); the WU-LIB-1 `StubLibraryOwnershipReaderAdapter` becomes an
+  inactive `@Alternative`. `/me/owned` and library collection now reflect commerce grants. Hexagonal
+  boundary preserved — library sees only track-id strings, never a commerce entity.
+- **New `ErrorCode`s (WU-COM-2).** `CART_EMPTY` (409), `CHECKOUT_KIND_UNSUPPORTED` (409),
+  `CHARGE_AMOUNT_EXCEEDED` (422) added to the platform `ErrorCode` enum + `DomainExceptionMapper`.
+- **PaymentFailed handling (LLFR-COMMERCE-02.3).** `PaymentSettledSubscriber.onFailed`
+  `@Observes(AFTER_SUCCESS) PaymentFailed` marks the order `failed` with the reason and **preserves the
+  cart** for retry; no grant is created (INV-1).
+
+### 14.1 Adversarial-review fixes (F1/F2/F3)
+
+- **F1 — per-creator sale split (multi-artist orders).** The settlement→grant service originally posted
+  one ledger split per order *line* using the same `paymentIntentId` as the source ref. Because payments
+  keys `ledger_posting` on `(ref_type, ref_id)` (PK), a ≥2-distinct-creator order collided on the second
+  creator's claim (23505 → `DuplicatePostingException`), and — since the post ran inside the grant
+  transaction — poisoned it: the *entire* settlement→grant rolled back (grants, credit, `pending→paid`,
+  cart clear, `order_grant_posting` claim, audit, event). Buyer charged, nothing granted, deterministic
+  on re-delivery. A two-artist cart is normal, so this was CRITICAL. **Fix:** `GrantOwnershipService`
+  now aggregates line grosses **per creator** (`LinkedHashMap`) and posts **one** split per creator with
+  a **per-creator-unique** ref `paymentIntentId + ":" + creatorAccountId` — distinct creators never
+  collide; same-creator lines sum into one balanced posting. `PaymentsSaleLedgerPosterAdapter.postSaleSplit`
+  now runs `REQUIRES_NEW` (crossing the CDI proxy from `GrantOwnershipService`), so a *genuine* duplicate
+  rolls back only that split's transaction and can never poison the grant transaction. Idempotency across
+  re-deliveries stays guaranteed by the order-level `order_grant_posting` claim (a re-delivered settlement
+  returns before any posting). Proven by `GrantOwnershipServiceTest.grant_multiCreatorOrder_creditsEachCreatorOnce_grantsAllTracks_F1`,
+  `grant_multiLineSameCreator_postsOneAggregatedSplit_F1`, `grant_multiCreatorRedelivery_creditsEachOnce_F1`
+  (unit; `FakeSaleLedgerPoster` now throws on a duplicate `(intent, refId)` so a regression fails), and
+  `CheckoutFlowIT.checkout_twoDistinctArtists_settle_creditsBothOnce_grantsAllTracks` (integration: both
+  creators credited exactly once, all tracks granted, ledger balanced `INV-6`, idempotent on re-delivery).
+- **F2 — `album-rest` ownership-aware pricing.** Full `album` purchase is unchanged and correct: the
+  album `list_price_minor` already bakes in the 24% bundle discount at authoring (release wizard sets it
+  to `sum(track prices) × (1 − bundleDiscountPct)`), so checkout must NOT re-apply `bundleDiscountPct`
+  (it stays a catalog-authoring constant; a note to that effect is on `PlatformSettings.bundleDiscountPct`).
+  `album-rest` ("buy the rest"), however, must match the frontend (`album/$albumId.tsx` `buyRest`): the
+  price is the **sum of the caller's not-yet-owned, for-sale album tracks at each track's individual
+  price, NO bundle discount**, and exactly those tracks are granted. **Fix:** `CatalogExpansionReader`
+  gains `remainingForSaleTracks(account, albumId)` (ownership-aware, via commerce's `OwnershipRepository`
+  + catalog's `track` rows filtered to `for-sale`, positive price, not-owned); `CheckoutService` prices
+  the `album-rest` line as their sum (rejecting with 404 `PriceUnavailable` if the caller owns everything —
+  nothing to buy); album-rest expansion (`tracksToGrant`) returns only the album's for-sale tracks so the
+  grant fan-out (with its per-track already-owned guard) grants exactly the remaining tracks. Proven by
+  `CheckoutServiceTest.checkout_albumRest_partialOwnership_chargesSumOfRemainingTracks_notAlbumPrice`,
+  `checkout_albumRest_ownsEverything_rejected` (unit), and
+  `CheckoutFlowIT.checkout_albumRest_partialOwnership_chargesRemainingTracks_grantsRemaining` (integration).
+- **F3 — corrected comments.** The "REQUIRES_NEW rolls back / benign no-op" comments in
+  `LedgerPostingService.claimPosting` and `PaymentsSaleLedgerPosterAdapter` were corrected to state that
+  the DB 23505 marks the *current* transaction rollback-only, so isolation is the CALLER's responsibility
+  (the caller must invoke on a `REQUIRES_NEW` boundary and pass a per-source-unique `refId`).
+
+**ADR:** the per-creator ledger source ref + album-rest ownership-aware pricing are recorded as
+**ADR-24** in `backend/docs/00-system-architecture.md` §9.
+
+### 14.2 Code-review fixes (idempotency-key reuse; partial-split atomicity)
+
+- **Review-A — same-key-different-body → 409.** The checkout idempotency short-circuit previously
+  returned the stored order UNCONDITIONALLY on a key match. Per `api-and-contract.md §5.2` (every money
+  POST), a replayed `Idempotency-Key` with a *different* request must be **409
+  `IDEMPOTENCY_KEY_CONFLICT`**, never a silent stale-order return or a re-charge. `CheckoutService` now
+  computes a SHA-256 `request_hash` over the idempotency-relevant fields — the cart contents (each line's
+  `kind:refId:qty`, sorted so ordering is irrelevant) plus `paymentMethodId` — persists it on the order
+  (`request_hash` column, V944), and on a key match compares it: **same hash → idempotent replay**
+  (return the stored order, one charge); **different hash → 409** (`commerce.domain.IdempotencyConflictException`,
+  reusing the existing `IDEMPOTENCY_KEY_CONFLICT` code, 409). The re-priced amount is intentionally NOT
+  hashed (server-side re-pricing means the client never supplies it; the cart contents + method fully
+  identify the request). Mirrors payments' `InitiateChargeService`. Proven by
+  `CheckoutServiceTest.checkout_sameKeyDifferentPaymentMethod_throwsConflict409`,
+  `checkout_sameKeyDifferentCart_throwsConflict409` (unit) and
+  `CheckoutFlowIT.checkout_sameKeyDifferentBody_returns409_IdempotencyReuse` (integration).
+- **Review-B — per-creator-split partial-failure atomicity (no double-credit; KEPT design).** Reviewers
+  asked what happens if creator #2's split fails with a NON-duplicate error after creator #1's
+  `REQUIRES_NEW` split committed. A regression test proves it: the outer grant transaction rolls back
+  (order stays `pending`, grants + `order_grant_posting` claim released) while creator #1's credit
+  survives; on re-delivery the grant re-runs and creator #1's re-post hits its already-committed
+  `ledger_posting` PK → `DuplicatePostingException` → swallowed by the adapter → **creator #1 is NOT
+  double-credited**; creator #2 (transient failure cleared) posts once. **End state: each creator
+  credited exactly once, both tracks granted once, order `paid`, ledger balanced — no double-credit, no
+  imbalance.** The design is KEPT; the only residual is an *orphaned creator credit* on a PERMANENT split
+  failure (mitigation — SAVEPOINT-per-split or an outbox/compensation — deferred, see ADR-24 addendum).
+  Proven by `GrantOwnershipServiceTest.grant_multiCreatorPartialSplitFailureThenRetry_noDoubleCredit_grantedOnce_B`.
+  Note: `FakeSaleLedgerPoster` was corrected to model the port contract precisely — a duplicate
+  `(intent, refId)` is a benign no-op the CALLER never sees (matching the real adapter's swallow), so the
+  F1 same-ref regression now surfaces as a missing posting (distinct-ref count assertion fails) rather
+  than a thrown exception.

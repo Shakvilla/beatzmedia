@@ -34,6 +34,16 @@ public class FakeCartRepository implements CartRepository {
     return toStore;
   }
 
+  @Override
+  public void deleteByAccount(AccountId account) {
+    byAccount.remove(account.value());
+  }
+
+  /** Test helper: does this account currently have a (non-deleted) cart? */
+  public boolean hasCart(AccountId account) {
+    return byAccount.containsKey(account.value());
+  }
+
   private CartItem copyItem(CartItem item) {
     return new CartItem(
         item.getLineId(), item.getKind(), item.getRefId(), item.getTitle(), item.getSubtitle(),
