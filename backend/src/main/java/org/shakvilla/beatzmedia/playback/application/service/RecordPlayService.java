@@ -13,6 +13,8 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.shakvilla.beatzmedia.catalog.domain.TrackId;
 import org.shakvilla.beatzmedia.catalog.domain.TrackNotFoundException;
 import org.shakvilla.beatzmedia.identity.domain.AccountId;
+import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
+import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
 import org.shakvilla.beatzmedia.playback.application.port.in.RecordPlay;
 import org.shakvilla.beatzmedia.playback.application.port.out.CatalogReader;
 import org.shakvilla.beatzmedia.playback.application.port.out.PlayEventRepository;
@@ -21,8 +23,6 @@ import org.shakvilla.beatzmedia.playback.domain.PlayRecorded;
 import org.shakvilla.beatzmedia.playback.domain.PlaySource;
 import org.shakvilla.beatzmedia.playback.domain.PlaybackMode;
 import org.shakvilla.beatzmedia.playback.domain.TrackOwnership;
-import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
-import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
 
 /**
  * Application service for {@link RecordPlay} (LLFR-PLAYBACK-01.2). Appends a {@code play_event},
