@@ -70,6 +70,22 @@ public class JpaPaymentRepository implements PaymentRepository {
   }
 
   @Override
+  public Optional<PaymentIntent> findByIdForUpdate(String id) {
+    // Pessimistic write lock (SELECT ... FOR UPDATE) so concurrent settlements for the same intent
+    // serialise: the loser blocks here until the winner commits, then re-reads a terminal status and
+    // no-ops (finding F1 defense-in-depth). A JPQL query with PESSIMISTIC_WRITE emits FOR UPDATE.
+    return em
+        .createQuery(
+            "SELECT p FROM PaymentIntentEntity p WHERE p.id = :id", PaymentIntentEntity.class)
+        .setParameter("id", id)
+        .setLockMode(jakarta.persistence.LockModeType.PESSIMISTIC_WRITE)
+        .getResultList()
+        .stream()
+        .findFirst()
+        .map(PaymentIntentMapper::toDomain);
+  }
+
+  @Override
   public Optional<PaymentIntent> findByProviderRef(String providerRef) {
     if (providerRef == null || providerRef.isBlank()) {
       return Optional.empty();

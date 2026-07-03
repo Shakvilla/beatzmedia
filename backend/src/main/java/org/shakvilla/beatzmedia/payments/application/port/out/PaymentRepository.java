@@ -43,6 +43,16 @@ public interface PaymentRepository {
   Optional<PaymentIntent> findById(String id);
 
   /**
+   * Look up an intent by id while taking a <strong>pessimistic write lock</strong> on its row
+   * ({@code SELECT … FOR UPDATE}). Used by the settle/fail/timeout transition (finding F1
+   * defense-in-depth): two concurrent settlements for the same intent serialise on this lock — the
+   * loser blocks until the winner commits {@code pending → settled}, then re-reads a terminal status
+   * and no-ops. Combined with the ledger {@code ledger_posting} exactly-once claim, this makes a
+   * duplicate settle both transition-once and credit-once (INV-1).
+   */
+  Optional<PaymentIntent> findByIdForUpdate(String id);
+
+  /**
    * Look up an intent by the provider's opaque charge reference. Used by the webhook handler
    * (LLFR-PAYMENTS-01.2) to resolve which intent a callback settles; a miss means an unknown/untrusted
    * ref → the webhook is accepted and ignored (202). Returns the first match (provider_ref is

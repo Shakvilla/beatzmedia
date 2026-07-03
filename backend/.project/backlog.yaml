@@ -191,7 +191,7 @@ work_units:
     depends_on: [WU-PAY-1]
     llfrs: [LLFR-PAYMENTS-02.1, LLFR-PAYMENTS-02.2, LLFR-PAYMENTS-02.3, LLFR-PAYMENTS-05]
     human_gate: [OQ-2, OQ-4]   # tip fee %, royalty model — defaults applied, confirm before prod money
-    status: todo
+    status: in_progress
     # HUMAN-GATE RESOLUTION (product owner decision, 2026-07-02):
     # OQ-4 (royalty model) RESOLVED → NO royalty model. BeatzClik is pure buy-to-own: the ledger
     #   posts ONLY sales splits (70/30) and tips (90/10). Do NOT build any royalty-accrual machinery
