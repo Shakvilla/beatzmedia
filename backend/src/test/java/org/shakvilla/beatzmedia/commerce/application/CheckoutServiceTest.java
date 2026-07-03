@@ -12,6 +12,7 @@ import org.junit.jupiter.api.Test;
 import org.shakvilla.beatzmedia.audit.domain.AuditType;
 import org.shakvilla.beatzmedia.audit.fakes.FakeAuditWriter;
 import org.shakvilla.beatzmedia.commerce.application.port.in.CheckoutResult;
+import org.shakvilla.beatzmedia.commerce.application.port.out.CatalogExpansionReader;
 import org.shakvilla.beatzmedia.commerce.application.service.CheckoutService;
 import org.shakvilla.beatzmedia.commerce.domain.Cart;
 import org.shakvilla.beatzmedia.commerce.domain.CartEmptyException;
@@ -20,7 +21,9 @@ import org.shakvilla.beatzmedia.commerce.domain.CartItem;
 import org.shakvilla.beatzmedia.commerce.domain.CartItemKind;
 import org.shakvilla.beatzmedia.commerce.domain.ChargeAmountExceededException;
 import org.shakvilla.beatzmedia.commerce.domain.CheckoutKindUnsupportedException;
+import org.shakvilla.beatzmedia.commerce.domain.PriceUnavailableException;
 import org.shakvilla.beatzmedia.commerce.fakes.FakeCartRepository;
+import org.shakvilla.beatzmedia.commerce.fakes.FakeCatalogExpansionReader;
 import org.shakvilla.beatzmedia.commerce.fakes.FakeChargeGateway;
 import org.shakvilla.beatzmedia.commerce.fakes.FakeOrderRefGenerator;
 import org.shakvilla.beatzmedia.commerce.fakes.FakeOrderRepository;
@@ -48,6 +51,7 @@ class CheckoutServiceTest {
   FakeCartRepository carts;
   FakeOrderRepository orders;
   FakePricingService pricing;
+  FakeCatalogExpansionReader expansion;
   FakeOrderRefGenerator refs;
   FakeChargeGateway gateway;
   FakePlatformSettingsProvider settings;
@@ -59,13 +63,14 @@ class CheckoutServiceTest {
     carts = new FakeCartRepository();
     orders = new FakeOrderRepository();
     pricing = new FakePricingService();
+    expansion = new FakeCatalogExpansionReader();
     refs = new FakeOrderRefGenerator();
     gateway = new FakeChargeGateway();
     settings = new FakePlatformSettingsProvider();
     audit = new FakeAuditWriter();
     service =
         new CheckoutService(
-            carts, orders, pricing, refs, gateway, settings, audit,
+            carts, orders, pricing, expansion, refs, gateway, settings, audit,
             FakeIds.sequential("com"), FakeClock.fixed());
   }
 
@@ -150,6 +155,42 @@ class CheckoutServiceTest {
     CheckoutResult result = service.checkout(ACCOUNT, KEY, "mtn");
     assertEquals(2050, gateway.last().amountMinor(), "album (2000) + fee (50)");
     assertTrue(result.reference().startsWith("BZ-"));
+  }
+
+  @Test
+  void checkout_albumRest_partialOwnership_chargesSumOfRemainingTracks_notAlbumPrice() {
+    // Album "al1" has 3 for-sale tracks priced 500/700/300 (individual). Album list price is 2000
+    // (the frontend's discounted full-album price). The fan already owns t1, so album-rest must charge
+    // the SUM of the REMAINING for-sale tracks (700 + 300 = 1000) + fee 50 = 1050 — NOT the album
+    // price, NOT a discounted figure (F2).
+    expansion.seedForSaleTracks(
+        "al1",
+        "artist-al1",
+        List.of(
+            new CatalogExpansionReader.PurchasableTrack("t1", 500),
+            new CatalogExpansionReader.PurchasableTrack("t2", 700),
+            new CatalogExpansionReader.PurchasableTrack("t3", 300)));
+    expansion.markOwned(ACCOUNT, "t1"); // fan already owns 1 of 3
+    pricing.seed(CartItemKind.album, "al1", "CO2 Album", 2000); // display + full-album price (unused here)
+    seedCartWithStoredPrice(CartItemKind.album_rest, "al1", 999_999); // tampered cart amount, ignored
+
+    service.checkout(ACCOUNT, KEY, "mtn");
+
+    assertEquals(1000, orders.all().get(0).getLines().get(0).getUnitPrice().minor(),
+        "album-rest line price = sum of remaining for-sale tracks (700 + 300)");
+    assertEquals(1050, gateway.last().amountMinor(), "remaining tracks (1000) + fee (50); album price ignored");
+  }
+
+  @Test
+  void checkout_albumRest_ownsEverything_rejected() {
+    expansion.seedForSaleTracks(
+        "al1", "artist-al1", List.of(new CatalogExpansionReader.PurchasableTrack("t1", 500)));
+    expansion.markOwned(ACCOUNT, "t1"); // owns the only for-sale track -> nothing to buy
+    pricing.seed(CartItemKind.album, "al1", "CO2 Album", 2000);
+    seedCartWithStoredPrice(CartItemKind.album_rest, "al1", 500);
+
+    assertThrows(PriceUnavailableException.class, () -> service.checkout(ACCOUNT, KEY, "mtn"));
+    assertEquals(0, gateway.count(), "no charge when the fan owns every for-sale track");
   }
 
   @Test

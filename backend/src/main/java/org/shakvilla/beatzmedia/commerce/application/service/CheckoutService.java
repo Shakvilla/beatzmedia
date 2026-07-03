@@ -14,6 +14,7 @@ import org.shakvilla.beatzmedia.audit.domain.AuditType;
 import org.shakvilla.beatzmedia.commerce.application.port.in.Checkout;
 import org.shakvilla.beatzmedia.commerce.application.port.in.CheckoutResult;
 import org.shakvilla.beatzmedia.commerce.application.port.out.CartRepository;
+import org.shakvilla.beatzmedia.commerce.application.port.out.CatalogExpansionReader;
 import org.shakvilla.beatzmedia.commerce.application.port.out.ChargeGateway;
 import org.shakvilla.beatzmedia.commerce.application.port.out.OrderRefGenerator;
 import org.shakvilla.beatzmedia.commerce.application.port.out.OrderRepository;
@@ -28,6 +29,7 @@ import org.shakvilla.beatzmedia.commerce.domain.CheckoutKindUnsupportedException
 import org.shakvilla.beatzmedia.commerce.domain.Order;
 import org.shakvilla.beatzmedia.commerce.domain.OrderId;
 import org.shakvilla.beatzmedia.commerce.domain.OrderLine;
+import org.shakvilla.beatzmedia.commerce.domain.PriceUnavailableException;
 import org.shakvilla.beatzmedia.identity.domain.AccountId;
 import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
 import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
@@ -68,6 +70,7 @@ public class CheckoutService implements Checkout {
   private final CartRepository cartRepository;
   private final OrderRepository orderRepository;
   private final PricingService pricingService;
+  private final CatalogExpansionReader expansionReader;
   private final OrderRefGenerator orderRefGenerator;
   private final ChargeGateway chargeGateway;
   private final PlatformSettingsProvider settingsProvider;
@@ -80,6 +83,7 @@ public class CheckoutService implements Checkout {
       CartRepository cartRepository,
       OrderRepository orderRepository,
       PricingService pricingService,
+      CatalogExpansionReader expansionReader,
       OrderRefGenerator orderRefGenerator,
       ChargeGateway chargeGateway,
       PlatformSettingsProvider settingsProvider,
@@ -89,6 +93,7 @@ public class CheckoutService implements Checkout {
     this.cartRepository = cartRepository;
     this.orderRepository = orderRepository;
     this.pricingService = pricingService;
+    this.expansionReader = expansionReader;
     this.orderRefGenerator = orderRefGenerator;
     this.chargeGateway = chargeGateway;
     this.settingsProvider = settingsProvider;
@@ -129,6 +134,13 @@ public class CheckoutService implements Checkout {
     for (CartItem item : cart.getItems()) {
       CartItemKind kind = item.getKind();
       gateKind(kind);
+      if (kind == CartItemKind.album_rest) {
+        // F2: album-rest ("buy the rest") is priced ownership-aware — the SUM of the caller's
+        // not-yet-owned, for-sale album tracks at each track's individual price, with NO bundle
+        // discount (the 24% is a full-album-only, authoring-time concept). Never the album list price.
+        lines.add(albumRestLine(account, item, currency));
+        continue;
+      }
       // Authoritative server-side re-price — the cart-stored price is NEVER trusted (INV-11 / G1).
       PricedItem priced = pricingService.priceFor(kind, item.getRefId(), item.getMetadata());
       lines.add(
@@ -185,6 +197,35 @@ public class CheckoutService implements Checkout {
       case episode, season_pass, ticket, store ->
           throw new CheckoutKindUnsupportedException(kind.wireValue());
     }
+  }
+
+  /**
+   * Build the {@code album-rest} order line ownership-aware (F2). The unit price is the SUM of the
+   * caller's remaining (not-yet-owned) for-sale album tracks at their individual prices — no bundle
+   * discount, never the album list price. On settlement, {@code GrantOwnershipService} grants exactly
+   * those remaining tracks (album-rest expansion returns only for-sale tracks, then the per-track
+   * already-owned guard filters any owned since checkout).
+   *
+   * <p>If the caller already owns every for-sale track, there is nothing to buy — reject with 404
+   * {@link PriceUnavailableException} rather than charging ₵0 / creating an empty order.
+   */
+  private OrderLine albumRestLine(AccountId account, CartItem item, Currency currency) {
+    List<CatalogExpansionReader.PurchasableTrack> remaining =
+        expansionReader.remainingForSaleTracks(account, item.getRefId());
+    if (remaining.isEmpty()) {
+      throw new PriceUnavailableException("album-rest", item.getRefId());
+    }
+    long totalMinor = remaining.stream().mapToLong(CatalogExpansionReader.PurchasableTrack::priceMinor).sum();
+    // Title/subtitle/image come from the interim priced metadata (display only); the PRICE is the
+    // authoritative server-computed sum above, never the client/cart value (G1/INV-11).
+    PricedItem display = pricingService.priceFor(CartItemKind.album, item.getRefId(), item.getMetadata());
+    return new OrderLine(
+        ids.newId(),
+        CartItemKind.album_rest,
+        item.getRefId(),
+        display.title(),
+        Money.ofMinor(totalMinor, currency),
+        1);
   }
 
   private CheckoutResult toResult(Order order) {

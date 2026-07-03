@@ -125,6 +125,69 @@ class GrantOwnershipServiceTest {
   }
 
   @Test
+  void grant_multiCreatorOrder_creditsEachCreatorOnce_grantsAllTracks_F1() {
+    // Two tracks from TWO DISTINCT creators in one order (a completely normal two-artist cart). The
+    // ORIGINAL F1 bug: both lines posted with the same paymentIntentId → the 2nd collided on the
+    // ledger_posting PK → DuplicatePostingException poisoned the grant txn → nothing granted, buyer
+    // charged. FakeSaleLedgerPoster now throws DuplicatePostingException on a duplicate (intent, refId),
+    // so a regression here would fail. With the fix (per-creator-unique ref), both post cleanly.
+    pendingOrder(
+        "BZ-2026-00010", trackLine("ta", 1000), trackLine("tb", 500));
+    expansion.seedTrack("ta", "creator-A");
+    expansion.seedTrack("tb", "creator-B");
+
+    service.grantForSettledOrder("BZ-2026-00010", "intent-BZ-2026-00010", "mtn");
+
+    // Both tracks granted, order paid.
+    assertEquals(2, ownership.activeTrackCount(BUYER), "both purchased tracks granted (INV-2)");
+    assertTrue(ownership.existsActiveForTrack(BUYER, "ta"));
+    assertTrue(ownership.existsActiveForTrack(BUYER, "tb"));
+    assertEquals(OrderStatus.paid, orders.findByReference("BZ-2026-00010").orElseThrow().getStatus());
+    // Exactly ONE split per creator, each with its own gross, distinct source refs (no PK collision).
+    assertEquals(2, ledger.count(), "one sale split per creator (F1)");
+    assertTrue(
+        ledger.postings().stream().anyMatch(p -> p.creator().equals("creator-A") && p.grossMinor() == 1000));
+    assertTrue(
+        ledger.postings().stream().anyMatch(p -> p.creator().equals("creator-B") && p.grossMinor() == 500));
+    assertEquals(
+        2L,
+        ledger.postings().stream().map(FakeSaleLedgerPoster.Posting::refId).distinct().count(),
+        "distinct-creator postings use distinct source refs (intentId:creatorId)");
+    assertEquals(1, grantedEvent.count(), "OwnershipGranted fired once");
+  }
+
+  @Test
+  void grant_multiLineSameCreator_postsOneAggregatedSplit_F1() {
+    // Two tracks from the SAME creator in one order must aggregate into ONE split (their gross summed),
+    // not two postings with the same (intent, creator) ref that would collide.
+    pendingOrder("BZ-2026-00011", trackLine("tx", 400), trackLine("ty", 600));
+    expansion.seedTrack("tx", "creator-Z");
+    expansion.seedTrack("ty", "creator-Z");
+
+    service.grantForSettledOrder("BZ-2026-00011", "intent-BZ-2026-00011", "mtn");
+
+    assertEquals(2, ownership.activeTrackCount(BUYER));
+    assertEquals(1, ledger.count(), "same-creator lines aggregate into ONE split (F1)");
+    assertEquals("creator-Z", ledger.postings().get(0).creator());
+    assertEquals(1000, ledger.postings().get(0).grossMinor(), "gross summed (400 + 600)");
+  }
+
+  @Test
+  void grant_multiCreatorRedelivery_creditsEachOnce_F1() {
+    // A re-delivered settlement for a multi-creator order must still credit each creator exactly once
+    // (the order-level grant claim short-circuits the whole re-delivery before any posting).
+    pendingOrder("BZ-2026-00012", trackLine("tp", 800), trackLine("tq", 200));
+    expansion.seedTrack("tp", "creator-P");
+    expansion.seedTrack("tq", "creator-Q");
+
+    service.grantForSettledOrder("BZ-2026-00012", "intent-BZ-2026-00012", "mtn");
+    service.grantForSettledOrder("BZ-2026-00012", "intent-BZ-2026-00012", "mtn");
+
+    assertEquals(2, ownership.activeTrackCount(BUYER), "each track granted once");
+    assertEquals(2, ledger.count(), "each creator credited exactly once despite re-delivery");
+  }
+
+  @Test
   void grant_redeliveredSettlement_grantsExactlyOnce_idempotent() {
     pendingOrder("BZ-2026-00003", trackLine("t9", 500));
     expansion.seedTrack("t9", CREATOR);
