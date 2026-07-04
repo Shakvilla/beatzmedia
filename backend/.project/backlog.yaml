@@ -258,7 +258,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-MED-1, WU-CAT-1, WU-COM-2]
     llfrs: [LLFR-PLAYBACK-01.1, LLFR-PLAYBACK-01.2]
-    status: in_progress
+    status: done   # PR #65 merged 2026-07-04 (squash 0b0e4cd). Fixed real @Path route collision + ownership-stub CDI shadowing bug. Phase 2 complete.
 
   # ---------------- Phase 3 — Money completion ----------------
   - id: WU-PAY-4
