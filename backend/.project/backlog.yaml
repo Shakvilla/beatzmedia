@@ -278,7 +278,7 @@ work_units:
     owner: payments-specialist
     depends_on: [WU-PAY-3, WU-COM-2]
     llfrs: [LLFR-PAYMENTS-04.1, LLFR-PAYMENTS-04.2, LLFR-PAYMENTS-04.3]
-    status: in_progress   # branch feat/WU-PAY-5-refunds-disputes-clawback (payments-specialist)
+    status: done   # PR #69 merged 2026-07-04 (squash c46c8d7). Phase 3 complete. Prod gates: OQ-2 fee %, F2 withdrawal-fee=rail-cost, webhook-secret %prod fail-fast (devops) await confirmation.
 
   # ---------------- Phase 4 — Surfaces & proposals ----------------
   - id: WU-STO-1
