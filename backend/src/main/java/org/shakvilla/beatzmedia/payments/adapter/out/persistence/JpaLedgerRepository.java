@@ -169,6 +169,63 @@ public class JpaLedgerRepository implements LedgerRepository {
   }
 
   @Override
+  public TxnId postRefundReversal(String paymentIntentId, String refundId, Instant at) {
+    // Read the ORIGINAL settlement entries for this intent (a sale posts ref_type='intent', a tip
+    // 'tip'; a multi-creator order posts several 'intent' sub-postings whose ref_id is
+    // "<intentId>:<creatorId>"). We match ref_id = intentId OR ref_id starting with intentId + ":"
+    // so both the single-creator and the per-creator multi-posting cases are captured.
+    @SuppressWarnings("unchecked")
+    List<Object[]> originals =
+        em.createNativeQuery(
+                "SELECT e.account_id, e.direction, e.amount_minor "
+                    + "FROM ledger_entry e "
+                    + "WHERE e.ref_type IN ('intent','tip') "
+                    + "AND (e.ref_id = :ref OR e.ref_id LIKE :prefix)")
+            .setParameter("ref", paymentIntentId)
+            .setParameter("prefix", paymentIntentId + ":%")
+            .getResultList();
+
+    if (originals.isEmpty()) {
+      throw new IllegalStateException(
+          "no settlement ledger entries to reverse for intent " + paymentIntentId);
+    }
+
+    TxnId txn = new TxnId(ids.newId());
+    // Exactly-once claim BEFORE any entry: a re-delivered / concurrent refund fails on the
+    // ledger_posting PK ("refund", refundId) and DuplicatePostingException rolls this tx back — so the
+    // clawback lands EXACTLY ONCE (INV-9). The caller runs this on a REQUIRES_NEW boundary.
+    claimPosting(txn, "refund", refundId);
+
+    List<LedgerEntry> reversal = new java.util.ArrayList<>(originals.size());
+    for (Object[] row : originals) {
+      String accountId = (String) row[0];
+      String direction = (String) row[1];
+      long amountMinor = ((Number) row[2]).longValue();
+      // Mirror: flip the direction, same account, same amount, ref_type='refund'.
+      org.shakvilla.beatzmedia.payments.domain.Direction mirror =
+          "DEBIT".equals(direction)
+              ? org.shakvilla.beatzmedia.payments.domain.Direction.CREDIT
+              : org.shakvilla.beatzmedia.payments.domain.Direction.DEBIT;
+      reversal.add(
+          LedgerEntry.post(
+              ids.newId(),
+              txn,
+              new LedgerAccountId(accountId),
+              mirror,
+              org.shakvilla.beatzmedia.platform.domain.Money.ofMinor(
+                  amountMinor, org.shakvilla.beatzmedia.platform.domain.Currency.GHS),
+              "refund",
+              refundId,
+              at,
+              at));
+    }
+
+    // Balanced by construction: the originals summed to zero, and flipping every sign preserves that.
+    postBalanced(txn, reversal);
+    return txn;
+  }
+
+  @Override
   public void clear(TxnId txn, Instant at) {
     em.createNativeQuery(
             "UPDATE ledger_entry SET cleared_at = :at WHERE txn_id = :txn AND cleared_at IS NULL")

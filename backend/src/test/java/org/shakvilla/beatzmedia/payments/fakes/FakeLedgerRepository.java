@@ -59,6 +59,40 @@ public class FakeLedgerRepository implements LedgerRepository {
   }
 
   @Override
+  public TxnId postRefundReversal(String paymentIntentId, String refundId, Instant at) {
+    // Mirror the real adapter: read the original settlement entries (ref_type intent/tip whose ref_id
+    // is the intent id or "<intentId>:<creatorId>"), flip each direction, post under ("refund",
+    // refundId). Balanced by construction because the originals summed to zero.
+    List<LedgerEntry> originals =
+        entries.stream()
+            .filter(
+                e ->
+                    (e.getRefType().equals("intent") || e.getRefType().equals("tip"))
+                        && (e.getRefId().equals(paymentIntentId)
+                            || e.getRefId().startsWith(paymentIntentId + ":")))
+            .toList();
+    if (originals.isEmpty()) {
+      throw new IllegalStateException(
+          "no settlement ledger entries to reverse for intent " + paymentIntentId);
+    }
+    TxnId txn = new TxnId("refund-" + txnSeq.incrementAndGet());
+    claimPosting(txn, "refund", refundId);
+    List<LedgerEntry> reversal = new ArrayList<>(originals.size());
+    for (LedgerEntry e : originals) {
+      org.shakvilla.beatzmedia.payments.domain.Direction mirror =
+          e.getDirection() == org.shakvilla.beatzmedia.payments.domain.Direction.DEBIT
+              ? org.shakvilla.beatzmedia.payments.domain.Direction.CREDIT
+              : org.shakvilla.beatzmedia.payments.domain.Direction.DEBIT;
+      reversal.add(
+          LedgerEntry.post(
+              "e-" + seq.incrementAndGet(), txn, e.getAccountId(), mirror, e.getAmount(),
+              "refund", refundId, at, at));
+    }
+    postBalanced(txn, reversal);
+    return txn;
+  }
+
+  @Override
   public void lockBalance(AccountId creator) {
     lockBalanceCalls.incrementAndGet();
   }

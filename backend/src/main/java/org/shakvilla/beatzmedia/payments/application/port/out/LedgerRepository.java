@@ -78,6 +78,44 @@ public interface LedgerRepository {
       Money amount, String withdrawalId, Provider provider, Instant at);
 
   /**
+   * Post the <strong>clawback reversal</strong> of a settled sale/tip for a refund (INV-9). Reads the
+   * ORIGINAL settlement entries for {@code paymentIntentId} (ref_type {@code intent} or {@code tip},
+   * possibly several per-creator sub-postings of a multi-creator order) and posts their exact MIRROR
+   * under ONE new {@link TxnId}: each original DEBIT becomes a CREDIT and vice-versa, at the same
+   * amount and against the same account. So the original split
+   *
+   * <pre>
+   *   DEBIT  provider_clearing (gross)
+   *   CREDIT creator_payable   (creator share)
+   *   CREDIT platform_revenue  (platform fee)
+   * </pre>
+   *
+   * reverses to
+   *
+   * <pre>
+   *   CREDIT provider_clearing (gross)          -- funds returned to the rail/buyer clearing
+   *   DEBIT  creator_payable   (creator share)  -- claws back the credit; drives available NEGATIVE
+   *                                                if the creator already withdrew it (owed)
+   *   DEBIT  platform_revenue  (platform fee)   -- reverses the fee take
+   * </pre>
+   *
+   * The mirror is balanced by construction (Σ DEBIT = Σ CREDIT, INV-6, re-checked by the DB trigger).
+   * The creator's {@code creator_balance} projection is refreshed in the same transaction, so a
+   * clawback exceeding the available balance yields a <strong>negative</strong> available (recovery
+   * owed) rather than being silently skipped. Exactly-once: keyed by {@code ("refund", refundId)} via
+   * {@link #claimPosting}, so a re-delivered / concurrent refund fails on the header PK and can NEVER
+   * double-clawback. The rows are posted already-cleared so available reflects the reversal at once.
+   *
+   * @param paymentIntentId the settled intent whose split is being reversed (the clawback anchor)
+   * @param refundId the refund driving this reversal (the exactly-once ref)
+   * @param at the refund/clawback instant
+   * @return the reversal {@link TxnId}
+   * @throws DuplicatePostingException if a reversal for {@code ("refund", refundId)} already exists
+   * @throws IllegalStateException if no settlement entries exist for the intent (nothing to reverse)
+   */
+  TxnId postRefundReversal(String paymentIntentId, String refundId, Instant at);
+
+  /**
    * Mark every uncleared entry of a transaction as cleared at {@code at} (funds available). Used by
    * later payout WUs; a settled sale/tip is posted already-cleared. Refreshes affected projections.
    */

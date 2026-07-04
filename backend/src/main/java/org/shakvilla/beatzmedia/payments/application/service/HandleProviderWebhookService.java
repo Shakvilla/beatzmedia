@@ -56,6 +56,7 @@ public class HandleProviderWebhookService implements HandleProviderWebhook {
   private final PaymentRepository intents;
   private final PaymentEventRepository events;
   private final PaymentSettlementService settlement;
+  private final HandleChargebackService chargebacks;
   private final ObjectMapper objectMapper;
   private final IdGenerator ids;
   private final Clock clock;
@@ -66,6 +67,7 @@ public class HandleProviderWebhookService implements HandleProviderWebhook {
       PaymentRepository intents,
       PaymentEventRepository events,
       PaymentSettlementService settlement,
+      HandleChargebackService chargebacks,
       ObjectMapper objectMapper,
       IdGenerator ids,
       Clock clock) {
@@ -73,6 +75,7 @@ public class HandleProviderWebhookService implements HandleProviderWebhook {
     this.intents = intents;
     this.events = events;
     this.settlement = settlement;
+    this.chargebacks = chargebacks;
     this.objectMapper = objectMapper;
     this.ids = ids;
     this.clock = clock;
@@ -86,7 +89,8 @@ public class HandleProviderWebhookService implements HandleProviderWebhook {
     }
 
     WebhookPayload payload = parse(rawBody);
-    PaymentEventType type = parseType(payload.status());
+    HandleChargebackService.Outcome chargeback = chargebackOutcomeOf(payload.status());
+    PaymentEventType type = chargeback == null ? parseType(payload.status()) : PaymentEventType.PENDING;
 
     PaymentIntent intent = intents.findByProviderRef(payload.providerRef()).orElse(null);
     if (intent == null) {
@@ -108,6 +112,16 @@ public class HandleProviderWebhookService implements HandleProviderWebhook {
       return WebhookResult.DUPLICATE;
     }
 
+    if (chargeback != null) {
+      // Provider chargeback event (signature-verified — this is the ONLY refund-driving path outside
+      // admin adjudication). A LOST case forces a refund (clawback + ownership revocation, INV-9). The
+      // dispute is keyed idempotently on the provider case id, and the refund clawback is exactly-once
+      // (ledger_posting + uq_refund_per_dispute), so a re-delivery never double-clawbacks/revokes.
+      String caseId = isBlank(payload.caseId()) ? payload.eventId() : payload.caseId();
+      chargebacks.handle(intent, caseId, chargeback, payload.reason());
+      return WebhookResult.HANDLED;
+    }
+
     switch (type) {
       case SETTLED -> settlement.settle(intent.getId(), intent.getProviderRef());
       case FAILED -> settlement.fail(intent.getId(), reasonOr(payload.reason(), "declined"));
@@ -116,6 +130,19 @@ public class HandleProviderWebhookService implements HandleProviderWebhook {
       }
     }
     return WebhookResult.HANDLED;
+  }
+
+  /**
+   * Map a webhook status to a chargeback {@link HandleChargebackService.Outcome}, or {@code null} if
+   * the status is a settlement (settled/failed/pending) rather than a chargeback event.
+   */
+  private static HandleChargebackService.Outcome chargebackOutcomeOf(String status) {
+    return switch (status.trim().toLowerCase()) {
+      case "chargeback", "chargeback_open", "dispute_opened" -> HandleChargebackService.Outcome.OPEN;
+      case "chargeback_lost", "dispute_lost" -> HandleChargebackService.Outcome.LOST;
+      case "chargeback_won", "dispute_won" -> HandleChargebackService.Outcome.WON;
+      default -> null;
+    };
   }
 
   private WebhookPayload parse(byte[] rawBody) {
@@ -156,5 +183,6 @@ public class HandleProviderWebhookService implements HandleProviderWebhook {
    * anti-corruption mapping lands) normalise to. Unknown JSON fields are ignored by the managed
    * {@link ObjectMapper} (Quarkus disables fail-on-unknown-properties).
    */
-  public record WebhookPayload(String eventId, String providerRef, String status, String reason) {}
+  public record WebhookPayload(
+      String eventId, String providerRef, String status, String reason, String caseId) {}
 }
