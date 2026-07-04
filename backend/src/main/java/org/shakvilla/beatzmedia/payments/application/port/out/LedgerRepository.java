@@ -10,7 +10,9 @@ import org.shakvilla.beatzmedia.payments.domain.LedgerAccountId;
 import org.shakvilla.beatzmedia.payments.domain.LedgerAccountKind;
 import org.shakvilla.beatzmedia.payments.domain.LedgerEntry;
 import org.shakvilla.beatzmedia.payments.domain.LedgerType;
+import org.shakvilla.beatzmedia.payments.domain.Provider;
 import org.shakvilla.beatzmedia.payments.domain.TxnId;
+import org.shakvilla.beatzmedia.platform.domain.Money;
 import org.shakvilla.beatzmedia.platform.domain.Page;
 import org.shakvilla.beatzmedia.platform.domain.PageRequest;
 
@@ -35,6 +37,45 @@ public interface LedgerRepository {
    * @throws UnbalancedLedgerException if the entries are not balanced
    */
   void postBalanced(TxnId txn, List<LedgerEntry> entries);
+
+  /**
+   * Take a serialising row lock on a creator's balance for the current transaction (WU-PAY-4). Used
+   * before reserving a withdrawal so two concurrent withdrawals against the SAME creator serialise:
+   * the second waits until the first's reservation has committed, then reads the reduced available
+   * balance — closing the read-then-reserve TOCTOU that would otherwise let both spend the same funds
+   * or drive the balance negative (INV-8). The row is created (zeroed) if it does not yet exist so the
+   * lock always has a row to hold. Must be called on a {@code @Transactional} boundary.
+   */
+  void lockBalance(AccountId creator);
+
+  /**
+   * Reserve {@code amount} of a creator's available balance for a withdrawal by posting a balanced,
+   * already-cleared ledger txn: DEBIT {@code creator_payable} (reduces available NOW), CREDIT {@code
+   * payout_clearing} (funds in-flight). Exactly-once: keyed by {@code ("withdraw", withdrawalId)} via
+   * {@link #claimPosting} so a duplicate reservation for the same withdrawal fails on the header PK.
+   * The creator's balance projection is refreshed in the same transaction, so a subsequent {@link
+   * #balanceOf} reflects the reservation. Caller MUST hold {@link #lockBalance} and have already
+   * checked {@code amount <= available}.
+   *
+   * @param withdrawalId the withdrawal this reservation backs (the exactly-once ref)
+   * @return the reservation txn id (recorded on the withdrawal for trace)
+   */
+  TxnId postWithdrawalReserve(AccountId creator, Money amount, String withdrawalId, Instant at);
+
+  /**
+   * Execute the disbursement of a reserved withdrawal by posting a balanced ledger txn: DEBIT {@code
+   * payout_clearing} (funds leave clearing), CREDIT {@code provider_clearing} for the payout rail
+   * (funds paid out). Exactly-once: keyed by {@code ("payout", withdrawalId)} via {@link
+   * #claimPosting} so a retried payout run for the same withdrawal fails on the header PK and can
+   * NEVER double-debit (INV-6). Does not touch {@code creator_payable}, so the creator's available
+   * balance is unchanged by disbursement (it was already reduced at reservation).
+   *
+   * @param withdrawalId the withdrawal being disbursed (the exactly-once ref)
+   * @param provider the payout rail whose provider-clearing account is credited
+   * @return the disbursement txn id (recorded on the payout txn for trace)
+   */
+  TxnId postWithdrawalDisburse(
+      Money amount, String withdrawalId, Provider provider, Instant at);
 
   /**
    * Mark every uncleared entry of a transaction as cleared at {@code at} (funds available). Used by

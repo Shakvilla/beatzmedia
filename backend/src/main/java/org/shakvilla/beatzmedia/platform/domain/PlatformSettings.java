@@ -34,6 +34,23 @@ public record PlatformSettings(
    */
   private static final long MAX_CHARGE_MINOR = 100_000_000L;
 
+  /**
+   * Withdrawal (cash-out) fee policy — the creator-facing rail fee deducted from a payout (INV-4:
+   * config-driven, never hard-coded at a call site). Mirrors the frontend {@code withdrawalFee}
+   * ({@code studio-payouts.ts}): a bank transfer is a flat ₵5.00; a MoMo cash-out is 1% of the amount
+   * with a ₵1.00 floor. Held here (not yet in the {@code platform_settings} row) so the values live in
+   * exactly one config-authoritative place and services never inline them; promote to stored columns
+   * in the admin-settings WU (WU-ADM-8) if they must be tunable per-environment.
+   *
+   * <p><strong>OQ-2 note.</strong> The tip fee % is {@link #tipFeePct} (config-driven, default 10 —
+   * flagged for human confirmation). This withdrawal-fee policy is the payout-side analog; both are
+   * config-driven defaults pending human sign-off before production.
+   */
+  private static final long WITHDRAWAL_FEE_BANK_MINOR = 500L;
+
+  private static final int WITHDRAWAL_FEE_MOMO_PCT = 1;
+  private static final long WITHDRAWAL_FEE_MOMO_MIN_MINOR = 100L;
+
   /** Construct defaults matching ADD §3.3 / PRD §0 constants. */
   public static PlatformSettings defaults() {
     return new PlatformSettings(
@@ -51,6 +68,20 @@ public record PlatformSettings(
   /** The configured upper bound on a single charge total (minor units). See {@link #MAX_CHARGE_MINOR}. */
   public long maxChargeMinor() {
     return MAX_CHARGE_MINOR;
+  }
+
+  /**
+   * The withdrawal (cash-out) fee in minor units for a payout of {@code amountMinor} to a method of
+   * the given kind (INV-4, config-driven). {@code methodKind} is the lower-case wire token ({@code
+   * bank} | {@code momo}); a bank transfer is a flat fee, MoMo is a percentage with a floor. Any other
+   * kind is treated as MoMo. See {@link #WITHDRAWAL_FEE_BANK_MINOR}.
+   */
+  public long withdrawalFeeMinor(String methodKind, long amountMinor) {
+    if ("bank".equalsIgnoreCase(methodKind)) {
+      return WITHDRAWAL_FEE_BANK_MINOR;
+    }
+    long pctFee = Math.round(amountMinor * (WITHDRAWAL_FEE_MOMO_PCT / 100.0));
+    return Math.max(WITHDRAWAL_FEE_MOMO_MIN_MINOR, pctFee);
   }
 
   /** Return a copy with maintenanceMode toggled. */
