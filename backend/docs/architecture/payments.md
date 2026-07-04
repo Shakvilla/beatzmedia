@@ -590,13 +590,23 @@ public interface IdGenerator { String newId(); }
 >   travels on the event; commerce owns the revoke.
 > - **Clawback reversal (`LedgerRepository.postRefundReversal`).** Reads the original settlement legs
 >   (ref_type `intent`/`tip`, incl. per-creator `<intentId>:<creatorId>` sub-postings) and posts a
->   PROPORTIONAL, rounding-safe reversal keyed exactly-once on `("refund", refundId)`: buyer/clearing
->   CREDIT = the refunded amount (clamped to the split gross — an order-total refund exceeds the split
->   because the flat service fee has no split leg); platform-revenue DEBIT = the half-up proportional
->   fee share; creator-payable DEBIT(s) = the EXACT remainder (mirrors `RevenueSplit` — creator absorbs
->   rounding; multi-creator distributes proportionally with the last creator absorbing the remainder).
->   Σ DEBIT = Σ CREDIT (INV-6). A FULL refund reverses exactly the original legs. Reversal rows post
->   already-cleared, so the creator's projected available reflects the clawback at once.
+>   PROPORTIONAL, rounding-safe reversal keyed exactly-once on `("refund", refundId)`:
+>   - **buyer/clearing CREDIT** = the refunded amount (clamped to the split gross — an order-total refund
+>     exceeds the split because the flat service fee has no split leg);
+>   - **platform-revenue DEBIT** = the half-up proportional fee share (`round(refund·fee/gross)`);
+>   - **creator-payable DEBIT(s)** = the remaining `refund − feeReversal`, distributed across creators by
+>     the **running-remainder (decreasing-denominator / largest-remainder)** rule: each creator's portion
+>     is the half-up share of the REMAINING budget over the REMAINING creator total, then both shrink
+>     (`portion = round(remainingBudget·share/remainingCreatorTotal); remainingBudget -= portion;
+>     remainingCreatorTotal -= share`). This guarantees every portion is ≥ 0 and the portions sum EXACTLY
+>     to the creator-side total (the final creator's portion is `remainingBudget` by construction) — no
+>     negative "last-creator remainder" that a naive independent-rounding split could produce (which
+>     would drop a negative leg and unbalance the txn, review F1-residual).
+>
+>   Σ DEBIT = Σ CREDIT (INV-6) for single- and multi-creator, full and partial. A FULL refund reverses
+>   exactly the original legs. Reversal rows post already-cleared, so the creator's projected available
+>   reflects the clawback at once. The JPA adapter and the test `FakeLedgerRepository` run the identical
+>   algorithm (kept in lockstep).
 > - **Negative balance on already-withdrawn (modelled, not skipped).** The `creator_balance` projection
 >   is a signed sum, so a clawback of a credit the creator already withdrew drives available NEGATIVE
 >   (recovery owed) rather than silently skipping — proven by `RefundReversalMathTest` and

@@ -131,20 +131,17 @@ public class FakeLedgerRepository implements LedgerRepository {
               org.shakvilla.beatzmedia.platform.domain.Money.ofMinor(platformReversal, ccy),
               "refund", refundId, at, at));
     }
-    long originalCreatorTotal = creatorShares.values().stream().mapToLong(Long::longValue).sum();
-    long assigned = 0L;
-    int idx = 0;
-    int last = creatorShares.size() - 1;
+    // Running-remainder (decreasing-denominator) distribution — identical to the JPA adapter so the
+    // fake stays in lockstep. Each creator's portion is the half-up share of the REMAINING budget over
+    // the REMAINING creator total; both shrink, so portions are ≥ 0 and sum EXACTLY to
+    // creatorReversalTotal (the final creator's portion == remainingBudget by construction).
+    long remainingBudget = creatorReversalTotal;
+    long remainingCreatorTotal = creatorShares.values().stream().mapToLong(Long::longValue).sum();
     for (java.util.Map.Entry<LedgerAccountId, Long> e : creatorShares.entrySet()) {
-      long portion;
-      if (idx == last) {
-        portion = creatorReversalTotal - assigned;
-      } else if (originalCreatorTotal > 0) {
-        portion = proportional(creatorReversalTotal, e.getValue(), originalCreatorTotal);
-        assigned += portion;
-      } else {
-        portion = 0L;
-      }
+      long share = e.getValue();
+      long portion = proportional(remainingBudget, share, remainingCreatorTotal);
+      remainingBudget -= portion;
+      remainingCreatorTotal -= share;
       if (portion > 0) {
         reversal.add(
             LedgerEntry.post(
@@ -153,7 +150,6 @@ public class FakeLedgerRepository implements LedgerRepository {
                 org.shakvilla.beatzmedia.platform.domain.Money.ofMinor(portion, ccy),
                 "refund", refundId, at, at));
       }
-      idx++;
     }
     postBalanced(txn, reversal);
     return txn;

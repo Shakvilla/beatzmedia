@@ -274,32 +274,27 @@ public class JpaLedgerRepository implements LedgerRepository {
               ccy, at));
     }
 
-    // Creator DEBIT(s) = the creator-side total, distributed per creator proportionally to their
-    // original share, with the LAST creator absorbing the rounding remainder so the creator DEBITs sum
-    // to exactly creatorReversalTotal (no pesewa lost/created; no creator over-clawed beyond its share).
-    long originalCreatorTotal = 0L;
+    // Creator DEBIT(s) = the creator-side total, distributed per creator by the RUNNING-REMAINDER
+    // (decreasing-denominator / largest-remainder) rule: each creator's portion is the half-up share of
+    // the REMAINING budget against the REMAINING creator total, then both shrink. This guarantees every
+    // portion is ≥ 0 AND the portions sum EXACTLY to creatorReversalTotal — the final creator's share is
+    // remainingBudget by construction, with no negative "last-creator remainder" that a naive
+    // independent-rounding split could produce (which would drop a negative leg and unbalance the txn).
+    long remainingBudget = creatorReversalTotal;
+    long remainingCreatorTotal = 0L;
     for (long s : creatorShares.values()) {
-      originalCreatorTotal += s;
+      remainingCreatorTotal += s;
     }
-    long assigned = 0L;
-    int idx = 0;
-    int last = creatorShares.size() - 1;
     for (java.util.Map.Entry<String, Long> e : creatorShares.entrySet()) {
-      long portion;
-      if (idx == last) {
-        portion = creatorReversalTotal - assigned; // exact remainder to the last creator
-      } else if (originalCreatorTotal > 0) {
-        portion = proportional(creatorReversalTotal, e.getValue(), originalCreatorTotal);
-        assigned += portion;
-      } else {
-        portion = 0L;
-      }
+      long share = e.getValue();
+      long portion = proportional(remainingBudget, share, remainingCreatorTotal);
+      remainingBudget -= portion;
+      remainingCreatorTotal -= share;
       if (portion > 0) {
         reversal.add(
             entry(txn, e.getKey(),
                 org.shakvilla.beatzmedia.payments.domain.Direction.DEBIT, portion, refundId, ccy, at));
       }
-      idx++;
     }
 
     postBalanced(txn, reversal);
