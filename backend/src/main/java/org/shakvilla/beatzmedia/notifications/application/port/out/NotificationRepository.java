@@ -30,4 +30,7 @@ public interface NotificationRepository {
 
   /** True iff a notification with this {@code dedupeKey} already exists (INV-N4 replay guard). */
   boolean existsByDedupeKey(String dedupeKey);
+
+  /** Look up the (already-created) notification for a given {@code dedupeKey}, if any. */
+  Optional<Notification> findByDedupeKey(String dedupeKey);
 }
