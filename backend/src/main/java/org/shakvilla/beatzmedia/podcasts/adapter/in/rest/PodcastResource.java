@@ -1,20 +1,28 @@
 package org.shakvilla.beatzmedia.podcasts.adapter.in.rest;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
 import jakarta.annotation.security.PermitAll;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.HeaderParam;
+import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
+import jakarta.ws.rs.core.Response;
 
 import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.shakvilla.beatzmedia.identity.domain.AccountId;
+import org.shakvilla.beatzmedia.payments.domain.MissingIdempotencyKeyException;
+import org.shakvilla.beatzmedia.platform.domain.Currency;
+import org.shakvilla.beatzmedia.platform.domain.Money;
 import org.shakvilla.beatzmedia.platform.domain.Page;
 import org.shakvilla.beatzmedia.platform.domain.PageRequest;
 import org.shakvilla.beatzmedia.platform.domain.ValidationException;
@@ -25,9 +33,14 @@ import org.shakvilla.beatzmedia.podcasts.application.port.in.ListPodcasts;
 import org.shakvilla.beatzmedia.podcasts.application.port.in.PodcastEpisodeView;
 import org.shakvilla.beatzmedia.podcasts.application.port.in.PodcastView;
 import org.shakvilla.beatzmedia.podcasts.application.port.in.StreamUrlResult;
+import org.shakvilla.beatzmedia.podcasts.application.port.in.TipMethod;
+import org.shakvilla.beatzmedia.podcasts.application.port.in.TipShow;
 import org.shakvilla.beatzmedia.podcasts.domain.EpisodeId;
 import org.shakvilla.beatzmedia.podcasts.domain.PodcastCategory;
 import org.shakvilla.beatzmedia.podcasts.domain.PodcastId;
+import org.shakvilla.beatzmedia.podcasts.domain.TipResult;
+
+import io.quarkus.security.Authenticated;
 
 /**
  * Thin REST resource for the podcasts browse/detail/gated-stream endpoints (LLFR-PODCAST-01.1 –
@@ -57,6 +70,7 @@ public class PodcastResource {
   private final GetPodcast getPodcast;
   private final ListEpisodes listEpisodes;
   private final GetEpisodeStreamUrl getEpisodeStreamUrl;
+  private final TipShow tipShow;
   private final JsonWebToken jwt;
 
   @Inject
@@ -65,11 +79,13 @@ public class PodcastResource {
       GetPodcast getPodcast,
       ListEpisodes listEpisodes,
       GetEpisodeStreamUrl getEpisodeStreamUrl,
+      TipShow tipShow,
       JsonWebToken jwt) {
     this.listPodcasts = listPodcasts;
     this.getPodcast = getPodcast;
     this.listEpisodes = listEpisodes;
     this.getEpisodeStreamUrl = getEpisodeStreamUrl;
+    this.tipShow = tipShow;
     this.jwt = jwt;
   }
 
@@ -105,6 +121,80 @@ public class PodcastResource {
     StreamUrlResult result = getEpisodeStreamUrl.getStreamUrl(new EpisodeId(id), callerId());
     return new StreamUrlResponse(
         result.audioUrl(), result.previewSeconds().orElse(null), result.expiresAt());
+  }
+
+  /**
+   * POST /v1/podcasts/:id/tip — a fan tips a show, credited 90/10 via payments (LLFR-PODCAST-02.1).
+   *
+   * <p>Thin: it maps the DTO → command and calls {@link TipShow}, which resolves the show → creator
+   * server-side and delegates the money movement to payments' {@code IssueTip} pipeline. Guards
+   * enforced here at the boundary:
+   *
+   * <ul>
+   *   <li><strong>Auth:</strong> {@code @Authenticated}; the tipping fan is the JWT subject, never a
+   *       body field — a client cannot tip on behalf of another account;
+   *   <li><strong>Idempotency (INV-1):</strong> the {@code Idempotency-Key} header is mandatory —
+   *       missing ⇒ 400 {@code MISSING_IDEMPOTENCY_KEY}; the same key ⇒ one charge, same result;
+   *   <li><strong>Amount bounds:</strong> decimal cedis → minor units happens only here (INV-11); a
+   *       non-positive amount is rejected as {@code VALIDATION} before the money path is touched.
+   * </ul>
+   *
+   * <p>Returns 202 Accepted: the charge is in flight and no value has moved (INV-1) — the 90/10 split
+   * (INV-4, {@code PlatformSettings.tipFeePct}, OQ-2 default 10%) posts on settlement.
+   */
+  @POST
+  @Path("/podcasts/{id}/tip")
+  @Consumes(MediaType.APPLICATION_JSON)
+  @Authenticated
+  public Response tip(
+      @PathParam("id") String id,
+      @HeaderParam("Idempotency-Key") String idempotencyKey,
+      TipRequest req) {
+    if (idempotencyKey == null || idempotencyKey.isBlank()) {
+      throw new MissingIdempotencyKeyException();
+    }
+    if (req == null) {
+      throw new ValidationException("request body is required");
+    }
+
+    AccountId fan = new AccountId(jwt.getSubject());
+    Money amount = parseAmount(req.amount(), req.currency());
+    TipMethod method =
+        new TipMethod(
+            requireField(req.provider(), "provider"),
+            requireField(req.methodKind(), "methodKind"),
+            requireField(req.paymentToken(), "paymentToken"));
+
+    TipResult result = tipShow.tip(new PodcastId(id), fan, amount, method, idempotencyKey);
+    return Response.status(Response.Status.ACCEPTED).entity(TipResponse.from(result)).build();
+  }
+
+  private static String requireField(String value, String field) {
+    if (value == null || value.isBlank()) {
+      throw new ValidationException(field + " is required", field);
+    }
+    return value;
+  }
+
+  private static Money parseAmount(BigDecimal amount, String currency) {
+    if (amount == null) {
+      throw new ValidationException("amount is required", "amount");
+    }
+    if (amount.signum() <= 0) {
+      throw new ValidationException("tip amount must be positive", "amount");
+    }
+    Currency ccy =
+        (currency != null && !currency.isBlank()) ? parseCurrency(currency) : Currency.GHS;
+    // Decimal cedis → minor units happens only here, at the boundary (INV-11).
+    return Money.ofCedis(amount, ccy);
+  }
+
+  private static Currency parseCurrency(String value) {
+    try {
+      return Currency.valueOf(value.trim().toUpperCase());
+    } catch (IllegalArgumentException e) {
+      throw new ValidationException("unsupported currency: " + value, "amount.currency");
+    }
   }
 
   private Optional<PodcastCategory> parseCategory(String raw) {

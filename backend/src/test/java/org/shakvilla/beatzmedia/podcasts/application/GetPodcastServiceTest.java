@@ -31,8 +31,8 @@ class GetPodcastServiceTest {
         new FakePodcastRepository()
             .withShow(
                 new Podcast(
-                    new PodcastId("show-1"), "Show One", "Pub", "img.png", PodcastCategory.CULTURE,
-                    "desc", 10, 90, null, true, CREATED));
+                    new PodcastId("show-1"), "Show One", "Pub", "creator-1", "img.png",
+                    PodcastCategory.CULTURE, "desc", 10, 90, null, true, CREATED));
     service = new GetPodcastService(repository);
   }
 

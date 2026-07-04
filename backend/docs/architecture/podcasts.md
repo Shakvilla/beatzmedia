@@ -136,8 +136,13 @@ public interface ListEpisodes {
 /** Issues an instant MoMo tip to a show, credited 90/10 via payments. LLFR-PODCAST-02.1. */
 public interface TipShow {
     TipResult tip(PodcastId id, AccountId fan, Money amount,
-                  PaymentMethodId method, IdempotencyKey key);
+                  TipMethod method, String idempotencyKey);
 }
+// Realized (WU-POD-2): the method is a framework-neutral TipMethod(provider, kind, token) (the
+// MoMo-first instrument the client supplies), and the idempotency key is a plain String forwarded
+// to payments (which wraps it in its own IdempotencyKey VO backed by the UNIQUE constraint). The
+// recipient creator is NOT a parameter — TipShow resolves it server-side from the show's
+// creator_account_id, so a client can never redirect a tip. See TipShowService.
 ```
 
 | Port | Trigger | Authorization | Idempotency | Events | LLFR |
@@ -192,10 +197,21 @@ public interface EventPublisher {
 ```java
 /** payments input port consumed by TipShow for the 90/10 split + ledger posting. (WU-POD-2.) */
 public interface IssueTipUseCase {
-    TipOutcome issueTip(AccountId fan, CreatorId creator, PodcastId show,
-                        Money amount, PaymentMethodId method, IdempotencyKey key);
+    TipOutcome issueTip(AccountId fan, AccountId creator, Money amount,
+                        TipMethod method, String idempotencyKey);
 }
 ```
+
+**Realized (WU-POD-2).** `IssueTipUseCase` takes the server-resolved recipient `creator` (an
+`identity.AccountId`) directly — the show id is not passed because the recipient is all payments
+needs (the creator is encoded into the intent's `TipRef` so settlement recovers it). Its adapter,
+`PaymentsTipAdapter`, translates `TipMethod → payments.PaymentMethodRef`, the identity `AccountId`s →
+`payments.AccountId`, and the `String` key → `payments.IdempotencyKey`, then calls payments'
+`IssueTip` INPUT port. Podcasts never reads/writes payments tables and never re-implements the
+split/ledger/idempotency/audit — all of that lives in the WU-PAY-3 pipeline. `TipOutcome(tipId,
+status)` is mapped to `TipResult` and then to the `TipResponse` DTO (HTTP 202). The `EventPublisher`
+port / `TipReceived` outbox coupling remains deferred (notifications consume the payments-side
+`TipReceived` emitted by the settlement subscriber).
 
 **Commerce-side addition (WU-POD-1).** No commerce input port previously exposed per-episode
 ownership outside commerce itself (only `library.GetOwnedTrackIds` existed, track-only). This WU
@@ -245,8 +261,12 @@ at the same position).
   owner-ref convention `("podcasts", episodeId)` — mirroring playback's `("catalog", trackId)`
   convention for tracks. Any media outage/illegal-state is translated to `MediaUnavailableException`
   (503 `MEDIA_UNAVAILABLE`), never an unmapped 500.
-- **`PaymentsTipAdapter`** wraps `payments.IssueTipUseCase` for `TipShow`. (WU-POD-2.)
-- **`CdiEventPublisher`** publishes `TipReceived` via the transactional outbox (AFTER_SUCCESS). (WU-POD-2.)
+- **`PaymentsTipAdapter`** (realized WU-POD-2) implements podcasts' `IssueTipUseCase` output port by
+  calling payments' `IssueTip` INPUT port in-process (symmetric to how `OwnershipReaderAdapter` calls
+  commerce's `GetOwnedEpisodeIds`). Pure translation boundary; an unknown provider/kind is mapped to
+  `VALIDATION` (422), never an unmapped 500.
+- **`CdiEventPublisher`** (deferred) would publish a podcasts-side `TipReceived` via the outbox; not
+  realized in WU-POD-2 — notifications consume the payments-side `TipReceived` from settlement.
 - **Transaction boundary (WU-POD-1 realized).** `ListPodcastsService`/`GetPodcastService`/
   `ListEpisodesService` are `@Transactional` read services over `PodcastRepository`.
   `GetEpisodeStreamUrlService` is deliberately **not** `@Transactional` (no DB write; mirrors
@@ -512,8 +532,24 @@ money paths + audit (INV-10), coverage gate, Spotless clean, ADD updated — **p
 2. **Per-caller ownership** is correct: authenticated owner → `isOwned=true` and full audio; anonymous
    → `isOwned=false` and locked. **✓ WU-POD-1.**
 3. **Tip split is exact**: ₵10 → creator 900 pesewas + platform 100, posted balanced in `payments`
-   (Σ debits = Σ credits, INV-6) with no remainder leak. **WU-POD-2.**
-4. **Tip is idempotent** (key replay → single effect) and emits exactly one `TipReceived`. **WU-POD-2.**
+   (Σ debits = Σ credits, INV-6) with no remainder leak. **✓ WU-POD-2** — proven end-to-end by
+   `PodcastTipFlowIT.tip_settles_and_credits_creator_90_percent_via_real_payments_pipeline` (₵10 tip
+   → `creator_balance.available_minor == 900` after webhook settlement). The 10% fee is
+   `PlatformSettings.tipFeePct` (OQ-2 default, still flagged for prod), never hard-coded here.
+4. **Tip is idempotent** (key replay → single effect); the payments `idempotency_key` UNIQUE
+   constraint + advisory lock enforce one charge/settlement per key (proven in payments'
+   `TipFlowIT.duplicate_tip_key_produces_one_charge_and_one_credit`). The INV-10 finance `AuditEntry`
+   is appended on the `IssueTip` path. The podcasts-side `TipReceived` outbox emission is deferred;
+   the creator `tip` notification is driven by the payments-side `TipReceived`. **✓ WU-POD-2.**
+
+**Guards (realized WU-POD-2).** `POST /v1/podcasts/:id/tip` requires auth (JWT subject = fan, never a
+body field) and a mandatory `Idempotency-Key` header (missing → **400** `MISSING_IDEMPOTENCY_KEY`).
+The recipient creator is resolved server-side from the show; a **self-tip** (`fan == creator`) is
+rejected **422** `SELF_TIP_NOT_ALLOWED`; an unknown show → **404** `NOT_FOUND`; a show with tips off
+or no owning creator → **403** `TIPS_DISABLED` (never posts money to a phantom recipient); a
+non-positive amount → **422** `VALIDATION`. Proven by `TipShowServiceTest` (unit,
+`selfTip_isRejected_andNeverTouchesPayments` + the resolve-creator-server-side + guard cases) and
+`PodcastTipFlowIT` (integration, unknown-podcast 404 / missing-key 400 / anonymous 401).
 5. **No cross-module FKs**; ownership resolved only via `OwnershipReader` (now backed by commerce's
    `GetOwnedEpisodeIds` input port, added this WU); season-pass grants surfaced from `commerce`
    (INV-2), not duplicated here. **✓ WU-POD-1.**
