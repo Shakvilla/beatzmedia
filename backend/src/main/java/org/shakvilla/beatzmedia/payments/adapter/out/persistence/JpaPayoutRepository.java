@@ -103,6 +103,19 @@ public class JpaPayoutRepository implements PayoutRepository {
   }
 
   @Override
+  public boolean existsWithdrawalForMethod(AccountId creator, PayoutMethodId methodId) {
+    Long count =
+        em.createQuery(
+                "SELECT COUNT(w) FROM WithdrawalRequestEntity w "
+                    + "WHERE w.methodId = :m AND w.accountId = :a",
+                Long.class)
+            .setParameter("m", methodId.value())
+            .setParameter("a", creator.value())
+            .getSingleResult();
+    return count != null && count > 0;
+  }
+
+  @Override
   public boolean hasAnyMethod(AccountId creator) {
     Long count =
         em.createQuery(

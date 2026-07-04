@@ -172,6 +172,13 @@ class PayoutRestIT {
             .extract().jsonPath().getString("id");
     org.junit.jupiter.api.Assertions.assertEquals(withdrawalId, replayId, "idempotent replay");
 
+    // 5b) Deleting the method now referenced by the withdrawal → 409 PAYOUT_METHOD_IN_USE, not a
+    //     500 (F-NEW-1). The method_id FK is ON DELETE RESTRICT.
+    given()
+        .header("Authorization", "Bearer " + artistToken)
+        .when().delete(METHODS_URL + "/" + methodId)
+        .then().statusCode(409);
+
     // 6) Admin pending list is finance-scoped (403 for a fan).
     given()
         .header("Authorization", "Bearer " + fanToken)

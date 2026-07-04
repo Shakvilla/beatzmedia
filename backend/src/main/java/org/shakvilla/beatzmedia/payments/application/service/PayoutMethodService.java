@@ -16,6 +16,7 @@ import org.shakvilla.beatzmedia.payments.domain.AccountId;
 import org.shakvilla.beatzmedia.payments.domain.MethodKind;
 import org.shakvilla.beatzmedia.payments.domain.PayoutMethod;
 import org.shakvilla.beatzmedia.payments.domain.PayoutMethodId;
+import org.shakvilla.beatzmedia.payments.domain.PayoutMethodInUseException;
 import org.shakvilla.beatzmedia.payments.domain.PayoutMethodNotFoundException;
 import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
 import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
@@ -85,8 +86,36 @@ public class PayoutMethodService
   public void remove(AccountId creator, PayoutMethodId id) {
     PayoutMethod method =
         repository.findMethod(creator, id).orElseThrow(() -> new PayoutMethodNotFoundException(id));
-    repository.deleteMethod(creator, method.getId());
+    // Guard: a method referenced by ANY withdrawal (even an old paid one) cannot be deleted — the
+    // withdrawal_request.method_id FK is ON DELETE RESTRICT (V704), so a raw delete would surface an
+    // opaque FK-violation 500. Pre-check for a deterministic, clean 409 (F-NEW-1).
+    if (repository.existsWithdrawalForMethod(creator, method.getId())) {
+      throw new PayoutMethodInUseException(id);
+    }
+    try {
+      repository.deleteMethod(creator, method.getId());
+    } catch (jakarta.persistence.PersistenceException e) {
+      // Backstop: a withdrawal created concurrently after the pre-check trips the FK — translate the
+      // constraint violation to the same mapped 409 rather than leaking a 500.
+      if (isForeignKeyViolation(e)) {
+        throw new PayoutMethodInUseException(id);
+      }
+      throw e;
+    }
     audit(creator, "REMOVE_PAYOUT_METHOD", id.value());
+  }
+
+  /** True if the throwable chain is a Postgres FK violation (SQLState 23503). */
+  private static boolean isForeignKeyViolation(Throwable e) {
+    for (Throwable t = e; t != null; t = t.getCause()) {
+      if (t instanceof java.sql.SQLException sql && "23503".equals(sql.getSQLState())) {
+        return true;
+      }
+      if (t instanceof org.hibernate.exception.ConstraintViolationException) {
+        return true;
+      }
+    }
+    return false;
   }
 
   @Override

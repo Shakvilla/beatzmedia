@@ -69,6 +69,12 @@ public class FakePayoutRepository implements PayoutRepository {
   }
 
   @Override
+  public boolean existsWithdrawalForMethod(AccountId creator, PayoutMethodId methodId) {
+    return withdrawals.values().stream()
+        .anyMatch(w -> w.getAccountId().equals(creator) && w.getMethodId().equals(methodId));
+  }
+
+  @Override
   public void clearDefaultMethods(AccountId creator) {
     methods.values().stream()
         .filter(m -> m.getAccountId().equals(creator) && m.isDefault())

@@ -38,6 +38,13 @@ public interface PayoutRepository {
   /** Delete a payout method owned by the creator. No-op if it does not exist. */
   void deleteMethod(AccountId creator, PayoutMethodId id);
 
+  /**
+   * True if ANY withdrawal request (any status — including already-{@code paid}) references the given
+   * method for the creator. Used to guard removal so a referenced method yields a mapped 409 {@code
+   * PAYOUT_METHOD_IN_USE} instead of an opaque FK-violation 500 (code-review F-NEW-1).
+   */
+  boolean existsWithdrawalForMethod(AccountId creator, PayoutMethodId methodId);
+
   /** True if the creator has any payout method (used to decide first-method-is-default). */
   boolean hasAnyMethod(AccountId creator);
 

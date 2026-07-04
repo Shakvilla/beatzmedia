@@ -555,6 +555,14 @@ public interface IdGenerator { String newId(); }
 >   (contrast the sale/tip split fee, which IS platform revenue and IS posted). Held as `PlatformSettings`
 >   constants (not yet a `platform_settings` column) — promote to stored columns in WU-ADM-8 if it must be
 >   tunable per-environment; flagged as a documented default awaiting production confirmation.
+> - **Removing a referenced payout method → mapped 409, not a 500 (review F-NEW-1).**
+>   `PayoutMethodService.remove` PRE-CHECKS `PayoutRepository.existsWithdrawalForMethod` (any
+>   withdrawal, any status — including already-`paid`) and throws `PayoutMethodInUseException` →
+>   `PAYOUT_METHOD_IN_USE` (409). The `withdrawal_request.method_id` FK is `ON DELETE RESTRICT` (V704),
+>   so a raw delete would surface an opaque Postgres FK-violation 500; a `PersistenceException`/23503
+>   backstop translates a concurrent-insert race to the same 409. Ownership scoping is preserved (a
+>   non-owner still gets 404). Proven by `PayoutMethodServiceTest` (in-use → 409, unreferenced →
+>   deletes) and `PayoutRestIT` (DELETE of a withdrawn-against method → 409 over HTTP).
 > - **Inbound surfaces.** `POST /v1/studio/payouts/withdraw` (artist, Idempotency-Key required);
 >   `POST/DELETE /v1/studio/payout-methods` + `PATCH …/:id/default` (artist, ownership-scoped); admin
 >   `GET /v1/admin/finance/payouts` (pending: `ready | kyc_pending`), `POST …/run-weekly`, `POST
