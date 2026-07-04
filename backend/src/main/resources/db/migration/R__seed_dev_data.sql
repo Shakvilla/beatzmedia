@@ -327,3 +327,157 @@ INSERT INTO browse_category (id, title, color_class) VALUES
   ('reggae',     'Reggae',     'from-emerald-500 to-green-400'),
   ('jazz',       'Jazz',       'from-slate-500 to-gray-400')
 ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, color_class = EXCLUDED.color_class;
+
+-- ==========================================================================
+-- Podcasts (WU-POD-1: Frontend/src/lib/podcast-data.ts `podcasts`)
+-- ==========================================================================
+
+INSERT INTO podcast (id, title, publisher, image, category, description, episode_count, popularity, season_pass_price_minor, season_pass_currency, supports_tips)
+VALUES
+  ('sincerely-accra', 'Sincerely, Accra', 'YGTV Africa',
+   'https://images.unsplash.com/photo-1516280440614-37939bbacd81?q=80&w=600&auto=format&fit=crop',
+   'Culture', 'Honest conversations about life, love and growing up in the city.',
+   142, 98, 1200, 'GHS', TRUE),
+
+  ('front-page-gh', 'Front Page', 'Citi Newsroom',
+   'https://images.unsplash.com/photo-1504711434969-e33886168f5c?q=80&w=600&auto=format&fit=crop',
+   'News & Politics', 'A daily breakdown of the stories shaping Ghana.',
+   410, 95, 1000, 'GHS', TRUE),
+
+  ('cedi-talk', 'Cedi Talk', 'Accra Business Network',
+   'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?q=80&w=600&auto=format&fit=crop',
+   'Business', 'Money, markets and building wealth in Ghana.',
+   88, 90, 1500, 'GHS', TRUE),
+
+  ('konnect-comedy', 'The Konnect', 'Konnect Media',
+   'https://images.unsplash.com/photo-1521119989659-a83eee488004?q=80&w=600&auto=format&fit=crop',
+   'Comedy', 'Three friends, zero filter, plenty of laughs.',
+   64, 88, NULL, NULL, TRUE),
+
+  ('black-stars-pod', 'Black Stars Breakdown', 'Joy Sports',
+   'https://images.unsplash.com/photo-1431324155629-1a6deb1dec8d?q=80&w=600&auto=format&fit=crop',
+   'Sports', 'Everything Ghana football, from the GPL to the Black Stars.',
+   120, 84, NULL, NULL, TRUE),
+
+  ('tech-nkwa', 'Tech Nkwa', 'Accra Tech Hub',
+   'https://images.unsplash.com/photo-1518770660439-4636190af475?q=80&w=600&auto=format&fit=crop',
+   'Tech', 'Africa''s startup and technology scene, decoded.',
+   52, 78, NULL, NULL, TRUE),
+
+  ('asaase-stories', 'Asaase Stories', 'Asaase Radio',
+   'https://images.unsplash.com/photo-1457369804613-52c61a468e7d?q=80&w=600&auto=format&fit=crop',
+   'Storytelling', 'Folktales and true stories from across the motherland.',
+   37, 72, NULL, NULL, TRUE),
+
+  ('well-being-gh', 'Body & Soul GH', 'Wellness Accra',
+   'https://images.unsplash.com/photo-1478737270239-2f02b77fc618?q=80&w=600&auto=format&fit=crop',
+   'Health', 'Practical wellness and mental health for busy Ghanaians.',
+   45, 68, NULL, NULL, TRUE)
+ON CONFLICT (id) DO UPDATE
+  SET title                   = EXCLUDED.title,
+      publisher                = EXCLUDED.publisher,
+      image                    = EXCLUDED.image,
+      category                 = EXCLUDED.category,
+      description              = EXCLUDED.description,
+      episode_count            = EXCLUDED.episode_count,
+      popularity               = EXCLUDED.popularity,
+      season_pass_price_minor  = EXCLUDED.season_pass_price_minor,
+      season_pass_currency     = EXCLUDED.season_pass_currency,
+      supports_tips            = EXCLUDED.supports_tips;
+
+-- ==========================================================================
+-- Podcast episodes (WU-POD-1: Frontend/src/lib/podcast-data.ts `episodes`)
+-- price_minor = GHS(n) * 100 pesewas
+-- ==========================================================================
+
+INSERT INTO podcast_episode (id, podcast_id, title, image, description, duration_sec, episode_number, is_premium, price_minor, price_currency, is_early_access, public_at, published_at)
+VALUES
+  -- Sincerely, Accra — showcase feed (free + premium + early-access)
+  ('ep-accra-6', 'sincerely-accra', 'Healing out loud',
+   'https://images.unsplash.com/photo-1516280440614-37939bbacd81?q=80&w=600&auto=format&fit=crop',
+   'A raw conversation about therapy, faith and forgiveness.',
+   3120, 48, TRUE, 500, 'GHS', TRUE, '2026-06-27T00:00:00Z', '2026-06-18T00:00:00Z'),
+
+  ('ep-accra-5', 'sincerely-accra', 'Moving back home after years abroad',
+   'https://images.unsplash.com/photo-1516280440614-37939bbacd81?q=80&w=600&auto=format&fit=crop',
+   'The reverse culture shock nobody warns you about.',
+   2940, 47, FALSE, NULL, NULL, FALSE, NULL, '2026-06-16T00:00:00Z'),
+
+  ('ep-accra-4', 'sincerely-accra', 'Dating in your 30s in Accra',
+   'https://images.unsplash.com/photo-1516280440614-37939bbacd81?q=80&w=600&auto=format&fit=crop',
+   'Apps, aunties and the pressure to settle down.',
+   3360, 46, TRUE, 300, 'GHS', FALSE, NULL, '2026-06-09T00:00:00Z'),
+
+  ('ep-accra-3', 'sincerely-accra', 'Money and friendships',
+   'https://images.unsplash.com/photo-1516280440614-37939bbacd81?q=80&w=600&auto=format&fit=crop',
+   'What happens when your circle grows at different speeds.',
+   3000, 45, TRUE, 300, 'GHS', FALSE, NULL, '2026-06-02T00:00:00Z'),
+
+  ('ep-accra-2', 'sincerely-accra', 'Therapy, the Ghanaian way',
+   'https://images.unsplash.com/photo-1516280440614-37939bbacd81?q=80&w=600&auto=format&fit=crop',
+   NULL, 2820, 44, FALSE, NULL, NULL, FALSE, NULL, '2026-05-26T00:00:00Z'),
+
+  ('ep-accra-1', 'sincerely-accra', 'Season 2 opener: starting over',
+   'https://images.unsplash.com/photo-1516280440614-37939bbacd81?q=80&w=600&auto=format&fit=crop',
+   NULL, 2700, 43, FALSE, NULL, NULL, FALSE, NULL, '2026-05-19T00:00:00Z'),
+
+  -- Front Page — news (mostly free, one premium deep dive)
+  ('ep-front-2', 'front-page-gh', 'The 2026 budget, explained',
+   'https://images.unsplash.com/photo-1504711434969-e33886168f5c?q=80&w=600&auto=format&fit=crop',
+   'What the new budget means for your pocket.',
+   1620, NULL, FALSE, NULL, NULL, FALSE, NULL, '2026-06-18T00:00:00Z'),
+
+  ('ep-front-1', 'front-page-gh', 'Ad-free deep dive: the cedi vs the dollar',
+   'https://images.unsplash.com/photo-1504711434969-e33886168f5c?q=80&w=600&auto=format&fit=crop',
+   'Extended, ad-free analysis for supporters.',
+   2580, NULL, TRUE, 400, 'GHS', FALSE, NULL, '2026-06-11T00:00:00Z'),
+
+  -- Cedi Talk — business (premium masterclass)
+  ('ep-cedi-2', 'cedi-talk', 'Saving in cedis vs dollars',
+   'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?q=80&w=600&auto=format&fit=crop',
+   'How to protect your savings against inflation.',
+   2280, NULL, FALSE, NULL, NULL, FALSE, NULL, '2026-06-15T00:00:00Z'),
+
+  ('ep-cedi-1', 'cedi-talk', 'Masterclass: building a MoMo side hustle',
+   'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?q=80&w=600&auto=format&fit=crop',
+   'A step-by-step premium workshop episode.',
+   3300, NULL, TRUE, 600, 'GHS', FALSE, NULL, '2026-06-08T00:00:00Z'),
+
+  -- Single free episodes for the rest
+  ('ep-konnect-1', 'konnect-comedy', 'Wedding season survival guide',
+   'https://images.unsplash.com/photo-1521119989659-a83eee488004?q=80&w=600&auto=format&fit=crop',
+   'Aso ebi, MCs and the contribution wahala.',
+   3300, NULL, FALSE, NULL, NULL, FALSE, NULL, '2026-06-14T00:00:00Z'),
+
+  ('ep-stars-1', 'black-stars-pod', 'Can the Black Stars bounce back?',
+   'https://images.unsplash.com/photo-1431324155629-1a6deb1dec8d?q=80&w=600&auto=format&fit=crop',
+   'Breaking down the squad ahead of the qualifiers.',
+   2700, NULL, FALSE, NULL, NULL, FALSE, NULL, '2026-06-17T00:00:00Z'),
+
+  ('ep-tech-1', 'tech-nkwa', 'Mobile money and the future of payments',
+   'https://images.unsplash.com/photo-1518770660439-4636190af475?q=80&w=600&auto=format&fit=crop',
+   'How MoMo reshaped commerce across West Africa.',
+   2100, NULL, FALSE, NULL, NULL, FALSE, NULL, '2026-06-12T00:00:00Z'),
+
+  ('ep-asaase-1', 'asaase-stories', 'Why the tortoise has a cracked shell',
+   'https://images.unsplash.com/photo-1457369804613-52c61a468e7d?q=80&w=600&auto=format&fit=crop',
+   'A retelling of the classic Ananse-era folktale.',
+   1500, NULL, FALSE, NULL, NULL, FALSE, NULL, '2026-06-10T00:00:00Z'),
+
+  ('ep-body-1', 'well-being-gh', 'Beating burnout in a hustle culture',
+   'https://images.unsplash.com/photo-1478737270239-2f02b77fc618?q=80&w=600&auto=format&fit=crop',
+   'Rest is productive too.',
+   1980, NULL, FALSE, NULL, NULL, FALSE, NULL, '2026-06-13T00:00:00Z')
+ON CONFLICT (id) DO UPDATE
+  SET podcast_id      = EXCLUDED.podcast_id,
+      title            = EXCLUDED.title,
+      image            = EXCLUDED.image,
+      description      = EXCLUDED.description,
+      duration_sec     = EXCLUDED.duration_sec,
+      episode_number   = EXCLUDED.episode_number,
+      is_premium       = EXCLUDED.is_premium,
+      price_minor      = EXCLUDED.price_minor,
+      price_currency   = EXCLUDED.price_currency,
+      is_early_access  = EXCLUDED.is_early_access,
+      public_at        = EXCLUDED.public_at,
+      published_at     = EXCLUDED.published_at;
