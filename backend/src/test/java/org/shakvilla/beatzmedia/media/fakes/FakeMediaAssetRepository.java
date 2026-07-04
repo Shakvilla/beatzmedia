@@ -35,6 +35,14 @@ public class FakeMediaAssetRepository implements MediaAssetRepository {
         .findFirst();
   }
 
+  @Override
+  public Optional<MediaAsset> findCurrentByOwnerRef(OwnerRef ownerRef) {
+    return store.values().stream()
+        .filter(a -> a.getOwnerRef().toStorageString().equals(ownerRef.toStorageString()))
+        .sorted((a, b) -> b.getCreatedAt().compareTo(a.getCreatedAt()))
+        .findFirst();
+  }
+
   public int size() {
     return store.size();
   }

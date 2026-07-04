@@ -18,6 +18,7 @@ import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 
 import org.eclipse.microprofile.config.inject.ConfigProperty;
+import org.shakvilla.beatzmedia.media.application.port.in.FindAssetForOwnerUseCase;
 import org.shakvilla.beatzmedia.media.application.port.in.IssueDeliveryUrlUseCase;
 import org.shakvilla.beatzmedia.media.application.port.in.TranscodeUseCase;
 import org.shakvilla.beatzmedia.media.application.port.in.UploadCommand;
@@ -41,6 +42,7 @@ import org.shakvilla.beatzmedia.media.domain.MediaKind;
 import org.shakvilla.beatzmedia.media.domain.MediaReady;
 import org.shakvilla.beatzmedia.media.domain.MediaStatus;
 import org.shakvilla.beatzmedia.media.domain.ObjectKey;
+import org.shakvilla.beatzmedia.media.domain.OwnerRef;
 import org.shakvilla.beatzmedia.media.domain.SignedUrl;
 import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
 import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
@@ -70,6 +72,7 @@ public class MediaApplicationService
     implements UploadOriginalUseCase,
         TranscodeUseCase,
         IssueDeliveryUrlUseCase,
+        FindAssetForOwnerUseCase,
         MediaService {
 
   /** Maximum upload size: 500 MB in bytes. */
@@ -248,6 +251,13 @@ public class MediaApplicationService
     // INV-3: resolveDeliveryKey enforces FULL → hlsKey only when variant == FULL; PREVIEW → previewKey
     ObjectKey deliveryKey = asset.resolveDeliveryKey(variant);
     return urlSigner.presignGet(deliveryKey, variant, ttl);
+  }
+
+  // ---- FindAssetForOwnerUseCase ----
+
+  @Override
+  public Optional<MediaAssetId> findAssetIdForOwner(OwnerRef ownerRef) {
+    return repository.findCurrentByOwnerRef(ownerRef).map(MediaAsset::getId);
   }
 
   // ---- MediaService facade ----

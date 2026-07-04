@@ -66,7 +66,7 @@ public class DomainExceptionMapper implements ExceptionMapper<DomainException> {
       case PROVIDER_ERROR -> BAD_GATEWAY;
       case METHOD_NOT_ALLOWED -> 405;
       case RATE_LIMITED -> Response.Status.TOO_MANY_REQUESTS.getStatusCode();
-      case MAINTENANCE -> Response.Status.SERVICE_UNAVAILABLE.getStatusCode();
+      case MAINTENANCE, MEDIA_UNAVAILABLE -> Response.Status.SERVICE_UNAVAILABLE.getStatusCode();
       case PAYLOAD_TOO_LARGE -> 413;
       case INTERNAL -> Response.Status.INTERNAL_SERVER_ERROR.getStatusCode();
     };

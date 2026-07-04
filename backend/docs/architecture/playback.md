@@ -152,16 +152,36 @@ kernel.
 Resources are thin: extract `caller` from JWT `sub` if present, map path/body → command, call the
 input port, map result → DTO. **No business logic in resources.**
 
+**Routing note (as-built).** `PlaybackResource` is `@Path("/v1")` at the class level with the full
+`tracks/{id}/stream` / `tracks/{id}/play` sub-paths on each method — **not** `@Path("/v1/tracks")` at
+the class level with `{id}/stream` on the method. The latter was tried first and, combined with
+`PublicCatalogResource`'s separate `@Path("/v1")` class root + `tracks/{id}` method path, produced a
+RESTEasy Reactive routing ambiguity: two different resource classes both contributing path segments
+under the literal `/v1/tracks` prefix caused `GET /v1/tracks/{id}` (catalog's track-detail endpoint)
+to 404 instead of reaching `PublicCatalogResource`. Found via `CatalogContractTest` regressing on this
+branch. Fix/convention going forward: **one `@Path` class-level root per bounded context, full
+sub-path per method** — matching `PublicCatalogResource`'s own pattern — rather than a resource class
+claiming a multi-segment root that another class's method path also produces.
+
 ### 5.2 Outbound — persistence & integrations
 
-- **`PlayEventRepository`** (persistence adapter) — single `INSERT` per counted play; never updates.
-  Maps domain `PlayEvent` ↔ JPA entity (domain carries no ORM annotations).
-- **`MediaServiceClient`** — calls media's signed-URL port with `PlaybackMode` + TTL; returns
-  `SignedUrl`. Translates media outages → `MEDIA_UNAVAILABLE` (503).
-- **`OwnershipReaderClient`** / **`CatalogReaderClient`** — in-process port calls into commerce/
-  library and catalog; resolve by id only.
-- **Transaction boundary** = the use case (`@Transactional` on `RecordPlay` impl; `GetStreamUrl` is a
-  read, no DB write). `PlayRecorded` is published AFTER_SUCCESS.
+- **`PlayEventPanacheRepository`** (persistence adapter, `adapter/out/persistence`) — implements
+  `PlayEventRepository`; single `INSERT` per counted play, never updates; `lastPlayAt` backs the
+  de-dup window. Maps domain `PlayEvent` ↔ `PlayEventEntity` via `PlayEventMapper` (domain carries no
+  ORM annotations).
+- **`MediaServiceAdapter`** (`adapter/out/integration`) — implements `MediaService`; resolves the
+  track's `MediaAssetId` via media's `FindAssetForOwnerUseCase.findAssetIdForOwner(OwnerRef("catalog",
+  trackId))`, then calls media's `MediaService.issueSignedUrl(assetId, DeliveryVariant, ttl)`
+  (`PlaybackMode.FULL/PREVIEW` ↔ `DeliveryVariant.FULL/PREVIEW`). Missing asset or any media-side
+  failure → `MediaUnavailableException` → `MEDIA_UNAVAILABLE` (503), never an unmapped 500.
+- **`OwnershipReaderAdapter`** (`adapter/out/integration`) — implements `OwnershipReader`; calls
+  library's `GetOwnedTrackIds` input port (backed by commerce's `ownership_grant`, WU-COM-2).
+- **`CatalogReaderAdapter`** (`adapter/out/integration`) — implements `CatalogReader`; calls catalog's
+  `GetTrackPlaybackInfo` input port (added alongside this WU — existence + intrinsic ownership kind
+  only, no per-caller decoration).
+- **Transaction boundary** = the use case (`@Transactional` on `RecordPlayService`; `GetStreamUrlService`
+  is a read, no DB write). `PlayRecorded` fires via CDI `Event<PlayRecorded>` after the insert, within
+  the same transaction (see §13 on the `EventPublisher` deviation).
 
 ## 6. DTOs & API shapes
 
@@ -326,3 +346,60 @@ Global DoD (PRD §8 / conventions §11) plus:
 - `expiresAt` honours `BEATZ_SIGNED_URL_TTL_SECONDS`; no hard-coded TTL or preview length.
 - `play_event` writes are de-duplicated per (account, track) window; `PlayRecorded` emitted only on
   counted plays; ArchUnit (hexagonal dependency rule) green.
+
+## 13. Implementation notes (WU-PLY-1, as-built)
+
+Deviations from the illustrative §4/§7 snippets, and the concrete cross-module wiring, recorded here
+per conventions §11 (ADD updated in the same PR as behavior).
+
+**Ownership port → `library::GetOwnedTrackIds`.** `OwnershipReaderAdapter` calls the **library**
+module's `GetOwnedTrackIds` input port (`List<String> ownedTrackIds(AccountId)`), itself backed by
+commerce's `ownership_grant` via `CommerceLibraryOwnershipReaderAdapter` (WU-COM-2). Library — not
+commerce directly — is the sanctioned seam because it already owns the "what does this fan own" read
+model (library ADD §4.2); playback never touches `ownership_grant` or any commerce table.
+
+**Catalog port → new `catalog::GetTrackPlaybackInfo` input port.** The existing `catalog::GetTrack`
+port throws on unknown ids and decorates the per-caller `owned|free|for-sale` view via catalog's own
+(largely stub) `OwnershipReader` — using it here would have made playback's INV-3 decision depend on
+a second, redundant, and inconsistent ownership source. Instead catalog gained a small dedicated input
+port, `GetTrackPlaybackInfo.get(TrackId) -> Optional<TrackPlaybackInfoView>`, returning only existence
++ the track's **intrinsic** commercial kind (`free`/`for-sale`, never `owned`) with no per-caller
+decoration and no throw. `CatalogReaderAdapter` maps its wire value to `TrackOwnership`.
+
+**Media port → new `media::FindAssetForOwnerUseCase` input port + `MediaService.findAssetIdForOwner`.**
+The media module had no existing way to resolve "the current `MediaAssetId` for this track" — only
+`findByOwnerRefAndContentHash` (upload idempotency). Added `MediaAssetRepository.findCurrentByOwnerRef`
+(most-recently-created asset for an `OwnerRef`) and exposed it as `FindAssetForOwnerUseCase` /
+`MediaService.findAssetIdForOwner`. `MediaServiceAdapter` builds `OwnerRef("catalog", trackId)` —
+the same convention catalog's `UploadReleaseTrackService` uses when it calls
+`media::UploadOriginalUseCase` — resolves the asset id, then calls `IssueDeliveryUrlUseCase`
+/`MediaService.issueSignedUrl(assetId, variant, ttl)`. A missing/not-ready asset maps to
+`MediaUnavailableException` → 503 `MEDIA_UNAVAILABLE`, never an unmapped 500.
+
+**Events.** No `EventPublisher` output-port interface was introduced; consistent with every other
+shipped module (commerce, media, identity), `PlayRecorded` is fired via a plain injected CDI
+`Event<PlayRecorded>` in `RecordPlayService`, `AFTER_SUCCESS`-equivalent because the service method
+is `@Transactional` and the event fires after the insert within that same transaction's success path.
+
+**`play_event.id` is `TEXT`, not `UUID`.** The illustrative §7 SQL used a native `UUID` column; the
+actual migration (`V401`) uses `TEXT`, matching the codebase-wide convention of string primary keys
+populated by the platform `IdGenerator` (UUIDv7-as-string) — e.g. `audit_entry`, `media_asset`,
+`account`. `PlayEventEntity.id` is a plain `String`, consistent with every other JPA entity.
+
+**Rate limiting vs. de-dup are two separate mechanisms**, both live:
+- `RecordPlayService` de-dupes repeated *valid* calls for the same (account, track) within
+  `beatz.playback.play-dedup-window-seconds` (default 30s) — a silent no-op, still `204`.
+- `PlayRateLimiter` (REST adapter, token bucket, same pattern as commerce's `CheckoutRateLimiter`)
+  guards against abusive call *volume* and throws `RateLimitedException` → 429 `RATE_LIMITED` +
+  `Retry-After` on a truly excessive burst, independent of whether individual calls would de-dupe.
+
+**Production bug found and fixed in this WU (library/commerce, not playback's own code).**
+`library.adapter.out.persistence.StubLibraryOwnershipReaderAdapter` carried
+`@Alternative @Priority(1)`, which CDI treats as a **globally enabled** bean — so despite its own
+Javadoc claiming to be inactive, it was still winning over the real, `@ApplicationScoped`
+`CommerceLibraryOwnershipReaderAdapter` (WU-COM-2) for the `LibraryOwnershipReader` port. This
+silently made `GET /v1/me/owned` always return `[]` and defeated commerce's `ALREADY_OWNED` cart
+guard in every environment, and would have defeated playback's own INV-3 ownership gate. Found via
+`PlaybackFlowIT`'s owner-of-a-for-sale-track assertion; fixed by deleting the dead stub so
+`CommerceLibraryOwnershipReaderAdapter` is the sole bean for the port. `library.md` and `commerce.md`
+should be cross-referenced/updated for this fix by doc-writer if not already covered.

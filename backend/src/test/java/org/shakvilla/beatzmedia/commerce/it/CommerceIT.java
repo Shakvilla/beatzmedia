@@ -242,12 +242,13 @@ class CommerceIT {
   @Test
   @Order(8)
   void addItem_notOwned_addsSuccessfully() {
-    // The ALREADY_OWNED (409) rejection path itself is covered end-to-end at the application-service
-    // layer (AddCartItemServiceTest, using FakeOwnershipReader) because real ownership data
-    // (`ownership_grant`) does not exist until WU-COM-2 ships checkout/settlement; in this
-    // environment library's GetOwnedTrackIds is backed by StubLibraryOwnershipReaderAdapter, which
-    // always reports nothing owned. Here we assert the happy (not-owned) path wires end-to-end
-    // through CommerceResource -> AddCartItemService -> LibraryOwnershipReaderAdapter -> GetOwnedTrackIds.
+    // No ownership_grant row exists for OWNED_TRACK_ID in this test's fixtures (no checkout/settle
+    // was run for it here), so the real commerce-backed ownership chain correctly reports it
+    // not-owned. The ALREADY_OWNED (409) rejection path itself is covered end-to-end at the
+    // application-service layer (AddCartItemServiceTest, using FakeOwnershipReader) and, with a
+    // genuine settled purchase, by commerce's CheckoutFlowIT. Here we assert the happy (not-owned)
+    // path wires end-to-end through CommerceResource -> AddCartItemService ->
+    // LibraryOwnershipReaderAdapter -> GetOwnedTrackIds -> CommerceLibraryOwnershipReaderAdapter.
     given()
         .header("Authorization", "Bearer " + fanToken)
         .contentType(ContentType.JSON)
