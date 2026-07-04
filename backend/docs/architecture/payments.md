@@ -832,7 +832,12 @@ CREATE TABLE refund (
   F1 / ADR-22). Ids are UUIDv7 `TEXT`; `direction` is `TEXT + CHECK` (as-built deviation from the
   ADD §7 illustrative `UUID`/enum DDL — see the WU-PAY-3 as-built note above).
 - `V704__payments_payouts.sql` (payout_method, withdrawal_request, payout_batch, payout_txn, kyc_record — WU-PAY-4)
-- `V705__payments_disputes.sql` (dispute, dispute_event, refund — WU-PAY-5)
+- `V705__payments_disputes.sql` (WU-PAY-5) — **implemented**; adds `dispute` (order_ref +
+  payment_intent_id anchor + `is_chargeback` + `provider_case_id` partial-UNIQUE for chargeback
+  idempotency), `dispute_event` (timeline), `refund` (`uq_refund_per_dispute` UNIQUE — one refund per
+  dispute; `clawback_txn_id` trace). The refund clawback reuses the V703 `ledger_posting` exactly-once
+  header keyed on `('refund', <refund_id>)`; ids are UUIDv7 `TEXT`, enum columns `TEXT + CHECK`
+  (as-built convention).
 - `R__seed_dev_data.sql` (dev only): seed `ledger_account` singletons (platform_revenue, payout_clearing, provider_clearing per provider) and sample KYC records.
 
 ## 8. Key flows
