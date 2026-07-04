@@ -84,6 +84,23 @@ public class FakeOwnershipRepository implements OwnershipRepository {
         .toList();
   }
 
+  @Override
+  public List<String> activeEpisodeIds(AccountId account, List<String> candidateEpisodeIds) {
+    if (candidateEpisodeIds == null || candidateEpisodeIds.isEmpty()) {
+      return List.of();
+    }
+    Set<String> candidates = new HashSet<>(candidateEpisodeIds);
+    return grants.stream()
+        .filter(
+            g ->
+                g.isActive()
+                    && g.getAccountId().value().equals(account.value())
+                    && g.getEpisodeId() != null
+                    && candidates.contains(g.getEpisodeId()))
+        .map(OwnershipGrant::getEpisodeId)
+        .toList();
+  }
+
   /** Test helper: all grants (active or revoked). */
   public List<OwnershipGrant> all() {
     return List.copyOf(grants);

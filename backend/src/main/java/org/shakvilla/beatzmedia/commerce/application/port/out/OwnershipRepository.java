@@ -41,4 +41,12 @@ public interface OwnershipRepository {
 
   /** All track ids the account currently owns (active grants) — backs library's owned read. */
   List<String> activeTrackIds(AccountId account);
+
+  /**
+   * Of the given candidate episode ids, the subset the account currently owns (active grants).
+   * Backs the podcasts module's {@code OwnershipReader} output port (WU-POD-1) via commerce's
+   * {@code GetOwnedEpisodeIds} input port — a single batched query avoids N+1 when decorating an
+   * episode list.
+   */
+  List<String> activeEpisodeIds(AccountId account, List<String> candidateEpisodeIds);
 }

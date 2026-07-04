@@ -116,6 +116,21 @@ public class JpaOwnershipRepository implements OwnershipRepository {
         .getResultList();
   }
 
+  @Override
+  public List<String> activeEpisodeIds(AccountId account, List<String> candidateEpisodeIds) {
+    if (candidateEpisodeIds == null || candidateEpisodeIds.isEmpty()) {
+      return List.of();
+    }
+    return em
+        .createQuery(
+            "SELECT g.episodeId FROM OwnershipGrantEntity g WHERE g.accountId = :acc"
+                + " AND g.episodeId IN :eids AND g.revokedAt IS NULL",
+            String.class)
+        .setParameter("acc", account.value())
+        .setParameter("eids", candidateEpisodeIds)
+        .getResultList();
+  }
+
   private OwnershipGrant toDomain(OwnershipGrantEntity e) {
     return new OwnershipGrant(
         e.id,
