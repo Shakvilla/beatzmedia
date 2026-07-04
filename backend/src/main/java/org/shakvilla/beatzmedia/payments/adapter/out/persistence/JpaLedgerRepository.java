@@ -233,9 +233,15 @@ public class JpaLedgerRepository implements LedgerRepository {
     }
 
     long refund = refundAmount.minor();
-    if (refund <= 0 || refund > originalGross) {
-      throw new IllegalStateException(
-          "refund amount " + refund + " out of range (0, gross=" + originalGross + "]");
+    if (refund <= 0) {
+      throw new IllegalStateException("refund amount must be positive, got " + refund);
+    }
+    // CLAMP to the reversible split gross. A refund/chargeback of the whole ORDER may exceed the
+    // split gross because the order total includes the flat service fee (which is NOT a creator/
+    // platform split leg — it has no ledger credit to reverse). The clawback reverses only what was
+    // split; the service-fee portion of a refund is a buyer-side settlement outside the split ledger.
+    if (refund > originalGross) {
+      refund = originalGross;
     }
 
     // Proportional, rounding-safe reversal (mirrors RevenueSplit): the platform-fee reversal is the

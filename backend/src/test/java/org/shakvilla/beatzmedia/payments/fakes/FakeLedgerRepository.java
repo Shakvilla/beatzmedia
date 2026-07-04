@@ -104,9 +104,11 @@ public class FakeLedgerRepository implements LedgerRepository {
     }
 
     long refund = refundAmount.minor();
-    if (refund <= 0 || refund > originalGross) {
-      throw new IllegalStateException(
-          "refund amount " + refund + " out of range (0, gross=" + originalGross + "]");
+    if (refund <= 0) {
+      throw new IllegalStateException("refund amount must be positive, got " + refund);
+    }
+    if (refund > originalGross) {
+      refund = originalGross; // clamp to the reversible split gross (service fee has no split leg)
     }
     long platformReversal = proportional(refund, originalPlatformFee, originalGross);
     long creatorReversalTotal = refund - platformReversal;

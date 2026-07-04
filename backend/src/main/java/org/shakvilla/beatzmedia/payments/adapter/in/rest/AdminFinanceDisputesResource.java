@@ -90,9 +90,9 @@ public class AdminFinanceDisputesResource {
     String key = requireKey(idempotencyKey);
     RefundRequest req = body == null ? new RefundRequest(null, null) : body;
     Optional<Money> amount =
-        req.amount() == null
+        req.amount() == null || req.amount().amount() == null
             ? Optional.empty()
-            : Optional.of(Money.ofCedis(req.amount(), Currency.GHS));
+            : Optional.of(Money.ofCedis(req.amount().amount(), Currency.GHS));
     return refundDispute.refund(
         jwt.getSubject(),
         new DisputeId(id),
@@ -123,8 +123,14 @@ public class AdminFinanceDisputesResource {
     return idempotencyKey;
   }
 
-  /** Refund request body: optional partial {@code amount} (decimal cedis) + required {@code reason}. */
-  public record RefundRequest(BigDecimal amount, String reason) {}
+  /**
+   * Refund request body: optional partial {@code amount} (wire Money {@code { amount, currency }},
+   * INV-11) + required {@code reason}. Omitting {@code amount} refunds the full dispute amount.
+   */
+  public record RefundRequest(MoneyBody amount, String reason) {}
+
+  /** Wire money shape {@code { amount: <decimal cedis>, currency: "GHS" }} (matches the frontend). */
+  public record MoneyBody(BigDecimal amount, String currency) {}
 
   /** Reject request body: the required {@code reason}. */
   public record RejectRequest(@NotBlank String reason) {}
