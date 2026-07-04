@@ -656,6 +656,25 @@ issuance is deferred, see G3 below). As-built decisions on top of this ADD:
   `@Observes(AFTER_SUCCESS) PaymentFailed` marks the order `failed` with the reason and **preserves the
   cart** for retry; no grant is created (INV-1).
 
+### 14.0 WU-PAY-5 ownership revocation on refund (INV-9, as-built)
+
+The refund/clawback machinery lives in `payments` (WU-PAY-5); commerce owns only the **grant
+revocation**, reached the same sanctioned way grants are created — by consuming a payments domain event,
+never by a cross-module table read.
+
+- **`OrderRefundedSubscriber`** `@Observes(AFTER_SUCCESS) payments.domain.OrderRefunded` (fired after the
+  refund clawback commits) → **`RevokeOwnershipService.revokeForRefundedOrder`** (the ONLY revoker; no
+  REST caller), implementing the ADD's `RevokeOwnership` input port.
+- **Runs `REQUIRES_NEW`**, resolves the order by the reference carried on the event (`FOR UPDATE`),
+  guards `paid → refunded`, and revokes EVERY active `ownership_grant` for the order — an album/season
+  refund revokes ALL its constituent track/episode grants (the grants were materialised one-per-unit at
+  grant time, INV-2). Each grant `revoke` is idempotent (`revoked_at` set once), and the order-row lock +
+  `paid → refunded` guard make a re-delivered refund/chargeback event, or two concurrent refunds, revoke
+  exactly once (no double-revoke). Appends one `AuditEntry` (INV-10).
+- No payments-table read: the order reference travels on `OrderRefunded`; commerce owns `ownership_grant`.
+  Proven end-to-end by `payments … RefundDisputeIT` (revoke on admin refund + on lost chargeback; album
+  refund revokes all tracks; re-delivery and two-concurrent-refunds revoke exactly once).
+
 ### 14.1 Adversarial-review fixes (F1/F2/F3)
 
 - **F1 — per-creator sale split (multi-artist orders).** The settlement→grant service originally posted

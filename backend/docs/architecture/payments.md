@@ -576,6 +576,48 @@ public interface IdGenerator { String newId(); }
 > - **OQ-4 (royalty model).** No royalty model (ADR-20): `PayoutsView.bySource.royalties` and any
 >   `Royalty` ledger line resolve to ₵0. Config-driven default pending human confirmation.
 
+> **WU-PAY-5 implementation notes (as-built) — refunds / chargebacks / disputes + revoke + clawback.**
+> - **Schema (V705, forward-only).** `dispute` (`order_ref` + `payment_intent_id` clawback anchor +
+>   `is_chargeback` + `provider_case_id` partial-UNIQUE `uq_dispute_provider_case` for chargeback
+>   re-delivery idempotency), `dispute_event` (timeline), `refund` (`uq_refund_per_dispute` UNIQUE — one
+>   refund per dispute; `clawback_txn_id` trace). Ids UUIDv7 `TEXT`; enum columns `TEXT + CHECK`.
+> - **Refund = revoke (via EVENT) + balanced clawback (INV-9).** `RefundDispute` (admin, finance/
+>   super-admin, `Idempotency-Key` required) transitions the dispute `open → refunded`, posts a
+>   BALANCED ledger reversal of the ORIGINAL sale/tip split, and emits `OrderRefunded`. Commerce's
+>   `OrderRefundedSubscriber` (`AFTER_SUCCESS`) → `RevokeOwnershipService` (`REQUIRES_NEW`) revokes the
+>   `ownership_grant` rows for the order (album/season → ALL constituent tracks/episodes, mirroring the
+>   INV-2 grant expansion). Payments NEVER touches commerce's ownership tables — the order reference
+>   travels on the event; commerce owns the revoke.
+> - **Clawback reversal (`LedgerRepository.postRefundReversal`).** Reads the original settlement legs
+>   (ref_type `intent`/`tip`, incl. per-creator `<intentId>:<creatorId>` sub-postings) and posts a
+>   PROPORTIONAL, rounding-safe reversal keyed exactly-once on `("refund", refundId)`: buyer/clearing
+>   CREDIT = the refunded amount (clamped to the split gross — an order-total refund exceeds the split
+>   because the flat service fee has no split leg); platform-revenue DEBIT = the half-up proportional
+>   fee share; creator-payable DEBIT(s) = the EXACT remainder (mirrors `RevenueSplit` — creator absorbs
+>   rounding; multi-creator distributes proportionally with the last creator absorbing the remainder).
+>   Σ DEBIT = Σ CREDIT (INV-6). A FULL refund reverses exactly the original legs. Reversal rows post
+>   already-cleared, so the creator's projected available reflects the clawback at once.
+> - **Negative balance on already-withdrawn (modelled, not skipped).** The `creator_balance` projection
+>   is a signed sum, so a clawback of a credit the creator already withdrew drives available NEGATIVE
+>   (recovery owed) rather than silently skipping — proven by `RefundReversalMathTest` and
+>   `RefundDisputeIT.refundAfterCreatorWithdrew_drivesBalanceNegative_owed`.
+> - **Chargebacks via the WU-PAY-2 signature-verified webhook (no client money endpoint).**
+>   `chargeback`/`chargeback_lost`/`chargeback_won` statuses route to `HandleChargebackService` (a
+>   non-transactional coordinator over `REQUIRES_NEW` steps). OPEN opens a dispute keyed on the provider
+>   case id; **LOST forces refund + clawback + revocation** (via the same exactly-once poster) and
+>   OVERRIDES an admin `escalated` state (`Dispute.forceRefundedFromChargeback`, F2); WON rejects (no
+>   money). Admin (finance/super-admin) adjudicates `GET`/`refund`/`reject`/`escalate`.
+> - **Exactly-once + concurrency (F1 lesson).** The refund clawback + `OrderRefunded` emission run in a
+>   dedicated `RefundClawbackPoster.postRefund` (`REQUIRES_NEW`) that takes the dispute row `FOR UPDATE`
+>   INSIDE its own tx (NOT across the boundary — that self-deadlocks) plus the `ledger_posting` +
+>   `uq_refund_per_dispute` exactly-once claims. A re-delivered refund/chargeback event, or two
+>   concurrent refunds of the same dispute, yield exactly ONE clawback and ONE revocation — proven by
+>   `RefundDisputeIT.twoConcurrentRefunds_ofSameDispute_clawBackExactlyOnce` and
+>   `redeliveredChargebackLost_clawsBackAndRevokesExactlyOnce`. Money-POST idempotency-key advisory lock
+>   on the admin refund (`DisputeRepository.lockForIdempotencyKey`) serialises same-key retries.
+> - **Audit (INV-10).** Every refund/reject/escalate appends exactly one `AuditEntry`; the refund audit
+>   logs the amount. Commerce audits the revocation.
+
 ## 5. Adapters
 
 ### 5.1 Inbound — REST resources
