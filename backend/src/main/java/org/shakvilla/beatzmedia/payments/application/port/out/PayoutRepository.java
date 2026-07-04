@@ -66,15 +66,41 @@ public interface PayoutRepository {
   Optional<WithdrawalRequest> findWithdrawal(WithdrawalId id);
 
   /**
+   * A withdrawal by id, claimed {@code FOR UPDATE SKIP LOCKED} for the current transaction. If another
+   * concurrent run/send already holds this withdrawal's lock, returns empty (SKIPPED) rather than
+   * blocking — so the per-withdrawal disburse boundary no-ops for a row another run is already paying,
+   * and two runs never both process one withdrawal (finding F1). The lock is held until the current
+   * transaction commits/rolls back; call this ONLY inside the {@code REQUIRES_NEW} disburse boundary.
+   */
+  Optional<WithdrawalRequest> findWithdrawalForUpdate(WithdrawalId id);
+
+  /**
    * All payable withdrawals (status pending/ready) across creators, oldest first — the admin
-   * pending-payouts list and the weekly run's work set.
+   * pending-payouts read (no lock; a read-only projection).
    */
   List<WithdrawalRequest> findPayableWithdrawals();
+
+  /**
+   * The ids of the payable withdrawals (status pending/ready) to attempt in a weekly run, oldest
+   * first — a plain, LOCK-FREE candidate read. The row lock is taken per-withdrawal inside the
+   * {@code REQUIRES_NEW} disburse boundary ({@link #findWithdrawalForUpdate}, {@code SKIP LOCKED}), so
+   * the scan must NOT hold locks itself (that would self-deadlock against the inner boundary). Two
+   * concurrent runs may read overlapping candidates; the per-row {@code SKIP LOCKED} claim then
+   * partitions the actual work so neither run pays the same withdrawal twice (finding F1).
+   */
+  List<WithdrawalId> findPayableWithdrawalIds(int limit);
 
   // ---- batches / txns -----------------------------------------------------
 
   /** Persist a new or updated payout batch (run header). */
   PayoutBatch saveBatch(PayoutBatch batch);
+
+  /**
+   * Update just the {@code total_minor} + {@code count} of an existing batch header (preserving its
+   * kind/runBy/runAt) and return the reconstituted batch, or {@code null} if the batch is missing.
+   * Used to finalise a weekly run's totals after its per-withdrawal boundaries have committed.
+   */
+  PayoutBatch saveBatchTotals(String batchId, long totalMinor, int count);
 
   /**
    * Persist an executed payout txn. Throws {@link DuplicatePayoutException} if a txn already exists

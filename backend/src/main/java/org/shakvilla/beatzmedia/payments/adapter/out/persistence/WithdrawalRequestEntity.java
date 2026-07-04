@@ -22,6 +22,11 @@ public class WithdrawalRequestEntity {
   @Column(name = "amount_minor", nullable = false)
   public long amountMinor;
 
+  /**
+   * The informational rail-side cash-out cost (provider charge). Surfaced to the creator
+   * pre-confirmation; NOT posted to the ledger as platform revenue — the reservation debits the gross
+   * (ADR-25 / review F2).
+   */
   @Column(name = "fee_minor", nullable = false)
   public long feeMinor;
 

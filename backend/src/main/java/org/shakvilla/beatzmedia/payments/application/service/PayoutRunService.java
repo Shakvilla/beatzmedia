@@ -1,33 +1,20 @@
 package org.shakvilla.beatzmedia.payments.application.service;
 
 import java.util.List;
+import java.util.Optional;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
-import jakarta.transaction.Transactional;
 
-import org.shakvilla.beatzmedia.audit.application.port.out.AuditWriter;
-import org.shakvilla.beatzmedia.audit.domain.AuditEntry;
-import org.shakvilla.beatzmedia.audit.domain.AuditType;
 import org.shakvilla.beatzmedia.payments.application.port.in.PayoutBatchView;
 import org.shakvilla.beatzmedia.payments.application.port.in.PayoutTxnView;
 import org.shakvilla.beatzmedia.payments.application.port.in.RunWeeklyPayouts;
 import org.shakvilla.beatzmedia.payments.application.port.in.SendSinglePayout;
-import org.shakvilla.beatzmedia.payments.application.port.out.DuplicatePayoutException;
-import org.shakvilla.beatzmedia.payments.application.port.out.KycProvider;
-import org.shakvilla.beatzmedia.payments.application.port.out.LedgerRepository;
-import org.shakvilla.beatzmedia.payments.application.port.out.PayoutRepository;
 import org.shakvilla.beatzmedia.payments.domain.IdempotencyKey;
-import org.shakvilla.beatzmedia.payments.domain.KycBlockedException;
-import org.shakvilla.beatzmedia.payments.domain.MethodKind;
 import org.shakvilla.beatzmedia.payments.domain.PayoutBatch;
 import org.shakvilla.beatzmedia.payments.domain.PayoutBatchKind;
-import org.shakvilla.beatzmedia.payments.domain.PayoutMethod;
 import org.shakvilla.beatzmedia.payments.domain.PayoutTxn;
-import org.shakvilla.beatzmedia.payments.domain.Provider;
-import org.shakvilla.beatzmedia.payments.domain.TxnId;
 import org.shakvilla.beatzmedia.payments.domain.WithdrawalId;
-import org.shakvilla.beatzmedia.payments.domain.WithdrawalRequest;
 import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
 import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
 
@@ -35,168 +22,103 @@ import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
  * Application service for admin payout runs (LLFR-PAYMENTS-03.3 / 03.4). Implements {@link
  * RunWeeklyPayouts} and {@link SendSinglePayout}.
  *
- * <p><strong>Exactly-once / no double-pay (INV-6).</strong> Executing a withdrawal posts a balanced
- * disbursement txn (DEBIT payout_clearing / CREDIT provider_clearing) via {@link
- * LedgerRepository#postWithdrawalDisburse} — keyed exactly-once on the withdrawal id — and inserts a
- * {@link PayoutTxn} guarded by {@code uq_payout_per_withdrawal}. Either guard tripping means the
- * withdrawal is already paid: {@link DuplicatePayoutException} is caught and the execution is a no-op,
- * so a retried weekly run or a repeated single send can NEVER debit twice.
+ * <p><strong>Batch resilience (finding F1).</strong> A weekly run does NOT wrap every payout in one
+ * transaction. It commits the batch header first, then disburses EACH withdrawal on its own {@link
+ * PayoutDisburser#disburseOne} boundary ({@code REQUIRES_NEW}). A duplicate-claim collision (Postgres
+ * 23505 from the {@code ledger_posting} PK or {@code uq_payout_per_withdrawal}) rolls back ONLY that
+ * withdrawal's transaction — the surrounding batch keeps every other creator it already paid, instead
+ * of the whole batch being poisoned. Concurrent runs partition the work via {@code FOR UPDATE SKIP
+ * LOCKED} per withdrawal, so two runs never pay the same withdrawal (no double-pay, INV-6).
  *
  * <p><strong>KYC (INV-8).</strong> A single send BLOCKS on an unverified creator (mapped {@code
  * KYC_BLOCKED} 409). The weekly run SKIPS unverified creators (leaves them pending) rather than
- * failing the whole batch.
- *
- * <p>Every executed payout appends an {@link AuditEntry} recording the admin actor (INV-10).
+ * failing the batch. Every executed payout appends an {@link org.shakvilla.beatzmedia.audit.domain
+ * .AuditEntry} recording the admin actor (INV-10), inside the per-withdrawal boundary.
  */
 @ApplicationScoped
 public class PayoutRunService implements RunWeeklyPayouts, SendSinglePayout {
 
-  private final PayoutRepository payouts;
-  private final LedgerRepository ledger;
-  private final KycProvider kyc;
+  /** Upper bound on withdrawals paid per weekly run invocation (defensive; runs are re-runnable). */
+  private static final int RUN_LIMIT = 1000;
+
+  private final PayoutDisburser disburser;
   private final IdGenerator ids;
   private final Clock clock;
-  private final AuditWriter auditWriter;
 
   @Inject
-  public PayoutRunService(
-      PayoutRepository payouts,
-      LedgerRepository ledger,
-      KycProvider kyc,
-      IdGenerator ids,
-      Clock clock,
-      AuditWriter auditWriter) {
-    this.payouts = payouts;
-    this.ledger = ledger;
-    this.kyc = kyc;
+  public PayoutRunService(PayoutDisburser disburser, IdGenerator ids, Clock clock) {
+    this.disburser = disburser;
     this.ids = ids;
     this.clock = clock;
-    this.auditWriter = auditWriter;
   }
 
   @Override
-  @Transactional
   public PayoutBatchView runWeekly(String adminActorId, IdempotencyKey key) {
     requireActor(adminActorId);
-    // Idempotency: serialise same-key runs so a retried run does not build a parallel batch. The
-    // per-withdrawal exactly-once guard is the durable no-double-pay backstop regardless.
-    payouts.lockForIdempotencyKey(key);
 
+    // 1) Create + COMMIT the batch header first (own tx) so the per-withdrawal REQUIRES_NEW inserts
+    //    can reference it (payout_txn.batch_id FK) and it survives even if a payout collides.
     PayoutBatch batch =
         PayoutBatch.start(ids.newId(), PayoutBatchKind.WEEKLY, adminActorId, clock.now());
-    payouts.saveBatch(batch);
+    startBatch(batch, key);
 
-    List<WithdrawalRequest> payable = payouts.findPayableWithdrawals();
-    for (WithdrawalRequest w : payable) {
-      // Weekly run skips KYC-unverified creators rather than failing the batch.
-      if (!kyc.statusOf(w.getAccountId()).isVerified()) {
-        continue;
+    // 2) Read candidate ids (lock-free, own tx), then disburse each on its OWN REQUIRES_NEW boundary.
+    //    A collision/skip rolls back only that withdrawal; the batch keeps the rest.
+    List<WithdrawalId> candidates = readCandidates();
+    long total = 0L;
+    int count = 0;
+    for (WithdrawalId id : candidates) {
+      Optional<PayoutTxn> txn = disburser.disburseOne(batch.getId(), id, adminActorId, /*blockOnKyc*/ false);
+      if (txn.isPresent()) {
+        total += txn.get().getAmount().minor();
+        count += 1;
       }
-      executeOne(batch, w);
     }
-    payouts.saveBatch(batch);
+
+    // 3) Finalise the batch totals (own tx).
+    batch = finaliseBatch(batch.getId(), total, count);
     return PayoutBatchView.of(batch);
   }
 
   @Override
-  @Transactional
   public PayoutTxnView send(String adminActorId, WithdrawalId withdrawalId, IdempotencyKey key) {
     requireActor(adminActorId);
-    payouts.lockForIdempotencyKey(key);
 
-    WithdrawalRequest w =
-        payouts
-            .findWithdrawal(withdrawalId)
-            .orElseThrow(
-                () ->
-                    new org.shakvilla.beatzmedia.platform.domain.NotFoundException(
-                        "withdrawal not found: " + withdrawalId));
-
-    // Single send BLOCKS on KYC (API-CONTRACT §Finance) — mapped 409, not a silent skip.
-    if (!kyc.statusOf(w.getAccountId()).isVerified()) {
-      throw new KycBlockedException(w.getAccountId());
-    }
+    // Pre-check existence + KYC (mapped errors) before creating a batch — read-only, own tx.
+    sendPrecheck(withdrawalId);
 
     PayoutBatch batch =
         PayoutBatch.start(ids.newId(), PayoutBatchKind.SINGLE, adminActorId, clock.now());
-    payouts.saveBatch(batch);
+    startBatch(batch, key);
 
-    PayoutTxn txn = executeOne(batch, w);
-    payouts.saveBatch(batch);
-    if (txn == null) {
-      // Already paid (exactly-once guard tripped) — return the existing txn is out of scope here;
-      // surface a conflict so the admin retry is unambiguous. In practice the weekly run handles the
-      // idempotent bulk case; a single re-send of a PAID withdrawal is an operator error.
+    // The definitive KYC + payable + exactly-once check happens inside the REQUIRES_NEW boundary.
+    Optional<PayoutTxn> txn =
+        disburser.disburseOne(batch.getId(), withdrawalId, adminActorId, /*blockOnKyc*/ true);
+    if (txn.isEmpty()) {
+      // Already paid (exactly-once guard tripped) or no longer payable — surface a conflict so an
+      // operator re-send of a PAID withdrawal is unambiguous (no second debit occurred).
+      finaliseBatch(batch.getId(), 0L, 0);
       throw new org.shakvilla.beatzmedia.payments.domain.IllegalTransitionException(
-          "withdrawal " + withdrawalId + " is already paid");
+          "withdrawal " + withdrawalId + " is already paid or not payable");
     }
-    return PayoutTxnView.of(txn);
+    finaliseBatch(batch.getId(), txn.get().getAmount().minor(), 1);
+    return PayoutTxnView.of(txn.get());
   }
 
-  /**
-   * Execute one withdrawal: post the balanced disbursement, insert the exactly-once payout txn, mark
-   * the withdrawal paid, tally the batch, audit. Returns {@code null} if the withdrawal was already
-   * paid (a concurrent/retried run tripped the exactly-once guard) — the caller treats that as a
-   * no-op, never a second debit (INV-6). The payout method backs the payout rail (bank/momo).
-   */
-  private PayoutTxn executeOne(PayoutBatch batch, WithdrawalRequest w) {
-    if (!w.getStatus().isPayable()) {
-      return null;
-    }
-    Provider rail = railFor(w);
-    try {
-      TxnId disburseTxn =
-          ledger.postWithdrawalDisburse(w.getAmount(), w.getId().value(), rail, clock.now());
-      PayoutTxn txn =
-          PayoutTxn.executed(
-              ids.newId(),
-              batch.getId(),
-              w.getId(),
-              w.getAccountId(),
-              w.getAmount(),
-              null,
-              disburseTxn,
-              clock.now());
-      payouts.savePayoutTxn(txn);
-      w.markPaid();
-      payouts.saveWithdrawal(w);
-      batch.recordPayment(w.getAmount().minor());
-      audit(batch.getRunBy(), w);
-      return txn;
-    } catch (DuplicatePayoutException
-        | org.shakvilla.beatzmedia.payments.application.port.out.DuplicatePostingException e) {
-      // Already paid by a prior run — the disburse posting is exactly-once (ledger_posting header) AND
-      // the payout txn is exactly-once (uq_payout_per_withdrawal). Whichever guard trips first, NO
-      // ledger double-debit occurred. Skip silently so a retry is safe (INV-6).
-      return null;
-    }
+  private List<WithdrawalId> readCandidates() {
+    return disburser.readCandidates(RUN_LIMIT);
   }
 
-  /**
-   * The payout rail a withdrawal disburses over, derived from its method kind. Bank withdrawals clear
-   * via the bank rail; MoMo (and anything else) via the default MoMo rail (mtn). The method is looked
-   * up ownership-scoped; a missing method (should not happen for a reserved withdrawal) defaults to
-   * MoMo.
-   */
-  private Provider railFor(WithdrawalRequest w) {
-    return payouts
-        .findMethod(w.getAccountId(), w.getMethodId())
-        .map(PayoutMethod::getKind)
-        .map(k -> k == MethodKind.bank ? Provider.bank : Provider.mtn)
-        .orElse(Provider.mtn);
+  private void sendPrecheck(WithdrawalId withdrawalId) {
+    disburser.sendPrecheck(withdrawalId);
   }
 
-  private void audit(String adminActorId, WithdrawalRequest w) {
-    auditWriter.append(
-        new AuditEntry(
-            ids.newId(),
-            adminActorId,
-            "EXECUTE_PAYOUT",
-            "WithdrawalRequest",
-            w.getId().value(),
-            AuditType.FINANCE,
-            null,
-            clock.now()));
+  private void startBatch(PayoutBatch batch, IdempotencyKey key) {
+    disburser.startBatch(batch, key);
+  }
+
+  private PayoutBatch finaliseBatch(String batchId, long totalMinor, int count) {
+    return disburser.finaliseBatch(batchId, totalMinor, count);
   }
 
   private static void requireActor(String adminActorId) {

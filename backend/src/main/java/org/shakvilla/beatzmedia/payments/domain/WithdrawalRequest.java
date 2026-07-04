@@ -11,10 +11,12 @@ import org.shakvilla.beatzmedia.platform.domain.Money;
  * ledger txn (DEBIT {@code creator_payable}, CREDIT {@code payout_clearing}) so a second concurrent
  * withdrawal sees the reduced balance and cannot double-spend it. Framework-free.
  *
- * <p>The {@code amount} is the gross the creator draws; {@code fee} is the informational rail fee
- * from {@code PlatformSettings} (never hard-coded). {@code reserveTxnId} traces the reservation
- * posting. Status transitions: {@code PENDING/READY → PAID} (executed) or {@code → FAILED}
- * (reversed).
+ * <p>The {@code amount} is the gross the creator draws. {@code fee} is the <strong>informational
+ * rail-side cost</strong> from {@code PlatformSettings} (never hard-coded) — it is shown to the
+ * creator pre-confirmation but is <strong>NOT posted to the ledger</strong> as a separate leg (the
+ * reservation debits the GROSS; the fee is the provider's charge, not platform revenue — ADR-25 /
+ * review F2). {@code reserveTxnId} traces the reservation posting. Status transitions: {@code
+ * PENDING/READY → PAID} (executed) or {@code → FAILED} (reversed).
  */
 public final class WithdrawalRequest {
 

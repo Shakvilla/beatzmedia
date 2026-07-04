@@ -14,6 +14,7 @@ import org.shakvilla.beatzmedia.payments.domain.AccountId;
 import org.shakvilla.beatzmedia.payments.domain.IdempotencyKey;
 import org.shakvilla.beatzmedia.payments.domain.MethodKind;
 import org.shakvilla.beatzmedia.payments.domain.PayoutBatch;
+import org.shakvilla.beatzmedia.payments.domain.PayoutBatchKind;
 import org.shakvilla.beatzmedia.payments.domain.PayoutMethod;
 import org.shakvilla.beatzmedia.payments.domain.PayoutMethodId;
 import org.shakvilla.beatzmedia.payments.domain.PayoutTxn;
@@ -172,6 +173,25 @@ public class JpaPayoutRepository implements PayoutRepository {
   }
 
   @Override
+  public Optional<WithdrawalRequest> findWithdrawalForUpdate(WithdrawalId id) {
+    // SELECT ... FOR UPDATE SKIP LOCKED on the single row: if another concurrent run/send already
+    // holds this withdrawal's lock, this returns EMPTY (skipped) instead of blocking — so the caller's
+    // REQUIRES_NEW disburse no-ops for a row another run is already paying, and the two runs never
+    // both process one withdrawal (finding F1). The lock is held until THIS tx commits/rolls back.
+    @SuppressWarnings("unchecked")
+    List<String> rows =
+        em.createNativeQuery(
+                "SELECT id FROM withdrawal_request WHERE id = :id FOR UPDATE SKIP LOCKED")
+            .setParameter("id", id.value())
+            .getResultList();
+    if (rows.isEmpty()) {
+      return Optional.empty();
+    }
+    WithdrawalRequestEntity entity = em.find(WithdrawalRequestEntity.class, id.value());
+    return Optional.ofNullable(entity).map(JpaPayoutRepository::toWithdrawalDomain);
+  }
+
+  @Override
   public List<WithdrawalRequest> findPayableWithdrawals() {
     return em
         .createQuery(
@@ -182,6 +202,23 @@ public class JpaPayoutRepository implements PayoutRepository {
         .stream()
         .map(JpaPayoutRepository::toWithdrawalDomain)
         .toList();
+  }
+
+  @Override
+  public List<WithdrawalId> findPayableWithdrawalIds(int limit) {
+    // Plain, LOCK-FREE candidate read (oldest first). The row lock is taken per-withdrawal inside the
+    // REQUIRES_NEW disburse boundary via findWithdrawalForUpdate (SKIP LOCKED), so this scan must NOT
+    // hold locks (that would self-deadlock against the inner boundary). Overlapping candidates across
+    // concurrent runs are fine — the per-row SKIP LOCKED claim partitions the actual work (finding F1).
+    @SuppressWarnings("unchecked")
+    List<String> rows =
+        em.createNativeQuery(
+                "SELECT id FROM withdrawal_request "
+                    + "WHERE status IN ('pending','ready') "
+                    + "ORDER BY requested_at ASC LIMIT :lim")
+            .setParameter("lim", limit)
+            .getResultList();
+    return rows.stream().map(WithdrawalId::new).toList();
   }
 
   // ---- batches / txns -----------------------------------------------------
@@ -202,6 +239,25 @@ public class JpaPayoutRepository implements PayoutRepository {
     em.merge(entity);
     em.flush();
     return batch;
+  }
+
+  @Override
+  public PayoutBatch saveBatchTotals(String batchId, long totalMinor, int count) {
+    PayoutBatchEntity entity = em.find(PayoutBatchEntity.class, batchId);
+    if (entity == null) {
+      return null;
+    }
+    entity.totalMinor = totalMinor;
+    entity.count = count;
+    em.merge(entity);
+    em.flush();
+    return PayoutBatch.reconstitute(
+        entity.id,
+        PayoutBatchKind.valueOf(entity.kind.trim().toUpperCase()),
+        entity.runBy,
+        entity.totalMinor,
+        entity.count,
+        entity.runAt);
   }
 
   @Override
@@ -268,8 +324,25 @@ public class JpaPayoutRepository implements PayoutRepository {
     return false;
   }
 
+  /**
+   * Derive a stable {@code int8} advisory-lock key from the FULL idempotency-key string via SHA-256
+   * (first 8 bytes → long), NOT {@code String.hashCode()} duplicated into both halves (finding F3 —
+   * that scheme collapsed to a single 32-bit space, so distinct keys with equal {@code hashCode}
+   * needlessly serialised). This is an availability optimisation only; correctness is guaranteed by
+   * the {@code uq_withdrawal_idem} UNIQUE constraint regardless of lock collisions.
+   */
   private static long advisoryKey(String idempotencyKey) {
-    int h = idempotencyKey.hashCode();
-    return ((long) h << 32) | Integer.toUnsignedLong(h);
+    try {
+      byte[] digest =
+          java.security.MessageDigest.getInstance("SHA-256")
+              .digest(idempotencyKey.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+      long k = 0L;
+      for (int i = 0; i < 8; i++) {
+        k = (k << 8) | (digest[i] & 0xFFL);
+      }
+      return k;
+    } catch (java.security.NoSuchAlgorithmException e) {
+      throw new IllegalStateException("SHA-256 unavailable", e);
+    }
   }
 }
