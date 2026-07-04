@@ -163,9 +163,11 @@ public class PayoutRunService implements RunWeeklyPayouts, SendSinglePayout {
       batch.recordPayment(w.getAmount().minor());
       audit(batch.getRunBy(), w);
       return txn;
-    } catch (DuplicatePayoutException e) {
-      // Already paid by a prior run — no ledger double-debit occurred (the disburse posting is also
-      // exactly-once). Skip silently so a retry is safe (INV-6).
+    } catch (DuplicatePayoutException
+        | org.shakvilla.beatzmedia.payments.application.port.out.DuplicatePostingException e) {
+      // Already paid by a prior run — the disburse posting is exactly-once (ledger_posting header) AND
+      // the payout txn is exactly-once (uq_payout_per_withdrawal). Whichever guard trips first, NO
+      // ledger double-debit occurred. Skip silently so a retry is safe (INV-6).
       return null;
     }
   }
