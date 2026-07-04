@@ -298,7 +298,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-CAT-1, WU-MED-1]
     llfrs: [LLFR-PODCAST-01.1, LLFR-PODCAST-01.2, LLFR-PODCAST-01.3]
-    status: in_progress
+    status: done   # PR #71 merged 2026-07-04 (squash 48da6b3). Added commerce GetOwnedEpisodeIds port. Carryovers: global Jackson NON_NULL customizer (optional-boolean DTOs repo-wide); preview-seconds -> PlatformSettings.
   - id: WU-POD-2
     title: Tipping (90/10 via payments)
     phase: 4
