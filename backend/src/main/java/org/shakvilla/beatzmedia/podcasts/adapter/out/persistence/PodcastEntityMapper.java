@@ -22,6 +22,7 @@ final class PodcastEntityMapper {
         new PodcastId(e.id),
         e.title,
         e.publisher,
+        e.creatorAccountId,
         e.image,
         PodcastCategory.fromWireValue(e.category),
         e.description,

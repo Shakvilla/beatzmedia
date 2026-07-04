@@ -332,50 +332,54 @@ ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, color_class = EXCLUDED.co
 -- Podcasts (WU-POD-1: Frontend/src/lib/podcast-data.ts `podcasts`)
 -- ==========================================================================
 
-INSERT INTO podcast (id, title, publisher, image, category, description, episode_count, popularity, season_pass_price_minor, season_pass_currency, supports_tips)
+-- creator_account_id: the owning creator (tip recipient, WU-POD-2). Dev-seed placeholder account ids
+-- (studio authoring / real creator accounts arrive with WU-STU-2). A tip to a show whose
+-- creator_account_id is NULL is rejected as TIPS_DISABLED.
+INSERT INTO podcast (id, title, publisher, creator_account_id, image, category, description, episode_count, popularity, season_pass_price_minor, season_pass_currency, supports_tips)
 VALUES
-  ('sincerely-accra', 'Sincerely, Accra', 'YGTV Africa',
+  ('sincerely-accra', 'Sincerely, Accra', 'YGTV Africa', 'creator-ygtv-africa',
    'https://images.unsplash.com/photo-1516280440614-37939bbacd81?q=80&w=600&auto=format&fit=crop',
    'Culture', 'Honest conversations about life, love and growing up in the city.',
    142, 98, 1200, 'GHS', TRUE),
 
-  ('front-page-gh', 'Front Page', 'Citi Newsroom',
+  ('front-page-gh', 'Front Page', 'Citi Newsroom', 'creator-citi-newsroom',
    'https://images.unsplash.com/photo-1504711434969-e33886168f5c?q=80&w=600&auto=format&fit=crop',
    'News & Politics', 'A daily breakdown of the stories shaping Ghana.',
    410, 95, 1000, 'GHS', TRUE),
 
-  ('cedi-talk', 'Cedi Talk', 'Accra Business Network',
+  ('cedi-talk', 'Cedi Talk', 'Accra Business Network', 'creator-accra-biz-net',
    'https://images.unsplash.com/photo-1611974789855-9c2a0a7236a3?q=80&w=600&auto=format&fit=crop',
    'Business', 'Money, markets and building wealth in Ghana.',
    88, 90, 1500, 'GHS', TRUE),
 
-  ('konnect-comedy', 'The Konnect', 'Konnect Media',
+  ('konnect-comedy', 'The Konnect', 'Konnect Media', 'creator-konnect-media',
    'https://images.unsplash.com/photo-1521119989659-a83eee488004?q=80&w=600&auto=format&fit=crop',
    'Comedy', 'Three friends, zero filter, plenty of laughs.',
    64, 88, NULL, NULL, TRUE),
 
-  ('black-stars-pod', 'Black Stars Breakdown', 'Joy Sports',
+  ('black-stars-pod', 'Black Stars Breakdown', 'Joy Sports', 'creator-joy-sports',
    'https://images.unsplash.com/photo-1431324155629-1a6deb1dec8d?q=80&w=600&auto=format&fit=crop',
    'Sports', 'Everything Ghana football, from the GPL to the Black Stars.',
    120, 84, NULL, NULL, TRUE),
 
-  ('tech-nkwa', 'Tech Nkwa', 'Accra Tech Hub',
+  ('tech-nkwa', 'Tech Nkwa', 'Accra Tech Hub', 'creator-accra-tech-hub',
    'https://images.unsplash.com/photo-1518770660439-4636190af475?q=80&w=600&auto=format&fit=crop',
    'Tech', 'Africa''s startup and technology scene, decoded.',
    52, 78, NULL, NULL, TRUE),
 
-  ('asaase-stories', 'Asaase Stories', 'Asaase Radio',
+  ('asaase-stories', 'Asaase Stories', 'Asaase Radio', 'creator-asaase-radio',
    'https://images.unsplash.com/photo-1457369804613-52c61a468e7d?q=80&w=600&auto=format&fit=crop',
    'Storytelling', 'Folktales and true stories from across the motherland.',
    37, 72, NULL, NULL, TRUE),
 
-  ('well-being-gh', 'Body & Soul GH', 'Wellness Accra',
+  ('well-being-gh', 'Body & Soul GH', 'Wellness Accra', 'creator-wellness-accra',
    'https://images.unsplash.com/photo-1478737270239-2f02b77fc618?q=80&w=600&auto=format&fit=crop',
    'Health', 'Practical wellness and mental health for busy Ghanaians.',
    45, 68, NULL, NULL, TRUE)
 ON CONFLICT (id) DO UPDATE
   SET title                   = EXCLUDED.title,
       publisher                = EXCLUDED.publisher,
+      creator_account_id       = EXCLUDED.creator_account_id,
       image                    = EXCLUDED.image,
       category                 = EXCLUDED.category,
       description              = EXCLUDED.description,
