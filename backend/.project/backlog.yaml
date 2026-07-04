@@ -307,7 +307,8 @@ work_units:
     owner: payments-specialist
     depends_on: [WU-PAY-3, WU-POD-1]
     llfrs: [LLFR-PODCAST-02.1]
-    status: todo
+    human_gate: [OQ-2]   # tip fee % (10%) applied from PlatformSettings.tipFeePct — confirm before prod money
+    status: in_progress
   - id: WU-EVT-1
     title: Events browse + detail + tier availability
     phase: 4
