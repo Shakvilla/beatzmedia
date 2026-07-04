@@ -269,7 +269,7 @@ work_units:
     owner: payments-specialist
     depends_on: [WU-PAY-3, WU-IDN-4]
     llfrs: [LLFR-PAYMENTS-03.1, LLFR-PAYMENTS-03.2, LLFR-PAYMENTS-03.3, LLFR-PAYMENTS-03.4]
-    status: in_progress
+    status: done   # PR #67 merged 2026-07-04 (squash 5047de8). Prod gates: OQ-2 fee %, F2 withdrawal-fee=rail-cost (ADR-25) await confirmation. Carryovers: encrypt payout_method.detail + admin payout artist-name resolution at future WUs.
   - id: WU-PAY-5
     title: Refunds/chargebacks/disputes + ownership revocation + clawback
     phase: 3
