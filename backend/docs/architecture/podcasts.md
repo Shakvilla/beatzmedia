@@ -458,6 +458,20 @@ stateDiagram-v2
   same `TipResult`, no repeated charge or duplicate `TipReceived`.
 - **Events.** `TipReceived { tipId, podcastId, creatorId, amount, fanId, at }` published AFTER_SUCCESS
   via outbox; consumed by `notifications` for the creator `tip` notification. No JPA entities in events.
+  **Deferred-AC (WU-POD-2).** LLFR-PODCAST-02.1 also requires the creator `tip` notification, but the
+  `notifications` module does not exist yet (WU-NOT-1/WU-NOT-2). The money half is complete in
+  WU-POD-2; the notification half is **tracked-but-deferred** to a future WU-NOT-* which consumes the
+  **payments-side** `TipReceived` already emitted on settlement (`TipLedgerPoster`) — no podcasts
+  re-work needed. This is recorded in `backlog.yaml` (WU-POD-2 entry) so it is not silently dropped
+  when POD-2 is marked done.
+- **Rate limiting (WU-POD-2 realized).** `POST /v1/podcasts/:id/tip` is per-account token-bucket
+  limited (security-authz §6: 20/min, burst 10) by `PodcastTipRateLimiter` (mirrors commerce's
+  `CheckoutRateLimiter`) → `429` + `Retry-After`, checked before any charge is initiated.
+- **Amount bounds (WU-POD-2 realized).** An overflowing tip amount (too large for `long`) is caught
+  at the REST boundary and mapped to `VALIDATION` (422), never an unmapped 500; the platform charge
+  ceiling (`PlatformSettings.maxChargeMinor`) is enforced in payments' `IssueTipService` →
+  `CHARGE_AMOUNT_EXCEEDED` (422), so ALL tip callers (podcasts and the direct `/v1/payments/tips`
+  surface) get it — closing a real gap in the WU-PAY-3 tip entry that only checked positivity.
 - **Audit (INV-10).** The tip is a privileged money mutation; the audit entry is appended by
   `payments` on the `IssueTip` path (this module emits the trigger, not the ledger row).
 - **Feature flag.** `flags.tipping` and `flags.podcasts` (PlatformSettings) gate the tip and browse

@@ -308,6 +308,11 @@ work_units:
     depends_on: [WU-PAY-3, WU-POD-1]
     llfrs: [LLFR-PODCAST-02.1]
     human_gate: [OQ-2]   # tip fee % (10%) applied from PlatformSettings.tipFeePct — confirm before prod money
+    # DEFERRED (tracked, not dropped): LLFR-PODCAST-02.1 also wants a `tip` notification delivered to
+    # the creator. The notifications module does not exist yet (WU-NOT-1/WU-NOT-2). The money half
+    # (90/10 charge → settlement → split) is DONE in WU-POD-2; the notification half is deferred to a
+    # future WU-NOT-* which will consume the payments-side `TipReceived` event already emitted on
+    # settlement (no podcasts re-work needed — the event is published). See podcasts.md §9 / §12.
     status: in_progress
   - id: WU-EVT-1
     title: Events browse + detail + tier availability
