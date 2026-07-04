@@ -15,9 +15,11 @@ import org.shakvilla.beatzmedia.payments.application.port.in.PayoutsView;
 import org.shakvilla.beatzmedia.payments.application.port.in.PayoutsView.BySource;
 import org.shakvilla.beatzmedia.payments.application.port.out.LedgerRepository;
 import org.shakvilla.beatzmedia.payments.application.port.out.LedgerRepository.CreatorLedgerRow;
+import org.shakvilla.beatzmedia.payments.application.port.out.PayoutRepository;
 import org.shakvilla.beatzmedia.payments.domain.AccountId;
 import org.shakvilla.beatzmedia.payments.domain.CreatorBalance;
 import org.shakvilla.beatzmedia.payments.domain.LedgerType;
+import org.shakvilla.beatzmedia.payments.domain.PayoutMethod;
 
 /**
  * Read service for {@link GetPayouts} (LLFR-PAYMENTS-02.2). Projects the creator's ledger balance +
@@ -41,10 +43,12 @@ public class GetPayoutsService implements GetPayouts {
       DateTimeFormatter.ofPattern("MMM dd").withZone(ZoneOffset.UTC);
 
   private final LedgerRepository ledger;
+  private final PayoutRepository payouts;
 
   @Inject
-  public GetPayoutsService(LedgerRepository ledger) {
+  public GetPayoutsService(LedgerRepository ledger, PayoutRepository payouts) {
     this.ledger = ledger;
+    this.payouts = payouts;
   }
 
   @Override
@@ -73,6 +77,12 @@ public class GetPayoutsService implements GetPayouts {
               row.cleared() ? "cleared" : "pending"));
     }
 
+    // Payout methods (WU-PAY-4): the creator's own cash-out destinations, default first.
+    List<PayoutsView.PayoutMethodView> methods =
+        payouts.findMethods(creator).stream()
+            .map(GetPayoutsService::toMethodView)
+            .toList();
+
     return new PayoutsView(
         cedis(balance.availableMinor()),
         cedis(balance.pendingMinor()),
@@ -84,8 +94,13 @@ public class GetPayoutsService implements GetPayouts {
         List.of(),
         // OQ-4: royalties always 0 (no royalty model — ADR-20).
         new BySource(cedis(salesNet), BigDecimal.ZERO.setScale(2), cedis(tipsNet)),
-        List.of(), // payout methods: WU-PAY-4
+        methods,
         txns);
+  }
+
+  private static PayoutsView.PayoutMethodView toMethodView(PayoutMethod m) {
+    return new PayoutsView.PayoutMethodView(
+        m.getId().value(), m.getLabel(), m.getDetail(), m.getKind().name(), m.isDefault());
   }
 
   private static String sourceLabel(LedgerType type) {
