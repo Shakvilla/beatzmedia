@@ -69,13 +69,21 @@ public class HandleChargebackService {
   }
 
   /**
-   * Handle a chargeback event for a settled intent. Runs in its own transaction so a duplicate does
-   * not poison the webhook handler. {@code providerCaseId} is the provider's dispute/case reference
-   * used for idempotency.
+   * Handle a chargeback event for a settled intent. NOT itself {@code @Transactional} — it is a
+   * coordinator over three independently-committed steps so no boundary holds a lock on the dispute
+   * row while a nested boundary needs it (the self-deadlock the naive one-transaction version hit):
+   *
+   * <ol>
+   *   <li>{@link #resolveOrOpen} — open (or find) the dispute, committing it in its OWN tx so the
+   *       poster's separate tx can SEE it.
+   *   <li>LOST → {@link RefundClawbackPoster#postRefund} (its OWN tx, FOR UPDATE + exactly-once).
+   *   <li>WON → {@link #reject} (its OWN tx).
+   * </ol>
+   *
+   * {@code providerCaseId} is the provider's dispute/case reference used for idempotency.
    */
-  @Transactional(Transactional.TxType.REQUIRES_NEW)
   public void handle(PaymentIntent intent, String providerCaseId, Outcome outcome, String reason) {
-    // Resolve (or open) the dispute for this chargeback case, keyed idempotently on the provider case.
+    // Step 1: open-or-find the dispute in its own committed transaction.
     Dispute dispute = resolveOrOpen(intent, providerCaseId, reason);
     if (dispute == null) {
       // A concurrent delivery already opened + resolved this case; nothing to do.
@@ -83,42 +91,40 @@ public class HandleChargebackService {
     }
 
     switch (outcome) {
-      case OPEN -> {
-        // Case opened; the dispute now exists (open). No money moves until it resolves.
-        LOG.debugf("chargeback opened for order %s (case %s)", intent.getOrderRef().value(), providerCaseId);
-      }
-      case LOST -> {
-        // Platform lost: force a full refund — clawback + ownership revocation (INV-9). Reuse the
-        // same exactly-once poster admin refunds use; the reload picks up the current (open) dispute.
-        Dispute open =
-            disputes.findDisputeForUpdate(dispute.getId()).orElse(dispute);
-        if (open.getStatus().isAdjudicable()) {
-          disputes.saveEvent(
-              DisputeEvent.of(
-                  ids.newId(), open.getId(),
-                  "Chargeback LOST — provider notice; forcing refund", "provider", clock.now()));
-          clawbackPoster.postRefund(open, open.getAmount(), reasonOr(reason, "chargeback lost"), "provider");
-        }
-      }
-      case WON -> {
-        Dispute open = disputes.findDisputeForUpdate(dispute.getId()).orElse(dispute);
-        if (open.markRejected()) {
-          disputes.saveDispute(open);
-          disputes.saveEvent(
-              DisputeEvent.of(
-                  ids.newId(), open.getId(),
-                  "Chargeback WON — provider notice; no refund", "provider", clock.now()));
-        }
-      }
+      case OPEN ->
+          // Case opened; the dispute now exists (open). No money moves until it resolves.
+          LOG.debugf(
+              "chargeback opened for order %s (case %s)", intent.getOrderRef().value(), providerCaseId);
+      case LOST ->
+          // Platform lost: force a full refund — clawback + ownership revocation (INV-9). Reuse the
+          // same exactly-once poster admin refunds use; it re-loads the dispute FOR UPDATE in its OWN
+          // tx (which is why step 1 committed first). A no-op (already refunded) is fine on re-delivery.
+          clawbackPoster.postRefund(
+              dispute.getId(), dispute.getAmount(), reasonOr(reason, "chargeback lost"), "provider");
+      case WON -> reject(dispute.getId(), reason);
+    }
+  }
+
+  /** Reject a WON chargeback in its own transaction (no money moves). */
+  @Transactional(Transactional.TxType.REQUIRES_NEW)
+  void reject(DisputeId id, String reason) {
+    Dispute dispute = disputes.findDisputeForUpdate(id).orElse(null);
+    if (dispute != null && dispute.markRejected()) {
+      disputes.saveDispute(dispute);
+      disputes.saveEvent(
+          DisputeEvent.of(
+              ids.newId(), id, "Chargeback WON — provider notice; no refund", "provider", clock.now()));
     }
   }
 
   /**
    * Find the existing chargeback dispute for the provider case, or open a new one stamped with the
-   * case id (idempotent under re-delivery via {@code uq_dispute_provider_case}). Returns {@code null}
-   * only if a concurrent insert won the case and the row cannot be re-read (defensive).
+   * case id (idempotent under re-delivery via {@code uq_dispute_provider_case}). Committed in its OWN
+   * transaction so a subsequent refund poster tx can see the dispute. Returns {@code null} only if a
+   * concurrent insert won the case and the row cannot be re-read (defensive).
    */
-  private Dispute resolveOrOpen(PaymentIntent intent, String providerCaseId, String reason) {
+  @Transactional(Transactional.TxType.REQUIRES_NEW)
+  Dispute resolveOrOpen(PaymentIntent intent, String providerCaseId, String reason) {
     Optional<Dispute> existing = disputes.findByProviderCase(providerCaseId);
     if (existing.isPresent()) {
       return existing.get();

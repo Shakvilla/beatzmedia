@@ -9,12 +9,16 @@ import org.jboss.logging.Logger;
 import org.shakvilla.beatzmedia.audit.application.port.out.AuditWriter;
 import org.shakvilla.beatzmedia.audit.domain.AuditEntry;
 import org.shakvilla.beatzmedia.audit.domain.AuditType;
+import org.shakvilla.beatzmedia.payments.application.port.in.DisputeView;
 import org.shakvilla.beatzmedia.payments.application.port.out.DisputeRepository;
 import org.shakvilla.beatzmedia.payments.application.port.out.DuplicatePostingException;
 import org.shakvilla.beatzmedia.payments.application.port.out.DuplicateRefundException;
 import org.shakvilla.beatzmedia.payments.application.port.out.LedgerRepository;
 import org.shakvilla.beatzmedia.payments.domain.Dispute;
 import org.shakvilla.beatzmedia.payments.domain.DisputeEvent;
+import org.shakvilla.beatzmedia.payments.domain.DisputeId;
+import org.shakvilla.beatzmedia.payments.domain.DisputeNotFoundException;
+import org.shakvilla.beatzmedia.payments.domain.DisputeStatus;
 import org.shakvilla.beatzmedia.payments.domain.OrderRefunded;
 import org.shakvilla.beatzmedia.payments.domain.Refund;
 import org.shakvilla.beatzmedia.payments.domain.TxnId;
@@ -67,20 +71,29 @@ public class RefundClawbackPoster {
   }
 
   /**
-   * Execute the refund for a dispute that has already been loaded (and its status verified {@code
-   * open}) by the caller under a row lock. Returns {@code true} if THIS call performed the refund;
-   * {@code false} if it was a duplicate (already refunded — the caller returns the current view).
+   * Execute the refund for a dispute in this OWN transaction. Re-loads the dispute {@code FOR UPDATE}
+   * <em>inside</em> this boundary so two concurrent refunds of the same dispute serialise on its row
+   * here (never across a nested boundary — that would self-deadlock), guards {@code open → refunded},
+   * posts the balanced clawback, persists the refund, audits, and emits {@code OrderRefunded}. Returns
+   * {@code true} if THIS call performed the refund; {@code false} if it was a no-op (already refunded /
+   * not open / duplicate claim).
    *
-   * @param dispute the open dispute (loaded FOR UPDATE by the caller)
+   * @param id the dispute to refund
    * @param amount the refund amount (full or partial, positive minor units)
    * @param reason the refund reason (logged on audit + timeline)
-   * @param adminActorId the acting admin (INV-10)
+   * @param adminActorId the acting admin (INV-10; {@code "provider"} for a chargeback)
    */
   @Transactional(Transactional.TxType.REQUIRES_NEW)
-  public boolean postRefund(Dispute dispute, Money amount, String reason, String adminActorId) {
-    // Guard the transition inside this boundary (defense-in-depth alongside the caller's check).
-    if (!dispute.markRefunded()) {
-      return false; // already refunded — no-op
+  public boolean postRefund(DisputeId id, Money amount, String reason, String adminActorId) {
+    // Take the row lock INSIDE this boundary — the loser of two concurrent refunds blocks here until
+    // the winner commits, then re-reads a refunded status and no-ops.
+    Dispute dispute = disputes.findDisputeForUpdate(id).orElse(null);
+    if (dispute == null) {
+      return false; // dispute vanished — nothing to refund
+    }
+    // Guard the transition (open → refunded). An already-refunded/terminal dispute is a no-op.
+    if (dispute.getStatus() != DisputeStatus.open || !dispute.markRefunded()) {
+      return false;
     }
 
     String refundId = ids.newId();
@@ -136,5 +149,16 @@ public class RefundClawbackPoster {
       LOG.debugf("dispute %s already refunded (duplicate claim); ignoring", dispute.getId());
       return false;
     }
+  }
+
+  /**
+   * Read the dispute detail + timeline in a FRESH transaction (REQUIRES_NEW) — used by the refund
+   * coordinator to build the response AFTER {@link #postRefund} committed in a sibling transaction, so
+   * the view reflects the committed {@code refunded} status (not a stale first-level-cache read).
+   */
+  @Transactional(Transactional.TxType.REQUIRES_NEW)
+  public DisputeView readView(DisputeId id) {
+    Dispute dispute = disputes.findDispute(id).orElseThrow(() -> new DisputeNotFoundException(id));
+    return DisputeView.of(dispute, disputes.timelineOf(id));
   }
 }
