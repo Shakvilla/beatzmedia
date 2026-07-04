@@ -58,6 +58,8 @@ public enum ErrorCode {
   KYC_BLOCKED,
   PAYOUT_METHOD_IN_USE,
   PAYOUT_METHOD_NOT_FOUND,
+  // ---- Payments codes (WU-PAY-5) — refunds/chargebacks/disputes ----
+  DISPUTE_NOT_FOUND,
   // ---- Commerce codes (WU-COM-1) ----
   ALREADY_OWNED,
   NOT_STACKABLE,
