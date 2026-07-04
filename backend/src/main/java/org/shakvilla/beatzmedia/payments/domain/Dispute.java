@@ -95,6 +95,29 @@ public final class Dispute {
     return true;
   }
 
+  /**
+   * Force {@code (open|escalated) → refunded} on a LOST provider chargeback (INV-9). A chargeback the
+   * platform loses is a provider-authority decision that OVERRIDES an admin escalation: the buyer's
+   * bank has already reversed the funds, so ownership must be revoked and the credit clawed back
+   * regardless of whether an admin had escalated the dispute for review. Idempotent: a re-delivered
+   * lost chargeback on an already-{@code refunded} dispute is a no-op ({@code false}); a
+   * {@code rejected} (terminal) dispute cannot be force-refunded.
+   *
+   * @return {@code true} if this call performed the transition (the caller then posts the clawback)
+   * @throws IllegalTransitionException from a {@code rejected} status
+   */
+  public boolean forceRefundedFromChargeback() {
+    if (status == DisputeStatus.refunded) {
+      return false;
+    }
+    if (status != DisputeStatus.open && status != DisputeStatus.escalated) {
+      throw new IllegalTransitionException(
+          "dispute " + id + " cannot be force-refunded from status " + status.wire());
+    }
+    this.status = DisputeStatus.refunded;
+    return true;
+  }
+
   /** Guard {@code open → rejected} (admin rejects, no money moves). Idempotent on already-rejected. */
   public boolean markRejected() {
     if (status == DisputeStatus.rejected) {

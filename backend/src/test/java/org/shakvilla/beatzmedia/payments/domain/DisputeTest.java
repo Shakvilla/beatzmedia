@@ -80,6 +80,35 @@ class DisputeTest {
   }
 
   @Test
+  void a_lost_chargeback_forces_refund_from_open() {
+    Dispute d = open();
+    assertTrue(d.forceRefundedFromChargeback());
+    assertEquals(DisputeStatus.refunded, d.getStatus());
+  }
+
+  @Test
+  void a_lost_chargeback_forces_refund_even_from_escalated_F2() {
+    // F2: a LOST chargeback OVERRIDES an admin escalation — escalated → refunded is allowed via the
+    // chargeback force-transition (a normal markRefunded from escalated would throw).
+    Dispute d = open();
+    d.markEscalated();
+    assertThrows(IllegalTransitionException.class, d::markRefunded);
+    assertTrue(d.forceRefundedFromChargeback(), "lost chargeback forces escalated → refunded");
+    assertEquals(DisputeStatus.refunded, d.getStatus());
+  }
+
+  @Test
+  void a_lost_chargeback_force_refund_is_idempotent_and_blocked_from_rejected() {
+    Dispute refunded = open();
+    refunded.forceRefundedFromChargeback();
+    assertFalse(refunded.forceRefundedFromChargeback(), "re-delivered lost chargeback is a no-op");
+
+    Dispute rejected = open();
+    rejected.markRejected();
+    assertThrows(IllegalTransitionException.class, rejected::forceRefundedFromChargeback);
+  }
+
+  @Test
   void a_chargeback_dispute_carries_its_flag() {
     Dispute d =
         Dispute.open(

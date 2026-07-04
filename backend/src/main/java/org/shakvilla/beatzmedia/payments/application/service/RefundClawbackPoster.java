@@ -19,6 +19,7 @@ import org.shakvilla.beatzmedia.payments.domain.DisputeEvent;
 import org.shakvilla.beatzmedia.payments.domain.DisputeId;
 import org.shakvilla.beatzmedia.payments.domain.DisputeNotFoundException;
 import org.shakvilla.beatzmedia.payments.domain.DisputeStatus;
+import org.shakvilla.beatzmedia.payments.domain.IdempotencyKey;
 import org.shakvilla.beatzmedia.payments.domain.OrderRefunded;
 import org.shakvilla.beatzmedia.payments.domain.Refund;
 import org.shakvilla.beatzmedia.payments.domain.TxnId;
@@ -84,25 +85,58 @@ public class RefundClawbackPoster {
    * @param adminActorId the acting admin (INV-10; {@code "provider"} for a chargeback)
    */
   @Transactional(Transactional.TxType.REQUIRES_NEW)
+  public boolean postRefund(
+      DisputeId id, Money amount, String reason, String adminActorId, IdempotencyKey key) {
+    return postRefund(id, amount, reason, adminActorId, /*fromChargeback*/ false, key);
+  }
+
+  /**
+   * As {@link #postRefund(DisputeId, Money, String, String, IdempotencyKey)}, but a provider chargeback
+   * (no idempotency key; {@code fromChargeback=true} allows the {@code escalated → refunded} transition,
+   * F2 — a LOST chargeback OVERRIDES an admin escalation).
+   */
+  @Transactional(Transactional.TxType.REQUIRES_NEW)
   public boolean postRefund(DisputeId id, Money amount, String reason, String adminActorId) {
+    return postRefund(id, amount, reason, adminActorId, /*fromChargeback*/ true, /*key*/ null);
+  }
+
+  private boolean postRefund(
+      DisputeId id,
+      Money amount,
+      String reason,
+      String adminActorId,
+      boolean fromChargeback,
+      IdempotencyKey key) {
+    // Money-POST idempotency (F3): serialise same-key admin refunds on a transaction-scoped advisory
+    // lock, consistent with InitiateCharge / RequestWithdrawal / payout runs. The durable exactly-once
+    // backstop (uq_refund_per_dispute + ledger_posting claim) still makes a refund happen at most once
+    // per dispute regardless of key. A chargeback carries no key (null) — its idempotency is the
+    // provider case id + the same durable backstop.
+    if (key != null) {
+      disputes.lockForIdempotencyKey(key);
+    }
     // Take the row lock INSIDE this boundary — the loser of two concurrent refunds blocks here until
     // the winner commits, then re-reads a refunded status and no-ops.
     Dispute dispute = disputes.findDisputeForUpdate(id).orElse(null);
     if (dispute == null) {
       return false; // dispute vanished — nothing to refund
     }
-    // Guard the transition (open → refunded). An already-refunded/terminal dispute is a no-op.
-    if (dispute.getStatus() != DisputeStatus.open || !dispute.markRefunded()) {
+    // Guard the transition. A normal refund requires open; a LOST chargeback also accepts escalated
+    // (provider authority overrides an admin escalation, F2). Already-refunded/terminal → no-op.
+    boolean transitioned =
+        fromChargeback ? dispute.forceRefundedFromChargeback() : safeMarkRefunded(dispute);
+    if (!transitioned) {
       return false;
     }
 
     String refundId = ids.newId();
     try {
-      // 1) Balanced ledger clawback: reverse the original split. Exactly-once on ("refund", refundId).
-      //    Drives the creator's available NEGATIVE if the credit was already withdrawn (owed) — the
-      //    projection is signed, so this is modelled explicitly, never skipped (INV-9).
+      // 1) Balanced ledger clawback: reverse the original split PROPORTIONALLY to the (full or partial)
+      //    refund amount. Exactly-once on ("refund", refundId). Drives the creator's available NEGATIVE
+      //    if the credit was already withdrawn (owed) — the projection is signed, so this is modelled
+      //    explicitly, never skipped (INV-9). A full refund reverses exactly the original legs.
       TxnId clawbackTxn =
-          ledger.postRefundReversal(dispute.getPaymentIntentId(), refundId, clock.now());
+          ledger.postRefundReversal(dispute.getPaymentIntentId(), refundId, amount, clock.now());
 
       // 2) Persist the dispute (open → refunded) and the completed refund (uq_refund_per_dispute).
       disputes.saveDispute(dispute);
@@ -149,6 +183,18 @@ public class RefundClawbackPoster {
       LOG.debugf("dispute %s already refunded (duplicate claim); ignoring", dispute.getId());
       return false;
     }
+  }
+
+  /**
+   * Refund transition for the normal (admin) path: {@code open → refunded} only, as a NO-OP (not an
+   * exception) when the dispute is not open (already refunded / rejected / escalated), so a stray
+   * admin refund on a non-open dispute is a benign idempotent no-op rather than a 500.
+   */
+  private static boolean safeMarkRefunded(Dispute dispute) {
+    if (dispute.getStatus() != DisputeStatus.open) {
+      return false;
+    }
+    return dispute.markRefunded();
   }
 
   /**

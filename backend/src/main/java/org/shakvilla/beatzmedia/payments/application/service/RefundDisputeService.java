@@ -101,11 +101,11 @@ public class RefundDisputeService
       throw new ValidationException("refund amount exceeds the disputed amount", "amount");
     }
 
-    // Delegate the money-moving unit to the REQUIRES_NEW poster (exactly-once, F1-isolated). It
-    // re-loads the dispute FOR UPDATE inside its own tx, guards the transition, posts the clawback,
-    // and emits OrderRefunded. A duplicate claim / non-open status is a no-op replay; then return the
-    // current (committed, refunded) view.
-    clawbackPoster.postRefund(id, amount, cmd.reason(), adminActorId);
+    // Delegate the money-moving unit to the REQUIRES_NEW poster (exactly-once, F1-isolated). It takes
+    // the idempotency-key advisory lock (F3), re-loads the dispute FOR UPDATE inside its own tx, guards
+    // the transition, posts the clawback, and emits OrderRefunded. A duplicate claim / non-open status
+    // is a no-op replay; then return the current (committed, refunded) view.
+    clawbackPoster.postRefund(id, amount, cmd.reason(), adminActorId, key);
 
     // Read the committed view through the poster's REQUIRES_NEW read boundary (fresh persistence
     // context that sees the sibling-committed refunded transition, avoiding the stale-L1-cache read).

@@ -42,6 +42,17 @@ public class JpaDisputeRepository implements DisputeRepository {
   }
 
   @Override
+  public void lockForIdempotencyKey(
+      org.shakvilla.beatzmedia.payments.domain.IdempotencyKey key) {
+    // Transaction-scoped advisory lock derived from the refund idempotency key so two same-key admin
+    // refunds serialise (INV-1 / §9.2), consistent with the other money POSTs. The durable
+    // exactly-once backstop remains uq_refund_per_dispute + the ledger_posting claim.
+    em.createNativeQuery("SELECT pg_advisory_xact_lock(:k)")
+        .setParameter("k", advisoryKey(key.value()))
+        .getSingleResult();
+  }
+
+  @Override
   public Dispute saveDispute(Dispute dispute) {
     DisputeEntity entity = em.find(DisputeEntity.class, dispute.getId().value());
     boolean isNew = entity == null;
@@ -196,5 +207,21 @@ public class JpaDisputeRepository implements DisputeRepository {
       }
     }
     return false;
+  }
+
+  /** Derive a stable 64-bit advisory-lock key from the idempotency key (SHA-256, first 8 bytes). */
+  private static long advisoryKey(String idempotencyKey) {
+    try {
+      byte[] digest =
+          java.security.MessageDigest.getInstance("SHA-256")
+              .digest(idempotencyKey.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+      long k = 0L;
+      for (int i = 0; i < 8; i++) {
+        k = (k << 8) | (digest[i] & 0xFFL);
+      }
+      return k;
+    } catch (java.security.NoSuchAlgorithmException e) {
+      throw new IllegalStateException("SHA-256 unavailable", e);
+    }
   }
 }

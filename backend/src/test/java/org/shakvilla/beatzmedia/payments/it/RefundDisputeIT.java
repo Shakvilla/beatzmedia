@@ -278,6 +278,120 @@ class RefundDisputeIT {
     assertEquals(0, ledgerImbalance(), "ledger balanced after chargeback clawback");
   }
 
+  // ---- F2: lost chargeback AFTER an admin escalation still forces refund + clawback + revoke ----
+
+  @Test
+  void chargebackLost_afterAdminEscalation_stillForcesRefundClawbackRevoke() {
+    long n = System.nanoTime();
+    String artist = "rf-esc-artist-" + n;
+    String track = "rf-esc-track-" + n;
+    seedArtist(artist, "RF Esc Artist");
+    seedTrack(track, "RF Esc Track", 500, null, artist, "RF Esc Artist");
+    String buyerEmail = "rf-escbuyer-" + n + "@example.com";
+    String buyerToken = signUp(buyerEmail);
+    String account = accountIdOf(buyerEmail);
+    String reference = buyAndSettle(buyerToken, "track", track);
+    assertEquals(350, availableFor(artist));
+
+    String intentId = intentOfOrder(reference);
+    String providerRef = providerRefOf(intentId);
+    String caseId = "cb-esc-case-" + n;
+    String financeToken = financeToken(n);
+
+    // Provider opens the chargeback → dispute exists (open). Admin ESCALATES it for review.
+    chargebackWebhook(providerRef, "cb-esc-open-" + n, "chargeback", caseId);
+    String disputeId = disputeIdForCase(caseId);
+    given()
+        .header("Authorization", "Bearer " + financeToken)
+        .when().post("/v1/admin/finance/disputes/" + disputeId + "/escalate")
+        .then().statusCode(200).body("status", equalTo("escalated"));
+
+    // Now the provider rules LOST. Even though the dispute is ESCALATED, the lost chargeback must
+    // OVERRIDE the escalation and force refund + clawback + revocation (F2 / INV-9) — not silently skip.
+    chargebackWebhook(providerRef, "cb-esc-lost-" + n, "chargeback_lost", caseId);
+    assertEquals(0, activeGrantCount(account, track), "escalated→lost STILL revokes ownership (F2/INV-9)");
+    assertEquals(0, availableFor(artist), "escalated→lost STILL claws back the credit (F2/INV-9)");
+    assertEquals("refunded", disputeStatus(disputeId), "escalated dispute forced to refunded");
+    assertEquals(1, refundCountForIntent(intentId), "refunded exactly once");
+    assertEquals(0, ledgerImbalance(), "ledger balanced");
+  }
+
+  // ---- F1: partial refund claws back ONLY the proportional share ------------------
+
+  @Test
+  void partialRefund_clawsBackProportionally_notTheFullSplit() {
+    long n = System.nanoTime();
+    String artist = "rf-part-artist-" + n;
+    String track = "rf-part-track-" + n;
+    seedArtist(artist, "RF Part Artist");
+    seedTrack(track, "RF Part Track", 500, null, artist, "RF Part Artist"); // 350 creator / 150 platform
+    String buyerEmail = "rf-partbuyer-" + n + "@example.com";
+    String buyerToken = signUp(buyerEmail);
+    String account = accountIdOf(buyerEmail);
+    String reference = buyAndSettle(buyerToken, "track", track);
+    assertEquals(350, availableFor(artist), "creator credited 350 (70% of 500)");
+
+    String intentId = intentOfOrder(reference);
+    String disputeId = openDispute(reference, intentId, "Refund request", "@buyer", 500, false, null);
+    String financeToken = financeToken(n);
+
+    // Refund ₵2.00 (200) of the ₵5.00 sale. Proportional: platform=round(200*150/500)=60,
+    // creator=200-60=140. Creator credit 350 → 210 (reduced by only 140, NOT the full 350).
+    given()
+        .header("Authorization", "Bearer " + financeToken)
+        .header("Idempotency-Key", "rf-part-" + n)
+        .contentType(ContentType.JSON)
+        .body("{\"amount\":{\"amount\":2.00,\"currency\":\"GHS\"},\"reason\":\"partial\"}")
+        .when().post("/v1/admin/finance/disputes/" + disputeId + "/refund")
+        .then().statusCode(200).body("status", equalTo("refunded"));
+
+    assertEquals(210, availableFor(artist), "creator clawed back ONLY the proportional 140 (F1)");
+    assertEquals(0, ledgerImbalance(), "partial clawback balanced (INV-6)");
+    // Ownership is still revoked on a (partial) refund — the buyer loses the good.
+    assertEquals(0, activeGrantCount(account, track), "refund revokes ownership");
+  }
+
+  // ---- F3: same idempotency-key refund replays to exactly one clawback ------------
+
+  @Test
+  void sameIdempotencyKey_refund_clawsBackExactlyOnce() {
+    long n = System.nanoTime();
+    String artist = "rf-idem-artist-" + n;
+    String track = "rf-idem-track-" + n;
+    seedArtist(artist, "RF Idem Artist");
+    seedTrack(track, "RF Idem Track", 500, null, artist, "RF Idem Artist");
+    String buyerEmail = "rf-idembuyer-" + n + "@example.com";
+    String buyerToken = signUp(buyerEmail);
+    String reference = buyAndSettle(buyerToken, "track", track);
+
+    String intentId = intentOfOrder(reference);
+    String disputeId = openDispute(reference, intentId, "Refund request", "@buyer", 500, false, null);
+    String financeToken = financeToken(n);
+    String key = "rf-idem-key-" + n;
+
+    // Same Idempotency-Key twice → still exactly one refund / one clawback (F3 + durable backstop).
+    for (int i = 0; i < 2; i++) {
+      given()
+          .header("Authorization", "Bearer " + financeToken)
+          .header("Idempotency-Key", key)
+          .contentType(ContentType.JSON)
+          .body("{\"reason\":\"dup key\"}")
+          .when().post("/v1/admin/finance/disputes/" + disputeId + "/refund")
+          .then().statusCode(200).body("status", equalTo("refunded"));
+    }
+    assertEquals(1, refundCount(disputeId), "same-key refund replays to exactly one refund");
+    assertEquals(0, availableFor(artist), "clawed back exactly once (0, not -350)");
+    assertEquals(0, ledgerImbalance(), "ledger balanced");
+
+    // A refund POST without the Idempotency-Key is a 400 (money POST requires it).
+    given()
+        .header("Authorization", "Bearer " + financeToken)
+        .contentType(ContentType.JSON)
+        .body("{\"reason\":\"no key\"}")
+        .when().post("/v1/admin/finance/disputes/" + disputeId + "/refund")
+        .then().statusCode(400);
+  }
+
   // ---- exactly-once: a re-delivered refund does NOT double-clawback / double-revoke
 
   @Test
@@ -655,6 +769,22 @@ class RefundDisputeIT {
     return (String)
         em.createNativeQuery("SELECT id FROM account WHERE email = :e")
             .setParameter("e", email)
+            .getSingleResult();
+  }
+
+  @Transactional
+  String disputeIdForCase(String caseId) {
+    return (String)
+        em.createNativeQuery("SELECT id FROM dispute WHERE provider_case_id = :c")
+            .setParameter("c", caseId)
+            .getSingleResult();
+  }
+
+  @Transactional
+  String disputeStatus(String disputeId) {
+    return (String)
+        em.createNativeQuery("SELECT status FROM dispute WHERE id = :id")
+            .setParameter("id", disputeId)
             .getSingleResult();
   }
 

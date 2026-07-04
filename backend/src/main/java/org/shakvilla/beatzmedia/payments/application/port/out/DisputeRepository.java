@@ -6,6 +6,7 @@ import java.util.Optional;
 import org.shakvilla.beatzmedia.payments.domain.Dispute;
 import org.shakvilla.beatzmedia.payments.domain.DisputeEvent;
 import org.shakvilla.beatzmedia.payments.domain.DisputeId;
+import org.shakvilla.beatzmedia.payments.domain.IdempotencyKey;
 import org.shakvilla.beatzmedia.payments.domain.Refund;
 
 /**
@@ -26,6 +27,17 @@ import org.shakvilla.beatzmedia.payments.domain.Refund;
  * double-delivery.
  */
 public interface DisputeRepository {
+
+  /**
+   * Take a transaction-scoped Postgres advisory lock keyed on the refund idempotency key (INV-1 / §9.2)
+   * so two same-key admin refunds of a dispute serialise, consistent with the other money POSTs
+   * ({@code InitiateCharge} / {@code RequestWithdrawal} / payout runs). The durable exactly-once
+   * backstop is still {@code uq_refund_per_dispute} + the {@code ledger_posting} claim (a refund of one
+   * dispute happens at most once regardless of key), so this lock only makes a same-key retry
+   * serialise cleanly instead of both racing to the durable guard. Must be called on a
+   * {@code @Transactional} boundary.
+   */
+  void lockForIdempotencyKey(IdempotencyKey key);
 
   /** Persist a new or updated dispute (status transitions are guarded in the aggregate). */
   Dispute saveDispute(Dispute dispute);

@@ -59,10 +59,15 @@ public class FakeLedgerRepository implements LedgerRepository {
   }
 
   @Override
-  public TxnId postRefundReversal(String paymentIntentId, String refundId, Instant at) {
-    // Mirror the real adapter: read the original settlement entries (ref_type intent/tip whose ref_id
-    // is the intent id or "<intentId>:<creatorId>"), flip each direction, post under ("refund",
-    // refundId). Balanced by construction because the originals summed to zero.
+  public TxnId postRefundReversal(
+      String paymentIntentId,
+      String refundId,
+      org.shakvilla.beatzmedia.platform.domain.Money refundAmount,
+      Instant at) {
+    // Mirror the real adapter's PROPORTIONAL reversal: aggregate the original legs by kind, scale the
+    // platform-fee reversal to the refund proportionally (half-up), give the creators the exact
+    // remainder (last creator absorbs rounding). Balanced by construction: DEBITs sum to `refund` =
+    // buyer CREDIT.
     List<LedgerEntry> originals =
         entries.stream()
             .filter(
@@ -75,21 +80,91 @@ public class FakeLedgerRepository implements LedgerRepository {
       throw new IllegalStateException(
           "no settlement ledger entries to reverse for intent " + paymentIntentId);
     }
+
+    long originalGross = 0L;
+    long originalPlatformFee = 0L;
+    java.util.LinkedHashMap<LedgerAccountId, Long> creatorShares = new java.util.LinkedHashMap<>();
+    LedgerAccountId providerClearing = null;
+    LedgerAccountId platformRevenue = null;
+    for (LedgerEntry e : originals) {
+      LedgerAccount a = accountById(e.getAccountId());
+      LedgerAccountKind kind = a == null ? null : a.getKind();
+      if (kind == LedgerAccountKind.PROVIDER_CLEARING
+          && e.getDirection() == org.shakvilla.beatzmedia.payments.domain.Direction.DEBIT) {
+        originalGross += e.getAmount().minor();
+        providerClearing = e.getAccountId();
+      } else if (kind == LedgerAccountKind.PLATFORM_REVENUE
+          && e.getDirection() == org.shakvilla.beatzmedia.payments.domain.Direction.CREDIT) {
+        originalPlatformFee += e.getAmount().minor();
+        platformRevenue = e.getAccountId();
+      } else if (kind == LedgerAccountKind.CREATOR_PAYABLE
+          && e.getDirection() == org.shakvilla.beatzmedia.payments.domain.Direction.CREDIT) {
+        creatorShares.merge(e.getAccountId(), e.getAmount().minor(), Long::sum);
+      }
+    }
+
+    long refund = refundAmount.minor();
+    if (refund <= 0 || refund > originalGross) {
+      throw new IllegalStateException(
+          "refund amount " + refund + " out of range (0, gross=" + originalGross + "]");
+    }
+    long platformReversal = proportional(refund, originalPlatformFee, originalGross);
+    long creatorReversalTotal = refund - platformReversal;
+
     TxnId txn = new TxnId("refund-" + txnSeq.incrementAndGet());
     claimPosting(txn, "refund", refundId);
-    List<LedgerEntry> reversal = new ArrayList<>(originals.size());
-    for (LedgerEntry e : originals) {
-      org.shakvilla.beatzmedia.payments.domain.Direction mirror =
-          e.getDirection() == org.shakvilla.beatzmedia.payments.domain.Direction.DEBIT
-              ? org.shakvilla.beatzmedia.payments.domain.Direction.CREDIT
-              : org.shakvilla.beatzmedia.payments.domain.Direction.DEBIT;
+    List<LedgerEntry> reversal = new ArrayList<>();
+    var ccy = refundAmount.currency();
+    reversal.add(
+        LedgerEntry.post(
+            "e-" + seq.incrementAndGet(), txn, providerClearing,
+            org.shakvilla.beatzmedia.payments.domain.Direction.CREDIT,
+            org.shakvilla.beatzmedia.platform.domain.Money.ofMinor(refund, ccy),
+            "refund", refundId, at, at));
+    if (platformReversal > 0) {
       reversal.add(
           LedgerEntry.post(
-              "e-" + seq.incrementAndGet(), txn, e.getAccountId(), mirror, e.getAmount(),
+              "e-" + seq.incrementAndGet(), txn, platformRevenue,
+              org.shakvilla.beatzmedia.payments.domain.Direction.DEBIT,
+              org.shakvilla.beatzmedia.platform.domain.Money.ofMinor(platformReversal, ccy),
               "refund", refundId, at, at));
+    }
+    long originalCreatorTotal = creatorShares.values().stream().mapToLong(Long::longValue).sum();
+    long assigned = 0L;
+    int idx = 0;
+    int last = creatorShares.size() - 1;
+    for (java.util.Map.Entry<LedgerAccountId, Long> e : creatorShares.entrySet()) {
+      long portion;
+      if (idx == last) {
+        portion = creatorReversalTotal - assigned;
+      } else if (originalCreatorTotal > 0) {
+        portion = proportional(creatorReversalTotal, e.getValue(), originalCreatorTotal);
+        assigned += portion;
+      } else {
+        portion = 0L;
+      }
+      if (portion > 0) {
+        reversal.add(
+            LedgerEntry.post(
+                "e-" + seq.incrementAndGet(), txn, e.getKey(),
+                org.shakvilla.beatzmedia.payments.domain.Direction.DEBIT,
+                org.shakvilla.beatzmedia.platform.domain.Money.ofMinor(portion, ccy),
+                "refund", refundId, at, at));
+      }
+      idx++;
     }
     postBalanced(txn, reversal);
     return txn;
+  }
+
+  private static long proportional(long amount, long numerator, long denominator) {
+    if (denominator <= 0 || numerator <= 0) {
+      return 0L;
+    }
+    return java.math.BigDecimal.valueOf(amount)
+        .multiply(java.math.BigDecimal.valueOf(numerator))
+        .divide(java.math.BigDecimal.valueOf(denominator), 0, java.math.RoundingMode.HALF_UP)
+        .longValueExact();
   }
 
   @Override

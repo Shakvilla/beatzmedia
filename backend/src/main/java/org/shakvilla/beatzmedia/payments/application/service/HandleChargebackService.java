@@ -98,7 +98,9 @@ public class HandleChargebackService {
       case LOST ->
           // Platform lost: force a full refund — clawback + ownership revocation (INV-9). Reuse the
           // same exactly-once poster admin refunds use; it re-loads the dispute FOR UPDATE in its OWN
-          // tx (which is why step 1 committed first). A no-op (already refunded) is fine on re-delivery.
+          // tx (which is why step 1 committed first). fromChargeback=true so an ESCALATED dispute is
+          // still force-refunded (provider authority overrides an admin escalation, F2). A no-op
+          // (already refunded) is fine on re-delivery.
           clawbackPoster.postRefund(
               dispute.getId(), dispute.getAmount(), reasonOr(reason, "chargeback lost"), "provider");
       case WON -> reject(dispute.getId(), reason);

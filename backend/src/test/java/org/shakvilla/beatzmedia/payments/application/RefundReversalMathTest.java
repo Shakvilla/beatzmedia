@@ -59,7 +59,7 @@ class RefundReversalMathTest {
     postSale(ledger, "intent-1", creator);
     assertEquals(700, ledger.balanceOf(creator).availableMinor(), "creator credited 70% before refund");
 
-    ledger.postRefundReversal("intent-1", "refund-1", Instant.now());
+    ledger.postRefundReversal("intent-1", "refund-1", ghs(1000), Instant.now());
 
     // The creator credit is clawed back to zero (700 CREDIT + 700 DEBIT).
     assertEquals(0, ledger.balanceOf(creator).availableMinor(), "credit clawed back to zero");
@@ -88,7 +88,7 @@ class RefundReversalMathTest {
     assertEquals(0, ledger.balanceOf(creator).availableMinor(), "available drained by the withdrawal");
 
     // Refund now claws back the 700 credit the creator no longer holds → NEGATIVE (recovery owed).
-    ledger.postRefundReversal("intent-2", "refund-2", Instant.now());
+    ledger.postRefundReversal("intent-2", "refund-2", ghs(1000), Instant.now());
     assertEquals(
         -700, ledger.balanceOf(creator).availableMinor(),
         "clawback of an already-withdrawn credit drives available negative (owed), not skipped");
@@ -100,11 +100,11 @@ class RefundReversalMathTest {
     AccountId creator = new AccountId("creator-3");
     postSale(ledger, "intent-3", creator);
 
-    ledger.postRefundReversal("intent-3", "refund-3", Instant.now());
+    ledger.postRefundReversal("intent-3", "refund-3", ghs(1000), Instant.now());
     // A second reversal for the SAME refund id fails on the exactly-once claim (ledger_posting PK).
     assertThrows(
         DuplicatePostingException.class,
-        () -> ledger.postRefundReversal("intent-3", "refund-3", Instant.now()),
+        () -> ledger.postRefundReversal("intent-3", "refund-3", ghs(1000), Instant.now()),
         "a duplicate refund can never double-clawback");
     // Balance stayed at zero (exactly one clawback applied).
     assertEquals(0, ledger.balanceOf(creator).availableMinor());
@@ -115,7 +115,7 @@ class RefundReversalMathTest {
     FakeLedgerRepository ledger = new FakeLedgerRepository();
     assertThrows(
         IllegalStateException.class,
-        () -> ledger.postRefundReversal("nonexistent-intent", "refund-x", Instant.now()));
+        () -> ledger.postRefundReversal("nonexistent-intent", "refund-x", ghs(100), Instant.now()));
   }
 
   @Test
@@ -129,9 +129,99 @@ class RefundReversalMathTest {
     assertEquals(420, ledger.balanceOf(a).availableMinor()); // 70% of 600
     assertEquals(280, ledger.balanceOf(b).availableMinor()); // 70% of 400
 
-    ledger.postRefundReversal("intent-9", "refund-9", Instant.now());
+    ledger.postRefundReversal("intent-9", "refund-9", ghs(1000), Instant.now());
     assertEquals(0, ledger.balanceOf(a).availableMinor(), "creator A clawed back");
     assertEquals(0, ledger.balanceOf(b).availableMinor(), "creator B clawed back");
+  }
+
+  // ---- F1: proportional PARTIAL refund ---------------------------------------
+
+  /** Post a ₵5.00 sale split (creator 350 / platform 150) for an intent. */
+  private static void postSale500(FakeLedgerRepository ledger, String intentId, AccountId creator) {
+    LedgerAccountId providerClearing =
+        ledger.idOf(ledger.accountFor(LedgerAccountKind.PROVIDER_CLEARING, "mtn"));
+    LedgerAccountId creatorPayable =
+        ledger.idOf(ledger.accountFor(LedgerAccountKind.CREATOR_PAYABLE, creator.value()));
+    LedgerAccountId platformRevenue =
+        ledger.idOf(ledger.accountFor(LedgerAccountKind.PLATFORM_REVENUE, null));
+    TxnId txn = new TxnId("sale5-" + intentId);
+    Instant now = Instant.now();
+    ledger.claimPosting(txn, "intent", intentId);
+    ledger.postBalanced(
+        txn,
+        List.of(
+            LedgerEntry.post("f1", txn, providerClearing, Direction.DEBIT, ghs(500), "intent", intentId, now, now),
+            LedgerEntry.post("f2", txn, creatorPayable, Direction.CREDIT, ghs(350), "intent", intentId, now, now),
+            LedgerEntry.post("f3", txn, platformRevenue, Direction.CREDIT, ghs(150), "intent", intentId, now, now)));
+  }
+
+  private long refundEntrySum(FakeLedgerRepository ledger, String refundId, Direction dir) {
+    return ledger.entries.stream()
+        .filter(e -> e.getRefType().equals("refund") && e.getRefId().equals(refundId))
+        .filter(e -> e.getDirection() == dir)
+        .mapToLong(e -> e.getAmount().minor())
+        .sum();
+  }
+
+  @Test
+  void partial_refund_reverses_proportionally_and_stays_balanced() {
+    FakeLedgerRepository ledger = new FakeLedgerRepository();
+    AccountId creator = new AccountId("f1-creator");
+    postSale500(ledger, "f1-intent", creator); // 350 creator / 150 platform, gross 500
+    assertEquals(350, ledger.balanceOf(creator).availableMinor());
+
+    // Refund ₵2.00 = 200 of the ₵5.00 sale. Proportional: platform = round(200*150/500)=60,
+    // creator = 200-60 = 140 (exact remainder). Buyer credited 200.
+    ledger.postRefundReversal("f1-intent", "f1-refund", ghs(200), Instant.now());
+
+    // Creator credit reduced by ONLY the proportional 140 (was 350 → 210), NOT the full 350.
+    assertEquals(210, ledger.balanceOf(creator).availableMinor(), "creator clawed back proportionally (140)");
+    // DEBIT legs (platform 60 + creator 140) sum to exactly the refunded 200 = the buyer CREDIT.
+    assertEquals(200, refundEntrySum(ledger, "f1-refund", Direction.DEBIT), "DEBIT legs sum to refund");
+    assertEquals(200, refundEntrySum(ledger, "f1-refund", Direction.CREDIT), "buyer credited the refund");
+    // Balanced (INV-6).
+    long signed =
+        ledger.entries.stream()
+            .filter(e -> e.getRefType().equals("refund") && e.getRefId().equals("f1-refund"))
+            .mapToLong(LedgerEntry::signedMinor)
+            .sum();
+    assertEquals(0, signed, "partial reversal is balanced");
+  }
+
+  @Test
+  void partial_refund_odd_amount_hits_rounding_boundary_and_balances() {
+    FakeLedgerRepository ledger = new FakeLedgerRepository();
+    AccountId creator = new AccountId("f1-odd-creator");
+    postSale500(ledger, "f1-odd", creator); // 350 / 150, gross 500
+
+    // Refund ₵3.33 = 333. platform = round(333*150/500)=round(99.9)=100; creator = 333-100 = 233.
+    ledger.postRefundReversal("f1-odd", "f1-odd-refund", ghs(333), Instant.now());
+
+    // Buyer credited exactly the odd refund; DEBIT legs (platform 100 + creator 233) sum to 333.
+    assertEquals(333, refundEntrySum(ledger, "f1-odd-refund", Direction.CREDIT), "buyer credited 333");
+    assertEquals(333, refundEntrySum(ledger, "f1-odd-refund", Direction.DEBIT), "DEBIT legs sum to 333");
+    // Creator clawed back exactly the remainder 233 (was 350 → 117), not the rounded proportional.
+    assertEquals(117, ledger.balanceOf(creator).availableMinor(), "creator clawed back exact remainder 233");
+    long signed =
+        ledger.entries.stream()
+            .filter(e -> e.getRefType().equals("refund") && e.getRefId().equals("f1-odd-refund"))
+            .mapToLong(LedgerEntry::signedMinor)
+            .sum();
+    assertEquals(0, signed, "odd partial reversal is balanced");
+  }
+
+  @Test
+  void full_refund_still_reverses_exactly_the_original_legs() {
+    FakeLedgerRepository ledger = new FakeLedgerRepository();
+    AccountId creator = new AccountId("f1-full-creator");
+    postSale500(ledger, "f1-full", creator); // 350 / 150
+
+    // A FULL refund (amount == gross 500) reverses exactly the original legs (regression-safe).
+    ledger.postRefundReversal("f1-full", "f1-full-refund", ghs(500), Instant.now());
+    assertEquals(0, ledger.balanceOf(creator).availableMinor(), "full refund claws back all 350");
+    // DEBIT legs = platform 150 + creator 350 = 500 = buyer CREDIT (exact original legs).
+    assertEquals(500, refundEntrySum(ledger, "f1-full-refund", Direction.DEBIT), "DEBIT legs sum to full 500");
+    assertEquals(500, refundEntrySum(ledger, "f1-full-refund", Direction.CREDIT), "buyer credited full 500");
   }
 
   private static void postPerCreator(
