@@ -68,5 +68,8 @@ public enum ErrorCode {
   CHECKOUT_KIND_UNSUPPORTED,
   CHARGE_AMOUNT_EXCEEDED,
   // ---- Playback codes (WU-PLY-1) ----
-  MEDIA_UNAVAILABLE
+  MEDIA_UNAVAILABLE,
+  // ---- Podcasts codes (WU-POD-2) — tipping ----
+  TIPS_DISABLED,
+  SELF_TIP_NOT_ALLOWED
 }

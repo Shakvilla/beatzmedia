@@ -25,6 +25,13 @@ public class PodcastEntity {
   @Column(name = "publisher", nullable = false)
   public String publisher;
 
+  /**
+   * Account id of the owning creator (tip recipient, WU-POD-2). Nullable: legacy/seed shows may have
+   * no owning account until studio authoring (WU-STU-2). No cross-module FK (identity's table).
+   */
+  @Column(name = "creator_account_id")
+  public String creatorAccountId;
+
   @Column(name = "image", nullable = false)
   public String image;
 

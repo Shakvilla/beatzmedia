@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 
 import io.quarkus.test.junit.QuarkusTest;
+import io.restassured.http.ContentType;
 
 /**
  * Contract conformance test: validates {@code PodcastDto} / {@code PodcastEpisodeDto} /
@@ -219,5 +220,54 @@ class PodcastContractTest {
         .statusCode(404)
         .body("error.code", equalTo("NOT_FOUND"))
         .body("error.message", notNullValue());
+  }
+
+  // ---- TipResponse (POST /v1/podcasts/:id/tip → 202 { tipId, status }) --------------------------
+
+  @Test
+  void tip_matchesTipResponseShape_202_withTipIdAndStatus() {
+    String tipShowId = "pod-c-tip-show-" + System.nanoTime();
+    seedTippableShow(tipShowId, "pod-c-tip-creator-" + System.nanoTime());
+    String token = signUpFan("pod-c-tip-fan-" + System.nanoTime() + "@example.com");
+
+    given()
+        .header("Authorization", "Bearer " + token)
+        .header("Idempotency-Key", "pod-c-tip-key-" + System.nanoTime())
+        .contentType(ContentType.JSON)
+        .body(
+            "{ \"amount\": 5.00, \"currency\": \"GHS\", \"provider\": \"mtn\","
+                + " \"methodKind\": \"momo\", \"paymentToken\": \"tok-c-tip\" }")
+        .when()
+        .post("/v1/podcasts/" + tipShowId + "/tip")
+        .then()
+        .statusCode(202)
+        .body("tipId", isA(String.class))
+        .body("status", isA(String.class));
+  }
+
+  @Transactional
+  void seedTippableShow(String id, String creator) {
+    em.createNativeQuery(
+            "INSERT INTO podcast (id, title, publisher, creator_account_id, image, category,"
+                + " description, episode_count, popularity, supports_tips)"
+                + " VALUES (:id, 'Tip Contract Show', 'Tip Publisher', :creator, 'img.png', 'Tech',"
+                + " 'desc', 1, 40, true) ON CONFLICT (id) DO NOTHING")
+        .setParameter("id", id)
+        .setParameter("creator", creator)
+        .executeUpdate();
+  }
+
+  private String signUpFan(String email) {
+    given()
+        .contentType(ContentType.JSON)
+        .body("{ \"name\": \"Tip Fan\", \"email\": \"%s\", \"password\": \"password123\" }"
+            .formatted(email))
+        .when().post("/v1/auth/signup");
+    return given()
+        .contentType(ContentType.JSON)
+        .body("{ \"email\": \"%s\", \"password\": \"password123\" }".formatted(email))
+        .when().post("/v1/auth/login")
+        .then().statusCode(200)
+        .extract().jsonPath().getString("token");
   }
 }

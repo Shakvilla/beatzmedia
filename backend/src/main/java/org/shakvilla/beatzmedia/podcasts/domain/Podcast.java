@@ -16,6 +16,7 @@ public final class Podcast {
   private final PodcastId id;
   private final String title;
   private final String publisher;
+  private final String creatorAccountId;
   private final String image;
   private final PodcastCategory category;
   private final String description;
@@ -29,6 +30,7 @@ public final class Podcast {
       PodcastId id,
       String title,
       String publisher,
+      String creatorAccountId,
       String image,
       PodcastCategory category,
       String description,
@@ -49,6 +51,7 @@ public final class Podcast {
     this.id = id;
     this.title = title;
     this.publisher = publisher;
+    this.creatorAccountId = creatorAccountId;
     this.image = image;
     this.category = category;
     this.description = description;
@@ -69,6 +72,17 @@ public final class Podcast {
 
   public String publisher() {
     return publisher;
+  }
+
+  /**
+   * The account id of the show's owning creator — the tip recipient (WU-POD-2). Resolved
+   * server-side from the persisted {@code podcast.creator_account_id} column; NEVER client-supplied.
+   * May be {@code null} for legacy/seed shows with no owning account yet (studio authoring is
+   * WU-STU-2) — {@code TipShow} rejects such a show as not-tippable rather than posting money to a
+   * phantom recipient.
+   */
+  public Optional<String> creatorAccountId() {
+    return Optional.ofNullable(creatorAccountId);
   }
 
   public String image() {

@@ -35,12 +35,12 @@ class ListPodcastsServiceTest {
         new FakePodcastRepository()
             .withShow(
                 new Podcast(
-                    new PodcastId("show-culture"), "Culture Show", "Pub", "img.png",
-                    PodcastCategory.CULTURE, "desc", 10, 90, Money.ofMinor(1200, Currency.GHS),
-                    true, CREATED))
+                    new PodcastId("show-culture"), "Culture Show", "Pub", "creator-culture",
+                    "img.png", PodcastCategory.CULTURE, "desc", 10, 90,
+                    Money.ofMinor(1200, Currency.GHS), true, CREATED))
             .withShow(
                 new Podcast(
-                    new PodcastId("show-tech"), "Tech Show", "Pub", "img.png",
+                    new PodcastId("show-tech"), "Tech Show", "Pub", "creator-tech", "img.png",
                     PodcastCategory.TECH, "desc", 5, 50, null, false, CREATED));
     service = new ListPodcastsService(repository);
   }

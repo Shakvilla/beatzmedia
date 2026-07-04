@@ -20,6 +20,7 @@ import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway;
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway.ChargeHandle;
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentRepository;
 import org.shakvilla.beatzmedia.payments.domain.AccountId;
+import org.shakvilla.beatzmedia.payments.domain.ChargeAmountExceededException;
 import org.shakvilla.beatzmedia.payments.domain.IdempotencyConflictException;
 import org.shakvilla.beatzmedia.payments.domain.IdempotencyKey;
 import org.shakvilla.beatzmedia.payments.domain.OrderRef;
@@ -29,6 +30,7 @@ import org.shakvilla.beatzmedia.payments.domain.ProviderException;
 import org.shakvilla.beatzmedia.payments.domain.TipRef;
 import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
 import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
+import org.shakvilla.beatzmedia.platform.application.port.out.PlatformSettingsProvider;
 import org.shakvilla.beatzmedia.platform.domain.Money;
 
 /**
@@ -56,6 +58,7 @@ public class IssueTipService implements IssueTip {
   private final IdGenerator ids;
   private final Clock clock;
   private final AuditWriter auditWriter;
+  private final PlatformSettingsProvider settings;
 
   @Inject
   public IssueTipService(
@@ -63,12 +66,14 @@ public class IssueTipService implements IssueTip {
       PaymentGateway gateway,
       IdGenerator ids,
       Clock clock,
-      AuditWriter auditWriter) {
+      AuditWriter auditWriter,
+      PlatformSettingsProvider settings) {
     this.repository = repository;
     this.gateway = gateway;
     this.ids = ids;
     this.clock = clock;
     this.auditWriter = auditWriter;
+    this.settings = settings;
   }
 
   @Override
@@ -86,6 +91,14 @@ public class IssueTipService implements IssueTip {
     if (amount == null || !amount.isPositive()) {
       throw new org.shakvilla.beatzmedia.platform.domain.ValidationException(
           "tip amount must be positive", "amount");
+    }
+    // Enforce the platform charge ceiling on the tip path (CHARGE_AMOUNT_EXCEEDED → 422). Unlike a
+    // checkout order (which commerce re-prices and bounds before calling payments), a tip amount is
+    // client-influenced and reaches payments directly, so the ceiling MUST be enforced here — a
+    // within-long but absurd tip is rejected as a mapped 422, never sent to the provider.
+    long maxCharge = settings.current().maxChargeMinor();
+    if (amount.minor() > maxCharge) {
+      throw new ChargeAmountExceededException(amount.minor(), maxCharge);
     }
 
     // Serialise concurrent same-key tips before the read/provider/save window (see InitiateCharge).

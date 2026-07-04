@@ -49,8 +49,8 @@ class ListEpisodesServiceTest {
   void setUp() {
     Podcast show =
         new Podcast(
-            SHOW, "Show One", "Publisher", "img.png", PodcastCategory.CULTURE, null, 2, 10, null,
-            true, PUBLISHED);
+            SHOW, "Show One", "Publisher", "creator-1", "img.png", PodcastCategory.CULTURE, null, 2,
+            10, null, true, PUBLISHED);
     repository =
         new FakePodcastRepository()
             .withShow(show)
