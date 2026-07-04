@@ -7,7 +7,6 @@ import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 
 import org.jboss.logging.Logger;
-import org.shakvilla.beatzmedia.payments.adapter.out.persistence.JpaDisputeRepository;
 import org.shakvilla.beatzmedia.payments.application.port.out.DisputeRepository;
 import org.shakvilla.beatzmedia.payments.domain.Dispute;
 import org.shakvilla.beatzmedia.payments.domain.DisputeEvent;
@@ -46,8 +45,6 @@ public class HandleChargebackService {
   private static final Logger LOG = Logger.getLogger(HandleChargebackService.class);
 
   private final DisputeRepository disputes;
-  private final JpaDisputeRepository disputeAdapter;
-  private final RefundDisputeService refundService;
   private final RefundClawbackPoster clawbackPoster;
   private final IdGenerator ids;
   private final Clock clock;
@@ -55,14 +52,10 @@ public class HandleChargebackService {
   @Inject
   public HandleChargebackService(
       DisputeRepository disputes,
-      JpaDisputeRepository disputeAdapter,
-      RefundDisputeService refundService,
       RefundClawbackPoster clawbackPoster,
       IdGenerator ids,
       Clock clock) {
     this.disputes = disputes;
-    this.disputeAdapter = disputeAdapter;
-    this.refundService = refundService;
     this.clawbackPoster = clawbackPoster;
     this.ids = ids;
     this.clock = clock;
@@ -141,7 +134,7 @@ public class HandleChargebackService {
             intent.getAmount(),
             true,
             clock.now());
-    Optional<Dispute> saved = disputeAdapter.saveChargebackDispute(fresh, providerCaseId);
+    Optional<Dispute> saved = disputes.saveChargebackDispute(fresh, providerCaseId);
     if (saved.isPresent()) {
       disputes.saveEvent(
           DisputeEvent.of(

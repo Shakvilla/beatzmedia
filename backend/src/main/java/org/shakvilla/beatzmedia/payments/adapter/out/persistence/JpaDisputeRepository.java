@@ -96,12 +96,7 @@ public class JpaDisputeRepository implements DisputeRepository {
         .map(JpaDisputeRepository::toDomain);
   }
 
-  /**
-   * Persist a dispute opened from a provider chargeback, stamping its {@code provider_case_id} so a
-   * re-delivered chargeback event collides on {@code uq_dispute_provider_case} (durable idempotency).
-   * Separate from {@link #saveDispute} because the domain aggregate deliberately does not carry the
-   * provider case id (it is an infrastructure idempotency detail).
-   */
+  @Override
   public Optional<Dispute> saveChargebackDispute(Dispute dispute, String providerCaseId) {
     try {
       DisputeEntity entity = new DisputeEntity();

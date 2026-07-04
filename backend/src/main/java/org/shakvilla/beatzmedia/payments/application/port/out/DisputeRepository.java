@@ -30,6 +30,15 @@ public interface DisputeRepository {
   /** Persist a new or updated dispute (status transitions are guarded in the aggregate). */
   Dispute saveDispute(Dispute dispute);
 
+  /**
+   * Persist a dispute opened from a provider chargeback, stamped with its {@code providerCaseId} for
+   * idempotency ({@code uq_dispute_provider_case}, V705). Returns the saved dispute, or empty if a
+   * concurrent/duplicate chargeback for the same case already opened one (the caller re-reads it). The
+   * provider case id is an infrastructure idempotency detail the domain aggregate deliberately does
+   * not carry, so it is threaded through this method rather than held on {@link Dispute}.
+   */
+  Optional<Dispute> saveChargebackDispute(Dispute dispute, String providerCaseId);
+
   /** A dispute by id, or empty. */
   Optional<Dispute> findDispute(DisputeId id);
 
