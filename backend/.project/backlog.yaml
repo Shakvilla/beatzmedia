@@ -278,7 +278,7 @@ work_units:
     owner: payments-specialist
     depends_on: [WU-PAY-3, WU-COM-2]
     llfrs: [LLFR-PAYMENTS-04.1, LLFR-PAYMENTS-04.2, LLFR-PAYMENTS-04.3]
-    status: todo
+    status: in_progress   # branch feat/WU-PAY-5-refunds-disputes-clawback (payments-specialist)
 
   # ---------------- Phase 4 — Surfaces & proposals ----------------
   - id: WU-STO-1

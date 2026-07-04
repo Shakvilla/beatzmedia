@@ -78,6 +78,46 @@ public interface LedgerRepository {
       Money amount, String withdrawalId, Provider provider, Instant at);
 
   /**
+   * Post the <strong>clawback reversal</strong> of a settled sale/tip for a refund of {@code
+   * refundAmount} (INV-9). Reads the ORIGINAL settlement entries for {@code paymentIntentId} (ref_type
+   * {@code intent} or {@code tip}, possibly several per-creator sub-postings of a multi-creator order)
+   * and posts a BALANCED reversal <strong>scaled proportionally to {@code refundAmount /
+   * originalGross}</strong> under ONE new {@link TxnId}:
+   *
+   * <pre>
+   *   CREDIT provider_clearing (refundAmount)              -- funds returned to the rail/buyer clearing
+   *   DEBIT  platform_revenue  (round(refundAmount·fee/gross)) -- proportional fee reversal
+   *   DEBIT  creator_payable   (refundAmount − feeReversal)    -- the EXACT remainder (claws back the
+   *                                                              creator credit; drives available
+   *                                                              NEGATIVE if already withdrawn — owed)
+   * </pre>
+   *
+   * <p><strong>Rounding rule (mirrors {@code RevenueSplit}).</strong> The platform-fee reversal is the
+   * half-up proportional share of the refund amount; the creator reversal is the <em>exact remainder</em>
+   * ({@code refundAmount − feeReversal}). This guarantees the DEBIT legs sum EXACTLY to
+   * {@code refundAmount} = the buyer CREDIT, so Σ DEBIT = Σ CREDIT (INV-6) with no pesewa created or
+   * lost, and the creator is never over-clawed beyond the proportional amount. A <strong>full</strong>
+   * refund ({@code refundAmount == originalGross}) reverses exactly the original legs (regression-safe).
+   * For a multi-creator order the creator reversal is distributed across the creators proportionally to
+   * their original shares, with the last creator absorbing the rounding remainder.
+   *
+   * <p>The creator {@code creator_balance} projection is refreshed in the same transaction, so a
+   * clawback exceeding the available balance yields a <strong>negative</strong> available (recovery
+   * owed) rather than being silently skipped. Exactly-once: keyed by {@code ("refund", refundId)} via
+   * {@link #claimPosting}, so a re-delivered / concurrent refund fails on the header PK and can NEVER
+   * double-clawback. The rows are posted already-cleared so available reflects the reversal at once.
+   *
+   * @param paymentIntentId the settled intent whose split is being reversed (the clawback anchor)
+   * @param refundId the refund driving this reversal (the exactly-once ref)
+   * @param refundAmount the (full or partial) amount being refunded (positive minor units, ≤ gross)
+   * @param at the refund/clawback instant
+   * @return the reversal {@link TxnId}
+   * @throws DuplicatePostingException if a reversal for {@code ("refund", refundId)} already exists
+   * @throws IllegalStateException if no settlement entries exist for the intent (nothing to reverse)
+   */
+  TxnId postRefundReversal(String paymentIntentId, String refundId, Money refundAmount, Instant at);
+
+  /**
    * Mark every uncleared entry of a transaction as cleared at {@code at} (funds available). Used by
    * later payout WUs; a settled sale/tip is posted already-cleared. Refreshes affected projections.
    */

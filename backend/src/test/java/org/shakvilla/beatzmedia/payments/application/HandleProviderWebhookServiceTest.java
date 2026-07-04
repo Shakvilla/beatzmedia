@@ -61,9 +61,13 @@ class HandleProviderWebhookServiceTest {
     FakeClock clock = FakeClock.at(NOW);
     PaymentSettlementService settlement =
         new PaymentSettlementService(repo, clock, settledEvents, failedEvents);
+    // The chargeback path (WU-PAY-5) is exercised by RefundDisputeIT end-to-end; these unit tests
+    // cover only settle/fail/duplicate/signature, whose statuses never route to the chargeback service,
+    // so a null collaborator is safe here (it is only dereferenced for chargeback_* statuses).
     service =
         new HandleProviderWebhookService(
-            gateway, repo, events, settlement, new ObjectMapper(), FakeIds.sequential("ev"), clock);
+            gateway, repo, events, settlement, null, new ObjectMapper(), FakeIds.sequential("ev"),
+            clock);
   }
 
   @Test

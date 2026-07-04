@@ -169,6 +169,174 @@ public class JpaLedgerRepository implements LedgerRepository {
   }
 
   @Override
+  public TxnId postRefundReversal(
+      String paymentIntentId,
+      String refundId,
+      org.shakvilla.beatzmedia.platform.domain.Money refundAmount,
+      Instant at) {
+    // Read the ORIGINAL settlement entries for this intent (a sale posts ref_type='intent', a tip
+    // 'tip'; a multi-creator order posts several 'intent' sub-postings whose ref_id is
+    // "<intentId>:<creatorId>"). We match ref_id = intentId OR ref_id starting with intentId + ":"
+    // so both the single-creator and the per-creator multi-posting cases are captured. Joined to the
+    // account so we can classify each leg by kind (provider_clearing / creator_payable / platform).
+    @SuppressWarnings("unchecked")
+    List<Object[]> originals =
+        em.createNativeQuery(
+                "SELECT e.account_id, e.direction, e.amount_minor, a.kind "
+                    + "FROM ledger_entry e JOIN ledger_account a ON a.id = e.account_id "
+                    + "WHERE e.ref_type IN ('intent','tip') "
+                    + "AND (e.ref_id = :ref OR e.ref_id LIKE :prefix)")
+            .setParameter("ref", paymentIntentId)
+            .setParameter("prefix", paymentIntentId + ":%")
+            .getResultList();
+
+    if (originals.isEmpty()) {
+      throw new IllegalStateException(
+          "no settlement ledger entries to reverse for intent " + paymentIntentId);
+    }
+
+    // Aggregate the original legs: the gross (provider_clearing DEBIT), the platform fee
+    // (platform_revenue CREDIT), and the per-creator shares (creator_payable CREDIT, keyed by account
+    // in a deterministic order so the rounding remainder is assigned stably).
+    long originalGross = 0L;
+    long originalPlatformFee = 0L;
+    java.util.LinkedHashMap<String, Long> creatorShares = new java.util.LinkedHashMap<>();
+    String providerClearingAccount = null;
+    String platformRevenueAccount = null;
+    for (Object[] row : originals) {
+      String accountId = (String) row[0];
+      String direction = (String) row[1];
+      long amountMinor = ((Number) row[2]).longValue();
+      String kind = (String) row[3];
+      switch (kind) {
+        case "provider_clearing" -> {
+          if ("DEBIT".equals(direction)) {
+            originalGross += amountMinor;
+            providerClearingAccount = accountId;
+          }
+        }
+        case "platform_revenue" -> {
+          if ("CREDIT".equals(direction)) {
+            originalPlatformFee += amountMinor;
+            platformRevenueAccount = accountId;
+          }
+        }
+        case "creator_payable" -> {
+          if ("CREDIT".equals(direction)) {
+            creatorShares.merge(accountId, amountMinor, Long::sum);
+          }
+        }
+        default -> {
+          // ignore any other leg kinds
+        }
+      }
+    }
+
+    long refund = refundAmount.minor();
+    if (refund <= 0) {
+      throw new IllegalStateException("refund amount must be positive, got " + refund);
+    }
+    // CLAMP to the reversible split gross. A refund/chargeback of the whole ORDER may exceed the
+    // split gross because the order total includes the flat service fee (which is NOT a creator/
+    // platform split leg — it has no ledger credit to reverse). The clawback reverses only what was
+    // split; the service-fee portion of a refund is a buyer-side settlement outside the split ledger.
+    if (refund > originalGross) {
+      refund = originalGross;
+    }
+
+    // Proportional, rounding-safe reversal (mirrors RevenueSplit): the platform-fee reversal is the
+    // half-up proportional share of the refund; the creators absorb the EXACT remainder. So the DEBIT
+    // legs sum to exactly `refund` = the buyer CREDIT (Σ DEBIT = Σ CREDIT, INV-6). A FULL refund
+    // (refund == originalGross) reverses exactly the original legs (feeReversal == originalPlatformFee,
+    // each creatorReversal == its original share) — regression-safe.
+    long platformReversal = proportional(refund, originalPlatformFee, originalGross);
+    long creatorReversalTotal = refund - platformReversal; // exact remainder for the creator side
+
+    TxnId txn = new TxnId(ids.newId());
+    // Exactly-once claim BEFORE any entry: a re-delivered / concurrent refund fails on the
+    // ledger_posting PK ("refund", refundId) and DuplicatePostingException rolls this tx back — so the
+    // clawback lands EXACTLY ONCE (INV-9). The caller runs this on a REQUIRES_NEW boundary.
+    claimPosting(txn, "refund", refundId);
+
+    List<LedgerEntry> reversal = new java.util.ArrayList<>();
+    org.shakvilla.beatzmedia.platform.domain.Currency ccy = refundAmount.currency();
+
+    // Buyer/clearing CREDIT = the refunded amount (funds returned to the rail).
+    reversal.add(
+        entry(txn, providerClearingAccount,
+            org.shakvilla.beatzmedia.payments.domain.Direction.CREDIT, refund, refundId, ccy, at));
+
+    // Platform-revenue DEBIT = proportional fee reversal (may be 0 for a tiny partial refund).
+    if (platformReversal > 0) {
+      reversal.add(
+          entry(txn, platformRevenueAccount,
+              org.shakvilla.beatzmedia.payments.domain.Direction.DEBIT, platformReversal, refundId,
+              ccy, at));
+    }
+
+    // Creator DEBIT(s) = the creator-side total, distributed per creator by the RUNNING-REMAINDER
+    // (decreasing-denominator / largest-remainder) rule: each creator's portion is the half-up share of
+    // the REMAINING budget against the REMAINING creator total, then both shrink. This guarantees every
+    // portion is ≥ 0 AND the portions sum EXACTLY to creatorReversalTotal — the final creator's share is
+    // remainingBudget by construction, with no negative "last-creator remainder" that a naive
+    // independent-rounding split could produce (which would drop a negative leg and unbalance the txn).
+    long remainingBudget = creatorReversalTotal;
+    long remainingCreatorTotal = 0L;
+    for (long s : creatorShares.values()) {
+      remainingCreatorTotal += s;
+    }
+    for (java.util.Map.Entry<String, Long> e : creatorShares.entrySet()) {
+      long share = e.getValue();
+      long portion = proportional(remainingBudget, share, remainingCreatorTotal);
+      remainingBudget -= portion;
+      remainingCreatorTotal -= share;
+      if (portion > 0) {
+        reversal.add(
+            entry(txn, e.getKey(),
+                org.shakvilla.beatzmedia.payments.domain.Direction.DEBIT, portion, refundId, ccy, at));
+      }
+    }
+
+    postBalanced(txn, reversal);
+    return txn;
+  }
+
+  /** Build a refund-reversal ledger entry (already-cleared) against an account. */
+  private LedgerEntry entry(
+      TxnId txn,
+      String accountId,
+      org.shakvilla.beatzmedia.payments.domain.Direction direction,
+      long amountMinor,
+      String refundId,
+      org.shakvilla.beatzmedia.platform.domain.Currency ccy,
+      Instant at) {
+    return LedgerEntry.post(
+        ids.newId(),
+        txn,
+        new LedgerAccountId(accountId),
+        direction,
+        org.shakvilla.beatzmedia.platform.domain.Money.ofMinor(amountMinor, ccy),
+        "refund",
+        refundId,
+        at,
+        at);
+  }
+
+  /**
+   * Half-up proportional share: {@code round(amount · numerator / denominator)} in exact integer
+   * arithmetic (INV-11, no floating point). {@code denominator > 0} required by the caller.
+   */
+  private static long proportional(long amount, long numerator, long denominator) {
+    if (denominator <= 0 || numerator <= 0) {
+      return 0L;
+    }
+    return java.math.BigDecimal.valueOf(amount)
+        .multiply(java.math.BigDecimal.valueOf(numerator))
+        .divide(java.math.BigDecimal.valueOf(denominator), 0, java.math.RoundingMode.HALF_UP)
+        .longValueExact();
+  }
+
+  @Override
   public void clear(TxnId txn, Instant at) {
     em.createNativeQuery(
             "UPDATE ledger_entry SET cleared_at = :at WHERE txn_id = :txn AND cleared_at IS NULL")

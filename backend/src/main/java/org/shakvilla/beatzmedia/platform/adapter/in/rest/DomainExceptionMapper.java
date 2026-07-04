@@ -47,7 +47,8 @@ public class DomainExceptionMapper implements ExceptionMapper<DomainException> {
               PLAYLIST_NOT_FOUND,
               RELEASE_NOT_FOUND,
               PAYMENT_INTENT_NOT_FOUND,
-              PAYOUT_METHOD_NOT_FOUND ->
+              PAYOUT_METHOD_NOT_FOUND,
+              DISPUTE_NOT_FOUND ->
           Response.Status.NOT_FOUND.getStatusCode();
       case UNAUTHENTICATED, INVALID_CREDENTIALS, SOCIAL_TOKEN_INVALID ->
         Response.Status.UNAUTHORIZED.getStatusCode();
