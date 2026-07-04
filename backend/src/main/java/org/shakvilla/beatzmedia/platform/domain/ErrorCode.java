@@ -51,6 +51,13 @@ public enum ErrorCode {
   IDEMPOTENCY_KEY_CONFLICT,
   PAYMENT_INTENT_NOT_FOUND,
   PROVIDER_ERROR,
+  // ---- Payments codes (WU-PAY-4) — payouts/withdrawals/KYC ----
+  BELOW_MIN_PAYOUT,
+  INSUFFICIENT_BALANCE,
+  KYC_REQUIRED,
+  KYC_BLOCKED,
+  PAYOUT_METHOD_IN_USE,
+  PAYOUT_METHOD_NOT_FOUND,
   // ---- Commerce codes (WU-COM-1) ----
   ALREADY_OWNED,
   NOT_STACKABLE,

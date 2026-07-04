@@ -95,6 +95,80 @@ public class JpaLedgerRepository implements LedgerRepository {
   }
 
   @Override
+  public void lockBalance(AccountId creator) {
+    // Ensure a balance row exists to lock (INSERT ... ON CONFLICT DO NOTHING is atomic), then take a
+    // row lock (SELECT ... FOR UPDATE) so two concurrent withdrawals for the SAME creator serialise:
+    // the second blocks until the first's reservation commits and then reads the reduced available
+    // balance (INV-8). This closes the read-then-reserve TOCTOU that would otherwise let both spend
+    // the same funds or drive the balance negative.
+    em.createNativeQuery(
+            "INSERT INTO creator_balance (account_id, available_minor, pending_minor, lifetime_minor, updated_at) "
+                + "VALUES (:id, 0, 0, 0, :now) ON CONFLICT (account_id) DO NOTHING")
+        .setParameter("id", creator.value())
+        .setParameter("now", clock.now())
+        .executeUpdate();
+    em.createNativeQuery("SELECT account_id FROM creator_balance WHERE account_id = :id FOR UPDATE")
+        .setParameter("id", creator.value())
+        .getSingleResult();
+  }
+
+  @Override
+  public TxnId postWithdrawalReserve(
+      AccountId creator, org.shakvilla.beatzmedia.platform.domain.Money amount,
+      String withdrawalId, Instant at) {
+    // Reserve funds: DEBIT creator_payable (reduces available NOW) = CREDIT payout_clearing (in-flight).
+    // Balanced by construction (equal debit/credit of the same amount). Exactly-once on the withdrawal.
+    TxnId txn = new TxnId(ids.newId());
+    claimPosting(txn, "withdraw", withdrawalId);
+
+    LedgerAccountId creatorPayable =
+        idOf(accountFor(LedgerAccountKind.CREATOR_PAYABLE, creator.value()));
+    LedgerAccountId payoutClearing = idOf(accountFor(LedgerAccountKind.PAYOUT_CLEARING, null));
+
+    List<LedgerEntry> entries =
+        List.of(
+            LedgerEntry.post(
+                ids.newId(), txn, creatorPayable,
+                org.shakvilla.beatzmedia.payments.domain.Direction.DEBIT,
+                amount, "withdraw", withdrawalId, at, at),
+            LedgerEntry.post(
+                ids.newId(), txn, payoutClearing,
+                org.shakvilla.beatzmedia.payments.domain.Direction.CREDIT,
+                amount, "withdraw", withdrawalId, at, at));
+    postBalanced(txn, entries);
+    return txn;
+  }
+
+  @Override
+  public TxnId postWithdrawalDisburse(
+      org.shakvilla.beatzmedia.platform.domain.Money amount, String withdrawalId,
+      org.shakvilla.beatzmedia.payments.domain.Provider provider, Instant at) {
+    // Disburse: DEBIT payout_clearing (funds leave clearing) = CREDIT provider_clearing (paid via rail).
+    // Balanced; does NOT touch creator_payable (available was already reduced at reservation).
+    // Exactly-once keyed on ("payout", withdrawalId): a retried run fails on the header PK and rolls
+    // back rather than double-debiting (INV-6).
+    TxnId txn = new TxnId(ids.newId());
+    claimPosting(txn, "payout", withdrawalId);
+
+    LedgerAccountId payoutClearing = idOf(accountFor(LedgerAccountKind.PAYOUT_CLEARING, null));
+    LedgerAccountId providerClearing =
+        idOf(accountFor(LedgerAccountKind.PROVIDER_CLEARING, provider.name()));
+
+    List<LedgerEntry> entries =
+        List.of(
+            LedgerEntry.post(
+                ids.newId(), txn, payoutClearing,
+                org.shakvilla.beatzmedia.payments.domain.Direction.DEBIT,
+                amount, "payout", withdrawalId, at, at),
+            LedgerEntry.post(
+                ids.newId(), txn, providerClearing,
+                org.shakvilla.beatzmedia.payments.domain.Direction.CREDIT,
+                amount, "payout", withdrawalId, at, at));
+    postBalanced(txn, entries);
+    return txn;
+  }
+
+  @Override
   public void clear(TxnId txn, Instant at) {
     em.createNativeQuery(
             "UPDATE ledger_entry SET cleared_at = :at WHERE txn_id = :txn AND cleared_at IS NULL")

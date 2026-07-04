@@ -506,6 +506,76 @@ public interface IdGenerator { String newId(); }
 >   with the WU-PAY-1/2 as-built convention (additive evolution). Partial unique indexes on
 >   `ledger_account` make get-or-create idempotent under concurrency.
 
+> **WU-PAY-4 implementation notes (as-built) — payout methods + KYC-gated withdrawals + admin runs.**
+> - **Schema (V704, forward-only).** `kyc_record`, `payout_method` (partial-unique **one default per
+>   account**), `withdrawal_request` (`idempotency_key` UNIQUE; `amount_minor ≥ 1000` DB floor backstop),
+>   `payout_batch`, `payout_txn` (**`uq_payout_per_withdrawal` UNIQUE** — the durable exactly-once payout
+>   guard). Money is minor units (INV-11); enum columns are `TEXT + CHECK` (as-built convention).
+> - **Withdrawal money-safety (`RequestWithdrawalService`, LLFR-PAYMENTS-03.2).** Gates run in order,
+>   each a **mapped** domain error (never a 500): (1) advisory-lock idempotency → same key replays one
+>   withdrawal; (2) **KYC gate** — `KycProvider.statusOf` must be `verified`, else `KYC_REQUIRED` (403),
+>   **fail-closed** (no record ⇒ NONE); (3) method ownership (404); (4) **floor** `amount ≥
+>   PlatformSettings.payoutMinimumMinor` (₵10 default, config-driven — INV-4/8), else `BELOW_MIN_PAYOUT`
+>   (422); (5) **balance-backed under a `creator_balance` row lock** (`SELECT … FOR UPDATE` via
+>   `LedgerRepository.lockBalance`) — `amount ≤ available`, else `INSUFFICIENT_BALANCE` (409). The
+>   reservation posts a **balanced, cleared** txn `DEBIT creator_payable / CREDIT payout_clearing` keyed
+>   exactly-once on the withdrawal id (`ledger_posting` header), which reduces `available` immediately.
+>   Because available nets out reservations and the read-then-reserve is serialised by the row lock, two
+>   concurrent withdrawals **cannot** both pass the balance check and overdraw — exactly one wins, the
+>   loser gets 409, the balance never goes negative (proven by `ConcurrentWithdrawalIT`).
+> - **Payout runs (`PayoutRunService` + `PayoutDisburser`, LLFR-PAYMENTS-03.3/03.4).** Executing a
+>   withdrawal posts a **balanced** disbursement `DEBIT payout_clearing / CREDIT provider_clearing`
+>   (keyed exactly-once on the withdrawal id) and inserts a `payout_txn` guarded by
+>   `uq_payout_per_withdrawal`. Whichever guard trips on a retry (`DuplicatePostingException` /
+>   `DuplicatePayoutException`) makes the execution a **no-op** — a re-run or repeated send **can never
+>   double-debit** (INV-6, proven by `PayoutFlowIT`). The **weekly run SKIPS** KYC-unverified creators;
+>   a **single send BLOCKS** on KYC with `KYC_BLOCKED` (409). Every executed payout and every method
+>   mutation appends an `AuditEntry` (INV-10).
+> - **Batch resilience — per-withdrawal `REQUIRES_NEW` boundary (review F1, ADR-25).** `runWeekly` does
+>   **not** wrap the whole batch in one transaction (a duplicate-claim 23505 would mark the JTA tx
+>   rollback-only and poison every already-processed creator — catching the Java exception does NOT
+>   un-poison it; the WU-PAY-3/COM-2 F1 lesson). Instead `PayoutDisburser.disburseOne` runs **each**
+>   withdrawal on its **own** `@Transactional(REQUIRES_NEW)` boundary via the CDI proxy, so a collision
+>   rolls back **only that withdrawal** and the batch keeps every other creator it paid. Concurrent runs
+>   **partition** the work via `SELECT … FOR UPDATE SKIP LOCKED` per withdrawal (`findWithdrawalForUpdate`)
+>   — a row locked by run A is *skipped* by run B, never blocking it. `runWeekly` commits the batch
+>   header first (FK target), reads lock-free candidate ids, disburses each `REQUIRES_NEW`, then
+>   finalises totals. Proven by `ConcurrentPayoutRunIT` (two concurrent runs; run+send race): each
+>   withdrawal paid exactly once, none lost to a poisoned batch.
+> - **KYC lives in payments for now (ADR-23 sibling).** The ADD models `KycProvider` as resolving to the
+>   `identity` module, but identity has no KYC surface yet, so the authoritative `kyc_record` table lives
+>   in the payments band behind `KycProvider` (`JpaKycProvider`). A future identity-KYC WU can re-back the
+>   port with no change to the withdrawal/payout services. No cross-module table reads.
+> - **Withdrawal fee is a config-driven RAIL COST, not platform revenue (review F2, ADR-25).**
+>   `PlatformSettings.withdrawalFeeMinor(kind, amount)` encodes the policy (bank flat ₵5; MoMo 1% min ₵1)
+>   in one config-authoritative place; the service never inlines it. **The fee is the payment provider's
+>   charge**, shown to the creator pre-confirmation, and is **NOT posted to the ledger** as a separate
+>   leg: the reservation debits `creator_payable` the **gross**, the gross leaves via
+>   `payout_clearing → provider_clearing`, and **no `platform_revenue` credit** is created for it
+>   (contrast the sale/tip split fee, which IS platform revenue and IS posted). Held as `PlatformSettings`
+>   constants (not yet a `platform_settings` column) — promote to stored columns in WU-ADM-8 if it must be
+>   tunable per-environment; flagged as a documented default awaiting production confirmation.
+> - **Removing a referenced payout method → mapped 409, not a 500 (review F-NEW-1).**
+>   `PayoutMethodService.remove` PRE-CHECKS `PayoutRepository.existsWithdrawalForMethod` (any
+>   withdrawal, any status — including already-`paid`) and throws `PayoutMethodInUseException` →
+>   `PAYOUT_METHOD_IN_USE` (409). The `withdrawal_request.method_id` FK is `ON DELETE RESTRICT` (V704),
+>   so a raw delete would surface an opaque Postgres FK-violation 500; a `PersistenceException`/23503
+>   backstop translates a concurrent-insert race to the same 409. Ownership scoping is preserved (a
+>   non-owner still gets 404). Proven by `PayoutMethodServiceTest` (in-use → 409, unreferenced →
+>   deletes) and `PayoutRestIT` (DELETE of a withdrawn-against method → 409 over HTTP).
+> - **Inbound surfaces.** `POST /v1/studio/payouts/withdraw` (artist, Idempotency-Key required);
+>   `POST/DELETE /v1/studio/payout-methods` + `PATCH …/:id/default` (artist, ownership-scoped); admin
+>   `GET /v1/admin/finance/payouts` (pending: `ready | kyc_pending`), `POST …/run-weekly`, `POST
+>   …/:id/send` — all `@RolesAllowed({finance, super-admin})`. `GET /v1/studio/payouts` now returns the
+>   creator's real payout methods.
+>
+> **Human gates flagged (OQ-2 / OQ-4) — DEFAULTS APPLIED, awaiting production sign-off.**
+> - **OQ-2 (fees).** `tipFeePct` (10 → creator 90%) and the **withdrawal-fee policy** (bank ₵5 / MoMo 1%
+>   min ₵1, treated as a **rail-side cost, not platform revenue** — F2/ADR-25) are config-driven
+>   defaults, **not** yet human-confirmed for production. Surface in `/status`.
+> - **OQ-4 (royalty model).** No royalty model (ADR-20): `PayoutsView.bySource.royalties` and any
+>   `Royalty` ledger line resolve to ₵0. Config-driven default pending human confirmation.
+
 ## 5. Adapters
 
 ### 5.1 Inbound — REST resources
