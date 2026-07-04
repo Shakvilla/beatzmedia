@@ -145,19 +145,34 @@ public interface TipShow {
 | `ListPodcasts` | `GET /v1/podcasts` | Public | n/a (read) | — | 01.1 |
 | `GetPodcast` | `GET /v1/podcasts/:id` | Public | n/a (read) | — | 01.2 |
 | `ListEpisodes` | `GET /v1/podcasts/:id/episodes` | Public; ownership decoration requires auth | n/a (read) | — | 01.3 |
+| `GetEpisodeStreamUrl` | `GET /v1/podcasts/episodes/:id/stream` | Public; Bearer optional (INV-3 gate) | n/a (read) | — | 01.3 |
 | `TipShow` | `POST /v1/podcasts/:id/tip` | `fan` (authenticated) | `IdempotencyKey` — same key → same `TipResult`, no double charge | `TipReceived` (AFTER_SUCCESS) | 02.1 |
+
+**`GetEpisodeStreamUrl`** (realized WU-POD-1; not in the original port sketch above) is the sole
+INV-3 enforcement point for podcast episode audio, mirroring playback's `GetStreamUrl` (WU-PLY-1)
+exactly: resolves the episode, decides `EpisodeAccess` (accessible/previewOnly) from
+premium/early-access + a per-caller ownership check (skipped entirely for free episodes or an
+anonymous caller — no unnecessary cross-module round-trip), then calls `MediaService` for a signed
+full or ≤30s preview URL. The client cannot pass a rendition flag.
+
+```java
+public interface GetEpisodeStreamUrl {
+    StreamUrlResult getStreamUrl(EpisodeId episode, Optional<AccountId> caller);
+}
+```
 
 ### 4.2 Output ports
 
 ```java
-/** Owned-table reads/writes for shows & episodes. Adapter: PodcastJpaRepository (Postgres). */
+/** Owned-table reads for shows & episodes. Adapter: PodcastJpaRepository (Postgres). */
 public interface PodcastRepository {
     Page<Podcast> findShows(Optional<PodcastCategory> category, PageRequest page);
     Optional<Podcast> findShow(PodcastId id);
     List<PodcastEpisode> findEpisodes(PodcastId id);
+    Optional<PodcastEpisode> findEpisode(EpisodeId id);
 }
 
-/** Per-caller ownership lookup. Adapter: CommerceOwnershipAdapter (calls commerce read port). */
+/** Per-caller ownership lookup. Adapter: OwnershipReaderAdapter (calls commerce input port). */
 public interface OwnershipReader {
     boolean ownsEpisode(AccountId caller, EpisodeId episode);
     Set<EpisodeId> ownedEpisodes(AccountId caller, Set<EpisodeId> candidates);
@@ -165,25 +180,34 @@ public interface OwnershipReader {
 
 /** Streaming/preview URL issuance honouring INV-3. Adapter: MediaServiceAdapter (media module). */
 public interface MediaService {
-    StreamUrl fullStreamUrl(MediaAssetId asset);
-    StreamUrl previewStreamUrl(MediaAssetId asset, int previewSec);
+    SignedUrl issueSignedUrl(EpisodeId episode, boolean preview, Duration ttl);
 }
 
-/** Publishes domain events after commit. Adapter: CdiEventPublisher / outbox. */
+/** Publishes domain events after commit. Adapter: CdiEventPublisher / outbox. (WU-POD-2.) */
 public interface EventPublisher {
     void publish(DomainEvent event);
 }
 ```
 
 ```java
-/** payments input port consumed by TipShow for the 90/10 split + ledger posting. */
+/** payments input port consumed by TipShow for the 90/10 split + ledger posting. (WU-POD-2.) */
 public interface IssueTipUseCase {
     TipOutcome issueTip(AccountId fan, CreatorId creator, PodcastId show,
                         Money amount, PaymentMethodId method, IdempotencyKey key);
 }
 ```
 
-`Clock` and `IdGenerator` (kernel ports) supply `publicAt` comparison time and tip ids.
+**Commerce-side addition (WU-POD-1).** No commerce input port previously exposed per-episode
+ownership outside commerce itself (only `library.GetOwnedTrackIds` existed, track-only). This WU
+added `commerce.application.port.in.GetOwnedEpisodeIds` (`isOwned`, batched `ownedOf`), backed by a
+new `OwnershipRepository.activeEpisodeIds(account, candidateIds)` output-port method (a single
+batched query alongside the existing single-id `existsActiveForEpisode`). `podcasts`'
+`OwnershipReaderAdapter` calls this commerce input port in-process — podcasts never reads
+`ownership_grant` directly, preserving the hexagonal rule symmetric to how playback consumes
+library's `GetOwnedTrackIds`.
+
+`Clock` (kernel port) supplies the `publicAt`/`now` comparison instant — never `Instant.now()` in
+core code. `IdGenerator` is reserved for WU-POD-2 (tip ids).
 
 ## 5. Adapters
 
@@ -196,25 +220,39 @@ Base path `/v1`. JSON, UTF-8. Money as `{ amount, currency }`; durations whole s
 | GET | `/v1/podcasts?category=&page=&size=` | Public | — (query) | `Page<PodcastDto>` | 200 | `VALIDATION` (bad category/page) | 01.1 |
 | GET | `/v1/podcasts/:id` | Public | — | `PodcastDto` | 200 | `NOT_FOUND` | 01.2 |
 | GET | `/v1/podcasts/:id/episodes` | Public; Bearer optional (enables `isOwned`/full audio) | — | `PodcastEpisodeDto[]` | 200 | `NOT_FOUND` | 01.3 |
+| GET | `/v1/podcasts/episodes/:id/stream` | Public; Bearer optional (INV-3 gate) | — | `StreamUrlResponse` | 200 | `NOT_FOUND`, `MEDIA_UNAVAILABLE` | 01.3 |
 | POST | `/v1/podcasts/:id/tip` | `fan` (Bearer) | `TipRequest` + `Idempotency-Key` | `TipResponse` | 202 | `UNAUTHENTICATED`, `VALIDATION` (`amount<=0`), `TIPS_DISABLED`, `NOT_FOUND`, `PAYMENT_FAILED`, `IDEMPOTENCY_CONFLICT` | 02.1 |
 
 Resources are thin: map DTO → command, call input port, map result → DTO. No business logic in
 resources. The episodes endpoint extracts the caller from the bearer token if present; absent → all
-episodes returned with `isOwned=false` and premium/early-access locked.
+episodes returned with `isOwned=false` and premium/early-access locked. **Realized as a single
+`PodcastResource`** with one class-level `@Path("/v1")` root (mirroring `PublicCatalogResource` /
+`PlaybackResource`) and full sub-paths per method — `/podcasts/episodes/:id/stream` is nested under
+`/podcasts` (not a sibling `/episodes/:id/stream`) specifically so it cannot structurally collide
+with `/podcasts/:id` (the WU-PLY-1 routing lesson: one root, no overlapping literal segment count
+at the same position).
 
 ### 5.2 Outbound — persistence & integrations
 
 - **`PodcastJpaRepository`** maps domain ↔ JPA entities (`PodcastEntity`, `PodcastEpisodeEntity`);
   domain objects carry no ORM annotations. Indexed reads by `category` and `podcast_id` (§7).
-- **`CommerceOwnershipAdapter`** implements `OwnershipReader` by calling the `commerce` ownership read
-  port (by id, no FK). Batches episode ids to avoid N+1.
-- **`MediaServiceAdapter`** implements `MediaService` against the `media` module; issues signed full or
-  `previewSec`-clipped URLs. The media layer also performs server-side preview clipping (INV-3).
-- **`PaymentsTipAdapter`** wraps `payments.IssueTipUseCase` for `TipShow`.
-- **`CdiEventPublisher`** publishes `TipReceived` via the transactional outbox (AFTER_SUCCESS).
-- **Transaction boundary** = the use case (`@Transactional` on the application service impl). Tip
-  posting itself commits within `payments`; this module's own writes (e.g. tip audit row, if any) and
-  the `TipReceived` publish are outbox-coupled to that success.
+- **`OwnershipReaderAdapter`** implements `OwnershipReader` by calling commerce's
+  `GetOwnedEpisodeIds` INPUT port in-process (added in this WU — see §4.2) — never reads
+  `ownership_grant` directly. Batches candidate episode ids for the episode-list decoration to
+  avoid N+1.
+- **`MediaServiceAdapter`** implements `MediaService` by calling the media module's `MediaService`
+  output port (WU-MED-1), resolving the episode's asset via `findAssetIdForOwner` under the
+  owner-ref convention `("podcasts", episodeId)` — mirroring playback's `("catalog", trackId)`
+  convention for tracks. Any media outage/illegal-state is translated to `MediaUnavailableException`
+  (503 `MEDIA_UNAVAILABLE`), never an unmapped 500.
+- **`PaymentsTipAdapter`** wraps `payments.IssueTipUseCase` for `TipShow`. (WU-POD-2.)
+- **`CdiEventPublisher`** publishes `TipReceived` via the transactional outbox (AFTER_SUCCESS). (WU-POD-2.)
+- **Transaction boundary (WU-POD-1 realized).** `ListPodcastsService`/`GetPodcastService`/
+  `ListEpisodesService` are `@Transactional` read services over `PodcastRepository`.
+  `GetEpisodeStreamUrlService` is deliberately **not** `@Transactional` (no DB write; mirrors
+  playback's `GetStreamUrlService`) — it reads the episode, decides `EpisodeAccess`, and delegates
+  to `MediaService`/`OwnershipReader`. Tip posting (WU-POD-2) commits within `payments`; this
+  module's own writes and the `TipReceived` publish will be outbox-coupled to that success.
 
 ## 6. DTOs & API shapes
 
@@ -291,11 +329,13 @@ CREATE INDEX idx_episode_podcast ON podcast_episode (podcast_id, published_at DE
 Money in **minor units** (`*_minor`, BIGINT pesewas); durations in **whole seconds** (`duration_sec`);
 premium/early-access **flags** (`is_premium`, `is_early_access`); `public_at` TIMESTAMPTZ.
 
-**Flyway list** (forward-only, `src/main/resources/db/migration/`):
-- `V<n>__create_podcast.sql`
-- `V<n+1>__create_podcast_episode.sql`
-- `R__seed_dev_data.sql` (repeatable, dev/test) — contributes shows/episodes from
-  `Frontend/src/lib/podcast-data.ts` (e.g. `sincerely-accra` free + premium + early-access feed).
+**Flyway list** (forward-only, `src/main/resources/db/migration/`) — **realized (WU-POD-1)**:
+- `V945__create_podcast_and_episode.sql` — both `podcast` and `podcast_episode` in one migration
+  (a single logical change: the show + its episodes table together, per data-and-migrations §4.1's
+  "table + its indexes/constraints" unit), rather than two separate files as originally sketched.
+- `R__seed_dev_data.sql` (repeatable, dev/test) — extended with all 8 shows and all episodes from
+  `Frontend/src/lib/podcast-data.ts` (`sincerely-accra`'s free + premium + early-access feed, plus
+  one representative episode per remaining show).
 
 ## 8. Key flows
 
@@ -330,9 +370,11 @@ sequenceDiagram
   R-->>C: 200 PodcastEpisodeDto[]
 ```
 
-> Full audio is only ever fetched via `MediaService.fullStreamUrl` for accessible episodes; premium
-> unowned episodes resolve to `previewStreamUrl(asset, previewSec=30)` (INV-3, OQ-6). The list
-> endpoint returns metadata + flags; the actual audio URL is requested by the player per episode.
+> Full audio is only ever fetched via a separate `GET /v1/podcasts/episodes/:id/stream` call
+> (`GetEpisodeStreamUrl` → `MediaService.issueSignedUrl(episode, preview, ttl)`) for accessible
+> episodes; premium/pre-`publicAt` early-access unowned episodes resolve `preview=true` →
+> `previewSeconds=30` (INV-3, OQ-6). The list endpoint returns metadata + flags only; the actual
+> audio URL is requested by the player per episode via the stream endpoint (realized WU-POD-1).
 
 **(b) Tip → IssueTip (90/10) → TipReceived → notification (LLFR-PODCAST-02.1)**
 
@@ -420,17 +462,31 @@ stateDiagram-v2
 
 ## 11. Testing plan
 
-**Unit (domain/use-case with fakes).** `EpisodeAccess` truth table (free / premium-owned /
-premium-unowned / early-access before/after `publicAt`, owned/unowned). `TipShow` amount guard;
-idempotency-key passthrough; `TIPS_DISABLED` when `supports_tips=false`. Fakes for `OwnershipReader`,
-`MediaService`, `IssueTipUseCase`, `EventPublisher`, `Clock`.
+**Unit (domain/use-case with fakes) — realized (WU-POD-1).** `EpisodeAccessTest`: full truth table
+(free / premium-owned / premium-unowned / early-access before/after `publicAt`, owned/unowned; 8
+cases). `GetEpisodeStreamUrlServiceTest`: the INV-3 gate at the application boundary — owner/free →
+FULL no `previewSeconds`; non-owner/anonymous of a premium or pre-`publicAt` early-access episode →
+PREVIEW `previewSeconds=30`; early-access at/after `publicAt` → FULL regardless of ownership; unknown
+episode → `EpisodeNotFoundException`; free episode never queries `OwnershipReader` (no unnecessary
+cross-module call); `expiresAt` echoed from `MediaService`, never hard-coded. `ListEpisodesServiceTest`
+/ `ListPodcastsServiceTest` / `GetPodcastServiceTest`: browse/detail decoration + 404. Fakes:
+`FakePodcastRepository`, `FakeOwnershipReader`, `FakeMediaService` (podcasts test package), plus the
+shared `platform.fakes.FakeClock`. `TipShow` unit tests deferred to WU-POD-2.
 
-**Integration (Testcontainers Postgres + MinIO, REST-assured).** Seed shows/episodes; assert paged
-list, category filter, 404 on unknown show; episodes endpoint with and without bearer; tip flow
-against a fake `payments` boundary verifying a `TipReceived` is published.
+**Integration (Testcontainers Postgres, REST-assured) — realized.** `PodcastFlowIT`: seeded show +
+free/premium/locked-early-access episodes with READY `media_asset` rows; asserts paged list, category
+filter, 404s, episode-list ownership decoration (owner via a directly-seeded `ownership_grant` row —
+episode checkout itself is out of WU-COM-2's scope per §1/§9 until a later commerce WU), and the
+gated stream endpoint's full/preview decision end-to-end through the real commerce
+`GetOwnedEpisodeIds` chain and the real media `MediaService` chain (S3 signing faked via the shared
+test-scoped `FakeUrlSignerPort` CDI alternative, no live MinIO dependency). `PodcastMigrationIT`:
+`flyway.validate()` on a fresh container. Tip flow integration deferred to WU-POD-2.
 
-**Contract.** Responses validate against `Frontend/src/types/index.ts` (`Podcast`, `PodcastEpisode`)
-and `API-CONTRACT.md` §8 (OpenAPI contract test green).
+**Contract — realized.** `PodcastContractTest` validates `Page<PodcastDto>` envelope, `PodcastDto`
+(money `seasonPassPrice`), `PodcastEpisodeDto` (whole-second `duration`, ISO-8601 `publishedAt`,
+money `price`), `StreamUrlResponse` (`previewSeconds` present only when gated, ISO-8601 `expiresAt`),
+and the uniform error envelope on unknown show/episode — against `Frontend/src/types/index.ts`
+(`Podcast`, `PodcastEpisode`) and `API-CONTRACT.md` §8.
 
 **Key Given/When/Then (PRD §6.8).**
 - *Premium unowned:* **Given** a premium episode the caller does not own, **When** listing episodes,
@@ -452,11 +508,12 @@ Flyway applying cleanly, healthy under Docker Compose, ArchUnit dependency rule 
 money paths + audit (INV-10), coverage gate, Spotless clean, ADD updated — **plus**:
 
 1. **Preview never serves full audio** for premium-unowned or pre-`publicAt` early-access episodes
-   (INV-3 verified end-to-end).
+   (INV-3 verified end-to-end). **✓ WU-POD-1.**
 2. **Per-caller ownership** is correct: authenticated owner → `isOwned=true` and full audio; anonymous
-   → `isOwned=false` and locked.
+   → `isOwned=false` and locked. **✓ WU-POD-1.**
 3. **Tip split is exact**: ₵10 → creator 900 pesewas + platform 100, posted balanced in `payments`
-   (Σ debits = Σ credits, INV-6) with no remainder leak.
-4. **Tip is idempotent** (key replay → single effect) and emits exactly one `TipReceived`.
-5. **No cross-module FKs**; ownership resolved only via `OwnershipReader`; season-pass grants surfaced
-   from `commerce` (INV-2), not duplicated here.
+   (Σ debits = Σ credits, INV-6) with no remainder leak. **WU-POD-2.**
+4. **Tip is idempotent** (key replay → single effect) and emits exactly one `TipReceived`. **WU-POD-2.**
+5. **No cross-module FKs**; ownership resolved only via `OwnershipReader` (now backed by commerce's
+   `GetOwnedEpisodeIds` input port, added this WU); season-pass grants surfaced from `commerce`
+   (INV-2), not duplicated here. **✓ WU-POD-1.**

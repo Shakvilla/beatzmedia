@@ -219,8 +219,28 @@ public interface OwnershipRepository {
     boolean existsActiveForTrack(AccountId account, TrackId track);
     boolean existsActiveForEpisode(AccountId account, EpisodeId episode);
     List<OwnershipGrant> findBySourceOrder(OrderId orderId);
+    // Added WU-POD-1: batched read backing the new GetOwnedEpisodeIds input port below.
+    List<String> activeEpisodeIds(AccountId account, List<String> candidateEpisodeIds);
 }
+```
 
+**`GetOwnedEpisodeIds` input port (added WU-POD-1).** Before this WU, no commerce input port
+exposed per-episode ownership to other modules — only `library.GetOwnedTrackIds` existed (track
+ownership only). The `podcasts` module needed a caller-owns-this-episode check for its INV-3
+episode gating (`ListEpisodes` decoration + `GetEpisodeStreamUrl`), so commerce added:
+
+```java
+public interface GetOwnedEpisodeIds {
+    boolean isOwned(AccountId account, String episodeId);
+    Set<String> ownedOf(AccountId account, List<String> candidateEpisodeIds); // batched, avoids N+1
+}
+```
+
+Consumed in-process by the `podcasts` module's `OwnershipReader` output-port adapter — podcasts
+never reads `ownership_grant` directly. Symmetric to how playback consumes library's
+`GetOwnedTrackIds`.
+
+```java
 /** Server-side price/expansion source; never trusts the client (INV-2, INV-11). */
 public interface PricingService {
     PricedItem priceFor(CartItemKind kind, String refId, Map<String, Object> metadata);
