@@ -118,7 +118,84 @@ class PodcastTipFlowIT {
         .then().statusCode(401);
   }
 
+  @Test
+  void overflowingAmount_returns422_notUnmapped500() {
+    // An amount far beyond a long overflows Money.ofCedis(longValueExact) — must be a mapped 422,
+    // never fall through to the FallbackExceptionMapper (500).
+    given()
+        .header("Authorization", "Bearer " + fanToken)
+        .header("Idempotency-Key", "pod-tip-key-overflow")
+        .contentType(ContentType.JSON)
+        .body(rawAmountBody("100000000000000000000"))
+        .when().post("/v1/podcasts/" + showId + "/tip")
+        .then().statusCode(422)
+        .body("error.code", equalTo("VALIDATION"));
+  }
+
+  @Test
+  void aboveChargeCeiling_returns422_CHARGE_AMOUNT_EXCEEDED() {
+    // Within long but absurd: ₵9,000,000 = 900,000,000 pesewas > MAX_CHARGE_MINOR (100,000,000).
+    // Enforced in payments' IssueTipService — must be a mapped 422, and no provider charge occurs.
+    given()
+        .header("Authorization", "Bearer " + fanToken)
+        .header("Idempotency-Key", "pod-tip-key-ceiling")
+        .contentType(ContentType.JSON)
+        .body(tipBody(9_000_000.00))
+        .when().post("/v1/podcasts/" + showId + "/tip")
+        .then().statusCode(422)
+        .body("error.code", equalTo("CHARGE_AMOUNT_EXCEEDED"));
+  }
+
+  @Test
+  void tooManyTips_areRateLimited_429_withRetryAfter() {
+    // A fresh fan (own bucket): burst capacity is 10, so the 11th tip in a tight burst → 429.
+    String burstToken = signUpFan("pod-tip-burst-" + System.nanoTime() + "@example.com");
+    int limited = 0;
+    for (int i = 0; i < 15; i++) {
+      int status =
+          given()
+              .header("Authorization", "Bearer " + burstToken)
+              .header("Idempotency-Key", "pod-tip-burst-" + i + "-" + System.nanoTime())
+              .contentType(ContentType.JSON)
+              .body(tipBody(1.00))
+              .when().post("/v1/podcasts/" + showId + "/tip")
+              .then().extract().statusCode();
+      if (status == 429) {
+        limited++;
+      }
+    }
+    org.junit.jupiter.api.Assertions.assertTrue(
+        limited > 0, "expected at least one 429 after exhausting the per-account tip burst");
+  }
+
   // ---- helpers ----------------------------------------------------------
+
+  private String signUpFan(String email) {
+    given()
+        .contentType(ContentType.JSON)
+        .body("{ \"name\": \"Burst Fan\", \"email\": \"%s\", \"password\": \"%s\" }"
+            .formatted(email, FAN_PASSWORD))
+        .when().post(SIGNUP_URL);
+    return given()
+        .contentType(ContentType.JSON)
+        .body("{ \"email\": \"%s\", \"password\": \"%s\" }".formatted(email, FAN_PASSWORD))
+        .when().post(LOGIN_URL)
+        .then().statusCode(200)
+        .extract().jsonPath().getString("token");
+  }
+
+  private static String rawAmountBody(String rawAmount) {
+    return """
+        {
+          "amount": %s,
+          "currency": "GHS",
+          "provider": "mtn",
+          "methodKind": "momo",
+          "paymentToken": "tok-pod-tip"
+        }
+        """
+        .formatted(rawAmount);
+  }
 
   private Tip tip(String idempotencyKey, double amount) {
     Response r =

@@ -20,7 +20,6 @@ import jakarta.ws.rs.core.Response;
 
 import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.shakvilla.beatzmedia.identity.domain.AccountId;
-import org.shakvilla.beatzmedia.payments.domain.MissingIdempotencyKeyException;
 import org.shakvilla.beatzmedia.platform.domain.Currency;
 import org.shakvilla.beatzmedia.platform.domain.Money;
 import org.shakvilla.beatzmedia.platform.domain.Page;
@@ -36,6 +35,7 @@ import org.shakvilla.beatzmedia.podcasts.application.port.in.StreamUrlResult;
 import org.shakvilla.beatzmedia.podcasts.application.port.in.TipMethod;
 import org.shakvilla.beatzmedia.podcasts.application.port.in.TipShow;
 import org.shakvilla.beatzmedia.podcasts.domain.EpisodeId;
+import org.shakvilla.beatzmedia.podcasts.domain.MissingIdempotencyKeyException;
 import org.shakvilla.beatzmedia.podcasts.domain.PodcastCategory;
 import org.shakvilla.beatzmedia.podcasts.domain.PodcastId;
 import org.shakvilla.beatzmedia.podcasts.domain.TipResult;
@@ -71,6 +71,7 @@ public class PodcastResource {
   private final ListEpisodes listEpisodes;
   private final GetEpisodeStreamUrl getEpisodeStreamUrl;
   private final TipShow tipShow;
+  private final PodcastTipRateLimiter tipRateLimiter;
   private final JsonWebToken jwt;
 
   @Inject
@@ -80,12 +81,14 @@ public class PodcastResource {
       ListEpisodes listEpisodes,
       GetEpisodeStreamUrl getEpisodeStreamUrl,
       TipShow tipShow,
+      PodcastTipRateLimiter tipRateLimiter,
       JsonWebToken jwt) {
     this.listPodcasts = listPodcasts;
     this.getPodcast = getPodcast;
     this.listEpisodes = listEpisodes;
     this.getEpisodeStreamUrl = getEpisodeStreamUrl;
     this.tipShow = tipShow;
+    this.tipRateLimiter = tipRateLimiter;
     this.jwt = jwt;
   }
 
@@ -135,8 +138,12 @@ public class PodcastResource {
    *       body field — a client cannot tip on behalf of another account;
    *   <li><strong>Idempotency (INV-1):</strong> the {@code Idempotency-Key} header is mandatory —
    *       missing ⇒ 400 {@code MISSING_IDEMPOTENCY_KEY}; the same key ⇒ one charge, same result;
+   *   <li><strong>Rate limiting:</strong> per-account token bucket (security-authz §6) → 429 +
+   *       {@code Retry-After} on abusive bursts, checked BEFORE any charge is initiated;
    *   <li><strong>Amount bounds:</strong> decimal cedis → minor units happens only here (INV-11); a
-   *       non-positive amount is rejected as {@code VALIDATION} before the money path is touched.
+   *       non-positive OR overflowing amount is rejected as {@code VALIDATION} (422), never an
+   *       unmapped 500; the platform charge ceiling is enforced in payments ({@code IssueTipService})
+   *       → {@code CHARGE_AMOUNT_EXCEEDED} (422).
    * </ul>
    *
    * <p>Returns 202 Accepted: the charge is in flight and no value has moved (INV-1) — the 90/10 split
@@ -158,6 +165,8 @@ public class PodcastResource {
     }
 
     AccountId fan = new AccountId(jwt.getSubject());
+    // Per-account rate limit on the money path (429 + Retry-After) BEFORE any charge.
+    tipRateLimiter.check(fan.value());
     Money amount = parseAmount(req.amount(), req.currency());
     TipMethod method =
         new TipMethod(
@@ -185,8 +194,15 @@ public class PodcastResource {
     }
     Currency ccy =
         (currency != null && !currency.isBlank()) ? parseCurrency(currency) : Currency.GHS;
-    // Decimal cedis → minor units happens only here, at the boundary (INV-11).
-    return Money.ofCedis(amount, ccy);
+    // Decimal cedis → minor units happens only here, at the boundary (INV-11). An amount too large to
+    // fit a long overflows in Money.ofCedis (BigDecimal.longValueExact → ArithmeticException); catch
+    // it and surface a mapped 422 VALIDATION rather than letting it fall through to an unmapped 500.
+    // The absolute charge ceiling (< long) is then enforced in payments (CHARGE_AMOUNT_EXCEEDED).
+    try {
+      return Money.ofCedis(amount, ccy);
+    } catch (ArithmeticException e) {
+      throw new ValidationException("tip amount is too large", "amount");
+    }
   }
 
   private static Currency parseCurrency(String value) {
