@@ -100,10 +100,27 @@ public class FakePayoutRepository implements PayoutRepository {
   }
 
   @Override
+  public Optional<WithdrawalRequest> findWithdrawalForUpdate(WithdrawalId id) {
+    // Single-threaded fake: the FOR UPDATE SKIP LOCKED semantics are proven by the concurrency IT;
+    // here it is a plain lookup.
+    return Optional.ofNullable(withdrawals.get(id.value()));
+  }
+
+  @Override
   public List<WithdrawalRequest> findPayableWithdrawals() {
     return withdrawals.values().stream()
         .filter(w -> w.getStatus().isPayable())
         .sorted(Comparator.comparing(WithdrawalRequest::getRequestedAt))
+        .toList();
+  }
+
+  @Override
+  public List<WithdrawalId> findPayableWithdrawalIds(int limit) {
+    return withdrawals.values().stream()
+        .filter(w -> w.getStatus().isPayable())
+        .sorted(Comparator.comparing(WithdrawalRequest::getRequestedAt))
+        .limit(limit)
+        .map(WithdrawalRequest::getId)
         .toList();
   }
 
@@ -112,6 +129,24 @@ public class FakePayoutRepository implements PayoutRepository {
   public PayoutBatch saveBatch(PayoutBatch batch) {
     batches.put(batch.getId(), batch);
     return batch;
+  }
+
+  @Override
+  public PayoutBatch saveBatchTotals(String batchId, long totalMinor, int count) {
+    PayoutBatch existing = batches.get(batchId);
+    if (existing == null) {
+      return null;
+    }
+    PayoutBatch updated =
+        PayoutBatch.reconstitute(
+            existing.getId(),
+            existing.getKind(),
+            existing.getRunBy(),
+            totalMinor,
+            count,
+            existing.getRunAt());
+    batches.put(batchId, updated);
+    return updated;
   }
 
   @Override

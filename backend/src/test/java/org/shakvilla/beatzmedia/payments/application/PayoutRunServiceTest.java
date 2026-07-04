@@ -50,8 +50,14 @@ class PayoutRunServiceTest {
     ledger = new FakeLedgerRepository();
     kyc = new FakeKycProvider();
     audit = new FakeAuditWriter();
-    service =
-        new PayoutRunService(payouts, ledger, kyc, FakeIds.sequential("po"), FakeClock.fixed(), audit);
+    // The disburser runs each payout on its own REQUIRES_NEW boundary in production; here it is a
+    // plain collaborator (the boundary/SKIP-LOCKED behaviour is proven by the concurrency IT).
+    var ids = FakeIds.sequential("po");
+    var clock = FakeClock.fixed();
+    org.shakvilla.beatzmedia.payments.application.service.PayoutDisburser disburser =
+        new org.shakvilla.beatzmedia.payments.application.service.PayoutDisburser(
+            payouts, ledger, kyc, ids, clock, audit);
+    service = new PayoutRunService(disburser, ids, clock);
   }
 
   private static Money ghs(long minor) {
