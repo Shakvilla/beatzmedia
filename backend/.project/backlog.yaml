@@ -313,7 +313,7 @@ work_units:
     # (90/10 charge → settlement → split) is DONE in WU-POD-2; the notification half is deferred to a
     # future WU-NOT-* which will consume the payments-side `TipReceived` event already emitted on
     # settlement (no podcasts re-work needed — the event is published). See podcasts.md §9 / §12.
-    status: in_progress
+    status: done   # PR #73 merged 2026-07-04 (squash 9d3948e). Hardened shared tip path with charge ceiling. OQ-2 fee % awaits prod confirmation.
   - id: WU-EVT-1
     title: Events browse + detail + tier availability
     phase: 4
