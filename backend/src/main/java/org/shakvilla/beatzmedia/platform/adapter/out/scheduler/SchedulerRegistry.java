@@ -49,6 +49,7 @@ import io.quarkus.scheduler.Scheduled.ConcurrentExecution;
  *   payout-window    Fri 09:00    — weekly payout reminder/run
  *   payment-recon    every 30 s   — payment reconciliation / timeout poll
  *   digest           daily 08:00  — digest emails
+ *   delivery-retry-sweep every 60 s — notifications email/SMS delivery_attempt retry/backoff sweep
  *   analytics-rollup every 5 min  — analytics rollups
  *   search-reindex   every 10 min — search re-index
  * </pre>
@@ -76,6 +77,7 @@ public class SchedulerRegistry {
   private static final String JOB_PAYOUT_WINDOW    = "payments.payout-window";
   private static final String JOB_PAYMENT_RECON    = "payments.payment-recon";
   private static final String JOB_DIGEST           = "notifications.digest";
+  private static final String JOB_DELIVERY_RETRY   = "notifications.delivery-retry-sweep";
   private static final String JOB_ANALYTICS_ROLLUP = "analytics.rollup";
   private static final String JOB_SEARCH_REINDEX   = "search.reindex";
 
@@ -120,6 +122,16 @@ public class SchedulerRegistry {
       concurrentExecution = ConcurrentExecution.SKIP)
   void sendDigests() {
     runWithLock(JOB_DIGEST);
+  }
+
+  /**
+   * Notifications delivery retry sweep (WU-NOT-2, LLFR-NOTIF-02.1) — every 60 s. Scans due {@code
+   * delivery_attempt} rows (pending/failed with {@code next_attempt_at <= now}) and re-sends.
+   */
+  @Scheduled(every = "60s", identity = "delivery-retry-sweep",
+      concurrentExecution = ConcurrentExecution.SKIP)
+  void sweepDeliveryRetries() {
+    runWithLock(JOB_DELIVERY_RETRY);
   }
 
   /** Analytics rollups — every 5 minutes. */
