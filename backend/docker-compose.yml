@@ -3,8 +3,8 @@
 # Based on environments-and-deployment.md §2.1 (canonical topology).
 #
 # Phase 0 includes: db (postgres:16), objectstore (MinIO), createbuckets, mail
-# (Mailpit), and app (Dockerfile.jvm). Redis, SMS-stub, and transcoder are
-# optional; sms-capture-stub is a placeholder until the image is published.
+# (Mailpit), sms (in-repo SMS capture stub, WU-NOT-2 / OQ-9), and app
+# (Dockerfile.jvm). Redis and transcoder remain optional.
 #
 # Boot: ./mvnw package -DskipTests && docker compose up -d --build
 # Tear down: docker compose down -v
@@ -90,6 +90,27 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
+  # sms — in-repo SMS capture stub (WU-NOT-2, PRD OQ-9 default): a tiny stdlib-only
+  # Python HTTP server (backend/tools/sms-capture-stub/server.py), analogous to
+  # Mailpit but for SMS. NEVER a real provider call in dev/test. Source lives in
+  # this repo (mounted read-only), so no external image publish is required.
+  # ---------------------------------------------------------------------------
+  sms:
+    image: python:3-alpine
+    working_dir: /app
+    volumes:
+      - ./tools/sms-capture-stub:/app:ro
+    command: ["python3", "server.py"]
+    ports:
+      - "8026:8026" # HTTP send endpoint + capture UI
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8026/livez')"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  # ---------------------------------------------------------------------------
   # app — the Quarkus JVM image built from Dockerfile.jvm
   # Build the jar first: ./mvnw package -DskipTests
   # ---------------------------------------------------------------------------
@@ -103,6 +124,8 @@ services:
       objectstore:
         condition: service_healthy
       mail:
+        condition: service_healthy
+      sms:
         condition: service_healthy
       createbuckets:
         condition: service_completed_successfully
@@ -128,6 +151,8 @@ services:
       QUARKUS_MAILER_PORT: "1025"
       QUARKUS_MAILER_FROM: no-reply@beatzclik.local
       QUARKUS_MAILER_MOCK: "false"
+      # --- sms (in-repo capture stub, WU-NOT-2 / OQ-9) ---
+      BEATZ_SMS_ENDPOINT: http://sms:8026/send
       # --- jwt (dev — empty keys; real keys come from .env or GitHub secrets) ---
       BEATZ_JWT_PRIVATE_KEY: ${BEATZ_JWT_PRIVATE_KEY:-}
       BEATZ_JWT_PUBLIC_KEY: ${BEATZ_JWT_PUBLIC_KEY:-}

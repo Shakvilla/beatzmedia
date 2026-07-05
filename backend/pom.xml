@@ -79,6 +79,12 @@
             <artifactId>quarkus-rest-client-jackson</artifactId>
         </dependency>
 
+        <!-- Mailer — email delivery channel (WU-NOT-2); dev/test -> Mailpit (SMTP capture) -->
+        <dependency>
+            <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-mailer</artifactId>
+        </dependency>
+
         <!-- ================================================================ -->
         <!-- CDI                                                                -->
         <!-- ================================================================ -->
