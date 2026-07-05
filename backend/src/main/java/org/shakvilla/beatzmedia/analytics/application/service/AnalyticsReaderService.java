@@ -107,23 +107,29 @@ public class AnalyticsReaderService implements AnalyticsReader {
         revenueTipsMinor);
   }
 
-  /** The {@code points} bucket-start dates at {@code grain}, ending at (and including) {@code today}. */
+  /**
+   * The {@code points} bucket-start dates at {@code grain}, ASCENDING, ending at (and including)
+   * {@code today}.
+   */
   private static List<LocalDate> bucketsEndingAt(LocalDate today, Grain grain, int points) {
     List<LocalDate> buckets = new ArrayList<>(points);
     LocalDate cursor = org.shakvilla.beatzmedia.analytics.domain.RollupBucket.startOf(today, grain);
     for (int i = points - 1; i >= 0; i--) {
-      buckets.add(0, stepBack(cursor, grain, i));
+      buckets.add(stepBack(cursor, grain, i));
     }
     return buckets;
   }
 
-  /** The {@code points} buckets immediately preceding the first entry of {@code currentBuckets}. */
+  /**
+   * The {@code points} buckets immediately preceding the first entry of {@code currentBuckets},
+   * ASCENDING.
+   */
   private static List<LocalDate> bucketsBefore(List<LocalDate> currentBuckets, Grain grain, int points) {
     LocalDate firstCurrent = currentBuckets.get(0);
     LocalDate lastPrevious = stepBack(firstCurrent, grain, 1);
     List<LocalDate> buckets = new ArrayList<>(points);
     for (int i = points - 1; i >= 0; i--) {
-      buckets.add(0, stepBack(lastPrevious, grain, i));
+      buckets.add(stepBack(lastPrevious, grain, i));
     }
     return buckets;
   }
