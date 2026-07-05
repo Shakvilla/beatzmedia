@@ -340,7 +340,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-NOT-1, WU-PLT-2]
     llfrs: [LLFR-NOTIF-02.1]
-    status: todo
+    status: in_progress
   - id: WU-STU-1
     title: Studio profile
     phase: 4
