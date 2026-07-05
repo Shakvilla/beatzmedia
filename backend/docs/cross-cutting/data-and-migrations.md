@@ -310,7 +310,7 @@ Two acceptable forms — keep both in sync:
 | `V801` | store | `create_store_item`, license/variant tables |
 | `V811` | podcasts | `create_podcast`, `podcast_episode` |
 | `V821` | events | `create_event`, `ticket_tier`, `ticket` |
-| `V901` | notifications | `create_app_notification`, `delivery_attempt` |
+| `V947` | notifications | `create_notification` (WU-NOT-1 ✅); `delivery_attempt` deferred to WU-NOT-2 (next free in band) |
 | `V911` | studio | `create_studio_settings` |
 | `V921` | admin | `create_moderation_case`, `risk_signal`, `support_ticket`, `compliance_request`, editorial tables |
 | `V931` | analytics | `create_sales_rollup`, `audience_rollup` |
