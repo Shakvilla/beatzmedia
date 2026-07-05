@@ -14,8 +14,8 @@ import org.shakvilla.beatzmedia.notifications.application.port.out.NotificationR
 import org.shakvilla.beatzmedia.notifications.domain.Channel;
 import org.shakvilla.beatzmedia.notifications.domain.DeliveryAttempt;
 import org.shakvilla.beatzmedia.notifications.domain.Notification;
-import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
 import org.shakvilla.beatzmedia.platform.application.port.in.ScheduledJob;
+import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
 
 /**
  * WU-PLT-2 {@link ScheduledJob} that sweeps due {@code delivery_attempt} rows (status {@code
