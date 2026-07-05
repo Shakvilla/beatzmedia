@@ -379,3 +379,28 @@ Global DoD (PRD §8 / conventions §11) **plus**:
    in logs.
 7. `AppNotification` validates against the frontend type (contract test green); `unread` reflects the
    recipient's full unread total.
+
+## 13. As-built (WU-NOT-1)
+
+WU-NOT-1 delivered the in-app feed + read state + in-app notification creation. Deviations from the
+sketches above (recorded per DoD; email/SMS dispatch + `delivery_attempt` remain WU-NOT-2):
+
+- **Ids are `TEXT`, not `UUID`.** `notification.id` / `recipient_id` are `TEXT` (migration
+  `V947__create_notification.sql`), mirroring `account.id` (V201). `recipient_id` is a bare account
+  reference with **no cross-module FK** (hexagonal rule — notifications references accounts by id only).
+- **Only `onTipReceived` is wired, synchronously.** `adapter.in.events.NotificationEventObservers`
+  observes exactly one event today — payments' `TipReceived` via `@Observes(during = AFTER_SUCCESS)`
+  (synchronous, keeping transactional context; not `@ObservesAsync`) → creates the creator's in-app
+  "you received a tip" notification (`type=tip`, dedupe `tip:<intentId>:<creatorId>`). This closes the
+  in-app half of the WU-POD-2 deferred tip-notification AC. The other producers sketched in §4.1
+  (`sale`/`follower`/`payout`/`release`/`episode`/`system`) are **deferred**: their source domain
+  events do not exist in the codebase yet, so no observer is wired — added as those events land.
+- **`NotificationListResponse` is the full `Page<T>` envelope.** The wire shape is
+  `{ items, page, size, total, unread }` (conventions §5), not `{ items, unread }` — `unread` is the
+  recipient's full unread total across all pages. `AppNotificationView` = `{ id, type, title, body,
+  time, read, to? }` where `time` is a server-derived relative label string (e.g. "2h ago"), never a
+  raw timestamp, per the frontend `AppNotification` contract.
+- **Idempotent creation (INV-N4)** = fast-path `findByDedupeKey` + the unique partial index
+  `uq_notification_dedupe (dedupe_key) WHERE dedupe_key IS NOT NULL`; `JpaNotificationRepository.save`
+  catches the constraint violation and re-reads the winning row so a concurrent replay still yields a
+  single row and a valid id.
