@@ -331,7 +331,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-IDN-1]
     llfrs: [LLFR-NOTIF-01.1, LLFR-NOTIF-01.2, LLFR-NOTIF-01.3]
-    status: in_progress
+    status: done   # PR #75 merged 2026-07-05 (squash 30e8b62). Wired onTipReceived (closes WU-POD-2 in-app tip-notification AC); other event producers deferred until their source events exist.
   - id: WU-NOT-2
     title: Email/SMS dispatch on events with retry
     phase: 4
