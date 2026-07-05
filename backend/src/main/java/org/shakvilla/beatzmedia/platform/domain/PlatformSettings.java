@@ -58,6 +58,28 @@ public record PlatformSettings(
   private static final int WITHDRAWAL_FEE_MOMO_PCT = 1;
   private static final long WITHDRAWAL_FEE_MOMO_MIN_MINOR = 100L;
 
+  /**
+   * Retry ceiling for notifications' email/SMS {@code delivery_attempt} backoff sweep (WU-NOT-2,
+   * INV-N5): a transient failure reaching this many retries transitions to the terminal {@code
+   * dead} state and is never retried again. Held here (not yet a persisted {@code
+   * platform_settings} column) so the constant is config-authoritative in one place rather than
+   * inlined at the call site; promote to a stored column in WU-ADM-8 if it must be tunable
+   * per-environment.
+   */
+  private static final int NOTIFICATION_MAX_RETRIES = 5;
+
+  /**
+   * Base backoff duration for the first retry of a failed {@code delivery_attempt}; the sweep
+   * doubles this per retry ({@code base * 2^retryCount}), capped at {@link
+   * #NOTIFICATION_RETRY_BACKOFF_CAP}. WU-NOT-2 / notifications ADD §9.
+   */
+  private static final java.time.Duration NOTIFICATION_RETRY_BACKOFF_BASE =
+      java.time.Duration.ofMinutes(1);
+
+  /** Upper bound on the computed exponential backoff, so a high retry count never sleeps for days. */
+  private static final java.time.Duration NOTIFICATION_RETRY_BACKOFF_CAP =
+      java.time.Duration.ofHours(6);
+
   /** Construct defaults matching ADD §3.3 / PRD §0 constants. */
   public static PlatformSettings defaults() {
     return new PlatformSettings(
@@ -91,6 +113,22 @@ public record PlatformSettings(
     }
     long pctFee = Math.round(amountMinor * (WITHDRAWAL_FEE_MOMO_PCT / 100.0));
     return Math.max(WITHDRAWAL_FEE_MOMO_MIN_MINOR, pctFee);
+  }
+
+  /** Max retry count before a {@code delivery_attempt} becomes terminally {@code dead} (INV-N5). */
+  public int notificationMaxRetries() {
+    return NOTIFICATION_MAX_RETRIES;
+  }
+
+  /**
+   * Computes the exponential backoff duration for the given (0-based, pre-increment) retry count:
+   * {@code base * 2^retryCount}, capped. WU-NOT-2 / notifications ADD §9.
+   */
+  public java.time.Duration notificationRetryBackoff(int retryCount) {
+    java.time.Duration computed = NOTIFICATION_RETRY_BACKOFF_BASE.multipliedBy(1L << Math.min(retryCount, 20));
+    return computed.compareTo(NOTIFICATION_RETRY_BACKOFF_CAP) > 0
+        ? NOTIFICATION_RETRY_BACKOFF_CAP
+        : computed;
   }
 
   /** Return a copy with maintenanceMode toggled. */

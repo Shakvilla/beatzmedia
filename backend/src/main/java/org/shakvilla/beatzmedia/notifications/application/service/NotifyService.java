@@ -1,6 +1,7 @@
 package org.shakvilla.beatzmedia.notifications.application.service;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 
@@ -30,9 +31,12 @@ import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
  *       concurrent replay still returns a single, valid id rather than a 500.
  * </ul>
  *
- * <p>In-app persistence always happens independent of any downstream delivery outcome (WU-NOT-2
- * dispatch is out of this WU's scope) — a notification row is the one durable fact this service
- * produces.
+ * <p>In-app persistence always happens independent of any downstream delivery outcome — a
+ * notification row is the one durable fact this service produces. On a genuine NEW row (never on
+ * a dedupe-guard replay no-op) this service fires {@link NotificationCreated}, observed {@code
+ * AFTER_SUCCESS} by {@link DispatchSubscriber} (WU-NOT-2) to fan out to email/SMS post-commit —
+ * reusing this same creation path rather than a second, independent observer of the source domain
+ * events (hard requirement: no double dispatch logic).
  */
 @ApplicationScoped
 @Transactional
@@ -43,12 +47,18 @@ public class NotifyService implements NotifyUseCase {
   private final NotificationRepository repository;
   private final Clock clock;
   private final IdGenerator ids;
+  private final Event<NotificationCreated> notificationCreatedEvent;
 
   @Inject
-  public NotifyService(NotificationRepository repository, Clock clock, IdGenerator ids) {
+  public NotifyService(
+      NotificationRepository repository,
+      Clock clock,
+      IdGenerator ids,
+      Event<NotificationCreated> notificationCreatedEvent) {
     this.repository = repository;
     this.clock = clock;
     this.ids = ids;
+    this.notificationCreatedEvent = notificationCreatedEvent;
   }
 
   @Override
@@ -79,6 +89,13 @@ public class NotifyService implements NotifyUseCase {
             clock.now());
 
     Notification saved = repository.save(notification);
+
+    // Fired only for a genuine new row; the observer runs post-commit (AFTER_SUCCESS) so a
+    // provider outage during dispatch never rolls back the in-app notification.
+    notificationCreatedEvent.fire(
+        new NotificationCreated(
+            saved.id().value(), saved.recipientId().value(), saved.title(), saved.body()));
+
     return saved.id();
   }
 }

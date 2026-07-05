@@ -10,6 +10,10 @@ import java.util.Optional;
 
 import org.shakvilla.beatzmedia.identity.domain.AccountId;
 import org.shakvilla.beatzmedia.notifications.application.port.out.NotificationRepository;
+import org.shakvilla.beatzmedia.notifications.domain.Channel;
+import org.shakvilla.beatzmedia.notifications.domain.DeliveryAttempt;
+import org.shakvilla.beatzmedia.notifications.domain.DeliveryAttemptId;
+import org.shakvilla.beatzmedia.notifications.domain.DeliveryStatus;
 import org.shakvilla.beatzmedia.notifications.domain.Notification;
 import org.shakvilla.beatzmedia.notifications.domain.NotificationId;
 import org.shakvilla.beatzmedia.platform.domain.Page;
@@ -96,5 +100,61 @@ public class FakeNotificationRepository implements NotificationRepository {
   /** Test helper — total rows stored (across all recipients). */
   public int count() {
     return byId.size();
+  }
+
+  // -------------------------------------------------------------------------
+  // WU-NOT-2: delivery_attempt
+  // -------------------------------------------------------------------------
+
+  private final Map<String, DeliveryAttempt> attemptsById = new LinkedHashMap<>();
+
+  @Override
+  public DeliveryAttempt saveAttempt(DeliveryAttempt attempt) {
+    // Emulate the unique (notification_id, channel) index: a DIFFERENT id trying to claim an
+    // existing (notificationId, channel) pair is a constraint violation (send-idempotency guard).
+    findAttempt(attempt.notificationId(), attempt.channel())
+        .filter(existing -> !existing.id().equals(attempt.id()))
+        .ifPresent(clash -> {
+          throw new IllegalStateException(
+              "duplicate delivery_attempt for (notificationId, channel): "
+                  + attempt.notificationId() + "/" + attempt.channel());
+        });
+    attemptsById.put(attempt.id().value(), attempt);
+    return attempt;
+  }
+
+  @Override
+  public Optional<DeliveryAttempt> findAttemptById(DeliveryAttemptId id) {
+    return Optional.ofNullable(attemptsById.get(id.value()));
+  }
+
+  @Override
+  public Optional<DeliveryAttempt> findAttempt(NotificationId notificationId, Channel channel) {
+    return attemptsById.values().stream()
+        .filter(a -> a.notificationId().equals(notificationId) && a.channel() == channel)
+        .findFirst();
+  }
+
+  @Override
+  public List<DeliveryAttempt> findAttemptsByNotification(NotificationId notificationId) {
+    return attemptsById.values().stream()
+        .filter(a -> a.notificationId().equals(notificationId))
+        .sorted(Comparator.comparing(DeliveryAttempt::createdAt))
+        .toList();
+  }
+
+  @Override
+  public List<DeliveryAttempt> findDueRetries(Instant now, int limit) {
+    return attemptsById.values().stream()
+        .filter(a -> a.status() == DeliveryStatus.pending || a.status() == DeliveryStatus.failed)
+        .filter(a -> a.nextAttemptAt().isEmpty() || !a.nextAttemptAt().get().isAfter(now))
+        .sorted(Comparator.comparing(DeliveryAttempt::createdAt))
+        .limit(limit)
+        .toList();
+  }
+
+  /** Test helper — total delivery_attempt rows stored. */
+  public int attemptCount() {
+    return attemptsById.size();
   }
 }

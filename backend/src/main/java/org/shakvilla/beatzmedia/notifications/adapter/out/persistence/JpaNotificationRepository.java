@@ -11,14 +11,18 @@ import jakarta.persistence.PersistenceException;
 
 import org.shakvilla.beatzmedia.identity.domain.AccountId;
 import org.shakvilla.beatzmedia.notifications.application.port.out.NotificationRepository;
+import org.shakvilla.beatzmedia.notifications.domain.Channel;
+import org.shakvilla.beatzmedia.notifications.domain.DeliveryAttempt;
+import org.shakvilla.beatzmedia.notifications.domain.DeliveryAttemptId;
+import org.shakvilla.beatzmedia.notifications.domain.DeliveryStatus;
 import org.shakvilla.beatzmedia.notifications.domain.Notification;
 import org.shakvilla.beatzmedia.notifications.domain.NotificationId;
 import org.shakvilla.beatzmedia.platform.domain.Page;
 import org.shakvilla.beatzmedia.platform.domain.PageRequest;
 
 /**
- * JPA implementation of {@link NotificationRepository}. Owns only the {@code notification} table
- * (WU-NOT-1 scope); {@code delivery_attempt} is added in WU-NOT-2. Notifications ADD §5.2.
+ * JPA implementation of {@link NotificationRepository}. Owns the {@code notification} (WU-NOT-1)
+ * and {@code delivery_attempt} (WU-NOT-2) tables. Notifications ADD §5.2.
  */
 @ApplicationScoped
 public class JpaNotificationRepository implements NotificationRepository {
@@ -129,5 +133,89 @@ public class JpaNotificationRepository implements NotificationRepository {
             .setParameter("key", dedupeKey)
             .getResultList();
     return results.stream().findFirst().map(NotificationEntityMapper::toDomain);
+  }
+
+  // -------------------------------------------------------------------------
+  // WU-NOT-2: delivery_attempt
+  // -------------------------------------------------------------------------
+
+  @Override
+  public DeliveryAttempt saveAttempt(DeliveryAttempt attempt) {
+    DeliveryAttemptEntity incoming = DeliveryAttemptEntityMapper.toEntity(attempt);
+    DeliveryAttemptEntity existing = em.find(DeliveryAttemptEntity.class, incoming.id);
+    try {
+      if (existing == null) {
+        em.persist(incoming);
+        em.flush();
+        return DeliveryAttemptEntityMapper.toDomain(incoming);
+      }
+      existing.status = incoming.status;
+      existing.retryCount = incoming.retryCount;
+      existing.lastError = incoming.lastError;
+      existing.nextAttemptAt = incoming.nextAttemptAt;
+      existing.updatedAt = incoming.updatedAt;
+      em.flush();
+      return DeliveryAttemptEntityMapper.toDomain(existing);
+    } catch (PersistenceException e) {
+      // Send-idempotency concurrency guard: a racing insert for the SAME (notification_id,
+      // channel) violates the unique index (uq_delivery_attempt_channel) — a channel is never
+      // sent twice. Fall back to the row the winning concurrent write already created rather than
+      // surfacing a 500 for what is, from the caller's perspective, a benign replay.
+      Optional<DeliveryAttempt> winner =
+          findAttempt(attempt.notificationId(), attempt.channel());
+      if (winner.isPresent()) {
+        return winner.get();
+      }
+      throw e;
+    }
+  }
+
+  @Override
+  public Optional<DeliveryAttempt> findAttemptById(DeliveryAttemptId id) {
+    DeliveryAttemptEntity e = em.find(DeliveryAttemptEntity.class, id.value());
+    return Optional.ofNullable(e).map(DeliveryAttemptEntityMapper::toDomain);
+  }
+
+  @Override
+  public Optional<DeliveryAttempt> findAttempt(NotificationId notificationId, Channel channel) {
+    List<DeliveryAttemptEntity> results =
+        em.createQuery(
+                "SELECT e FROM DeliveryAttemptEntity e"
+                    + " WHERE e.notificationId = :nid AND e.channel = :channel",
+                DeliveryAttemptEntity.class)
+            .setParameter("nid", notificationId.value())
+            .setParameter("channel", channel.name())
+            .getResultList();
+    return results.stream().findFirst().map(DeliveryAttemptEntityMapper::toDomain);
+  }
+
+  @Override
+  public List<DeliveryAttempt> findAttemptsByNotification(NotificationId notificationId) {
+    return em.createQuery(
+            "SELECT e FROM DeliveryAttemptEntity e WHERE e.notificationId = :nid"
+                + " ORDER BY e.createdAt ASC",
+            DeliveryAttemptEntity.class)
+        .setParameter("nid", notificationId.value())
+        .getResultList()
+        .stream()
+        .map(DeliveryAttemptEntityMapper::toDomain)
+        .toList();
+  }
+
+  @Override
+  public List<DeliveryAttempt> findDueRetries(Instant now, int limit) {
+    List<DeliveryAttemptEntity> rows =
+        em.createQuery(
+                "SELECT e FROM DeliveryAttemptEntity e"
+                    + " WHERE e.status IN (:pending, :failed)"
+                    + " AND (e.nextAttemptAt IS NULL OR e.nextAttemptAt <= :now)"
+                    + " ORDER BY e.createdAt ASC",
+                DeliveryAttemptEntity.class)
+            .setParameter("pending", DeliveryStatus.pending.name())
+            .setParameter("failed", DeliveryStatus.failed.name())
+            .setParameter("now", now)
+            .setMaxResults(limit)
+            .getResultList();
+    return rows.stream().map(DeliveryAttemptEntityMapper::toDomain).toList();
   }
 }
