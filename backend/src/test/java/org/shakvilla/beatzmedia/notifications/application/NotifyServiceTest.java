@@ -8,10 +8,12 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.shakvilla.beatzmedia.identity.domain.AccountId;
 import org.shakvilla.beatzmedia.notifications.application.port.in.NotifyCommand;
+import org.shakvilla.beatzmedia.notifications.application.service.NotificationCreated;
 import org.shakvilla.beatzmedia.notifications.application.service.NotifyService;
 import org.shakvilla.beatzmedia.notifications.domain.NotificationId;
 import org.shakvilla.beatzmedia.notifications.domain.NotificationType;
 import org.shakvilla.beatzmedia.notifications.fakes.FakeNotificationRepository;
+import org.shakvilla.beatzmedia.notifications.fakes.RecordingEvent;
 import org.shakvilla.beatzmedia.platform.fakes.FakeClock;
 import org.shakvilla.beatzmedia.platform.fakes.FakeIds;
 
@@ -28,6 +30,7 @@ class NotifyServiceTest {
   FakeNotificationRepository repository;
   FakeClock clock;
   FakeIds ids;
+  RecordingEvent<NotificationCreated> notificationCreatedEvent;
   NotifyService service;
 
   @BeforeEach
@@ -35,7 +38,8 @@ class NotifyServiceTest {
     repository = new FakeNotificationRepository();
     clock = FakeClock.at("2026-07-04T10:00:00Z");
     ids = FakeIds.sequential("notif");
-    service = new NotifyService(repository, clock, ids);
+    notificationCreatedEvent = new RecordingEvent<>();
+    service = new NotifyService(repository, clock, ids, notificationCreatedEvent);
   }
 
   private NotifyCommand tipCommand(String dedupeKey) {
@@ -71,5 +75,23 @@ class NotifyServiceTest {
   @Test
   void notify_nullCommand_isRejected() {
     assertThrows(IllegalArgumentException.class, () -> service.notify(null));
+  }
+
+  @Test
+  void notify_firesNotificationCreated_exactlyOnce_forANewRow() {
+    NotificationId id = service.notify(tipCommand("tip:intent-1:acct-creator"));
+
+    assertEquals(1, notificationCreatedEvent.count());
+    NotificationCreated fired = notificationCreatedEvent.fired().get(0);
+    assertEquals(id.value(), fired.notificationId());
+    assertEquals(CREATOR.value(), fired.recipientId());
+  }
+
+  @Test
+  void notify_redeliveredSameDedupeKey_doesNotFireNotificationCreatedAgain() {
+    service.notify(tipCommand("tip:intent-1:acct-creator"));
+    service.notify(tipCommand("tip:intent-1:acct-creator"));
+
+    assertEquals(1, notificationCreatedEvent.count(), "replay must not re-trigger dispatch");
   }
 }
