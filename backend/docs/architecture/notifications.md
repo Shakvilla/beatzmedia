@@ -404,3 +404,83 @@ sketches above (recorded per DoD; email/SMS dispatch + `delivery_attempt` remain
   `uq_notification_dedupe (dedupe_key) WHERE dedupe_key IS NOT NULL`; `JpaNotificationRepository.save`
   catches the constraint violation and re-reads the winning row so a concurrent replay still yields a
   single row and a valid id.
+
+## 14. As-built (WU-NOT-2)
+
+WU-NOT-2 delivered email/SMS dispatch on notification creation with retry/backoff, dev provider
+adapters, and the `delivery_attempt` table. Deviations from the §4/§8 sketches:
+
+- **Dispatch trigger is an in-module event, not a second observer of source domain events.**
+  `NotifyService` (WU-NOT-1) fires a new in-module CDI event, `NotificationCreated(notificationId,
+  recipientId, title, body)`, immediately after a genuinely NEW notification row is saved (never
+  fired on an INV-N4 dedupe-replay no-op). `application.service.DispatchSubscriber` observes it via
+  `@Observes(during = TransactionPhase.AFTER_SUCCESS)`, so dispatch runs the instant `NotifyService`'s
+  own `@Transactional` method commits — synchronously in the same request/event-handling thread, not
+  on a separate async thread. This satisfies "reuse WU-NOT-1's creation path" without re-observing
+  `TipReceived`/`SaleCompleted`/etc a second time (no double logic).
+- **Channel opt-in resolution — a new identity input port, not a direct `fan_settings` read.**
+  Notifications never reads identity's `account`/`fan_settings` tables. It depends on its own output
+  port `application.port.out.NotificationContactPort`, implemented by
+  `adapter.out.integration.IdentityContactAdapter`, which calls a NEW identity input port,
+  `identity.application.port.in.GetNotificationContact` (impl:
+  `GetNotificationContactService`) — mirrors the podcasts→payments tip pattern
+  (`PaymentsTipAdapter`). The port never throws: an unknown account or absent `fan_settings` row
+  resolves to "no contact, opted out of both channels" (INV-N3 treats "no data" as "opted out").
+  **Category mapping (fan_settings has no dedicated email/SMS toggle today):** `emailOptIn` = `
+  newReleases OR playlistUpdates` (the two categories judged "transactional-worthy"; `dropsOffers` is
+  promotional-only and excluded); `smsOptIn` = `emailOptIn AND a non-blank phone is on file`. This is
+  a pragmatic default pending a dedicated channel-preference toggle (flagged for a future WU if
+  product wants per-channel opt-in independent of category).
+- **`DeliveryAttemptService` owns the whole state machine + backoff policy** (not split across the
+  subscriber and the sweep job): `createPendingIfAbsent` is idempotent create-if-absent keyed on
+  `(notificationId, channel)` (send-idempotency — a channel is attempted at most once per
+  notification, backed by the unique index `uq_delivery_attempt_channel`), and `attemptSend` performs
+  the actual provider call, applying `pending|failed -> sent | failed(+backoff) | dead` per §8's state
+  diagram. Every method runs in its own `REQUIRES_NEW` transaction (mirrors payments'
+  `TipLedgerPoster`), so a provider outage never rolls back the in-app notification or a sibling
+  channel's attempt.
+- **Backoff + max retries are derived `PlatformSettings` methods, not a persisted column.**
+  `PlatformSettings.notificationMaxRetries()` (default 5) and
+  `PlatformSettings.notificationRetryBackoff(retryCount)` (`base(1m) * 2^retryCount`, capped at 6h)
+  follow the existing "derived constant, not yet a stored column" pattern (`maxChargeMinor()`,
+  `withdrawalFeeMinor()`) — config-authoritative in one place; promote to stored columns in WU-ADM-8
+  if they must be tunable per-environment.
+- **Provider idempotency key** = `"<notificationId>:<channel>"`, set once at `createPendingIfAbsent`
+  time and passed unchanged to every `Mailer.send`/`SmsSender.send` call for that attempt (including
+  every retry), so a provider that itself supports idempotency keys sees the same key across retries.
+- **Retry sweep is a WU-PLT-2 `ScheduledJob` bean**, `DeliveryRetrySweepJob`
+  (`notifications.delivery-retry-sweep`), registered in `SchedulerRegistry` on a new 60 s cadence
+  (`@Scheduled(every = "60s", identity = "delivery-retry-sweep")`), guarded by the same
+  advisory-lock/exactly-once-per-tick machinery as every other platform job. Each tick calls
+  `NotificationRepository.findDueRetries(now, limit=200)` (rows `pending`/`failed` with
+  `next_attempt_at <= now`, batch-capped so one tick cannot run unbounded), re-resolves the
+  recipient's CURRENT opt-in/contact state (INV-N3 is re-checked on every retry, not just the first
+  send — a recipient who opts out between attempts is skipped, left `failed` rather than forced to
+  `dead`), and calls the same `DeliveryAttemptService.attemptSend`.
+- **Dev provider adapters — real Quarkus Mailer + a genuinely in-repo SMS stub (OQ-9 closed
+  literally).** `adapter.out.integration.SmtpMailer` wraps the injected `io.quarkus.mailer.Mailer`
+  (added the `quarkus-mailer` extension); dev points at Mailpit (`mail:1025`) via the existing
+  `quarkus.mailer.*` config, and `%test.quarkus.mailer.mock=true` captures sends in Quarkus's
+  `MockMailbox` with zero real SMTP connection needed to prove the flow in tests.
+  `adapter.out.integration.HttpSmsSender` is a small dependency-free `java.net.http.HttpClient` POST
+  against `beatz.sms.endpoint` (`http://sms:8026/send` in compose); the endpoint is served by a NEW
+  in-repo, dependency-free Python stdlib HTTP server, `backend/tools/sms-capture-stub/server.py`
+  (mounted read-only into a `python:3-alpine` container in `docker-compose.yml`'s new `sms` service) —
+  no third-party image publish was required, resolving the "placeholder" note left in WU-PLT-0/1's
+  compose file. The stub captures POSTs in memory, dedupes by `idempotencyKey`, and serves a tiny
+  read UI/API (`GET /messages`, `GET /`) analogous to Mailpit.
+- **Failure classification.** `SmtpMailer` conservatively treats every send exception as
+  `TransientDeliveryException` (Quarkus Mailer's blocking API does not expose a stable
+  transient-vs-permanent SMTP-reply distinction at this abstraction level — a message is never
+  silently dropped without at least one retry). `HttpSmsSender` classifies by HTTP status: 2xx =
+  success, 429/5xx = transient, any other 4xx = permanent (`PermanentDeliveryException`), and a
+  network-level exception (timeout, connection refused) = transient.
+- **Config bug fixed in the same PR:** `beatz.sms.api-key` defaulted to `""` (empty string), which
+  SmallRye Config's built-in converter treats as `null` and rejects for a plain `String`
+  `@ConfigProperty` at CDI validation time — the app failed to boot in `%test`/`%dev` whenever the
+  env var was unset. Fixed by injecting `Optional<String>` instead.
+- **`delivery_attempt` migration** — `V948__create_delivery_attempt.sql` (ids `TEXT`, mirroring
+  `notification.id`); indexes: `idx_delivery_attempt_notification`, a partial
+  `idx_delivery_attempt_due` on `next_attempt_at` filtered to `status IN ('pending','failed')`
+  (backs the sweep's query), and the unique `uq_delivery_attempt_channel (notification_id, channel)`
+  (send-idempotency).
