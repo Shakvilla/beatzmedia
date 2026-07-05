@@ -5,6 +5,7 @@ import java.net.http.HttpClient;
 import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
+import java.util.Optional;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -42,9 +43,9 @@ public class HttpSmsSender implements SmsSender {
   @Inject
   public HttpSmsSender(
       @ConfigProperty(name = "beatz.sms.endpoint") String endpoint,
-      @ConfigProperty(name = "beatz.sms.api-key") String apiKey) {
+      @ConfigProperty(name = "beatz.sms.api-key") Optional<String> apiKey) {
     this.endpoint = endpoint;
-    this.apiKey = apiKey;
+    this.apiKey = apiKey.orElse(null);
     this.client = HttpClient.newBuilder().connectTimeout(Duration.ofSeconds(5)).build();
   }
 
