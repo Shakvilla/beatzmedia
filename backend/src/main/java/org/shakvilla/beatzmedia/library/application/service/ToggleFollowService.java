@@ -1,6 +1,7 @@
 package org.shakvilla.beatzmedia.library.application.service;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 
@@ -9,7 +10,9 @@ import org.shakvilla.beatzmedia.library.application.port.in.ToggleFollow;
 import org.shakvilla.beatzmedia.library.application.port.out.CatalogReader;
 import org.shakvilla.beatzmedia.library.application.port.out.CollectionRepository;
 import org.shakvilla.beatzmedia.library.domain.FollowKind;
+import org.shakvilla.beatzmedia.library.domain.Followed;
 import org.shakvilla.beatzmedia.library.domain.TargetNotFoundException;
+import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
 
 /** Application service for PUT/DELETE /v1/me/follows/{kind}/:id. LLFR-LIBRARY-01.3. */
 @ApplicationScoped
@@ -17,18 +20,31 @@ public class ToggleFollowService implements ToggleFollow {
 
   private final CollectionRepository repo;
   private final CatalogReader catalogReader;
+  private final Clock clock;
+  private final Event<Followed> followedEvent;
 
   @Inject
-  public ToggleFollowService(CollectionRepository repo, CatalogReader catalogReader) {
+  public ToggleFollowService(
+      CollectionRepository repo,
+      CatalogReader catalogReader,
+      Clock clock,
+      Event<Followed> followedEvent) {
     this.repo = repo;
     this.catalogReader = catalogReader;
+    this.clock = clock;
+    this.followedEvent = followedEvent;
   }
 
   @Override
   @Transactional
   public void follow(AccountId account, FollowKind kind, String targetId) {
     validateExists(kind, targetId);
-    repo.addFollow(account, kind, targetId);
+    boolean inserted = repo.addFollow(account, kind, targetId);
+    if (inserted) {
+      // Only fire on a genuinely new follow row — a re-toggle of an already-active follow (benign
+      // no-op at the repo layer) must not double-count followersGained in analytics (WU-ANA-1).
+      followedEvent.fire(new Followed(account.value(), kind, targetId, clock.now()));
+    }
   }
 
   @Override

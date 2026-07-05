@@ -19,6 +19,7 @@ import org.shakvilla.beatzmedia.commerce.domain.OrderId;
 import org.shakvilla.beatzmedia.commerce.domain.OrderLine;
 import org.shakvilla.beatzmedia.commerce.domain.OrderStatus;
 import org.shakvilla.beatzmedia.commerce.domain.OwnershipGranted;
+import org.shakvilla.beatzmedia.commerce.domain.SaleRecorded;
 import org.shakvilla.beatzmedia.commerce.fakes.FakeCartRepository;
 import org.shakvilla.beatzmedia.commerce.fakes.FakeCatalogExpansionReader;
 import org.shakvilla.beatzmedia.commerce.fakes.FakeOrderRepository;
@@ -51,6 +52,7 @@ class GrantOwnershipServiceTest {
   FakeCartRepository carts;
   FakeAuditWriter audit;
   RecordingEvent<OwnershipGranted> grantedEvent;
+  RecordingEvent<SaleRecorded> saleRecordedEvent;
   GrantOwnershipService service;
 
   @BeforeEach
@@ -62,9 +64,10 @@ class GrantOwnershipServiceTest {
     carts = new FakeCartRepository();
     audit = new FakeAuditWriter();
     grantedEvent = new RecordingEvent<>();
+    saleRecordedEvent = new RecordingEvent<>();
     service =
         new GrantOwnershipService(
-            orders, ownership, expansion, ledger, carts, audit, grantedEvent,
+            orders, ownership, expansion, ledger, carts, audit, grantedEvent, saleRecordedEvent,
             FakeIds.sequential("grant"), FakeClock.fixed());
   }
 
@@ -108,6 +111,9 @@ class GrantOwnershipServiceTest {
     assertEquals(1000, ledger.postings().get(0).grossMinor());
     assertFalse(carts.hasCart(BUYER), "cart cleared on settlement");
     assertEquals(1, grantedEvent.count(), "OwnershipGranted fired once");
+    assertEquals(1, saleRecordedEvent.count(), "SaleRecorded fired once for analytics (WU-ANA-1)");
+    assertEquals(CREATOR, saleRecordedEvent.fired().get(0).creatorAccountId());
+    assertEquals(1000, saleRecordedEvent.fired().get(0).grossMinor());
   }
 
   @Test
@@ -155,6 +161,7 @@ class GrantOwnershipServiceTest {
         ledger.postings().stream().map(FakeSaleLedgerPoster.Posting::refId).distinct().count(),
         "distinct-creator postings use distinct source refs (intentId:creatorId)");
     assertEquals(1, grantedEvent.count(), "OwnershipGranted fired once");
+    assertEquals(2, saleRecordedEvent.count(), "one SaleRecorded per distinct creator");
   }
 
   @Test
