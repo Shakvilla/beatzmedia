@@ -59,19 +59,33 @@ public class JpaAudienceRollupRepository implements AudienceRollupRepository {
         .executeUpdate();
   }
 
+  /**
+   * Reads the current row with a NATIVE scalar query, NOT a JPA entity query — see the analogous note
+   * on {@code JpaSalesRollupRepository#find}. Avoids stale first-level-cache reads during the audience
+   * job's read-modify-write, which would undercount a bucket with 3+ facts in one window.
+   */
   @Override
   public Optional<AudienceRollup> find(ArtistId artistId, LocalDate bucket, Grain grain) {
-    List<AudienceRollupEntity> rows =
-        em.createQuery(
-                "SELECT r FROM AudienceRollupEntity r "
-                    + "WHERE r.artistId = :artist AND r.bucket = :bucket AND r.grain = :grain",
-                AudienceRollupEntity.class)
+    List<?> rows =
+        em.createNativeQuery(
+                "SELECT plays, followers_gained, unique_listeners, completion_pct FROM audience_rollup "
+                    + "WHERE artist_id = :artist AND bucket = :bucket AND grain = :grain")
             .setParameter("artist", artistId.value())
             .setParameter("bucket", bucket)
             .setParameter("grain", grain.name())
-            .setMaxResults(1)
             .getResultList();
-    return rows.stream().findFirst().map(JpaAudienceRollupRepository::toDomain);
+    if (rows.isEmpty()) {
+      return Optional.empty();
+    }
+    Object[] r = (Object[]) rows.get(0);
+    return Optional.of(
+        new AudienceRollup(
+            artistId,
+            new RollupBucket(bucket, grain),
+            ((Number) r[0]).longValue(),
+            ((Number) r[1]).intValue(),
+            ((Number) r[2]).intValue(),
+            ((Number) r[3]).intValue()));
   }
 
   @Override

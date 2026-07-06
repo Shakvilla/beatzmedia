@@ -58,19 +58,37 @@ public class JpaSalesRollupRepository implements SalesRollupRepository {
         .executeUpdate();
   }
 
+  /**
+   * Reads the current row with a NATIVE scalar query, NOT a JPA entity query. This is deliberate:
+   * the rollup jobs read-modify-write a bucket once per fact via {@link #find} + {@link #upsert},
+   * and {@link #upsert} writes through native SQL. A JPA entity {@code find} would, on the 2nd read
+   * of a bucket within the same transaction, return the stale first-level-cached instance (Hibernate
+   * guarantees session identity and never overwrites managed state from a native write) — silently
+   * undercounting when a bucket has 3+ facts in one window. A scalar native read always sees the
+   * committed-so-far value.
+   */
   @Override
   public Optional<SalesRollup> find(ArtistId artistId, LocalDate bucket, Grain grain) {
-    List<SalesRollupEntity> rows =
-        em.createQuery(
-                "SELECT r FROM SalesRollupEntity r "
-                    + "WHERE r.artistId = :artist AND r.bucket = :bucket AND r.grain = :grain",
-                SalesRollupEntity.class)
+    List<?> rows =
+        em.createNativeQuery(
+                "SELECT sales_minor, tips_minor, units FROM sales_rollup "
+                    + "WHERE artist_id = :artist AND bucket = :bucket AND grain = :grain")
             .setParameter("artist", artistId.value())
             .setParameter("bucket", bucket)
             .setParameter("grain", grain.name())
-            .setMaxResults(1)
             .getResultList();
-    return rows.stream().findFirst().map(JpaSalesRollupRepository::toDomain);
+    if (rows.isEmpty()) {
+      return Optional.empty();
+    }
+    Object[] r = (Object[]) rows.get(0);
+    return Optional.of(
+        new SalesRollup(
+            artistId,
+            new RollupBucket(bucket, grain),
+            ((Number) r[0]).longValue(),
+            ((Number) r[1]).longValue(),
+            0L,
+            ((Number) r[2]).intValue()));
   }
 
   @Override
