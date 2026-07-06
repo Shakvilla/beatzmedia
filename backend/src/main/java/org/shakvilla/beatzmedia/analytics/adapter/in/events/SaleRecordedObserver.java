@@ -4,6 +4,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import jakarta.enterprise.event.TransactionPhase;
 import jakarta.inject.Inject;
+import jakarta.transaction.Transactional;
 
 import org.shakvilla.beatzmedia.analytics.application.port.out.SaleFactRepository;
 import org.shakvilla.beatzmedia.analytics.domain.SaleFact;
@@ -34,6 +35,7 @@ public class SaleRecordedObserver {
     this.ids = ids;
   }
 
+  @Transactional(Transactional.TxType.REQUIRES_NEW)
   public void onSaleRecorded(@Observes(during = TransactionPhase.AFTER_SUCCESS) SaleRecorded event) {
     saleFacts.append(
         SaleFact.unprocessed(

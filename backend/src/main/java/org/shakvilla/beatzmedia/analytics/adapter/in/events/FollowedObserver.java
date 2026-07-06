@@ -4,6 +4,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import jakarta.enterprise.event.TransactionPhase;
 import jakarta.inject.Inject;
+import jakarta.transaction.Transactional;
 
 import org.shakvilla.beatzmedia.analytics.application.port.out.FollowFactRepository;
 import org.shakvilla.beatzmedia.analytics.domain.FollowFact;
@@ -29,6 +30,7 @@ public class FollowedObserver {
     this.ids = ids;
   }
 
+  @Transactional(Transactional.TxType.REQUIRES_NEW)
   public void onFollowed(@Observes(during = TransactionPhase.AFTER_SUCCESS) Followed event) {
     if (event.kind() != FollowKind.artist) {
       return;
