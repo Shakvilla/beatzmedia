@@ -230,31 +230,44 @@ erDiagram
 
 ### 4.1 ANALYTICS — input & rollup ports
 
-```java
-/** Read-side port consumed by studio & admin to serve insights from rollups (LLFR-ANALYTICS-01.1). */
-public interface AnalyticsReader {
-    StudioInsights studioInsights(ArtistId artist, AnalyticsRange range);   // GET /studio/analytics
-    AudienceInsights audience(ArtistId artist, AudienceRange range);        // GET /studio/audience
-    AdminOverviewMetrics adminOverview(AdminRange range);                   // GET /admin/overview
-}
+> **Implementation status (WU-ANA-1, done):** `AnalyticsReader.studioInsights` and `RollupJob` are
+> implemented exactly as specified below. `audience(...)` and `adminOverview(...)` are **not yet
+> implemented** — they are out of WU-ANA-1's scope (owned by a future studio-audience / admin-overview
+> WU) and are left here as forward-looking port signatures the ADD anticipates.
+>
+> **Deviation — snapshot ports are CDI event observers, not pull-based `since(from)` queries.**
+> `SettledSalesSource`/`PlayCountSource`/`FollowEventSource` as originally drafted below implied a
+> *pull* model (the job calls `since(Instant)` on a sibling module's port at tick time). The
+> implementation instead follows the **event-sourced push** pattern already established by every
+> other cross-module integration in this codebase (`payments.PaymentSettled` → commerce's
+> `PaymentSettledSubscriber`; `payments.TipReceived` → notifications' observer; etc.): each owning
+> module fires a canonical CDI domain event `AFTER_SUCCESS`, and analytics owns
+> `adapter.in.events.*Observer` classes that turn each event into a row in one of analytics' own
+> **staging-fact tables** (`analytics_sale_fact`, `analytics_tip_fact`, `analytics_play_fact`,
+> `analytics_follow_fact` — §7). The `RollupJob`s then read/upsert **only from these analytics-owned
+> tables**, never a sibling module's schema and never a pull-style port call at tick time. This is
+> equivalent in spirit (no cross-module table reads; idempotent; upsert-by-key) but changes the
+> port shape from `since(Instant)` pull to `@Observes(AFTER_SUCCESS)` push. Two consequences worth
+> recording:
+>
+> - **Observers run in their own transaction.** An `AFTER_SUCCESS` observer fires *after* the
+>   producing transaction has committed, so there is no active transaction when it stages its fact —
+>   each `*Observer` is therefore `@Transactional(REQUIRES_NEW)`. (A fact lost because that separate
+>   append fails is an acceptable analytics gap; it must never poison the producer's money/ownership
+>   transaction, which has already committed.)
+> - **Rollup reads are native scalar, not JPA entity queries.** The jobs read-modify-write a bucket
+>   once per fact (`find` + native `upsert`). A JPA entity `find` would return the stale
+>   first-level-cached instance on the 2nd+ read of a bucket within one window (Hibernate never
+>   refreshes managed state from a native write), silently undercounting a bucket with 3+ facts.
+>   `find()` therefore reads through a native scalar query; `findRange()` (reader-side, always a
+>   fresh request/transaction) stays JPA.
+>
+> **Carryover (tracked, not dropped):** `audience_rollup.unique_listeners` and `completion_pct`
+> columns and the `analytics_play_fact.account_id` needed to compute uniques are in place (§7), but
+> the audience job only maintains `plays` and `followers_gained` today — `unique_listeners` /
+> `completion_pct` stay 0 until the studio `/studio/audience` WU consumes them (they are not on the
+> `studioInsights` KPIs this WU serves). No schema change will be needed to light them up.
 
-/** A single scheduled aggregation job that maintains one rollup table; idempotent per (range, asOf). */
-public interface RollupJob {
-    RollupResult run(RollupWindow window);          // recompute buckets covered by window
-    String name();                                  // stable job id for metrics/logs
-}
-
-/** Snapshot ports the analytics jobs read settled facts through (no cross-module table access). */
-public interface SettledSalesSource { List<SalesFact> since(Instant from); }   // payments/commerce
-public interface PlayCountSource    { List<PlayFact>  since(Instant from); }   // playback
-public interface FollowEventSource  { List<FollowFact> since(Instant from); }  // library
-```
-
-- **`AnalyticsReader`** — *trigger:* studio/admin REST. *Authz:* artist (own `artistId`) /
-  super-admin; ownership re-checked in app layer. *Idempotency:* pure read. *Events:* none.
-  *LLFR:* ANALYTICS-01.1, STUDIO-03.1/03.2, ADMIN-01.1.
-- **`RollupJob`** — *trigger:* `@Scheduled`. *Idempotency:* upsert by `(artist_id, bucket, grain)`;
-  re-running a window yields identical rows. *LLFR:* ANALYTICS-01.1.
 
 ### 4.2 AUDIT — writer port + interceptor binding
 

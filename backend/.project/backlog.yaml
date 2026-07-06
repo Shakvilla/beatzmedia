@@ -367,7 +367,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-PLY-1, WU-COM-2, WU-PLT-2]
     llfrs: [LLFR-ANALYTICS-01.1]
-    status: todo
+    status: in_progress
   - id: WU-STU-3
     title: Studio analytics/audience reads
     phase: 4
