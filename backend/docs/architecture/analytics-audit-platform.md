@@ -230,31 +230,24 @@ erDiagram
 
 ### 4.1 ANALYTICS — input & rollup ports
 
-```java
-/** Read-side port consumed by studio & admin to serve insights from rollups (LLFR-ANALYTICS-01.1). */
-public interface AnalyticsReader {
-    StudioInsights studioInsights(ArtistId artist, AnalyticsRange range);   // GET /studio/analytics
-    AudienceInsights audience(ArtistId artist, AudienceRange range);        // GET /studio/audience
-    AdminOverviewMetrics adminOverview(AdminRange range);                   // GET /admin/overview
-}
+> **Implementation status (WU-ANA-1, done):** `AnalyticsReader.studioInsights` and `RollupJob` are
+> implemented exactly as specified below. `audience(...)` and `adminOverview(...)` are **not yet
+> implemented** — they are out of WU-ANA-1's scope (owned by a future studio-audience / admin-overview
+> WU) and are left here as forward-looking port signatures the ADD anticipates.
+>
+> **Deviation — snapshot ports are CDI event observers, not pull-based `since(from)` queries.**
+> `SettledSalesSource`/`PlayCountSource`/`FollowEventSource` as originally drafted below implied a
+> *pull* model (the job calls `since(Instant)` on a sibling module's port at tick time). The
+> implementation instead follows the **event-sourced push** pattern already established by every
+> other cross-module integration in this codebase (`payments.PaymentSettled` → commerce's
+> `PaymentSettledSubscriber`; `payments.TipReceived` → notifications' observer; etc.): each owning
+> module fires a canonical CDI domain event `AFTER_SUCCESS`, and analytics owns
+> `adapter.in.events.*Observer` classes that turn each event into a row in one of analytics' own
+> **staging-fact tables** (`analytics_sale_fact`, `analytics_tip_fact`, `analytics_play_fact`,
+> `analytics_follow_fact` — §7). The `RollupJob`s then read/upsert **only from these analytics-owned
+> tables**, never a sibling module's schema and never a pull-style port call at tick time. This is
+> equivalent in spirit (no cross-module table reads; idempotent; upsert-by-key) but changes the
 
-/** A single scheduled aggregation job that maintains one rollup table; idempotent per (range, asOf). */
-public interface RollupJob {
-    RollupResult run(RollupWindow window);          // recompute buckets covered by window
-    String name();                                  // stable job id for metrics/logs
-}
-
-/** Snapshot ports the analytics jobs read settled facts through (no cross-module table access). */
-public interface SettledSalesSource { List<SalesFact> since(Instant from); }   // payments/commerce
-public interface PlayCountSource    { List<PlayFact>  since(Instant from); }   // playback
-public interface FollowEventSource  { List<FollowFact> since(Instant from); }  // library
-```
-
-- **`AnalyticsReader`** — *trigger:* studio/admin REST. *Authz:* artist (own `artistId`) /
-  super-admin; ownership re-checked in app layer. *Idempotency:* pure read. *Events:* none.
-  *LLFR:* ANALYTICS-01.1, STUDIO-03.1/03.2, ADMIN-01.1.
-- **`RollupJob`** — *trigger:* `@Scheduled`. *Idempotency:* upsert by `(artist_id, bucket, grain)`;
-  re-running a window yields identical rows. *LLFR:* ANALYTICS-01.1.
 
 ### 4.2 AUDIT — writer port + interceptor binding
 
