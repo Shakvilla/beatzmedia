@@ -247,6 +247,26 @@ erDiagram
 > `analytics_follow_fact` — §7). The `RollupJob`s then read/upsert **only from these analytics-owned
 > tables**, never a sibling module's schema and never a pull-style port call at tick time. This is
 > equivalent in spirit (no cross-module table reads; idempotent; upsert-by-key) but changes the
+> port shape from `since(Instant)` pull to `@Observes(AFTER_SUCCESS)` push. Two consequences worth
+> recording:
+>
+> - **Observers run in their own transaction.** An `AFTER_SUCCESS` observer fires *after* the
+>   producing transaction has committed, so there is no active transaction when it stages its fact —
+>   each `*Observer` is therefore `@Transactional(REQUIRES_NEW)`. (A fact lost because that separate
+>   append fails is an acceptable analytics gap; it must never poison the producer's money/ownership
+>   transaction, which has already committed.)
+> - **Rollup reads are native scalar, not JPA entity queries.** The jobs read-modify-write a bucket
+>   once per fact (`find` + native `upsert`). A JPA entity `find` would return the stale
+>   first-level-cached instance on the 2nd+ read of a bucket within one window (Hibernate never
+>   refreshes managed state from a native write), silently undercounting a bucket with 3+ facts.
+>   `find()` therefore reads through a native scalar query; `findRange()` (reader-side, always a
+>   fresh request/transaction) stays JPA.
+>
+> **Carryover (tracked, not dropped):** `audience_rollup.unique_listeners` and `completion_pct`
+> columns and the `analytics_play_fact.account_id` needed to compute uniques are in place (§7), but
+> the audience job only maintains `plays` and `followers_gained` today — `unique_listeners` /
+> `completion_pct` stay 0 until the studio `/studio/audience` WU consumes them (they are not on the
+> `studioInsights` KPIs this WU serves). No schema change will be needed to light them up.
 
 
 ### 4.2 AUDIT — writer port + interceptor binding
