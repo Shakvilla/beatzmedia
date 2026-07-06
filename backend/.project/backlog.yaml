@@ -340,7 +340,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-NOT-1, WU-PLT-2]
     llfrs: [LLFR-NOTIF-02.1]
-    status: done
+    status: done   # PR #77 merged 2026-07-05 (squash 56e3f79). Dispatch+retry via PLT-2 sweep; dev stubs (Mailpit+SMS capture). Notifications module complete. Carryover: SmtpMailer classifies all failures transient (pending SMTP reply-code inspection); notification retry settings hardcoded -> WU-ADM-8.
   - id: WU-STU-1
     title: Studio profile
     phase: 4
