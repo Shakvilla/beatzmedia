@@ -22,7 +22,9 @@ set -uo pipefail
 # shellcheck source=_common.sh
 . "$(dirname "$0")/_common.sh"
 
-BACKLOG="$BACKEND_DIR/.project/backlog.yaml"
+# Backlog path — overridable via BEATZ_BACKLOG (used by the script self-tests
+# to run against a fixed fixture instead of the live, ever-advancing backlog).
+BACKLOG="${BEATZ_BACKLOG:-$BACKEND_DIR/.project/backlog.yaml}"
 
 usage() {
   cat <<EOF
@@ -59,7 +61,9 @@ emit_rows() {
   if [ "$USE_YQ" -eq 1 ]; then
     yq -r '
       .work_units[]
-      | [ (.phase // "?"), .id, .status, ((.human_gate // []) | length > 0), (.title // "") ]
+      | [ (.phase // "?"), .id,
+          ((.status // "?") | sub("\s*#.*$"; "")),   # defensive: strip any inline comment
+          ((.human_gate // []) | length > 0), (.title // "") ]
       | @tsv
     ' "$BACKLOG" 2>/dev/null && return 0
     # If yq failed (e.g. older syntax), fall through to awk.
@@ -87,7 +91,9 @@ emit_rows() {
       line=$0; sub(/^[[:space:]]+phase:[[:space:]]*/, "", line); gsub(/[[:space:]]+$/,"",line); phase=line; next
     }
     /^[[:space:]]+status:[[:space:]]*/ {
-      line=$0; sub(/^[[:space:]]+status:[[:space:]]*/, "", line); gsub(/[[:space:]]+$/,"",line); status=line; next
+      line=$0; sub(/^[[:space:]]+status:[[:space:]]*/, "", line)
+      sub(/[[:space:]]*#.*$/, "", line)   # drop inline YAML comment (e.g. "done   # PR #63 merged")
+      gsub(/[[:space:]]+$/,"",line); status=line; next
     }
     /^[[:space:]]+human_gate:[[:space:]]*/ { gate="true"; next }
     /^[[:space:]]+title:[[:space:]]*/ {

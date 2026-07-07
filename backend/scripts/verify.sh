@@ -162,6 +162,29 @@ say "ArchUnit rules run inside the JUnit suite (testing-strategy.md §6); they"
 say "are exercised by phases (c)/(d) above and do not need a separate step here."
 record OK "archunit (in-suite)"
 
+# --- (g) Automation self-tests ---------------------------------------------
+section "(g) Automation self-tests (backend/scripts/tests)"
+_tests_dir="$(dirname "$0")/tests"
+if ls "$_tests_dir"/*.test.sh >/dev/null 2>&1; then
+  _st_fail=0
+  for _t in "$_tests_dir"/*.test.sh; do
+    if bash "$_t"; then
+      ok "$(basename "$_t") passed."
+    else
+      err "$(basename "$_t") failed."
+      _st_fail=1
+    fi
+  done
+  if [ "$_st_fail" -eq 0 ]; then
+    record OK "script-self-tests"
+  else
+    fail_phase "script-self-tests"
+  fi
+else
+  warn "No script self-tests found — skipping."
+  record WARN "script-self-tests (none)"
+fi
+
 print_summary
 section "Local gate PASSED"
 ok "Safe to open a PR. (Note WARN rows above for tooling not yet wired.)"
