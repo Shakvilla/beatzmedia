@@ -1,5 +1,6 @@
 package org.shakvilla.beatzmedia.commerce.application.service;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -25,6 +26,7 @@ import org.shakvilla.beatzmedia.commerce.domain.Order;
 import org.shakvilla.beatzmedia.commerce.domain.OrderLine;
 import org.shakvilla.beatzmedia.commerce.domain.OwnershipGrant;
 import org.shakvilla.beatzmedia.commerce.domain.OwnershipGranted;
+import org.shakvilla.beatzmedia.commerce.domain.SaleRecorded;
 import org.shakvilla.beatzmedia.identity.domain.AccountId;
 import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
 import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
@@ -67,6 +69,7 @@ public class GrantOwnershipService implements GrantOwnership {
   private final CartRepository cartRepository;
   private final AuditWriter auditWriter;
   private final Event<OwnershipGranted> ownershipGrantedEvent;
+  private final Event<SaleRecorded> saleRecordedEvent;
   private final IdGenerator ids;
   private final Clock clock;
 
@@ -79,6 +82,7 @@ public class GrantOwnershipService implements GrantOwnership {
       CartRepository cartRepository,
       AuditWriter auditWriter,
       Event<OwnershipGranted> ownershipGrantedEvent,
+      Event<SaleRecorded> saleRecordedEvent,
       IdGenerator ids,
       Clock clock) {
     this.orderRepository = orderRepository;
@@ -88,6 +92,7 @@ public class GrantOwnershipService implements GrantOwnership {
     this.cartRepository = cartRepository;
     this.auditWriter = auditWriter;
     this.ownershipGrantedEvent = ownershipGrantedEvent;
+    this.saleRecordedEvent = saleRecordedEvent;
     this.ids = ids;
     this.clock = clock;
   }
@@ -167,12 +172,17 @@ public class GrantOwnershipService implements GrantOwnership {
     // Post ONE 70/30 sale split per creator (percentage from PlatformSettings inside payments), with a
     // per-creator-unique source ref so distinct creators never collide on the ledger_posting PK, and
     // each runs in its own REQUIRES_NEW transaction so a duplicate can't poison this grant txn (F1).
+    // Alongside each split, fire ONE SaleRecorded per creator so analytics (WU-ANA-1) can roll up
+    // settled sales attributed to that artist — analytics never reads a commerce/payments table.
+    Instant settledAt = clock.now();
     for (Map.Entry<String, Long> e : grossByCreator.entrySet()) {
       saleLedgerPoster.postSaleSplit(
           provider,
           new AccountId(e.getKey()),
           Money.ofMinor(e.getValue(), currency),
           saleRef(paymentIntentId, e.getKey()));
+      saleRecordedEvent.fire(
+          new SaleRecorded(order.getId().value(), e.getKey(), e.getValue(), currency.name(), settledAt));
     }
 
     // Clear the caller's cart on a successful purchase (idempotent).

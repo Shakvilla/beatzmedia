@@ -367,7 +367,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-PLY-1, WU-COM-2, WU-PLT-2]
     llfrs: [LLFR-ANALYTICS-01.1]
-    status: todo
+    status: done   # PR #79 merged 2026-07-06 (squash 272fec9). Event-sourced push (SaleRecorded/TipReceived/PlayRecorded/Followed -> analytics-owned staging facts -> rollup jobs -> AnalyticsReader); royalty=0 (OQ-4). Fixes found+fixed pre-merge: AFTER_SUCCESS observers need @Transactional(REQUIRES_NEW); rollup find() uses native scalar reads to avoid Hibernate L1 staleness that undercounts 3+-facts-per-bucket windows. Carryover: unique_listeners/completion_pct staged (columns+account_id) but not yet computed (future /studio/audience WU). Unblocks WU-STU-3, which MUST enforce Layer-2 artist ownership on the read endpoint (IDOR — security-reviewer note).
   - id: WU-STU-3
     title: Studio analytics/audience reads
     phase: 4
