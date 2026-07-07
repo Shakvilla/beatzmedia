@@ -342,6 +342,13 @@ public interface AssignTicketUseCase {                              // LLFR-ADMI
 public interface ResolveTicketUseCase {                            // LLFR-ADMIN-08.1
     void resolve(AdminActor actor, TicketId id);
 }
+// WU-ADM-7 as-built note: `assign`/`resolve` return the full SupportTicketDetail (not void) — the
+// REST layer's response DTO is SupportTicketDto per §5.1's table, so the use case must produce it.
+// `ListSupportTickets` returns SupportTicketDetailView (thread included) per item, not a summary —
+// `GET /admin/support/tickets` serves a BARE ARRAY of full SupportTicket objects (matching
+// `admin-data.ts`'s `getSupportTickets()` and `admin.support.tsx`, which renders a selected list
+// item's thread with no extra fetch). The REST resource unwraps the internal Page<> to a bare
+// array with a generous default page size (100); status/q filters apply server-side.
 
 // ---- Compliance (ADMIN-09) — auth: super-admin (OQ-1) ----
 public interface ListComplianceUseCase {                           // LLFR-ADMIN-09.1
@@ -530,11 +537,22 @@ the application layer. Money/side-effect POSTs (finance) require `Idempotency-Ke
 
 | Method | Path | Required scope | Request DTO | Response DTO | Code | Error codes | LLFR |
 |---|---|---|---|---|---|---|---|
-| GET | `/admin/support/tickets?status=&q=` | any admin (support+) | — | `PagedTickets` | 200 | `422` | 08.1 |
-| GET | `/admin/support/tickets/:id` | any admin | — | `SupportTicketDetail` (thread) | 200 | `404` | 08.1 |
-| POST | `/admin/support/tickets/:id/reply` | any admin | `{ text }` | `SupportMessage` | 201 | `422`, `404` | 08.1 |
-| POST | `/admin/support/tickets/:id/assign` | any admin | `{ assigneeId }` | `SupportTicketDto` | 200 | `404` | 08.1 |
-| POST | `/admin/support/tickets/:id/resolve` | any admin | — | `SupportTicketDto` | 200 | `404`, `409` | 08.1 |
+| GET | `/admin/support/tickets?status=&q=` | any admin (support+) | — | `SupportTicket[]` (bare array, full thread) | 200 | `422` | 08.1 |
+| GET | `/admin/support/tickets/:id` | any admin | — | `SupportTicket` (thread) | 200 | `404` | 08.1 |
+| POST | `/admin/support/tickets/:id/reply` | any admin | `{ text }` | `SupportMessage` | 201 | `422 VALIDATION`, `404` | 08.1 |
+| POST | `/admin/support/tickets/:id/assign` | any admin | `{ assigneeId }` | `SupportTicket` | 200 | `404` | 08.1 |
+| POST | `/admin/support/tickets/:id/resolve` | any admin | — | `SupportTicket` | 200 | `404`, `409 ILLEGAL_TRANSITION` | 08.1 |
+
+> **WU-ADM-7 as-built.** `GET /admin/support/tickets` returns a **bare array** (not a `{ items,
+> page, size, total }` envelope) of full `SupportTicket` objects including `messages` — this
+> mirrors `Frontend/src/lib/admin-data.ts`'s `getSupportTickets()` mock and `admin.support.tsx`,
+> which renders a selected list item's thread with no extra fetch. RBAC: `@RolesAllowed` accepts
+> all five admin roles (support is `RW` for every role per §8's matrix); no additional
+> application-layer narrowing is needed (unlike compliance/settings, which are super-admin only).
+> `requesterRef` resolves to a display name via the `IdentityReader` output port (reads the
+> identity module's `account` JPA entity in-process — no cross-module FK, mirrors
+> `library.CatalogReaderAdapter`). Audit entries use `AuditType.USER` (the wire `AuditType` union
+> in `admin-data.ts` has no dedicated `support` value).
 
 #### §12 Compliance (HLFR-ADMIN-09)
 
@@ -749,17 +767,23 @@ CREATE TABLE curated_playlist (
 );
 ```
 
-**Flyway migration list** (`src/main/resources/db/migration/`, forward-only):
+**Flyway migration list** (`src/main/resources/db/migration/`, forward-only). This §7 sketch used
+hypothetical `V40..V45` numbers; the module's actual migrations are allocated at build time from
+the shared V9xx band via `next-migration-version.sh --module admin` (data-and-migrations §4.1), so
+the as-built numbers differ from this sketch — updated here as each WU lands:
 
-- `V40__admin_platform_settings.sql` — `platform_settings`, `feature_flag` (WU-ADM-8 / WU-PLT-1 seed row).
-- `V41__admin_audit_entry.sql` — `audit_entry` + append-only rules + indexes (WU-AUD-1).
-- `V42__admin_moderation.sql` — `moderation_case`, `risk_signal` (WU-ADM-3/5).
-- `V43__admin_support.sql` — `support_ticket`, `support_message` (WU-ADM-6).
-- `V44__admin_compliance.sql` — `compliance_request` (WU-ADM-7).
-- `V45__admin_editorial.sql` — `featured_slot`, `push_item`, `curated_playlist` (WU-ADM-4).
+- `V950__admin_support.sql` — `support_ticket`, `support_message` (**WU-ADM-7**, as actually
+  scoped/built: LLFR-ADMIN-08.1 support tickets — note this differs from this ADD's original §10
+  work-unit table, which had sketched WU-ADM-6=support/WU-ADM-7=compliance; the backlog's WU-ADM-7
+  is support tickets. §10 is not renumbered here to avoid WU-id churn — treat the backlog as the
+  source of truth for WU↔LLFR mapping).
+- (planned, not yet built) `platform_settings`/`feature_flag`, `audit_entry`, `moderation_case`/
+  `risk_signal`, `compliance_request`, `featured_slot`/`push_item`/`curated_playlist` — allocated
+  from the same V9xx band as their owning WUs land.
 - `R__seed_dev_data.sql` — dev/test seed contribution: default `platform_settings` row
   (`platform_fee_pct=30`, `payout_minimum_minor=1000`, all providers on), feature flags, sample
-  moderation/risk/support rows mirroring `admin-data.ts`.
+  moderation/risk/support rows mirroring `admin-data.ts` (not yet populated for support — left for
+  a follow-up WU once more admin modules land, to avoid a large one-off seed diff).
 
 ## 8. Key flows
 
