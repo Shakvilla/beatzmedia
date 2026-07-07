@@ -22,7 +22,9 @@ set -uo pipefail
 # shellcheck source=_common.sh
 . "$(dirname "$0")/_common.sh"
 
-BACKLOG="$BACKEND_DIR/.project/backlog.yaml"
+# Backlog path — overridable via BEATZ_BACKLOG (used by the script self-tests
+# to run against a fixed fixture instead of the live, ever-advancing backlog).
+BACKLOG="${BEATZ_BACKLOG:-$BACKEND_DIR/.project/backlog.yaml}"
 
 usage() {
   cat <<EOF
