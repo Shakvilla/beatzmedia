@@ -77,7 +77,7 @@ class AdminEditorialResourceIT {
         .body("[0].title", equalTo("Trending in Ghana"))
         .body("[1].sponsored", equalTo(true));
 
-    assertEquals(1, countAuditEntriesOfType("editorial", "Reordered featured"),
+    assertEquals(1, countAuditEntriesOfType("EDITORIAL", "Reordered featured"),
         "exactly one AuditEntry per mutation (INV-10)");
   }
 
@@ -193,7 +193,7 @@ class AdminEditorialResourceIT {
         .body("title", equalTo("Friday drops · 8 new"))
         .body("id", org.hamcrest.Matchers.notNullValue());
 
-    assertEquals(1, countAuditEntriesOfType("editorial", "Scheduled push"),
+    assertEquals(1, countAuditEntriesOfType("EDITORIAL", "Scheduled push"),
         "exactly one AuditEntry per mutation (INV-10)");
   }
 
@@ -250,7 +250,7 @@ class AdminEditorialResourceIT {
         .body("name", equalTo("Made in Ghana"))
         .body("id", org.hamcrest.Matchers.notNullValue());
 
-    assertEquals(1, countAuditEntriesOfType("editorial", "Created playlist"),
+    assertEquals(1, countAuditEntriesOfType("EDITORIAL", "Created playlist"),
         "exactly one AuditEntry per mutation (INV-10)");
   }
 
