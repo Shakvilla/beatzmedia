@@ -485,3 +485,132 @@ ON CONFLICT (id) DO UPDATE
       is_early_access  = EXCLUDED.is_early_access,
       public_at        = EXCLUDED.public_at,
       published_at     = EXCLUDED.published_at;
+
+-- ==========================================================================
+-- Events (WU-EVT-1: Frontend/src/lib/event-data.ts `events`)
+-- status/soldOut are NEVER seeded — always derived at read time from
+-- ticket_tier.sold/capacity (INV-EVT-2). capacity/sold below are chosen so the derived status
+-- reproduces the original mock fixture: iron-boy-live and five-star-night land "selling-fast"
+-- (low remaining stock), afro-nation-gh's tiers are seeded AT capacity ("sold-out" fixture), and
+-- the rest have ample remaining stock ("on-sale").
+-- ==========================================================================
+
+INSERT INTO event (id, title, artist_name, artist_id, lineup, image, event_at, doors_time, venue, city, region, category, description, age_restriction, popularity)
+VALUES
+  ('iron-boy-live', 'Iron Boy Live', 'Black Sherif', 'black-sherif',
+   '["Lasmid","Camidoh"]'::jsonb,
+   'https://images.unsplash.com/photo-1501386761578-eac5c94b800a?q=80&w=1200&auto=format&fit=crop',
+   '2026-07-09T19:00:00Z', '7:00 PM', 'Independence Square', 'Accra', 'Greater Accra', 'Concert',
+   'Black Sherif headlines a homecoming show backed by a full live band, with special guests from across the 233.',
+   'All ages', 99),
+
+  ('outside-tour-accra', 'Burna Boy — Outside Tour', 'Burna Boy', 'burna-boy',
+   '["Asake"]'::jsonb,
+   'https://images.unsplash.com/photo-1540039155733-5bb30b53aa14?q=80&w=1200&auto=format&fit=crop',
+   '2026-08-15T20:00:00Z', '8:00 PM', 'Accra Sports Stadium', 'Accra', 'Greater Accra', 'Tour',
+   'The African Giant brings the Outside Tour to Accra for one massive night.',
+   'All ages', 96),
+
+  ('detty-december', 'Detty December Festival', 'Multiple Artists', NULL,
+   '["Black Sherif","King Promise","Camidoh","Lasmid","Sarkodie"]'::jsonb,
+   'https://images.unsplash.com/photo-1459749411175-04bf5292ceea?q=80&w=1200&auto=format&fit=crop',
+   '2026-12-20T16:00:00Z', '4:00 PM', 'Labadi Beach', 'Accra', 'Greater Accra', 'Festival',
+   'Ghana''s biggest end-of-year beach festival — a full day of afrobeats, highlife and amapiano.',
+   '18+', 94),
+
+  ('five-star-night', 'King Promise: 5 Star Night', 'King Promise', 'king-promise',
+   '[]'::jsonb,
+   'https://images.unsplash.com/photo-1415201364774-f6f0bb35f28f?q=80&w=1200&auto=format&fit=crop',
+   '2026-06-27T21:00:00Z', '9:00 PM', '+233 Jazz Bar & Grill', 'Accra', 'Greater Accra', 'Club Night',
+   'An intimate late-night set from King Promise in the heart of Accra.',
+   '21+', 88),
+
+  ('asaase-sound-clash', 'Asaase Sound Clash', 'Multiple Artists', NULL,
+   '["Lasmid","Camidoh","Asake"]'::jsonb,
+   'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?q=80&w=1200&auto=format&fit=crop',
+   '2026-09-05T18:00:00Z', '6:00 PM', 'Baba Yara Stadium', 'Kumasi', 'Ashanti', 'Festival',
+   'The Garden City''s biggest clash of sounds returns to Baba Yara.',
+   'All ages', 82),
+
+  ('sugarcane-listening', 'Sugarcane: Listening Party', 'Camidoh', 'camidoh',
+   '[]'::jsonb,
+   'https://images.unsplash.com/photo-1566737236500-c8ac43014a67?q=80&w=1200&auto=format&fit=crop',
+   '2026-06-28T19:30:00Z', '7:30 PM', 'Community 1 Arts Centre', 'Tema', 'Greater Accra', 'Listening Party',
+   'Hear Camidoh''s new project first, with a live Q&A and signing.',
+   'All ages', 74),
+
+  ('afro-nation-gh', 'Afro Nation Ghana', 'Multiple Artists', NULL,
+   '["Burna Boy","Rema","Black Sherif","Asake"]'::jsonb,
+   'https://images.unsplash.com/photo-1533174072545-7a4b6ad7a6c3?q=80&w=1200&auto=format&fit=crop',
+   '2026-10-10T15:00:00Z', '3:00 PM', 'Aburi Gardens', 'Aburi', 'Eastern', 'Festival',
+   'The world''s biggest afrobeats festival lands in Ghana.',
+   '18+', 91)
+ON CONFLICT (id) DO UPDATE
+  SET title           = EXCLUDED.title,
+      artist_name     = EXCLUDED.artist_name,
+      artist_id       = EXCLUDED.artist_id,
+      lineup          = EXCLUDED.lineup,
+      image           = EXCLUDED.image,
+      event_at        = EXCLUDED.event_at,
+      doors_time      = EXCLUDED.doors_time,
+      venue           = EXCLUDED.venue,
+      city            = EXCLUDED.city,
+      region          = EXCLUDED.region,
+      category        = EXCLUDED.category,
+      description     = EXCLUDED.description,
+      age_restriction = EXCLUDED.age_restriction,
+      popularity      = EXCLUDED.popularity,
+      updated_at      = now();
+
+-- Ticket tiers (event-data.ts `ticketTiers`). price_minor = GHS(n) * 100 pesewas.
+-- capacity/sold chosen per the status-derivation note above; afro-nation-gh tiers are seeded
+-- AT capacity (sold = capacity) to reproduce the sold-out fixture end to end.
+INSERT INTO ticket_tier (id, event_id, name, price_minor, capacity, sold, perks)
+VALUES
+  -- iron-boy-live: total remaining 26 <= low-stock threshold -> selling-fast
+  ('iron-boy-live-regular', 'iron-boy-live', 'Regular', 15000, 500, 480,
+   '["General standing","Access from 6 PM"]'::jsonb),
+  ('iron-boy-live-vip', 'iron-boy-live', 'VIP', 40000, 200, 195,
+   '["Elevated VIP deck","Dedicated bar","Fast-track entry"]'::jsonb),
+  ('iron-boy-live-vvip-table-5', 'iron-boy-live', 'VVIP Table (5)', 250000, 20, 19,
+   '["Front-stage table for 5","Bottle service","Backstage tour"]'::jsonb),
+
+  -- outside-tour-accra: ample remaining stock -> on-sale
+  ('outside-tour-accra-regular', 'outside-tour-accra', 'Regular', 25000, 5000, 1200, '[]'::jsonb),
+  ('outside-tour-accra-vip', 'outside-tour-accra', 'VIP', 60000, 1000, 300,
+   '["VIP section","Premium viewing"]'::jsonb),
+  ('outside-tour-accra-golden-circle', 'outside-tour-accra', 'Golden Circle', 120000, 300, 50,
+   '["Front pit","Exclusive entrance"]'::jsonb),
+
+  -- detty-december: ample remaining stock -> on-sale
+  ('detty-december-1-day-pass', 'detty-december', '1-Day Pass', 25000, 3000, 500,
+   '["Single-day entry"]'::jsonb),
+  ('detty-december-weekend-pass', 'detty-december', 'Weekend Pass', 45000, 1500, 400,
+   '["Both days","Re-entry"]'::jsonb),
+  ('detty-december-vip-weekend', 'detty-december', 'VIP Weekend', 90000, 500, 100,
+   '["VIP zone","Free welcome drinks","Shaded lounge"]'::jsonb),
+
+  -- five-star-night: total remaining 11 <= low-stock threshold -> selling-fast
+  ('five-star-night-entry', 'five-star-night', 'Entry', 8000, 300, 290, '[]'::jsonb),
+  ('five-star-night-booth-4', 'five-star-night', 'Booth (4)', 150000, 30, 29,
+   '["Reserved booth for 4","Bottle service"]'::jsonb),
+
+  -- asaase-sound-clash: ample remaining stock -> on-sale
+  ('asaase-sound-clash-regular', 'asaase-sound-clash', 'Regular', 12000, 2000, 400, '[]'::jsonb),
+  ('asaase-sound-clash-vip', 'asaase-sound-clash', 'VIP', 35000, 500, 100,
+   '["VIP stand","Fast-track entry"]'::jsonb),
+
+  -- sugarcane-listening: ample remaining stock -> on-sale
+  ('sugarcane-listening-standard', 'sugarcane-listening', 'Standard', 5000, 200, 50,
+   '["Entry","Welcome drink"]'::jsonb),
+  ('sugarcane-listening-meet-and-greet', 'sugarcane-listening', 'Meet & Greet', 20000, 30, 5,
+   '["Signed merch","Photo with Camidoh"]'::jsonb),
+
+  -- afro-nation-gh: sold = capacity on BOTH tiers -> sold-out fixture
+  ('afro-nation-gh-general', 'afro-nation-gh', 'General', 50000, 5000, 5000, '[]'::jsonb),
+  ('afro-nation-gh-vip', 'afro-nation-gh', 'VIP', 150000, 1000, 1000, '[]'::jsonb)
+ON CONFLICT (event_id, name) DO UPDATE
+  SET price_minor = EXCLUDED.price_minor,
+      capacity    = EXCLUDED.capacity,
+      sold        = EXCLUDED.sold,
+      perks       = EXCLUDED.perks;

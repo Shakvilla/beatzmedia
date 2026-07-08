@@ -67,7 +67,8 @@ public class DomainExceptionMapper implements ExceptionMapper<DomainException> {
               CHECKOUT_KIND_UNSUPPORTED,
               INSUFFICIENT_BALANCE,
               KYC_BLOCKED,
-              PAYOUT_METHOD_IN_USE ->
+              PAYOUT_METHOD_IN_USE,
+              TIER_SOLD_OUT ->
           Response.Status.CONFLICT.getStatusCode();
       case MISSING_IDEMPOTENCY_KEY -> Response.Status.BAD_REQUEST.getStatusCode();
       case PROVIDER_ERROR -> BAD_GATEWAY;
