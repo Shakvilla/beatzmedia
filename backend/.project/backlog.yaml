@@ -289,7 +289,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-CAT-1, WU-SRCH-1]
     llfrs: [LLFR-STORE-01.1, LLFR-STORE-01.2]
-    status: todo
+    status: done   # PR #92 merged 2026-07-08 (squash eec3537). Store catalog browse/detail (TRACK/ALBUM/BEAT_LICENSE/MERCH/EXCLUSIVE); PurchaseConfirmedSubscriber wired to commerce's real OwnershipGranted event, dormant until commerce accepts kind=store checkout.
   - id: WU-POD-1
     title: Podcast shows/episodes browse + gating
     phase: 4
@@ -349,7 +349,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-IDN-3]
     llfrs: [LLFR-STUDIO-01.1]
-    status: todo
+    status: done   # PR #93 merged 2026-07-08 (squash fed6fed). Studio profile get/save, USERNAME_TAKEN, genre validation. New platform-kernel Genre taxonomy. Carryover: settings/podcasts/episodes are WU-STU-2/3/4.
   - id: WU-STU-2
     title: Studio podcast shows/episodes create/manage
     phase: 4
