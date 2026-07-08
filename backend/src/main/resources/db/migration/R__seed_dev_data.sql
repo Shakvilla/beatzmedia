@@ -645,3 +645,157 @@ ON CONFLICT (event_id, name) DO UPDATE
       capacity    = EXCLUDED.capacity,
       sold        = EXCLUDED.sold,
       perks       = EXCLUDED.perks;
+
+-- ==========================================================================
+-- Store (WU-STO-1: Frontend/src/lib/store-data.ts `allStoreItems`)
+-- price_minor = GHS(n) * 100 pesewas (INV-11). BEAT_LICENSE base price = lowest license tier
+-- price (INV-STORE-B). stock_remaining is only set for EXCLUSIVE/MERCH (INV-STORE-A/INV-STORE-C).
+-- ==========================================================================
+
+-- ---- Hi-Fi: lossless tracks & mastered albums ---------------------------------------------------
+INSERT INTO store_item (id, type, title, artist_name, artist_id, image, price_minor, currency, genre, badges, description, popularity, created_at, quality)
+VALUES
+  ('hifi-love-damini', 'ALBUM', 'Love, Damini (Hi-Fi Master)', 'Burna Boy', 'burna-boy',
+   'https://images.unsplash.com/photo-1493225255756-d9584f8606e9?q=80&w=600&auto=format&fit=crop',
+   3499, 'GHS', 'Afrobeats', '["HI-FI LOSSLESS"]'::jsonb,
+   'The full album remastered in studio-grade lossless audio.', 98, '2026-05-02T00:00:00Z',
+   'Lossless • 24-bit/192kHz'),
+
+  ('hifi-iron-boy', 'ALBUM', 'Iron Boy (Hi-Fi Master)', 'Black Sherif', 'black-sherif',
+   'https://images.unsplash.com/photo-1614613535308-eb5fbd3d2c17?q=80&w=600&auto=format&fit=crop',
+   2999, 'GHS', 'Drill', '["HI-FI LOSSLESS"]'::jsonb,
+   NULL, 95, '2026-05-20T00:00:00Z', 'Lossless • 24-bit/96kHz'),
+
+  ('hifi-last-last', 'TRACK', 'Last Last (Hi-Fi)', 'Burna Boy', 'burna-boy',
+   'https://images.unsplash.com/photo-1493225255756-d9584f8606e9?q=80&w=600&auto=format&fit=crop',
+   450, 'GHS', 'Afrobeats', '["HI-FI LOSSLESS"]'::jsonb,
+   NULL, 99, '2026-04-15T00:00:00Z', 'Lossless • 24-bit/192kHz'),
+
+  ('hifi-sugarcane', 'TRACK', 'Sugarcane (Hi-Fi)', 'Camidoh', 'camidoh',
+   'https://images.unsplash.com/photo-1504151932400-72d4384f0e6d?q=80&w=600&auto=format&fit=crop',
+   400, 'GHS', 'R&B', '["HI-FI LOSSLESS"]'::jsonb,
+   NULL, 80, '2026-03-30T00:00:00Z', 'Lossless • 16-bit/44.1kHz'),
+
+  ('hifi-terminator', 'TRACK', 'Terminator (Hi-Fi)', 'King Promise', 'king-promise',
+   'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?q=80&w=600&auto=format&fit=crop',
+   400, 'GHS', 'Highlife', '["HI-FI LOSSLESS"]'::jsonb,
+   NULL, 76, '2026-05-10T00:00:00Z', 'Lossless • 24-bit/96kHz'),
+
+-- ---- Beats: licensable beats & stems (BEAT_LICENSE; base price = LEASE = lowest tier, INV-STORE-B)
+  ('beat-konongo-drill', 'BEAT_LICENSE', 'Konongo Drill Type Beat', 'Joker Nharnah', NULL,
+   'https://images.unsplash.com/photo-1598488035139-bdbb2231ce04?q=80&w=600&auto=format&fit=crop',
+   5000, 'GHS', 'Drill', '["STEMS INCLUDED"]'::jsonb,
+   'Hard-hitting Ghanaian drill beat with live highlife guitars. 142 BPM, A minor.', 92, '2026-05-18T00:00:00Z', NULL),
+
+  ('beat-amapiano-log', 'BEAT_LICENSE', 'Amapiano Log Drum Groove', 'KeyzBeatz', NULL,
+   'https://images.unsplash.com/photo-1514525253161-7a46d19cd819?q=80&w=600&auto=format&fit=crop',
+   6000, 'GHS', 'Amapiano', '["STEMS INCLUDED"]'::jsonb,
+   'Smooth amapiano groove with rolling log drums and shakers. 112 BPM.', 88, '2026-05-25T00:00:00Z', NULL),
+
+  ('beat-highlife-soul', 'BEAT_LICENSE', 'Highlife Soul Instrumental', 'GuitarBoy GH', NULL,
+   'https://images.unsplash.com/photo-1470225620780-dba8ba36b745?q=80&w=600&auto=format&fit=crop',
+   4500, 'GHS', 'Highlife', '[]'::jsonb,
+   'Warm highlife instrumental with palm-wine guitar licks. 96 BPM.', 70, '2026-04-28T00:00:00Z', NULL),
+
+  ('beat-afro-fusion', 'BEAT_LICENSE', 'Afro-Fusion Anthem', 'Atown TSB', NULL,
+   'https://images.unsplash.com/photo-1508700115892-45ecd05ae2ad?q=80&w=600&auto=format&fit=crop',
+   7000, 'GHS', 'Afrobeats', '["STEMS INCLUDED"]'::jsonb,
+   'Festival-sized afro-fusion anthem with big horns. 105 BPM.', 85, '2026-06-01T00:00:00Z', NULL),
+
+-- ---- Merch: physical & digital (MERCH; stock_remaining reused for scarcity) ----------------------
+  ('merch-bsherif-tee', 'MERCH', 'Iron Boy Tour Tee', 'Black Sherif', 'black-sherif',
+   'https://images.unsplash.com/photo-1521572163474-6864f9cf17ab?q=80&w=600&auto=format&fit=crop',
+   12000, 'GHS', NULL, '["OFFICIAL"]'::jsonb,
+   '100% cotton tee, screen-printed Iron Boy tour artwork.', 90, '2026-05-12T00:00:00Z', NULL),
+
+  ('merch-burna-hoodie', 'MERCH', 'Outside Embroidered Hoodie', 'Burna Boy', 'burna-boy',
+   'https://images.unsplash.com/photo-1556821840-3a63f95609a7?q=80&w=600&auto=format&fit=crop',
+   28000, 'GHS', NULL, '["OFFICIAL"]'::jsonb,
+   NULL, 84, '2026-04-20T00:00:00Z', NULL),
+
+  ('merch-gh-cap', 'MERCH', 'Made in Ghana Snapback', 'BeatzClik', NULL,
+   'https://images.unsplash.com/photo-1588850561407-ed78c282e89b?q=80&w=600&auto=format&fit=crop',
+   8500, 'GHS', NULL, '[]'::jsonb,
+   NULL, 65, '2026-03-15T00:00:00Z', NULL),
+
+  ('merch-villain-vinyl', 'MERCH', 'The Villain I Never Was — Vinyl', 'Black Sherif', 'black-sherif',
+   'https://images.unsplash.com/photo-1539375665275-f9de415ef9ac?q=80&w=600&auto=format&fit=crop',
+   35000, 'GHS', NULL, '["LIMITED"]'::jsonb,
+   'Limited gatefold double vinyl pressing.', 78, '2026-05-30T00:00:00Z', NULL),
+
+-- ---- Exclusives: VIP experiences & limited drops (EXCLUSIVE; dropsAt + stock_remaining) ----------
+  ('exclusive-meet-greet', 'EXCLUSIVE', 'VIP Meet & Greet — Accra', 'Black Sherif', 'black-sherif',
+   'https://images.unsplash.com/photo-1470229722913-7c0e2dbbafd3?q=80&w=600&auto=format&fit=crop',
+   80000, 'GHS', NULL, '["LIMITED","VIP"]'::jsonb,
+   'Backstage meet & greet plus signed merch at Independence Square.', 96, '2026-06-05T00:00:00Z', NULL),
+
+  ('exclusive-early-album', 'EXCLUSIVE', 'Early Access: Unreleased EP', 'Camidoh', 'camidoh',
+   'https://images.unsplash.com/photo-1504151932400-72d4384f0e6d?q=80&w=600&auto=format&fit=crop',
+   5000, 'GHS', NULL, '["EARLY ACCESS"]'::jsonb,
+   'Stream the new EP 7 days before public release.', 82, '2026-06-10T00:00:00Z', NULL),
+
+  ('exclusive-signed-vinyl', 'EXCLUSIVE', 'Signed Vinyl + Handwritten Lyrics', 'King Promise', 'king-promise',
+   'https://images.unsplash.com/photo-1539375665275-f9de415ef9ac?q=80&w=600&auto=format&fit=crop',
+   60000, 'GHS', NULL, '["LIMITED"]'::jsonb,
+   NULL, 74, '2026-05-28T00:00:00Z', NULL)
+
+ON CONFLICT (id) DO UPDATE
+  SET type        = EXCLUDED.type,
+      title       = EXCLUDED.title,
+      artist_name = EXCLUDED.artist_name,
+      artist_id   = EXCLUDED.artist_id,
+      image       = EXCLUDED.image,
+      price_minor = EXCLUDED.price_minor,
+      currency    = EXCLUDED.currency,
+      genre       = EXCLUDED.genre,
+      badges      = EXCLUDED.badges,
+      description = EXCLUDED.description,
+      popularity  = EXCLUDED.popularity,
+      created_at  = EXCLUDED.created_at,
+      quality     = EXCLUDED.quality;
+
+-- dropsAt / stock_remaining set in a second pass (kept out of the shared INSERT above so the
+-- column list stays common across all types; only EXCLUSIVE/MERCH rows are touched, INV-STORE-A).
+UPDATE store_item SET stock_remaining = 42  WHERE id = 'merch-bsherif-tee';
+UPDATE store_item SET stock_remaining = 18  WHERE id = 'merch-burna-hoodie';
+UPDATE store_item SET stock_remaining = 7   WHERE id = 'merch-villain-vinyl';
+UPDATE store_item SET drops_at = '2026-07-09T00:00:00Z', stock_remaining = 12  WHERE id = 'exclusive-meet-greet';
+UPDATE store_item SET drops_at = '2026-06-25T00:00:00Z', stock_remaining = 500 WHERE id = 'exclusive-early-album';
+UPDATE store_item SET stock_remaining = 25  WHERE id = 'exclusive-signed-vinyl';
+
+-- License tiers (store-data.ts `licenseLadder(base)`) — LEASE cheapest, EXCLUSIVE dearest (INV-STORE-B).
+INSERT INTO license_option (id, store_item_id, tier, label, price_minor, features, terms, sort_order)
+VALUES
+  ('beat-konongo-drill-lease',     'beat-konongo-drill',  'LEASE',     'Basic Lease',    5000,   '["Tagged MP3 file","Up to 10,000 streams","Non-exclusive","1 music video"]'::jsonb, 'MP3 • up to 10,000 streams', 0),
+  ('beat-konongo-drill-premium',   'beat-konongo-drill',  'PREMIUM',   'Premium Stems',  20000,  '["Untagged WAV + track stems","Up to 100,000 streams","Non-exclusive","Unlimited music videos"]'::jsonb, 'WAV + stems • up to 100,000 streams', 1),
+  ('beat-konongo-drill-exclusive', 'beat-konongo-drill',  'EXCLUSIVE', 'Exclusive',      100000, '["WAV + stems + project file","Unlimited streams & sales","Exclusive — beat removed from store","Full ownership transfer"]'::jsonb, 'Full ownership transfer', 2),
+
+  ('beat-amapiano-log-lease',      'beat-amapiano-log',   'LEASE',     'Basic Lease',    6000,   '["Tagged MP3 file","Up to 10,000 streams","Non-exclusive","1 music video"]'::jsonb, 'MP3 • up to 10,000 streams', 0),
+  ('beat-amapiano-log-premium',    'beat-amapiano-log',   'PREMIUM',   'Premium Stems',  24000,  '["Untagged WAV + track stems","Up to 100,000 streams","Non-exclusive","Unlimited music videos"]'::jsonb, 'WAV + stems • up to 100,000 streams', 1),
+  ('beat-amapiano-log-exclusive',  'beat-amapiano-log',   'EXCLUSIVE', 'Exclusive',      120000, '["WAV + stems + project file","Unlimited streams & sales","Exclusive — beat removed from store","Full ownership transfer"]'::jsonb, 'Full ownership transfer', 2),
+
+  ('beat-highlife-soul-lease',     'beat-highlife-soul',  'LEASE',     'Basic Lease',    4500,   '["Tagged MP3 file","Up to 10,000 streams","Non-exclusive","1 music video"]'::jsonb, 'MP3 • up to 10,000 streams', 0),
+  ('beat-highlife-soul-premium',   'beat-highlife-soul',  'PREMIUM',   'Premium Stems',  18000,  '["Untagged WAV + track stems","Up to 100,000 streams","Non-exclusive","Unlimited music videos"]'::jsonb, 'WAV + stems • up to 100,000 streams', 1),
+  ('beat-highlife-soul-exclusive', 'beat-highlife-soul',  'EXCLUSIVE', 'Exclusive',      90000,  '["WAV + stems + project file","Unlimited streams & sales","Exclusive — beat removed from store","Full ownership transfer"]'::jsonb, 'Full ownership transfer', 2),
+
+  ('beat-afro-fusion-lease',       'beat-afro-fusion',    'LEASE',     'Basic Lease',    7000,   '["Tagged MP3 file","Up to 10,000 streams","Non-exclusive","1 music video"]'::jsonb, 'MP3 • up to 10,000 streams', 0),
+  ('beat-afro-fusion-premium',     'beat-afro-fusion',    'PREMIUM',   'Premium Stems',  28000,  '["Untagged WAV + track stems","Up to 100,000 streams","Non-exclusive","Unlimited music videos"]'::jsonb, 'WAV + stems • up to 100,000 streams', 1),
+  ('beat-afro-fusion-exclusive',   'beat-afro-fusion',    'EXCLUSIVE', 'Exclusive',      140000, '["WAV + stems + project file","Unlimited streams & sales","Exclusive — beat removed from store","Full ownership transfer"]'::jsonb, 'Full ownership transfer', 2)
+ON CONFLICT (store_item_id, tier) DO UPDATE
+  SET label       = EXCLUDED.label,
+      price_minor = EXCLUDED.price_minor,
+      features    = EXCLUDED.features,
+      terms       = EXCLUDED.terms,
+      sort_order  = EXCLUDED.sort_order;
+
+-- Merch variants (store-data.ts `variants`).
+INSERT INTO merch_variant (id, store_item_id, label, options, sort_order)
+VALUES
+  ('merch-bsherif-tee-size',   'merch-bsherif-tee',   'Size',   '["S","M","L","XL","XXL"]'::jsonb, 0),
+  ('merch-bsherif-tee-colour', 'merch-bsherif-tee',   'Colour', '["Black","Cream"]'::jsonb,        1),
+  ('merch-burna-hoodie-size',  'merch-burna-hoodie',  'Size',   '["S","M","L","XL"]'::jsonb,        0),
+  ('merch-gh-cap-colour',      'merch-gh-cap',        'Colour', '["Red","Gold","Black"]'::jsonb,    0)
+ON CONFLICT (id) DO UPDATE
+  SET label      = EXCLUDED.label,
+      options    = EXCLUDED.options,
+      sort_order = EXCLUDED.sort_order;
