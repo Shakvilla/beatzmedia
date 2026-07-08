@@ -71,5 +71,7 @@ public enum ErrorCode {
   MEDIA_UNAVAILABLE,
   // ---- Podcasts codes (WU-POD-2) — tipping ----
   TIPS_DISABLED,
-  SELF_TIP_NOT_ALLOWED
+  SELF_TIP_NOT_ALLOWED,
+  // ---- Events codes (WU-EVT-1) ----
+  TIER_SOLD_OUT
 }
