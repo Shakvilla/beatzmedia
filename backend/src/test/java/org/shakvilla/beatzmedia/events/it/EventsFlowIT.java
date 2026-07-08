@@ -158,8 +158,8 @@ class EventsFlowIT {
         .get("/v1/events/" + eventId)
         .then()
         .statusCode(200)
-        .body("find { it.name == 'VIP' }.soldOut", equalTo(true))
-        .body("find { it.name == 'Regular' }.soldOut", equalTo(false));
+        .body("ticketTiers.find { it.name == 'VIP' }.soldOut", equalTo(true))
+        .body("ticketTiers.find { it.name == 'Regular' }.soldOut", equalTo(false));
   }
 
   // ---- Dev-seed fixture (Events ADD DoD #5) -----------------------------------------------------
