@@ -421,7 +421,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-IDN-4, WU-AUD-1, WU-CAT-2]
     llfrs: [LLFR-ADMIN-06.1]
-    status: todo
+    status: done   # PR #88 merged 2026-07-07 (squash 1447e74). Featured/push/curated-playlist CRUD, RBAC matrix (editor/super-admin RW, support R), INV-10 audit on every mutation.
   - id: WU-ADM-5
     title: Finance ops surface (delegates to payments)
     phase: 4
@@ -448,7 +448,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-IDN-4, WU-AUD-1]
     llfrs: [LLFR-ADMIN-08.1]
-    status: todo
+    status: done   # PR #87 merged 2026-07-07 (squash 1438b4f). Support ticket create/assign/reply/resolve; scaffold reused by WU-ADM-4.
   - id: WU-ADM-8
     title: Compliance + platform settings & feature flags
     phase: 4
