@@ -562,6 +562,37 @@ ON CONFLICT (id) DO UPDATE
       popularity      = EXCLUDED.popularity,
       updated_at      = now();
 
+-- ==========================================================================
+-- Studio profile (WU-STU-1: Frontend/src/lib/studio-data.ts getStudioProfile())
+-- artist_id = 'black-sherif' — the same dev/test artist fixture id used by artist_profile/album/
+-- track above (studio_profile.artist_id has no FK to those tables; matched by convention only).
+-- links/shows/press_assets are JSONB (Studio ADD §7).
+-- ==========================================================================
+
+INSERT INTO studio_profile (artist_id, username, display_name, hometown, genres, bio, avatar_url, banner_url, links, shows, featured_track_id, booking_email, press_assets, updated_at)
+VALUES
+  ('black-sherif', '@blacko', 'Black Sherif', 'Konongo, Ghana',
+   ARRAY['Drill','Hiplife','Afrobeats'],
+   'Mohammed Ismail Sherif, known as Black Sherif, is a Ghanaian rapper from Konongo. Best known for "Kwaku the Traveller" and "Soja".',
+   NULL, NULL,
+   '{"instagram":"@blacksherif","twitter":"@blacko_sherif","youtube":"BlackSherifVEVO","website":"blacksherif.com"}'::jsonb,
+   '[{"id":"s1","venue":"Independence Square","date":"May 22","city":"Accra"},{"id":"s2","venue":"Baba Yara Stadium","date":"Jun 14","city":"Kumasi"}]'::jsonb,
+   NULL, 'bookings@blacksherif.com', '[]'::jsonb, now())
+ON CONFLICT (artist_id) DO UPDATE
+  SET username          = EXCLUDED.username,
+      display_name      = EXCLUDED.display_name,
+      hometown          = EXCLUDED.hometown,
+      genres            = EXCLUDED.genres,
+      bio               = EXCLUDED.bio,
+      avatar_url        = EXCLUDED.avatar_url,
+      banner_url        = EXCLUDED.banner_url,
+      links             = EXCLUDED.links,
+      shows             = EXCLUDED.shows,
+      featured_track_id = EXCLUDED.featured_track_id,
+      booking_email     = EXCLUDED.booking_email,
+      press_assets      = EXCLUDED.press_assets,
+      updated_at        = now();
+
 -- Ticket tiers (event-data.ts `ticketTiers`). price_minor = GHS(n) * 100 pesewas.
 -- capacity/sold chosen per the status-derivation note above; afro-nation-gh tiers are seeded
 -- AT capacity (sold = capacity) to reproduce the sold-out fixture end to end.

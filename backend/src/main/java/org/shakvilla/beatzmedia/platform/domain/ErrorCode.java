@@ -73,5 +73,8 @@ public enum ErrorCode {
   TIPS_DISABLED,
   SELF_TIP_NOT_ALLOWED,
   // ---- Events codes (WU-EVT-1) ----
-  TIER_SOLD_OUT
+  TIER_SOLD_OUT,
+  // ---- Studio codes (WU-STU-1) ----
+  USERNAME_TAKEN,
+  INVALID_GENRE
 }

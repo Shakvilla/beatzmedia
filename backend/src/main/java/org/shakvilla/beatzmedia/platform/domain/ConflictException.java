@@ -10,4 +10,9 @@ public class ConflictException extends DomainException {
   public ConflictException(ErrorCode code, String message) {
     super(code, message);
   }
+
+  /** Constructor for subclasses that carry a field pointer (e.g. {@code USERNAME_TAKEN}). */
+  protected ConflictException(ErrorCode code, String message, String field) {
+    super(code, message, field);
+  }
 }
