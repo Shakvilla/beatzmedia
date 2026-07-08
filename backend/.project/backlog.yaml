@@ -322,7 +322,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-CAT-1]
     llfrs: [LLFR-EVENTS-01.1, LLFR-EVENTS-01.2]
-    status: todo
+    status: done   # PR #90 merged 2026-07-08 (squash 53cef48). Public browse/detail with live-derived status/soldOut (INV-EVT-2); internal IssueTicket port (row-locked, idempotent on orderId+tierId, no-oversell INV-EVT-1/OQ-11) for commerce to call on settlement. Wiring commerce's settlement path to call IssueTicket (closing the ADR-23 gate on WU-COM-2) is a follow-up, not done here.
   - id: WU-NOT-1
     title: In-app notifications feed + read state
     phase: 4
