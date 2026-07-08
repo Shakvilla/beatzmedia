@@ -37,7 +37,7 @@ public class DomainExceptionMapper implements ExceptionMapper<DomainException> {
     return switch (code) {
       case VALIDATION, UNSUPPORTED_FORMAT, FILE_REJECTED, WEAK_PASSWORD, INVALID_ROLE,
               MISSING_QUERY, TRACK_COUNT_INVALID, SPLIT_OVER_100, CHARGE_AMOUNT_EXCEEDED,
-              BELOW_MIN_PAYOUT ->
+              BELOW_MIN_PAYOUT, INVALID_GENRE ->
           UNPROCESSABLE_ENTITY;
       case NOT_FOUND,
               ARTIST_NOT_FOUND,
@@ -68,7 +68,8 @@ public class DomainExceptionMapper implements ExceptionMapper<DomainException> {
               INSUFFICIENT_BALANCE,
               KYC_BLOCKED,
               PAYOUT_METHOD_IN_USE,
-              TIER_SOLD_OUT ->
+              TIER_SOLD_OUT,
+              USERNAME_TAKEN ->
           Response.Status.CONFLICT.getStatusCode();
       case MISSING_IDEMPOTENCY_KEY -> Response.Status.BAD_REQUEST.getStatusCode();
       case PROVIDER_ERROR -> BAD_GATEWAY;

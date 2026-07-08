@@ -566,3 +566,42 @@ Global DoD (PRD §8 / `01-conventions-and-standards.md` §11) **plus**:
    (INV-11), serialized as `{ amount, currency }`.
 8. Hexagonal dependency rule green (ArchUnit); Spotless clean; Flyway migrations apply on an empty DB;
    contract test green against frontend types / `API-CONTRACT.md` §11.
+
+## 13. Implementation notes (WU-STU-1, as-built)
+
+Deviations from the illustrative §4/§7 snippets recorded here per conventions §11 (ADD updated in
+the same PR as behavior). WU-STU-1 implements **only** the `studio_profile` get/save slice
+(`GetStudioProfile`, `SaveStudioProfile`, `StudioProfileResource` at `GET`/`PUT /v1/studio/profile`)
+over the `studio_profile` table; `StudioSettings`, `PodcastShow`, `Episode` and the corresponding
+ports/tables/endpoints in §3–§7 are out of scope and land with WU-STU-2/3/4 as originally planned.
+The WU-STU-1 `StudioRepository` output port therefore only declares `findProfile` / `usernameTaken` /
+`saveProfile` — the settings/show/episode methods in the full §4.2 interface are added when those
+WUs land their own tables, not stubbed ahead of scope.
+
+**`studio_profile.artist_id` is `TEXT`, not `UUID`.** The illustrative §7 SQL used a native `UUID`
+column; the actual migration (`V955`) uses `TEXT`, matching the codebase-wide convention of string
+primary keys populated by the platform `IdGenerator` (UUIDv7-as-string) — e.g. `account.id`,
+`track.id`, `cart.account_id` (same documented deviation as `V401`/`V943`, see playback.md §13).
+`StudioProfileEntity.artistId` is a plain `String`, consistent with every other JPA entity.
+
+**`Genre` taxonomy lives in the platform kernel, not `catalog`.** No module had previously
+formalized genres as a typed enum — `catalog`'s `Album`/`ArtistProfile` store `genres` as untyped
+`List<String>`. Since WU-STU-1 is the first WU to validate genre membership against a closed set
+(422 `INVALID_GENRE`), `platform.domain.Genre` (the 9-value taxonomy verbatim from `Frontend/src/
+types/index.ts`) was added to the shared kernel per conventions §1 ("shared, cross-module
+primitives... may be imported by any module's domain"), for `studio` and any future module
+(`catalog`, `events`, `store`) to reuse rather than re-declaring per module.
+
+**Auth: `@RolesAllowed("artist")`, not a bespoke `ARTIST_REQUIRED` error code.** The endpoint table
+in §5.1 lists `403 ARTIST_REQUIRED` for both endpoints. In practice every other module gating on the
+same "artist, own studio" requirement (`catalog::StudioReleaseResource`,
+`payments::StudioPayoutsResource`, `identity::AdminTeamResource` for its own admin scopes) uses
+`@RolesAllowed` and lets the framework produce a bare `403` with the generic `UNAUTHORIZED` code —
+none of them wire a per-role error code, and no test in the codebase asserts one for a role-gate
+403. `StudioProfileResource` follows that established, codebase-wide precedent instead of
+introducing a one-off mechanism for this WU alone. `403 ARTIST_REQUIRED` in the table above should
+be read as "403, role-gated" rather than a literal wire `error.code` value.
+
+**`GET /studio/profile` never 404s.** Confirmed against §5.1's endpoint table (no `404` listed for
+`GET`): a not-yet-configured profile resolves to `StudioProfile.blank(artist)` — empty strings/empty
+lists, nothing persisted — rather than an error.
