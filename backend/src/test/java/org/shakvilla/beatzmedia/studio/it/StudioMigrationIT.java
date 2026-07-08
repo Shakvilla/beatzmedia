@@ -11,7 +11,7 @@ import org.junit.jupiter.api.Test;
 import io.quarkus.test.junit.QuarkusTest;
 
 /**
- * Migration integration test: verifies that the Flyway migration set (V955 {@code studio_profile}
+ * Migration integration test: verifies that the Flyway migration set (V958 {@code studio_profile}
  * + R__ seed) applies cleanly and validates on a fresh database. Studio ADD §7 / §12.
  */
 @QuarkusTest
@@ -25,6 +25,6 @@ class StudioMigrationIT {
   void flyway_migrations_apply_cleanly_and_validate() {
     // Flyway ran at start (quarkus.flyway.migrate-at-start=true).
     assertDoesNotThrow(() -> flyway.validate(),
-        "Flyway validation must pass: V955 studio_profile + R__seed must apply on a fresh DB");
+        "Flyway validation must pass: V958 studio_profile + R__seed must apply on a fresh DB");
   }
 }

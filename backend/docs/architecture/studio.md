@@ -579,7 +579,7 @@ The WU-STU-1 `StudioRepository` output port therefore only declares `findProfile
 WUs land their own tables, not stubbed ahead of scope.
 
 **`studio_profile.artist_id` is `TEXT`, not `UUID`.** The illustrative §7 SQL used a native `UUID`
-column; the actual migration (`V955`) uses `TEXT`, matching the codebase-wide convention of string
+column; the actual migration (`V958`) uses `TEXT`, matching the codebase-wide convention of string
 primary keys populated by the platform `IdGenerator` (UUIDv7-as-string) — e.g. `account.id`,
 `track.id`, `cart.account_id` (same documented deviation as `V401`/`V943`, see playback.md §13).
 `StudioProfileEntity.artistId` is a plain `String`, consistent with every other JPA entity.

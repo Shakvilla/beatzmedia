@@ -14,7 +14,7 @@ import org.hibernate.type.SqlTypes;
 /**
  * JPA entity for the {@code studio_profile} table. Domain types carry no ORM annotations. {@code
  * artist_id} is TEXT (not native UUID) matching the codebase-wide convention for primary keys
- * populated by the platform {@code IdGenerator} (UUIDv7-as-string) — see V955 migration note.
+ * populated by the platform {@code IdGenerator} (UUIDv7-as-string) — see V958 migration note.
  * Studio ADD §5.2 / §7.
  */
 @Entity

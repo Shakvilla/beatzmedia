@@ -1,4 +1,4 @@
--- V955__studio_profile.sql
+-- V958__studio_profile.sql
 -- WU-STU-1: Studio module — creator profile (studio_profile table only; studio_settings /
 -- studio_podcast_show / studio_episode land in later WUs WU-STU-2/3/4). Studio ADD §7.
 --
