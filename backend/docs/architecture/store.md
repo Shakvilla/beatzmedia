@@ -192,11 +192,25 @@ Paths/verbs/shapes lifted from `API-CONTRACT.md` §7. **Sort semantics:** `popul
 
 `StoreRepositoryJpa` owns all DB access to `store_item`, `license_option`, `merch_variant`; it builds
 the filter/sort query with composite indexes (§7) and maps domain ↔ JPA (domain carries no ORM
-annotations). `SearchIndexPg` fulfils text queries against the shared Postgres FTS/`pg_trgm` index.
+annotations). `SearchIndexPg` fulfils text queries against the shared Postgres FTS/`pg_trgm` index — it
+is a thin adapter that calls the `search` module's own **input** ports (`QueryService`,
+`IndexEntityUseCase`), the same cross-module pattern `catalog.application.service.SearchService`
+already uses (hexagonal rule: talk to another module through its input port, never its table).
 **No external clients** (no payment/S3/SMTP — those are `commerce`/`media`). The
 `PurchaseConfirmedSubscriber` (inbound messaging adapter) consumes `commerce`'s after-commit event and
 calls `StoreRepository.decrementStock`, keyed by `orderId` for idempotency. **Transaction boundary** =
 the use case (`@Transactional` on the application service impl); reads run read-only.
+
+> **Implementation note (WU-STO-1 build).** No `PurchaseConfirmed` event exists in `commerce.domain`.
+> The subscriber instead observes `commerce.domain.OwnershipGranted` — the actual after-commit,
+> exactly-once-per-order event `GrantOwnershipService` publishes on settlement (guarded upstream by its
+> `order_grant_posting` claim, which supplies the "keyed by orderId" idempotency called for above). It
+> treats each id in `OwnershipGranted.trackIds()`/`episodeIds()` as a candidate store item id and
+> decrements stock only when a matching EXCLUSIVE/MERCH row exists. `commerce.CheckoutService` still
+> gates `kind=store` checkout (`CheckoutKindUnsupportedException`) pending an authoritative store price
+> port, so in production this subscriber is presently wired but dormant; it activates once that gate is
+> lifted and `CatalogExpansionReader`'s `store` expansion is populated. See
+> `store/adapter/in/events/PurchaseConfirmedSubscriber` for the full rationale.
 
 ## 6. DTOs & API shapes
 
