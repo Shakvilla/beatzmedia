@@ -5,13 +5,16 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.isA;
 import static org.hamcrest.Matchers.notNullValue;
 
-import org.junit.jupiter.api.BeforeAll;
+import jakarta.inject.Inject;
+
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.shakvilla.beatzmedia.platform.application.port.out.FeatureFlags;
 import org.shakvilla.beatzmedia.platform.domain.FeatureKey;
 
-import io.quarkus.arc.Arc;
 import io.quarkus.test.junit.QuarkusTest;
 import io.restassured.http.ContentType;
 
@@ -23,9 +26,15 @@ import io.restassured.http.ContentType;
  * avatar, banner, links{instagram,twitter,youtube,website}, shows[]{id,venue,date,city},
  * featuredTrackId, bookingEmail, pressAssets[]{id,name,url}}. No {@code id}/{@code artistId} on the
  * wire. Studio ADD §6.
+ *
+ * <p>Setup runs as an ordered {@code @Test} (not a static {@code @BeforeAll}) and injects {@link
+ * FeatureFlags} via CDI rather than a static {@code Arc.container()} lookup, mirroring the proven
+ * pattern in {@code StudioProfileResourceIT} — a static {@code @BeforeAll} issuing the very first
+ * HTTP call after Quarkus boot was observed to intermittently 401 on {@code POST /v1/auth/signup}.
  */
 @QuarkusTest
 @Tag("integration")
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class StudioProfileContractTest {
 
   private static final String SIGNUP_URL = "/v1/auth/signup";
@@ -33,11 +42,15 @@ class StudioProfileContractTest {
   private static final String BECOME_ARTIST_URL = "/v1/me/become-artist";
   private static final String PROFILE_URL = "/v1/studio/profile";
 
+  @Inject
+  FeatureFlags featureFlags;
+
   private static String artistToken;
 
-  @BeforeAll
-  static void setup() {
-    Arc.container().instance(FeatureFlags.class).get().set(FeatureKey.ARTIST_SIGNUPS, true);
+  @Test
+  @Order(1)
+  void setup() {
+    featureFlags.set(FeatureKey.ARTIST_SIGNUPS, true);
 
     String email = "studio-profile-contract-it@example.com";
     String password = "password123";
@@ -80,6 +93,7 @@ class StudioProfileContractTest {
   }
 
   @Test
+  @Order(2)
   void getProfile_matchesStudioProfileDtoShape() {
     io.restassured.response.Response response = given()
         .header("Authorization", "Bearer " + artistToken)
@@ -118,6 +132,7 @@ class StudioProfileContractTest {
   // ---- Uniform error envelope --------------------------------------------------------------------
 
   @Test
+  @Order(3)
   void putInvalidGenre_returnsUniformErrorEnvelope() {
     given()
         .header("Authorization", "Bearer " + artistToken)
