@@ -83,5 +83,7 @@ public enum ErrorCode {
   INVALID_PRICE,
   SCHEDULE_DATE_REQUIRED,
   MEDIA_INVALID,
-  EPISODE_PUBLISHED
+  EPISODE_PUBLISHED,
+  // ---- Studio codes (WU-STU-3) — analytics/audience reads ----
+  INVALID_RANGE
 }
