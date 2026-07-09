@@ -14,16 +14,23 @@ import org.shakvilla.beatzmedia.studio.domain.EpisodeStatus;
 import org.shakvilla.beatzmedia.studio.domain.PodcastShow;
 import org.shakvilla.beatzmedia.studio.domain.ShowId;
 import org.shakvilla.beatzmedia.studio.domain.StudioProfile;
+import org.shakvilla.beatzmedia.studio.domain.StudioSettings;
 
 /** In-memory fake for {@link StudioRepository} used in unit tests. */
 public class FakeStudioRepository implements StudioRepository {
 
   private final Map<String, StudioProfile> profiles = new LinkedHashMap<>();
+  private final Map<String, StudioSettings> settings = new LinkedHashMap<>();
   private final Map<String, PodcastShow> shows = new LinkedHashMap<>();
   private final Map<String, Episode> episodes = new LinkedHashMap<>();
 
   public FakeStudioRepository withProfile(StudioProfile profile) {
     profiles.put(profile.artistId().value(), profile);
+    return this;
+  }
+
+  public FakeStudioRepository withSettings(StudioSettings settings) {
+    this.settings.put(settings.artistId().value(), settings);
     return this;
   }
 
@@ -55,6 +62,19 @@ public class FakeStudioRepository implements StudioRepository {
   public StudioProfile saveProfile(StudioProfile profile) {
     profiles.put(profile.artistId().value(), profile);
     return profile;
+  }
+
+  // ---- Settings (WU-STU-4) ----
+
+  @Override
+  public Optional<StudioSettings> findSettings(ArtistId artist) {
+    return Optional.ofNullable(settings.get(artist.value()));
+  }
+
+  @Override
+  public StudioSettings saveSettings(StudioSettings settings) {
+    this.settings.put(settings.artistId().value(), settings);
+    return settings;
   }
 
   // ---- Podcast shows / episodes (WU-STU-2) ----
