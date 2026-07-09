@@ -358,7 +358,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-MED-1, WU-POD-1]
     llfrs: [LLFR-STUDIO-02.1, LLFR-STUDIO-02.2, LLFR-STUDIO-02.3, LLFR-STUDIO-02.4]
-    status: todo
+    status: done   # PR #95 merged 2026-07-09 (squash 47c605b). Episode FSM (INV-7) go-live only via scheduler sweep; idempotent create; upload-before-commit. Added commerce GetOwnedEpisodeIds.hasAnyOwner (delete guard, OQ-8). Fixed a real ManagedExecutor/JTA transaction-propagation bug in media's InProcessTranscodeJobAdapter affecting every module's audio upload.
   - id: WU-ANA-1
     title: Analytics rollups
     phase: 4
