@@ -385,7 +385,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-IDN-3]
     llfrs: [LLFR-STUDIO-04.2]
-    status: todo
+    status: done   # PR #99 merged 2026-07-09 (squash 438fa56). New studio_settings table (Category A: notifications/defaults/payouts/privacy/team, natural upsert, audited INV-10). Category B fields (sessions/connectedApps/billing/twoFactor/phone/language/timezone/country/verification.identity|payout|rights) have no backing subsystem in this codebase — served as honest static defaults, documented as carryover in studio.md §16 (same precedent as WU-STU-3's analytics gaps). email sourced live from identity's GetCurrentAccount via new AccountReader port.
   - id: WU-ADM-1
     title: Admin overview & health
     phase: 4
