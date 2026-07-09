@@ -16,22 +16,26 @@ import org.shakvilla.beatzmedia.studio.domain.EpisodeStatus;
 import org.shakvilla.beatzmedia.studio.domain.PodcastShow;
 import org.shakvilla.beatzmedia.studio.domain.ShowId;
 import org.shakvilla.beatzmedia.studio.domain.StudioProfile;
+import org.shakvilla.beatzmedia.studio.domain.StudioSettings;
 
 /**
  * JPA implementation of {@link StudioRepository}. Reads/writes {@code studio_profile}, {@code
- * studio_podcast_show} and {@code studio_episode}; no cross-module joins. Transaction boundary =
- * the application service. Studio ADD §5.2.
+ * studio_settings}, {@code studio_podcast_show} and {@code studio_episode}; no cross-module joins.
+ * Transaction boundary = the application service. Studio ADD §5.2.
  */
 @ApplicationScoped
 public class JpaStudioRepository implements StudioRepository {
 
   private final EntityManager em;
   private final StudioProfileEntityMapper mapper;
+  private final StudioSettingsEntityMapper settingsMapper;
 
   @Inject
-  public JpaStudioRepository(EntityManager em, StudioProfileEntityMapper mapper) {
+  public JpaStudioRepository(
+      EntityManager em, StudioProfileEntityMapper mapper, StudioSettingsEntityMapper settingsMapper) {
     this.em = em;
     this.mapper = mapper;
+    this.settingsMapper = settingsMapper;
   }
 
   @Override
@@ -62,6 +66,26 @@ public class JpaStudioRepository implements StudioRepository {
       em.merge(entity);
     }
     return mapper.toDomain(entity);
+  }
+
+  // ---- Settings (WU-STU-4) ----
+
+  @Override
+  public Optional<StudioSettings> findSettings(ArtistId artist) {
+    StudioSettingsEntity e = em.find(StudioSettingsEntity.class, artist.value());
+    return e == null ? Optional.empty() : Optional.of(settingsMapper.toDomain(e));
+  }
+
+  @Override
+  public StudioSettings saveSettings(StudioSettings settings) {
+    StudioSettingsEntity existing = em.find(StudioSettingsEntity.class, settings.artistId().value());
+    StudioSettingsEntity entity = settingsMapper.toEntity(settings, existing);
+    if (existing == null) {
+      em.persist(entity);
+    } else {
+      em.merge(entity);
+    }
+    return settingsMapper.toDomain(entity);
   }
 
   // ---- Podcast shows / episodes (WU-STU-2) ----

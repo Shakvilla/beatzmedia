@@ -10,13 +10,11 @@ import org.shakvilla.beatzmedia.studio.domain.EpisodeId;
 import org.shakvilla.beatzmedia.studio.domain.PodcastShow;
 import org.shakvilla.beatzmedia.studio.domain.ShowId;
 import org.shakvilla.beatzmedia.studio.domain.StudioProfile;
+import org.shakvilla.beatzmedia.studio.domain.StudioSettings;
 
 /**
- * Output port for {@code studio_profile} + {@code studio_podcast_show} + {@code studio_episode}
- * persistence (WU-STU-1 + WU-STU-2 scope). The full ADD §4.2 {@code StudioRepository} also declares
- * settings methods over a table that doesn't exist yet in this WU ({@code studio_settings}); those
- * are added when WU-STU-4 lands its own table, rather than stubbed here ahead of scope. Studio ADD
- * §4.2.
+ * Output port for {@code studio_profile} + {@code studio_settings} + {@code studio_podcast_show} +
+ * {@code studio_episode} persistence (WU-STU-1 + WU-STU-2 + WU-STU-4 scope). Studio ADD §4.2.
  */
 public interface StudioRepository {
 
@@ -26,6 +24,12 @@ public interface StudioRepository {
   boolean usernameTaken(String username, ArtistId excluding);
 
   StudioProfile saveProfile(StudioProfile profile);
+
+  // ---- Settings (WU-STU-4) ----
+
+  Optional<StudioSettings> findSettings(ArtistId artist);
+
+  StudioSettings saveSettings(StudioSettings settings);
 
   // ---- Podcast shows / episodes (WU-STU-2) ----
 
