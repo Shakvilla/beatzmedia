@@ -376,7 +376,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-ANA-1]
     llfrs: [LLFR-STUDIO-03.1, LLFR-STUDIO-03.2]
-    status: todo
+    status: done   # PR #97 merged 2026-07-09 (squash d23b8f8). Read-only analytics/audience endpoints; artistId resolved only via jwt.getSubject() (IDOR-safe, proven by cross-artist-isolation IT). Honest empty/zero fields for countries/topTracks/ages/engagement/sources (no backing rollup dimension yet) and revenue.streaming=0 (OQ-4 default, not a gap) — documented as carryover in studio.md §15.
   - id: WU-STU-4
     title: Studio settings
     phase: 4
