@@ -505,7 +505,7 @@ stateDiagram-v2
 | **WU-STU-1** | Studio profile get/save; `USERNAME_TAKEN`; genre validation | STUDIO-01.1 | `studio_profile` | WU-IDN-3 |
 | **WU-STU-2** | Podcast shows + episodes create/manage; premium/early-access; publish-now/schedule; delete guard | STUDIO-02.1–02.4 | `studio_podcast_show`, `studio_episode` | WU-MED-1 (`MediaService`), WU-POD-1 |
 | **WU-STU-3** | Analytics + audience reads over ranges via `AnalyticsReader` | STUDIO-03.1–03.2 | (reads rollups) | WU-ANA-1 |
-| **WU-STU-4** | Studio settings get/save (notifications, defaults, payouts, privacy, team, security) | STUDIO-04.2 | `studio_settings` | WU-IDN-3 |
+| **WU-STU-4** ✅ | Studio settings get/save (notifications, defaults, payouts, privacy, team — Category A only; see §16) | STUDIO-04.2 | `studio_settings` | WU-IDN-3 |
 
 Supporting WUs consumed via ports: **WU-MED-1** (media upload→transcode→signed URL; `MediaService`),
 **WU-ANA-1** (analytics rollups; `AnalyticsReader`), **WU-PAY-4** (payouts view via `payments`
@@ -787,3 +787,72 @@ consumed via a new `studio` output port, mirroring `OwnershipReader`.
 **New `ErrorCode.INVALID_RANGE`, mapped to 422 in `DomainExceptionMapper`.** Added alongside the
 existing WU-STU-1/2 studio codes; no other switch in the codebase exhaustively enumerates `ErrorCode`
 so this addition is compile-safe elsewhere.
+
+## 16. Implementation notes (WU-STU-4, as-built)
+
+Deviations and carryovers, recorded here per conventions §11. WU-STU-4 implements the settings
+slice (`GetStudioSettings`, `SaveStudioSettings`, `StudioSettingsResource` at `GET`/`PUT /v1/studio/
+settings`) over a new `studio_settings` table (`V961`) — the last table the module ADD's §3/§7
+illustrative schema still owed. No other module tables/ports are touched (`GET /studio/payouts`
+remains payments' proxy, untouched).
+
+**Category A vs. Category B — the frontend mock's `StudioSettings` shape is wider than what
+`studio` (or any reachable module) can honestly back.** `Frontend/src/lib/studio-data.ts`'s
+`StudioSettings` interface mixes genuinely creator-owned config with fields that have no backing
+subsystem anywhere in this codebase. Rather than fabricate data or build speculative infrastructure
+to fill the gaps (the same "honest empty/zero over invented data" principle §15 already established
+for analytics), every field is classified and handled as follows:
+
+| Field | Category | Status | Note |
+|---|---|---|---|
+| `notifications.{sales,tips,followers,payouts,weeklySummary,comments,marketing}` | A | **Real, persisted** | `studio_settings.notifications` jsonb. |
+| `defaults.{trackPrice,releaseVisibility,autoExplicit,allowOffers}` | A | **Real, persisted** | `studio_settings.defaults` jsonb; `trackPrice` stored as `Money` (minor units, INV-11), bare decimal cedis on the wire (same convention as `StudioEpisodeDto.price`, §14). |
+| `payouts.{autoWithdraw,autoWithdrawThreshold,taxId}` | A | **Real, persisted** | `studio_settings.payouts` jsonb — the creator's own auto-withdraw CONFIGURATION, distinct from `payments`' payout methods/KYC/ledger (`GET /studio/payouts`, untouched). |
+| `privacy.{discoverable,showRealName,acceptBookings,allowDms}` | A | **Real, persisted** | `studio_settings.privacy` jsonb. |
+| `team[]` | A | **Real, persisted** | `studio_settings.team` jsonb array of `{id,name,email,role}`; `role` is the closed `TeamRole` enum (`Owner\|Manager\|Label\|Invited`), validated by a Bean Validation `@Pattern` on the inbound DTO (422 `VALIDATION`), not a service-level check (unlike `SaveStudioProfileService#validateGenres` — the WU brief explicitly calls for Hibernate-Validator-driven 422 here). |
+| `email` | B (real source) | **Real** | The one Category B field genuinely backed by another module: resolved from `identity`'s `GetCurrentAccount` INPUT port in-process via a new `studio.application.port.out.AccountReader` output port + `AccountReaderAdapter`, mirroring `OwnershipReaderAdapter` (WU-STU-2) — the real "wrap another module's input port behind a studio-owned output port" precedent (not the fictional `MediaService`, per §15's own correction). |
+| `verification.artist` | B (real, derived) | **Real** | Always `true`: this endpoint is `@RolesAllowed("artist")`-gated, so any caller who reaches the handler already satisfies "is an artist." No stored flag needed. |
+| `phone`, `country` | B | **Honest empty `""`** | No such field on `Account` or anywhere reachable; not part of Category A's schema either. |
+| `language`, `timezone` | B | **Fixed platform default** | `"English"` / `"GMT (Accra)"` — single hardcoded values matching the frontend mock's Ghana-first defaults (`STUDIO_LANGUAGES`); never persisted (no column). |
+| `twoFactor` | B | **Honest `false`** | No 2FA infrastructure anywhere in `identity`. |
+| `sessions[]` | B | **Honest `[]`** | No session-tracking infrastructure anywhere in the codebase — JWTs are stateless; there is no server-side session table to enumerate. |
+| `connectedApps[]` | B | **Honest `[]`** | No OAuth/third-party integration infrastructure anywhere in the codebase. |
+| `verification.{identity,payout,rights}` | B | **Honest `false`** | No backing KYC/rights-management subsystem reachable from `studio`. `payments` has its own KYC status internally, but wiring a new cross-module read for it is explicitly out of scope for this WU (would need its own WU, e.g. extending `AccountReader` or a new port). |
+| `billing.{plan,price,renews}` | B | **Fixed honest default** `{"Free", 0, null}` | BeatzClik is buy-to-own with no subscription/billing engine anywhere in the backend (no `billing`/`subscription` module exists, OQ-4 confirms no royalty/subscription accrual model). Deliberately NOT a fabricated paid "Studio Pro" plan, unlike the frontend mock's seed data — nothing in the backend ever charges for one. |
+
+None of the Category B fields are ever accepted from `PUT /studio/settings` — `SaveStudioSettingsCommand`
+/ `SaveStudioSettingsResource.SaveStudioSettingsBody` only carry the Category A writable subset
+(`notifications`, `defaults`, `payouts`, `privacy`, `team`), reading the ADD §6 DTO note "`SaveStudioSettingsDto`
+mirrors writable fields" as "same shape MINUS the non-writable Category B fields."
+
+**`StudioSettings` has no `security` sub-object, unlike the ADD's illustrative §3/§7 schema.** The
+illustrative domain-model table and SQL both list a `security` jsonb column/field, but nothing in
+scope (frontend mock, `API-CONTRACT.md`, or any reachable subsystem) ever reads or writes it — the
+closest concept, `twoFactor`, is Category B (honest `false`, no persistence). No `security` column
+exists in `V961`; if 2FA is ever implemented in `identity`, a future WU can add the column then.
+
+**`AccountReader` output port, mirroring `OwnershipReader` (WU-STU-2), not a fictional `MediaService`
+adapter.** As already corrected in §15 for `AnalyticsReaderAdapter`, this codebase has no generic
+abstract `MediaService`-style output port to imitate; `OwnershipReaderAdapter` (wrapping commerce's
+`GetOwnedEpisodeIds`) is the actual as-built precedent for "wrap another module's in-process input
+port behind a studio-owned output port + adapter." `studio.adapter.out.integration.AccountReaderAdapter`
+follows it exactly: it implements `studio.application.port.out.AccountReader` and calls `identity.
+application.port.in.GetCurrentAccount#current` in-process — `studio` never reads `identity`'s
+`account` table directly.
+
+**`GET /studio/settings` never 404s**, same "not-yet-configured resolves to a blank shell" precedent
+as `StudioProfile#blank` (§13): `StudioSettings.blank(artist)` (all Category A booleans `false`,
+`trackPrice`/`autoWithdrawThreshold` = 0, `releaseVisibility` = `"public"`, `team` = `[]`) composed
+with the honest Category B defaults above.
+
+**`PUT /studio/settings` is a natural upsert with no `Idempotency-Key`,** same reasoning as `PUT
+/studio/profile` (§13): replaying the identical request twice yields the same saved state, so no
+idempotency key is required. Each call is still its own privileged mutation for audit purposes —
+INV-10 requires exactly one `AuditEntry` per successful `PUT`, not de-duplicated across replays
+(verified by `StudioSettingsResourceIT#put_appendsExactlyOneAuditEntryPerCall`, which counts
+`audit_entry` rows by `(actor_id, target_type='StudioSettings')` directly via JDBC).
+
+**`studio_settings.artist_id` is `TEXT`, not native `UUID`.** Same documented deviation as
+`studio_profile.artist_id` (V958) and `studio_podcast_show`/`studio_episode` (V959/V960) — the
+codebase-wide convention of TEXT primary keys populated by the platform `IdGenerator`
+(UUIDv7-as-string).
