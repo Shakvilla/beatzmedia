@@ -35,4 +35,9 @@ public class GetOwnedEpisodeIdsService implements GetOwnedEpisodeIds {
   public Set<String> ownedOf(AccountId account, List<String> candidateEpisodeIds) {
     return Set.copyOf(ownershipRepository.activeEpisodeIds(account, candidateEpisodeIds));
   }
+
+  @Override
+  public boolean hasAnyOwner(String episodeId) {
+    return ownershipRepository.existsAnyActiveForEpisode(episodeId);
+  }
 }

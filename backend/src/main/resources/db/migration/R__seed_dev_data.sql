@@ -593,6 +593,49 @@ ON CONFLICT (artist_id) DO UPDATE
       press_assets      = EXCLUDED.press_assets,
       updated_at        = now();
 
+-- ==========================================================================
+-- Studio podcast show + episodes (WU-STU-2: Frontend/src/lib/studio-data.ts
+-- getStudioShows() / getStudioEpisodes()). artist_id = 'black-sherif' — same dev/test artist
+-- fixture id as the studio_profile seed above (no FK; matched by convention only).
+-- ep3 is seeded `scheduled` with scheduled_at computed relative to `now()` so it always remains
+-- in the future (INV-7) regardless of when this repeatable migration runs.
+-- ==========================================================================
+
+INSERT INTO studio_podcast_show (id, artist_id, title, category, created_at)
+VALUES ('sh-konongo', 'black-sherif', 'Konongo Diaries', 'Storytelling', now())
+ON CONFLICT (id) DO UPDATE
+  SET title       = EXCLUDED.title,
+      category    = EXCLUDED.category;
+
+INSERT INTO studio_episode (
+    id, show_id, artist_id, title, description, audio_key, cover_url, duration_sec, status,
+    is_premium, price_minor, currency, is_early_access, scheduled_at, published_at, plays,
+    created_at)
+VALUES
+  ('ep1', 'sh-konongo', 'black-sherif', 'Ep 12 · The Come Up',
+   'The come up — from Konongo to the world.', 'seed-audio-ep1', NULL, 2940, 'published',
+   false, 0, 'GHS', false, NULL, '2026-05-02T00:00:00Z', 18400, now()),
+  ('ep2', 'sh-konongo', 'black-sherif', 'Ep 11 · Studio Nights',
+   'Late nights in the studio.', 'seed-audio-ep2', NULL, 3360, 'published',
+   true, 500, 'GHS', false, NULL, '2026-04-25T00:00:00Z', 9200, now()),
+  ('ep3', 'sh-konongo', 'black-sherif', 'Ep 13 · Bonus (early access)',
+   'Bonus episode — early access for premium listeners.', 'seed-audio-ep3', NULL, 1980, 'scheduled',
+   true, 500, 'GHS', true, now() + interval '14 days', NULL, 0, now())
+ON CONFLICT (id) DO UPDATE
+  SET title           = EXCLUDED.title,
+      description     = EXCLUDED.description,
+      audio_key       = EXCLUDED.audio_key,
+      cover_url       = EXCLUDED.cover_url,
+      duration_sec    = EXCLUDED.duration_sec,
+      status          = EXCLUDED.status,
+      is_premium      = EXCLUDED.is_premium,
+      price_minor     = EXCLUDED.price_minor,
+      currency        = EXCLUDED.currency,
+      is_early_access = EXCLUDED.is_early_access,
+      scheduled_at    = EXCLUDED.scheduled_at,
+      published_at    = EXCLUDED.published_at,
+      plays           = EXCLUDED.plays;
+
 -- Ticket tiers (event-data.ts `ticketTiers`). price_minor = GHS(n) * 100 pesewas.
 -- capacity/sold chosen per the status-derivation note above; afro-nation-gh tiers are seeded
 -- AT capacity (sold = capacity) to reproduce the sold-out fixture end to end.

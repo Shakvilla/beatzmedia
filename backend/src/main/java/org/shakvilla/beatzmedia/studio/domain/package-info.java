@@ -13,7 +13,10 @@
  * (testing-strategy.md §6).
  *
  * <p>WU-STU-1 scope: only {@link org.shakvilla.beatzmedia.studio.domain.StudioProfile} (creator
- * profile get/save). Podcasts/episodes, analytics/audience reads, settings, and payouts described
- * in the module ADD land in later work units (WU-STU-2/3/4).
+ * profile get/save). WU-STU-2 adds {@link org.shakvilla.beatzmedia.studio.domain.PodcastShow} and
+ * {@link org.shakvilla.beatzmedia.studio.domain.Episode} (create/manage, premium/early-access,
+ * publish-now/schedule via {@link org.shakvilla.beatzmedia.studio.domain.EpisodeStatus}, INV-7).
+ * Analytics/audience reads, settings, and payouts described in the module ADD land in later work
+ * units (WU-STU-3/4).
  */
 package org.shakvilla.beatzmedia.studio.domain;

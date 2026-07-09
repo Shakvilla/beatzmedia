@@ -18,4 +18,12 @@ public interface GetOwnedEpisodeIds {
 
   /** Of the given candidates, the subset the account currently owns (single batched query). */
   Set<String> ownedOf(AccountId account, List<String> candidateEpisodeIds);
+
+  /**
+   * Does ANY account currently own the given episode — an aggregate, not account-scoped, query.
+   * Backs the {@code studio} module's delete guard (OQ-8 / WU-STU-2): a {@code published} episode
+   * with at least one owner cannot be deleted. Added for WU-STU-2, mirroring the precedent set by
+   * this same port's original addition for WU-POD-1's analogous cross-module read need.
+   */
+  boolean hasAnyOwner(String episodeId);
 }

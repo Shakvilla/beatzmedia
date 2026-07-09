@@ -33,6 +33,12 @@ public interface OwnershipRepository {
 
   boolean existsActiveForEpisode(AccountId account, String episodeId);
 
+  /**
+   * Does ANY account currently hold an active grant for the given episode — an aggregate query, not
+   * account-scoped. Backs {@code GetOwnedEpisodeIds#hasAnyOwner} (WU-STU-2 delete guard, OQ-8).
+   */
+  boolean existsAnyActiveForEpisode(String episodeId);
+
   /** All grants (active or revoked) whose {@code source_order_id} matches — used by refund (INV-9). */
   List<OwnershipGrant> findBySourceOrder(OrderId orderId);
 

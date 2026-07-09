@@ -76,5 +76,12 @@ public enum ErrorCode {
   TIER_SOLD_OUT,
   // ---- Studio codes (WU-STU-1) ----
   USERNAME_TAKEN,
-  INVALID_GENRE
+  INVALID_GENRE,
+  // ---- Studio codes (WU-STU-2) — podcast shows/episodes ----
+  SHOW_NOT_FOUND,
+  EPISODE_NOT_FOUND,
+  INVALID_PRICE,
+  SCHEDULE_DATE_REQUIRED,
+  MEDIA_INVALID,
+  EPISODE_PUBLISHED
 }

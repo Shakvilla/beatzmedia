@@ -46,6 +46,7 @@ import io.quarkus.scheduler.Scheduled.ConcurrentExecution;
  * <h2>Cadences (from ADD §5.2)</h2>
  * <pre>
  *   go-live          every 60 s   — catalog go-live (INV-7)
+ *   episode-go-live  every 60 s   — studio podcast episode go-live (INV-7, WU-STU-2)
  *   payout-window    Fri 09:00    — weekly payout reminder/run
  *   payment-recon    every 30 s   — payment reconciliation / timeout poll
  *   digest           daily 08:00  — digest emails
@@ -74,6 +75,7 @@ public class SchedulerRegistry {
 
   /** Job names (convention: module.action) — must match ScheduledJob#jobName() implementations. */
   private static final String JOB_GO_LIVE          = "catalog.go-live";
+  private static final String JOB_EPISODE_GO_LIVE  = "studio.episode-go-live";
   private static final String JOB_PAYOUT_WINDOW    = "payments.payout-window";
   private static final String JOB_PAYMENT_RECON    = "payments.payment-recon";
   private static final String JOB_DIGEST           = "notifications.digest";
@@ -97,10 +99,18 @@ public class SchedulerRegistry {
   // @Scheduled declarations — ADD §5.2
   // -------------------------------------------------------------------------
 
-  /** Release/episode go-live — INV-7. Every 60 s with single-JVM overlap prevention. */
+  /** Release go-live — INV-7. Every 60 s with single-JVM overlap prevention. */
   @Scheduled(every = "60s", identity = "go-live", concurrentExecution = ConcurrentExecution.SKIP)
   void publishDue() {
     runWithLock(JOB_GO_LIVE);
+  }
+
+  /** Studio podcast episode go-live — INV-7 (WU-STU-2). Every 60 s, same cadence as catalog's
+   * go-live but a distinct job/lock so the two sweeps never contend for the same advisory lock. */
+  @Scheduled(every = "60s", identity = "episode-go-live",
+      concurrentExecution = ConcurrentExecution.SKIP)
+  void publishDueEpisodes() {
+    runWithLock(JOB_EPISODE_GO_LIVE);
   }
 
   /** Weekly payout reminder / run window — Friday 09:00 UTC. */
