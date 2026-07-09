@@ -707,3 +707,83 @@ this codebase (`catalog.go-live`, `payments.payment-recon`, `notifications.deliv
 `runWithLock("studio.episode-go-live")`) is a small, one-time addition to
 `platform.adapter.out.scheduler.SchedulerRegistry`. There is no generic "run every registered job on
 some default cadence" mechanism in this codebase to hook into instead.
+
+## 15. Implementation notes (WU-STU-3, as-built)
+
+Deviations and carryovers, recorded here per conventions §11. WU-STU-3 implements the analytics/
+audience read slice (`GetAnalytics`, `GetAudience`, `StudioAnalyticsResource` at `GET /v1/studio/
+{analytics,audience}`) as **pure read composition** over the `analytics` module's rollups via a new
+`studio.application.port.out.AnalyticsReader` output port — no new `studio` tables. `StudioSettings`
+and its port/table/endpoints remain out of scope (WU-STU-4).
+
+**IDOR / Layer-2 ownership — hard requirement, verified by test.** Both endpoints are
+`@RolesAllowed("artist")` and resolve the caller's artist id EXCLUSIVELY from `jwt.getSubject()` —
+there is no `artistId` path or query parameter on either endpoint, matching `StudioProfileResource`/
+`StudioPodcastResource`'s exact pattern. This directly resolves the WU-ANA-1 carryover note that
+flagged this endpoint as needing server-enforced artist ownership. `StudioAnalyticsResourceIT`
+proves it: rollup rows are seeded for one artist only, and a second artist's JWT against the same
+endpoint gets an honest all-zero response, never the first artist's data.
+
+**No `MediaService`-style abstract output-port adapter exists to "mirror" — `OwnershipReaderAdapter`
+(WU-STU-2) is the actual as-built precedent instead.** The WU brief referenced mirroring `studio.
+adapter.out.integration.MediaServiceAdapter`, but per §14's own as-built notes, WU-STU-2 deliberately
+does NOT define an abstract `MediaService` output port — `CreateEpisodeService` calls media's input
+port directly in-process. The file that actually matches "wrap another module's in-process input
+port behind a studio-owned output port + adapter" is `studio.adapter.out.integration.
+OwnershipReaderAdapter` (wrapping commerce's `GetOwnedEpisodeIds`). `studio.adapter.out.analytics.
+AnalyticsReaderAdapter` follows that real precedent: it implements `studio.application.port.out.
+AnalyticsReader` and calls `analytics.application.port.in.AnalyticsReader#studioInsights` in-process.
+
+**The output port returns a studio-owned shape (`AnalyticsReader.Insights`/`MetricSeriesData`), not
+`analytics.domain.StudioInsights` directly.** Unlike `OwnershipReader`, which returns a bare
+`boolean`, this read needs a richer structure — but leaking another module's domain type across a
+studio output port would defeat the purpose of the port. `AnalyticsReaderAdapter` maps `analytics.
+domain.StudioInsights` (keyed by `analytics.domain.MetricKey`) into `Insights` (keyed by the four
+wire metric names `"streams"/"sales"/"followers"/"tips"`) at the adapter boundary only; no `analytics`
+type is referenced above this adapter.
+
+**Studio owns its own `AnalyticsRange`/`AudienceRange` enums, distinct from `analytics.domain.
+AnalyticsRange`, with STRICT `fromWire` parsing (422 `INVALID_RANGE`).** `analytics.domain.
+AnalyticsRange#fromWire` silently defaults to `28d` on an unrecognised value (correct for its own
+internal callers), but the endpoint contract (§5.1) requires a hard 422 on bad `?range=` input.
+`studio.domain.AnalyticsRange`/`AudienceRange#fromWire` default `null`/blank to `28d` (no range
+supplied) but throw the new `studio.domain.InvalidRangeException` (422 `INVALID_RANGE`, new
+`ErrorCode.INVALID_RANGE`) for any other unrecognised value — including `"all"` on the narrower
+`AudienceRange`, which the frontend's own `AudienceRange` type (`studio-analytics.ts`) also excludes.
+`AnalyticsReaderAdapter` translates `studio.domain.AnalyticsRange` → `analytics.domain.AnalyticsRange`
+(same five wire values) only at the outbound-adapter boundary; `AudienceRange#toAnalyticsRange()`
+does the equivalent narrower mapping.
+
+**Real vs. honest-empty/zero DTO fields — the ADD's illustrative §6 `AnalyticsDto`/`AudienceDto`
+shapes are wider than what the `analytics` rollups can honestly compute.** `sales_rollup`/
+`audience_rollup` are aggregated strictly per-artist-per-bucket (Analytics ADD §4.1: "Reads are
+served exclusively from rollups — never raw events"), so there is NO per-track, geographic,
+demographic, session/engagement, or per-fan dimension anywhere in the data model to serve several
+fields the frontend mock (`Frontend/src/lib/studio-analytics.ts`) illustrates with a seeded PRNG —
+that file's own header says "Swap `getAnalytics` for a TanStack Query hook once the API exists," i.e.
+it was never a real-data spec. Every field below either has a genuine rollup-backed source (mapped
+faithfully, `AnalyticsMapper`/`AudienceMapper`) or is honestly returned empty/zero (never invented):
+
+| Field | Status | Note |
+|---|---|---|
+| `rangeLabel`, `axisLabel`, `labels` | **Real** | Passthrough from `StudioInsights`. |
+| `metrics.{streams,sales,followers,tips}` | **Real** | Faithful 1:1 rollup series. `sales`/`tips` carry RAW MINOR UNITS (pesewas, matching `sales_minor`/`tips_minor`), not decimal cedis — deliberately NOT converted like `revenue.*`, since no per-element rounding convention for a parallel count/money array was ever specified; see `MetricSeriesView` javadoc. |
+| `fans` | **Real** | `StudioInsights.fansTotal` — Σ `followers_gained` over the window (period, not lifetime). |
+| `revenue.sales`, `revenue.tips` | **Real** | `Money.ofMinor(...).toCedis()` — the actual INV-11 boundary conversion. |
+| `revenue.streaming` | **Correct `0`, not a gap** | BeatzClik is buy-to-own with no streaming/subscription revenue model at all (OQ-4: no royalty accrual). `0` here is the true business-model answer. |
+| `countries`, `topTracks`, `ages` (Analytics), `sources`, `engagement.{completion,save,skip}` | **Honest empty/zero** | No per-track/geo/demographic/engagement dimension anywhere in `sales_rollup`/`audience_rollup`. Extending the rollup schema with these dimensions is out of scope for this WU (would be its own WU). |
+| `followers`, `followersGained` (Audience) | **Real, but same aggregate as `fans`** | `analytics` exposes NO lifetime/cumulative follower total — only net-new followers gained within the queried window. Both fields surface that one number; `followers` is therefore period-scoped, not a true lifetime total. A real lifetime total would need a new cross-module read (e.g. into `catalog.artist_profile.followers`) — out of scope here. |
+| `followersPeriod` | **Real (derived, not fabricated)** | A deterministic textual label for the queried range (`"this week"/"this month"/"this quarter"/"this year"`), exactly like `rangeLabel`/`axisLabel` describe the range itself — not a numeric data point. |
+| `monthlyListeners`, `listenersDelta` | **Honest `0`** | `audience_rollup.unique_listeners` is a staged column the rollup job NEVER actually populates (confirmed by reading `AudienceRollupJob` — the field is always `0`), exactly as the WU-ANA-1 carryover note said. No honest non-zero value is derivable. |
+| `superfans`, `superfansList`, `avgSessionSec`, `avgSessionDelta`, `cities`, `gender`, `ages` (Audience) | **Honest empty/zero** | No per-fan spend, session, geographic, or demographic dimension in the rollups. |
+
+**Future work to close these gaps** (not scoped to this WU — would need its own WU(s)): extend
+`sales_rollup`/`audience_rollup` (or add sibling rollup tables) with per-track, geo, demographic,
+session, and per-fan dimensions, computed by new or extended rollup jobs reacting to the same
+canonical domain events (`SaleRecorded`, `PlayRecorded`, `Followed`, `TipReceived`) with additional
+grouping keys; and/or add a cross-module read for `catalog.artist_profile.followers` (lifetime total)
+consumed via a new `studio` output port, mirroring `OwnershipReader`.
+
+**New `ErrorCode.INVALID_RANGE`, mapped to 422 in `DomainExceptionMapper`.** Added alongside the
+existing WU-STU-1/2 studio codes; no other switch in the codebase exhaustively enumerates `ErrorCode`
+so this addition is compile-safe elsewhere.
