@@ -83,6 +83,18 @@ public class JpaOwnershipRepository implements OwnershipRepository {
   }
 
   @Override
+  public boolean existsAnyActiveForEpisode(String episodeId) {
+    Long count =
+        em.createQuery(
+                "SELECT COUNT(g) FROM OwnershipGrantEntity g WHERE g.episodeId = :eid"
+                    + " AND g.revokedAt IS NULL",
+                Long.class)
+            .setParameter("eid", episodeId)
+            .getSingleResult();
+    return count > 0;
+  }
+
+  @Override
   public List<OwnershipGrant> findBySourceOrder(OrderId orderId) {
     return em
         .createQuery(

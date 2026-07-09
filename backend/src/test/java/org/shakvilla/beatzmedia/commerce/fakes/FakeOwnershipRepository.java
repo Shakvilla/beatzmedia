@@ -64,6 +64,11 @@ public class FakeOwnershipRepository implements OwnershipRepository {
   }
 
   @Override
+  public boolean existsAnyActiveForEpisode(String episodeId) {
+    return grants.stream().anyMatch(g -> g.isActive() && episodeId.equals(g.getEpisodeId()));
+  }
+
+  @Override
   public List<OwnershipGrant> findBySourceOrder(OrderId orderId) {
     return grants.stream()
         .filter(g -> g.getSourceOrderId().value().equals(orderId.value()))

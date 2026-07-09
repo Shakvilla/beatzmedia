@@ -442,3 +442,35 @@ Global DoD (conventions §11 / PRD §8) **plus**:
 5. Format/safety rejections return the exact stable codes (`UNSUPPORTED_FORMAT`, `FILE_REJECTED`, 413).
 6. Boots healthy under `docker compose up` with `objectstore` + `transcoder` (PRD §5.1); Flyway applies
    cleanly on an empty DB; ArchUnit dependency rule green.
+
+## 13. Implementation notes (as-built)
+
+**`InProcessTranscodeJobAdapter` uses a plain `ExecutorService` (virtual threads), not the
+CDI-injected `ManagedExecutor` — bug fix discovered by WU-STU-2's first real end-to-end audio-upload
+integration test.** §5.2's original text specified MicroProfile Context Propagation's
+`ManagedExecutor` (ADR WU-MED-1 §1). No module's test suite had ever exercised a *successful*
+`UploadOriginalUseCase#uploadOriginal` call for `MediaKind.AUDIO` through a real `@QuarkusTest` REST
+flow until `studio.it.StudioPodcastResourceIT` (WU-STU-2) — every prior upload IT (`catalog
+.StudioReleaseResourceIT`) only exercised the format-rejection path, which throws before reaching
+`transcodeJobPort.submit(...)`.
+
+`submit(TranscodeJob)` is called as the last line of `uploadOriginal`, which is itself
+`@Transactional` and still mid-transaction on the calling thread at that point (true for every
+caller: catalog/studio/podcasts upload use cases). `ManagedExecutor`'s default context propagation
+— via Quarkus's `narayana-jta` integration — associates the SAME still-active JTA transaction with
+the new worker thread it spawns, so the worker's own `@Transactional markTranscoding(...)` call and
+the original request thread end up concurrently active in one Narayana transaction. Narayana rejects
+this at commit time (`ARJUNA012094`/`ARJUNA012107`, "commiting with 2 threads active"), which
+surfaces to the HTTP caller as an opaque 500 ("Enlisted connection used without active transaction")
+— this affected EVERY module's audio-upload path identically, not something introduced by WU-STU-2.
+
+Fix: `InProcessTranscodeJobAdapter` now owns a plain, unmanaged `Executors
+.newVirtualThreadPerTaskExecutor()` instead of the injected `ManagedExecutor`. A plain
+`ExecutorService` propagates no ambient thread context at all, so the worker thread never touches
+the caller's transaction; `MediaApplicationService` is `@ApplicationScoped` (not request-scoped), so
+no CDI request context is needed on the worker thread either — each of its methods opens its own
+independent transaction as designed. `TranscodeJobPort`'s contract ("runs on a managed thread") is
+unchanged; only the concrete executor mechanism changed. No port, DTO, or other module's code was
+touched. Regression-tested by `studio.it.StudioPodcastResourceIT`'s successful create-episode paths
+(the media module's own unit tests — `UploadOriginalUseCaseTest` et al. — construct
+`MediaApplicationService` directly with `FakeTranscodeJobPort` and were unaffected).

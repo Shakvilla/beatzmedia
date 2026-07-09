@@ -605,3 +605,105 @@ be read as "403, role-gated" rather than a literal wire `error.code` value.
 **`GET /studio/profile` never 404s.** Confirmed against §5.1's endpoint table (no `404` listed for
 `GET`): a not-yet-configured profile resolves to `StudioProfile.blank(artist)` — empty strings/empty
 lists, nothing persisted — rather than an error.
+
+## 14. Implementation notes (WU-STU-2, as-built)
+
+Deviations from the illustrative §4/§5/§7 snippets, recorded here per conventions §11. WU-STU-2
+implements the `studio_podcast_show` + `studio_episode` slice (`ListStudioPodcastShows`,
+`CreatePodcastShow`, `ListStudioEpisodes`, `CreateEpisode`, `UpdateEpisode`, `DeleteEpisode`,
+`StudioPodcastResource` at `/v1/studio/podcasts/{shows,episodes}`) and the `EpisodeGoLiveJob`
+scheduler (INV-7). `StudioSettings` and the corresponding port/table/endpoints remain out of scope
+(WU-STU-4).
+
+**No abstract `MediaService`/`EventPublisher` output ports — direct in-process calls, matching
+codebase convention.** §4.2's illustrative table lists abstract `MediaService`/`EventPublisher`
+ports. As already noted for `catalog`/`events`/`podcasts`, no module in this codebase actually
+defines a generic `EventPublisher` interface or wraps the media pipeline behind a module-local
+`MediaService` port when a direct input-port call suffices. `CreateEpisodeService` calls the media
+module's `media.application.port.in.UploadOriginalUseCase#uploadOriginal` directly (in-process input
+port), exactly like `catalog.UploadReleaseTrackService`; `EpisodePublished` is fired via a plain
+CDI `jakarta.enterprise.event.Event<EpisodePublished>` inside the `@Transactional` service method,
+exactly like `events.IssueTicketService` fires `TicketTierSoldOut`. Both `EpisodePublished` firing
+sites (`CreateEpisodeService` on publish-now/`draft→published` via PATCH, and
+`RunEpisodeGoLiveSweepService` on scheduler go-live) fire it exactly once per transition; no
+consumer is registered by this WU (a future WU may `@Observes(during = AFTER_SUCCESS)` it).
+
+**`studio_podcast_show.id` / `studio_episode.{id,show_id,artist_id}` are `TEXT`, not `UUID`.** Same
+deviation as `studio_profile.artist_id` (V958) — the codebase-wide convention of string primary keys
+populated by the platform `IdGenerator` (UUIDv7-as-string). `show_id` carries a real FK to
+`studio_podcast_show(id)` (same module, not a cross-module FK violation); `artist_id` has no FK
+(matched by convention only, exactly like `studio_podcast_show.artist_id` and
+`studio_profile.artist_id`).
+
+**Strict INV-7 state machine: `scheduled → published` is reachable ONLY via the scheduler.** The
+illustrative §8 state diagram doesn't show a manual "early-publish a scheduled episode" edge, and
+INV-7 requires an episode is "never publicly listed/streamable before its `scheduledAt`". `Episode`'s
+domain methods enforce this strictly: `publishNow()`/`scheduleAt()` only fire from `draft`;
+`unschedule()` only fires from `scheduled` (back to `draft`); `goLive()` (scheduler-only) is the sole
+path from `scheduled` to `published`. `PATCH .../episodes/:id` with `visibility=public` on a
+`scheduled` episode is rejected with 409 `ILLEGAL_TRANSITION` (it does not silently early-publish);
+the same PATCH on an already-`published` episode is treated as a no-op (not an error), since it
+requests no actual state change.
+
+**`cover` is a plain URL string inside the `CreateEpisodeDto` JSON part, not a second multipart file
+part.** API-CONTRACT.md §11 lists `cover?` alongside `title`/`description`/etc. inside the single
+JSON object carried by the multipart request's `data` part — only `audio` is a real binary file
+part. This mirrors `studio_profile.avatar_url`, which is likewise a client-supplied URL string, not
+a binary upload. `CreateEpisode.CreateEpisodeCommand.coverUrl` is stored on the episode verbatim; no
+media-pipeline call is made for the cover.
+
+**Multipart part names: `audio` (binary) + `data` (JSON, `@PartType(APPLICATION_JSON)`).** Not
+specified by API-CONTRACT.md beyond "multipart audio + `{...}`"; `StudioPodcastResource` names the
+JSON part `data`, deserialized directly to `CreateEpisodeBody` via RESTEasy Reactive's
+`@FormParam`/`@PartType(MediaType.APPLICATION_JSON)` binding (no prior precedent for a JSON
+multipart part in this codebase; the binary-only precedent is `catalog.TrackUploadForm`).
+
+**`MEDIA_INVALID` vs. the media module's own codes.** §5.1 lists `422 MEDIA_INVALID` for the audio
+part. `CreateEpisodeService` throws `studio.domain.MediaInvalidException` (422 `MEDIA_INVALID`) only
+for studio's own coarse pre-validation (missing `audio` part; declared content-type outside the
+WAV/FLAC allow-list) — the same allow-list check `catalog.UploadReleaseTrackService` performs before
+calling media. Deeper checks performed *inside* the media module (magic-byte mismatch, failed virus
+scan, oversize) surface their own existing codes unchanged (`UNSUPPORTED_FORMAT` 422, `FILE_REJECTED`
+422, `PAYLOAD_TOO_LARGE` 413) via the existing global `DomainExceptionMapper` — studio does not
+re-wrap them, per the explicit "confirm and reuse, don't reinvent" guidance.
+
+**Idempotency: request-hash conflict detection added (not in the illustrative §9 text).** A replay
+of the same `(artist, Idempotency-Key)` with a *materially different* request body is rejected with
+409 `IDEMPOTENCY_KEY_CONFLICT` (new `studio.domain.IdempotencyConflictException`, mirroring
+`commerce.domain.IdempotencyConflictException`) rather than silently returning the stale episode.
+The hash covers only the JSON metadata fields (`showId`/`newShow`/`title`/`description`/`cover`/
+`visibility`/`date`/`premium`/`price`/`earlyAccess`) — deliberately NOT the audio bytes, since
+avoiding a second upload of those bytes is the entire point of the idempotency key. Persisted on
+`studio_episode.request_hash`; the `(artist_id, idempotency_key)` pair is enforced unique by a
+partial index (`ux_studio_episode_idem`, `WHERE idempotency_key IS NOT NULL`).
+
+**`price` on `StudioEpisodeDto`/`StudioPodcastShowDto` is a bare decimal-cedis number, not the
+`{amount,currency}` money envelope.** Unlike money-path endpoints (checkout, payouts), Studio ADD §6
+and `Frontend/src/lib/studio-data.ts`'s `StudioEpisode.price: number` both specify a bare number;
+`EpisodeMapper` converts `Money(priceMinor, GHS).toCedis()` to a `BigDecimal` at this adapter
+boundary only (INV-11). `publishedAt` on the wire doubles as "the date to show in the Studio episode
+list": the actual publish instant once `published`, the anticipated go-live instant while
+`scheduled` (mirrors the `studio-data.ts` mock, where the scheduled sample episode's
+`publishedAt` already holds its future date), `null` while `draft`.
+
+**`commerce.GetOwnedEpisodeIds` extended with `hasAnyOwner(episodeId)` (aggregate, not
+account-scoped).** The port's existing methods (`isOwned`, `ownedOf`) are account-scoped and cannot
+answer "does ANY account own this episode" — needed for the delete guard (OQ-8). Added
+`hasAnyOwner(String episodeId)` to `commerce.application.port.in.GetOwnedEpisodeIds` +
+`GetOwnedEpisodeIdsService`, backed by a new `OwnershipRepository#existsAnyActiveForEpisode(String)`
+output-port method (a plain `EXISTS`-style count query, no new table). This mirrors the precedent
+`GetOwnedEpisodeIds` itself set when it was added to commerce for `podcasts`' (WU-POD-1) analogous
+cross-module read need. `studio` consumes it via its own new output port,
+`studio.application.port.out.OwnershipReader#hasAnyOwner`, implemented by
+`studio.adapter.out.integration.OwnershipReaderAdapter` calling `GetOwnedEpisodeIds` in-process —
+mirroring `podcasts.adapter.out.integration.OwnershipReaderAdapter` exactly. No commerce write/
+settlement path was touched.
+
+**Scheduler registration: a new `@Scheduled` trigger method in `SchedulerRegistry`, not purely
+automatic.** `EpisodeGoLiveJob` (job name `studio.episode-go-live`) is discovered automatically as a
+CDI bean via the registry's `Instance<ScheduledJob>` injection point, but — like every other job in
+this codebase (`catalog.go-live`, `payments.payment-recon`, `notifications.delivery-retry-sweep`,
+`analytics.rollup`) — the *cadence trigger* itself (`@Scheduled(every = "60s", ...)` calling
+`runWithLock("studio.episode-go-live")`) is a small, one-time addition to
+`platform.adapter.out.scheduler.SchedulerRegistry`. There is no generic "run every registered job on
+some default cadence" mechanism in this codebase to hook into instead.

@@ -1,5 +1,7 @@
 package org.shakvilla.beatzmedia.studio.adapter.out.persistence;
 
+import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 
 import jakarta.enterprise.context.ApplicationScoped;
@@ -8,11 +10,17 @@ import jakarta.persistence.EntityManager;
 
 import org.shakvilla.beatzmedia.studio.application.port.out.StudioRepository;
 import org.shakvilla.beatzmedia.studio.domain.ArtistId;
+import org.shakvilla.beatzmedia.studio.domain.Episode;
+import org.shakvilla.beatzmedia.studio.domain.EpisodeId;
+import org.shakvilla.beatzmedia.studio.domain.EpisodeStatus;
+import org.shakvilla.beatzmedia.studio.domain.PodcastShow;
+import org.shakvilla.beatzmedia.studio.domain.ShowId;
 import org.shakvilla.beatzmedia.studio.domain.StudioProfile;
 
 /**
- * JPA implementation of {@link StudioRepository}. Reads/writes only {@code studio_profile}; no
- * cross-module joins. Transaction boundary = the application service. Studio ADD §5.2.
+ * JPA implementation of {@link StudioRepository}. Reads/writes {@code studio_profile}, {@code
+ * studio_podcast_show} and {@code studio_episode}; no cross-module joins. Transaction boundary =
+ * the application service. Studio ADD §5.2.
  */
 @ApplicationScoped
 public class JpaStudioRepository implements StudioRepository {
@@ -54,5 +62,107 @@ public class JpaStudioRepository implements StudioRepository {
       em.merge(entity);
     }
     return mapper.toDomain(entity);
+  }
+
+  // ---- Podcast shows / episodes (WU-STU-2) ----
+
+  @Override
+  public List<PodcastShow> findShows(ArtistId artist) {
+    return em.createQuery(
+            "SELECT s FROM PodcastShowEntity s WHERE s.artistId = :artist ORDER BY s.createdAt",
+            PodcastShowEntity.class)
+        .setParameter("artist", artist.value())
+        .getResultList()
+        .stream()
+        .map(PodcastEntityMapper::toDomain)
+        .toList();
+  }
+
+  @Override
+  public PodcastShow saveShow(PodcastShow show) {
+    PodcastShowEntity existing = em.find(PodcastShowEntity.class, show.id().value());
+    PodcastShowEntity entity = PodcastEntityMapper.toEntity(show, existing);
+    if (existing == null) {
+      em.persist(entity);
+    } else {
+      em.merge(entity);
+    }
+    return PodcastEntityMapper.toDomain(entity);
+  }
+
+  @Override
+  public Optional<PodcastShow> findShow(ArtistId artist, ShowId id) {
+    PodcastShowEntity e = em.find(PodcastShowEntity.class, id.value());
+    if (e == null || !e.artistId.equals(artist.value())) {
+      return Optional.empty();
+    }
+    return Optional.of(PodcastEntityMapper.toDomain(e));
+  }
+
+  @Override
+  public List<Episode> findEpisodes(ArtistId artist) {
+    return em.createQuery(
+            "SELECT e FROM EpisodeEntity e WHERE e.artistId = :artist ORDER BY e.createdAt DESC",
+            EpisodeEntity.class)
+        .setParameter("artist", artist.value())
+        .getResultList()
+        .stream()
+        .map(PodcastEntityMapper::toDomain)
+        .toList();
+  }
+
+  @Override
+  public Optional<Episode> findEpisode(ArtistId artist, EpisodeId id) {
+    EpisodeEntity e = em.find(EpisodeEntity.class, id.value());
+    if (e == null || !e.artistId.equals(artist.value())) {
+      return Optional.empty();
+    }
+    return Optional.of(PodcastEntityMapper.toDomain(e));
+  }
+
+  @Override
+  public Optional<Episode> findEpisodeByIdempotencyKey(ArtistId artist, String idempotencyKey) {
+    return em.createQuery(
+            "SELECT e FROM EpisodeEntity e WHERE e.artistId = :artist"
+                + " AND e.idempotencyKey = :key",
+            EpisodeEntity.class)
+        .setParameter("artist", artist.value())
+        .setParameter("key", idempotencyKey)
+        .getResultStream()
+        .findFirst()
+        .map(PodcastEntityMapper::toDomain);
+  }
+
+  @Override
+  public List<Episode> findDueScheduled(Instant now) {
+    return em.createQuery(
+            "SELECT e FROM EpisodeEntity e WHERE e.status = :status AND e.scheduledAt <= :now",
+            EpisodeEntity.class)
+        .setParameter("status", EpisodeStatus.scheduled.name())
+        .setParameter("now", now)
+        .getResultList()
+        .stream()
+        .map(PodcastEntityMapper::toDomain)
+        .toList();
+  }
+
+  @Override
+  public Episode saveEpisode(Episode episode) {
+    EpisodeEntity existing = em.find(EpisodeEntity.class, episode.id().value());
+    EpisodeEntity entity = PodcastEntityMapper.toEntity(episode, existing);
+    if (existing == null) {
+      em.persist(entity);
+    } else {
+      em.merge(entity);
+    }
+    return PodcastEntityMapper.toDomain(entity);
+  }
+
+  @Override
+  public void deleteEpisode(EpisodeId id) {
+    EpisodeEntity e = em.find(EpisodeEntity.class, id.value());
+    if (e != null) {
+      em.remove(e);
+    }
   }
 }
