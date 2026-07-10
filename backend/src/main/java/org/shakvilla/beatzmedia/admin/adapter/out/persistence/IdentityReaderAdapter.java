@@ -1,5 +1,6 @@
 package org.shakvilla.beatzmedia.admin.adapter.out.persistence;
 
+import java.time.Instant;
 import java.util.Optional;
 
 import jakarta.enterprise.context.ApplicationScoped;
@@ -33,5 +34,24 @@ public class IdentityReaderAdapter implements IdentityReader {
     }
     AccountEntity entity = em.find(AccountEntity.class, accountId);
     return Optional.ofNullable(entity).map(e -> e.name);
+  }
+
+  @Override
+  public int countActiveAccounts() {
+    Long count = em.createQuery(
+            "SELECT COUNT(a) FROM AccountEntity a WHERE a.status = :status", Long.class)
+        .setParameter("status", "active")
+        .getSingleResult();
+    return count.intValue();
+  }
+
+  @Override
+  public int countNewArtists(Instant since) {
+    Long count = em.createQuery(
+            "SELECT COUNT(a) FROM AccountEntity a WHERE a.isArtist = true AND a.createdAt >= :since",
+            Long.class)
+        .setParameter("since", since)
+        .getSingleResult();
+    return count.intValue();
   }
 }

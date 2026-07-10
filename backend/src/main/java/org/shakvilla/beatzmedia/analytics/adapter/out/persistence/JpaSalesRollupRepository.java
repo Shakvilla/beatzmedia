@@ -106,6 +106,26 @@ public class JpaSalesRollupRepository implements SalesRollupRepository {
     return rows.stream().map(JpaSalesRollupRepository::toDomain).toList();
   }
 
+  /**
+   * Unscoped counterpart to {@link #findRange} — no artist filter, all artists in the window.
+   * Backs the admin overview (WU-ADM-1). Plain JPA entity read after rollups have already settled;
+   * the native-scalar caveat on {@link #find} does not apply here (no same-transaction
+   * read-modify-write in this call path).
+   */
+  @Override
+  public List<SalesRollup> findAllArtistsRange(Grain grain, LocalDate from, LocalDate to) {
+    List<SalesRollupEntity> rows =
+        em.createQuery(
+                "SELECT r FROM SalesRollupEntity r WHERE r.grain = :grain "
+                    + "AND r.bucket BETWEEN :from AND :to ORDER BY r.bucket ASC",
+                SalesRollupEntity.class)
+            .setParameter("grain", grain.name())
+            .setParameter("from", from)
+            .setParameter("to", to)
+            .getResultList();
+    return rows.stream().map(JpaSalesRollupRepository::toDomain).toList();
+  }
+
   private static SalesRollup toDomain(SalesRollupEntity e) {
     return new SalesRollup(
         new ArtistId(e.artistId),
