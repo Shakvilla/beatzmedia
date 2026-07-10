@@ -68,7 +68,7 @@ class AdminTeamServiceTest {
     // Seed a super-admin account
     Account superAdminAccount = Account.reconstitute(
         SUPER_ADMIN_ID, "Yaa Mensima", "yaa@beatzclik.com", null,
-        false, true, org.shakvilla.beatzmedia.identity.domain.AccountStatus.active,
+        false, true, false, org.shakvilla.beatzmedia.identity.domain.AccountStatus.active,
         NOW, NOW, null);
     repo.seed(superAdminAccount);
     AdminMember superAdmin = new AdminMember("member-super", SUPER_ADMIN_ID, AdminRole.SUPER_ADMIN,
@@ -78,7 +78,7 @@ class AdminTeamServiceTest {
     // Seed a finance-admin account
     Account financeAdminAccount = Account.reconstitute(
         FINANCE_ADMIN_ID, "Kofi Annor", "kofi@beatzclik.com", null,
-        false, true, org.shakvilla.beatzmedia.identity.domain.AccountStatus.active,
+        false, true, false, org.shakvilla.beatzmedia.identity.domain.AccountStatus.active,
         NOW, NOW, null);
     repo.seed(financeAdminAccount);
     AdminMember financeAdmin = new AdminMember("member-finance", FINANCE_ADMIN_ID,

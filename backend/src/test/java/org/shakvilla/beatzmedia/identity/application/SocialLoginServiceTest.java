@@ -119,7 +119,8 @@ class SocialLoginServiceTest {
   void suspended_linked_account_throws_AccountSuspendedException() {
     AccountId id = new AccountId("acc-suspended");
     repo.seed(Account.reconstitute(
-        id, "Suspended", "susp@example.com", null, false, false, AccountStatus.suspended, NOW, NOW, null));
+        id, "Suspended", "susp@example.com", null, false, false, false, AccountStatus.suspended,
+        NOW, NOW, null));
     verifier.register(SocialProvider.GOOGLE, "tok",
         new VerifiedIdentity("google-uid-susp", "susp@example.com", "Suspended", null));
 

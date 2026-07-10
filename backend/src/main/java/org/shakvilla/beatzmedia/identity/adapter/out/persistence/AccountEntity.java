@@ -34,6 +34,9 @@ public class AccountEntity {
   @Column(name = "is_admin", nullable = false)
   public boolean isAdmin;
 
+  @Column(name = "verified", nullable = false)
+  public boolean verified;
+
   @Column(name = "status", nullable = false)
   public String status;
 

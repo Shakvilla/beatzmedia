@@ -85,5 +85,9 @@ public enum ErrorCode {
   MEDIA_INVALID,
   EPISODE_PUBLISHED,
   // ---- Studio codes (WU-STU-3) — analytics/audience reads ----
-  INVALID_RANGE
+  INVALID_RANGE,
+  // ---- Admin codes (WU-ADM-2) — user administration ----
+  ALREADY_VERIFIED,
+  ALREADY_SUSPENDED,
+  NOT_SUSPENDED
 }

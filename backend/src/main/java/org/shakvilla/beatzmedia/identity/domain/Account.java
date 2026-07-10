@@ -14,6 +14,7 @@ public final class Account {
   private final String avatar;
   private final boolean isArtist;
   private final boolean isAdmin;
+  private boolean verified;
   private AccountStatus status;
   private final Instant createdAt;
   private Instant updatedAt;
@@ -26,6 +27,7 @@ public final class Account {
       String avatar,
       boolean isArtist,
       boolean isAdmin,
+      boolean verified,
       AccountStatus status,
       Instant createdAt,
       Instant updatedAt,
@@ -36,6 +38,7 @@ public final class Account {
     this.avatar = avatar;
     this.isArtist = isArtist;
     this.isAdmin = isAdmin;
+    this.verified = verified;
     this.status = status;
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
@@ -49,25 +52,28 @@ public final class Account {
    * Identity ADD §3 / LLFR-IDENTITY-02.2.
    */
   public Account upgradeToArtist(Instant now) {
-    return new Account(id, name, email, avatar, true, isAdmin, status, createdAt, now, credential);
+    return new Account(
+        id, name, email, avatar, true, isAdmin, verified, status, createdAt, now, credential);
   }
 
   /**
-   * Factory for a new fan account. Sets isArtist=false, isAdmin=false, status=active. Identity ADD
-   * §3 / LLFR-IDENTITY-01.1.
+   * Factory for a new fan account. Sets isArtist=false, isAdmin=false, verified=false,
+   * status=active. Identity ADD §3 / LLFR-IDENTITY-01.1.
    */
   public static Account createFan(
       AccountId id, String name, String email, Credential credential, Instant now) {
-    return new Account(id, name, email, null, false, false, AccountStatus.active, now, now,
-        credential);
+    return new Account(
+        id, name, email, null, false, false, false, AccountStatus.active, now, now, credential);
   }
 
   /**
    * Factory for a new fan account created via social login (no password credential). Sets
-   * isArtist=false, isAdmin=false, status=active. Identity ADD §3 / LLFR-IDENTITY-01.3.
+   * isArtist=false, isAdmin=false, verified=false, status=active. Identity ADD §3 /
+   * LLFR-IDENTITY-01.3.
    */
   public static Account createSocialFan(AccountId id, String name, String email, String avatar, Instant now) {
-    return new Account(id, name, email, avatar, false, false, AccountStatus.active, now, now, null);
+    return new Account(
+        id, name, email, avatar, false, false, false, AccountStatus.active, now, now, null);
   }
 
   /**
@@ -81,12 +87,14 @@ public final class Account {
       String avatar,
       boolean isArtist,
       boolean isAdmin,
+      boolean verified,
       AccountStatus status,
       Instant createdAt,
       Instant updatedAt,
       Credential credential) {
     return new Account(
-        id, name, email, avatar, isArtist, isAdmin, status, createdAt, updatedAt, credential);
+        id, name, email, avatar, isArtist, isAdmin, verified, status, createdAt, updatedAt,
+        credential);
   }
 
   /** Returns true when this account may authenticate (not suspended or banned). */
@@ -100,12 +108,33 @@ public final class Account {
     this.updatedAt = now;
   }
 
-  /** Reactivates a suspended account. Caller is responsible for appending an AuditEntry (INV-10). */
+  /**
+   * Reactivates a suspended account. Caller is responsible for appending an AuditEntry (INV-10).
+   *
+   * @throws AccountNotSuspendedException if the account is not currently suspended (409
+   *     NOT_SUSPENDED). LLFR-ADMIN-02.4.
+   */
   public void reactivate(Instant now) {
     if (this.status != AccountStatus.suspended) {
-      throw new IllegalStateException("Only suspended accounts can be reactivated");
+      throw new AccountNotSuspendedException();
     }
     this.status = AccountStatus.active;
+    this.updatedAt = now;
+  }
+
+  /**
+   * Marks this account as verified (admin badge). Caller is responsible for appending an
+   * AuditEntry (INV-10). No "must be an artist" guard — a verified fan account is a harmless
+   * no-op-ish state; the frontend simply never surfaces the verify action for fans. Identity ADD
+   * §3 / LLFR-ADMIN-02.2.
+   *
+   * @throws AccountAlreadyVerifiedException if already verified (409 ALREADY_VERIFIED)
+   */
+  public void verifyArtist(Instant now) {
+    if (this.verified) {
+      throw new AccountAlreadyVerifiedException();
+    }
+    this.verified = true;
     this.updatedAt = now;
   }
 
@@ -131,6 +160,10 @@ public final class Account {
 
   public boolean isAdmin() {
     return isAdmin;
+  }
+
+  public boolean isVerified() {
+    return verified;
   }
 
   public AccountStatus getStatus() {

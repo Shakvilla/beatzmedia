@@ -39,8 +39,13 @@ public class JwtTokenIssuer implements TokenIssuer {
 
   @Override
   public String issue(AccountId subject, Set<String> roles) {
+    return issue(subject, roles, Duration.ofSeconds(accessTtlSeconds));
+  }
+
+  @Override
+  public String issue(AccountId subject, Set<String> roles, Duration ttl) {
     Instant now = clock.now();
-    Instant expiry = now.plus(Duration.ofSeconds(accessTtlSeconds));
+    Instant expiry = now.plus(ttl);
     return Jwt.issuer(issuer)
         .subject(subject.value())
         .groups(roles)
