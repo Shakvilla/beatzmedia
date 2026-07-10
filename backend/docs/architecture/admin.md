@@ -933,7 +933,7 @@ stateDiagram-v2
 
 | WU | Scope (LLFRs) | Ports/adapters | Reads/Writes | Depends on |
 |---|---|---|---|---|
-| **WU-ADM-1** | Overview & health (ADMIN-01.1/.2) | GetOverview, GetHealth; AnalyticsAdminReader | (reads rollups) | WU-IDN-4, WU-ANA-1 |
+| **WU-ADM-1** ✅ | Overview & health (ADMIN-01.1/.2) | GetOverview, GetHealth; AnalyticsAdminReader | (reads rollups) | WU-IDN-4, WU-AUD-1 |
 | **WU-ADM-2** | User admin (ADMIN-02.1–.6) | List/GetUser, Verify, Suspend, Reactivate, Impersonate, ExportUserData; IdentityAdminReader, AccountAdminPort, AuditWriter, EventPublisher | (reads identity) | WU-IDN-4, WU-AUD-1 |
 | **WU-ADM-3** | Catalog moderation + queue (ADMIN-03/04) | Approve/Flag/Takedown, ModerationQueue + actions; CatalogAdminPort, AuditWriter | moderation_case | WU-IDN-4, WU-AUD-1, WU-CAT-4 |
 | **WU-ADM-4** | Editorial (ADMIN-06.1) | ListFeatured/SaveFeatured, PushSchedule, CuratedPlaylists; AuditWriter | featured_slot, push_item, curated_playlist | WU-IDN-4, WU-AUD-1 |
@@ -941,6 +941,12 @@ stateDiagram-v2
 | **WU-ADM-6** | Support (ADMIN-08.1) | ListTickets/GetTicket/Reply/Assign/Resolve; AuditWriter | support_ticket, support_message | WU-IDN-4, WU-AUD-1 |
 | **WU-ADM-7** | Compliance (ADMIN-09.1) | ListCompliance + start/complete/export/notice; AuditWriter | compliance_request | WU-IDN-4, WU-AUD-1 |
 | **WU-ADM-8** | Settings & flags (ADMIN-10.1) + Finance overview (ADMIN-05.1) | GetSettings/SaveSettings; PlatformSettingsRepository, FeatureFlagRepository, PaymentsFinancePort, AuditWriter | platform_settings, feature_flag | WU-PLT-1, WU-IDN-4, WU-AUD-1, WU-PAY-4, WU-PAY-5 |
+
+> **WU-ADM-1 as-built.** Done — see §13 for the full write-up. `AnalyticsAdminReader` wraps a NEW
+> analytics-owned input port (`GetPlatformSalesSummary`), not a direct read of `sales_rollup`/
+> `audience_rollup`; the backlog's actual `depends_on` is `WU-IDN-4, WU-AUD-1` (this table's
+> original `WU-ANA-1` sketch predates the backlog — `analytics` itself has no dedicated WU id in the
+> registry, its ports are additive to the already-`done` `analytics` module).
 
 **Build order** (PRD §8.1, Phase 4 — after audit + RBAC foundations): **WU-IDN-4 → WU-AUD-1 →
 WU-PLT-1** must exist first (audit + RBAC before any admin mutation). Then **WU-ADM-1** (read-only,
@@ -997,3 +1003,86 @@ Global DoD (PRD §8 / `01-conventions §11`) **plus**:
    `payments` input ports and carry `Idempotency-Key`.
 7. **No cross-module FKs / shared persistence;** all cross-module access via reader/delegation ports
    (ArchUnit green). Module ADD updated in the same PR if behaviour changed.
+
+## 13. Implementation notes (WU-ADM-1, as-built)
+
+Deviations and carryovers, recorded here per conventions §11. WU-ADM-1 implements the overview/
+health read slice (`GetOverview`, `GetHealth`, `AdminOverviewResource` at `GET /v1/admin/overview`
+and `GET /v1/admin/health`) as **pure read composition** — no new `admin` tables. Both endpoints are
+read-only and NOT `@Audited` (admin ADD §9: reads are never audited). This is the first WU to touch
+`analytics` from `admin`, so it also lands one small, additive `analytics` change: a new
+platform-wide (all-artists) input port, `analytics.application.port.in.GetPlatformSalesSummary`,
+alongside the existing per-artist `AnalyticsReader` (studio-facing) — neither modifies the other.
+
+**Two-module split: `analytics` owns the aggregation, `admin` owns the presentation.** The real facts
+(settled GMV, streams, per-bucket sums, top-N artists) live in `sales_rollup`/`audience_rollup`
+(V949) and are genuine business logic — sum-by-bucket and top-N-by-sales are computed once, in
+`analytics.application.service.GetPlatformSalesSummaryService`, from two new unscoped output-port
+reads (`SalesRollupRepository#findAllArtistsRange`, `AudienceRollupRepository#findAllArtistsRange` —
+additive siblings of the existing per-artist `findRange`). `admin` never reads `sales_rollup`/
+`audience_rollup` directly and never touches `analytics`'s repositories/JPA entities; it calls
+`GetPlatformSalesSummary` in-process through a new `admin`-owned output port,
+`admin.application.port.out.AnalyticsAdminReader` (`adapter.out.persistence.
+AnalyticsAdminReaderAdapter` — placed alongside `IdentityReaderAdapter`, since this module has no
+`adapter.out.integration` package yet), which maps the analytics view into admin's own `Summary`/
+`TopArtist` shapes. This mirrors the studio module's `AnalyticsReader` output-port pattern
+(studio ADD §15): own shapes at the boundary, no leaking of another module's domain type upward
+except the shared read-model parameter `analytics.domain.Grain`, reused directly (like `identity`'s
+`AccountEntity` is reused directly, not mirrored, inside `IdentityReaderAdapter`).
+
+**`AdminRange` is a new, admin-owned enum — `24h`/`7d`/`30d` — distinct from every other range type
+in the codebase** (`analytics.domain.AnalyticsRange`, `studio.domain.AnalyticsRange`/`AudienceRange`).
+There is no hourly rollup grain anywhere (`analytics.domain.Grain` is `DAILY|WEEKLY|MONTHLY` only), so
+every `AdminRange` reads at `Grain.DAILY`: `24h` is a single bucket (today), `7d`/`30d` are the
+trailing 7/30 daily buckets ending today. `AdminRange.fromWireValue` follows the SAME parsing
+precedent already established by `studio.domain.AnalyticsRange#fromWire` (studio ADD §15): `null`/
+blank defaults to `7d` (no range supplied), any other unrecognised value throws
+`InvalidAdminRangeException` (422 `INVALID_RANGE`, the SAME `ErrorCode.INVALID_RANGE` added by
+WU-STU-3 — no new error code or exception mapper needed, `DomainExceptionMapper` already handles it).
+
+**Deltas — `gmv`/`streams` are real period-over-period comparisons; `users` is honestly `0`.**
+`kpis.deltas.gmv`/`.streams` compare the current period to the immediately preceding period of equal
+length (e.g. for `7d`, the 7 days before that), rounding to the nearest int and returning `0` when the
+previous period's value was `0` (avoids division by zero). `kpis.deltas.users` is always `0` — see the
+`activeUsers` row below for why no honest non-zero value is derivable.
+
+**Real vs. honest-empty/static fields — the ADD's illustrative §6 `AdminOverview`/`Health` shapes are
+wider than what this WU's dependencies (`WU-IDN-4`, `WU-AUD-1` only — no `WU-PAY-*`, no
+moderation/compliance/risk WU) can honestly back.** Same "honest empty/zero over invented data"
+principle already established in studio ADD §15/§16, applied platform-wide:
+
+| Field | Status | Note |
+|---|---|---|
+| `kpis.gmv` | **Real** | `Σ sales_minor` across every artist in the range, via `AnalyticsAdminReader`. Deliberately excludes `tips_minor` — GMV is settled purchases only; tips are a separate revenue line, never folded in. |
+| `kpis.streams` | **Real** | `Σ plays` across every artist in the range. |
+| `gmvByDay` | **Real** | One point per DAILY bucket in the range, summed across every artist; a bucket with no rows contributes `0`. |
+| `topArtists` | **Real** | Top-5 artists by summed `sales_minor` in the range, descending; display names resolved via the existing `IdentityReader#displayNameOf`, falling back to the raw account id if the account no longer exists (same fallback already used by `SupportTicketMapper`). |
+| `kpis.newArtists` | **Real** | `COUNT(account WHERE is_artist AND created_at` within the current period`)`, via the new `IdentityReader#countNewArtists(Instant since)`. |
+| `kpis.activeUsers` | **Real, but NOT time-boxed** | `COUNT(account WHERE status = 'active')`, via the new `IdentityReader#countActiveAccounts()` — a real but range-independent proxy. There is no session/login-activity tracking anywhere in this codebase to compute a true "active in the last N days" figure; extending `identity` with one is out of scope (would be its own WU). Documented here rather than fabricated. |
+| `kpis.deltas.users` | **Honest `0`** | Follows directly from `activeUsers` not being time-boxed: there is no historical snapshot of account status to honestly compute a period-over-period change for it. Rather than overload the unrelated `newArtists` metric as a stand-in, the field stays honestly `0`. |
+| `needsAttention` | **Honest empty `[]`** | Would need moderation-queue/compliance/risk-signal counts (WU-ADM-3/5/7 in this ADD's own numbering — none built, none in this WU's dependency set). |
+| `paymentMethods` | **Honest empty `[]`** | No payment-method dimension exists anywhere in `analytics`'s facts, and reaching into `payments` is out of scope (this WU depends only on `WU-IDN-4`/`WU-AUD-1`, no `WU-PAY-*`). |
+| `Health.status` | **Honest fixed `"normal"`** | The one honest signal available: if this endpoint answers an HTTP request at all, the app is up. Never `"degraded"` — there is no failure-detection logic anywhere to drive that value truthfully. |
+| `Health.metrics`, `.listeners`, `.incidents` | **Honest empty `[]`** (the ENTIRE `Health` payload beyond `status`) | No APM/observability pipeline, incident-tracking system, payment-gateway health monitor, or concurrent-listener telemetry anywhere in this codebase. This is a much larger honest-empty surface than any prior WU's Category B fields — essentially the whole DTO is a placeholder pending real observability infrastructure, a future WU, not invented here. |
+
+**Future work to close these gaps** (not scoped to this WU — would need its own WU(s)): a real
+observability/APM pipeline for `Health`; extending `analytics` (or a new module) with a
+payment-method dimension and/or reaching into `payments` for it; wiring `needsAttention` once
+moderation/compliance/risk-signal WUs land; and, if ever needed, a session/login-activity table in
+`identity` to make `activeUsers`/its delta genuinely time-boxed.
+
+**Money is a bare decimal number, NOT the `{amount,currency}}` envelope — the ADD's illustrative §6
+prose is superseded by the frontend contract, same resolution as WU-STU-4's `trackPrice` (studio ADD
+§16).** `Frontend/src/lib/admin-data.ts`'s `AdminOverview`/`Health` interfaces (`kpis.gmv:number`,
+`RevenueArtist.revenue:number`, `PayMethod.value:number`) are all bare `number`s. `AdminOverviewView`/
+`AdminOverviewDto` carry these as `BigDecimal` end-to-end (mirroring `StudioDefaultsView#trackPrice`'s
+exact precedent) — minor units only exist transiently inside `GetOverviewService`/
+`AnalyticsAdminReader`/`GetPlatformSalesSummary`, converted to cedis once via `Money.ofMinor(...)
+.toCedis()` at the application-service boundary (INV-11).
+
+**RBAC is enforced entirely by the inbound `@RolesAllowed` filter; no additional application-layer
+narrowing.** Overview/health is `R` for all five admin roles (admin ADD §8's matrix) — the same
+"support has no super-admin-only action" reasoning WU-ADM-7 already established for the ticket inbox
+applies here too. `GetOverview`/`GetHealth` take no `AdminActor`/scope parameter (unlike the ADD
+§4.1 sketch's `GetOverviewUseCase(AdminActor actor, AdminRange range)`); this matches the module's
+existing read-only naming/signature convention (`ListFeaturedSlots.list()` also takes no actor).
