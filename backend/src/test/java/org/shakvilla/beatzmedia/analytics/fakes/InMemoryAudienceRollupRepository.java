@@ -40,6 +40,15 @@ public class InMemoryAudienceRollupRepository implements AudienceRollupRepositor
         .toList();
   }
 
+  @Override
+  public List<AudienceRollup> findAllArtistsRange(Grain grain, LocalDate from, LocalDate to) {
+    return rows.values().stream()
+        .filter(r -> r.bucket().grain() == grain)
+        .filter(r -> !r.bucket().bucket().isBefore(from) && !r.bucket().bucket().isAfter(to))
+        .sorted((a, b) -> a.bucket().bucket().compareTo(b.bucket().bucket()))
+        .toList();
+  }
+
   public int size() {
     return rows.size();
   }
