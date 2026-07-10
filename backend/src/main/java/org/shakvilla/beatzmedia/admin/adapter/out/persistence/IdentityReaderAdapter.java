@@ -68,7 +68,7 @@ public class IdentityReaderAdapter implements IdentityReader {
 
     TypedQuery<Long> countQuery =
         em.createQuery("SELECT COUNT(a) FROM AccountEntity a" + where, Long.class);
-    applyParams(countQuery, filter, q);
+    applyParams(countQuery, q);
     long total = countQuery.getSingleResult();
 
     if (total == 0) {
@@ -78,7 +78,7 @@ public class IdentityReaderAdapter implements IdentityReader {
     TypedQuery<AccountEntity> dataQuery = em.createQuery(
         "SELECT a FROM AccountEntity a" + where + " ORDER BY a.createdAt DESC, a.id DESC",
         AccountEntity.class);
-    applyParams(dataQuery, filter, q);
+    applyParams(dataQuery, q);
     dataQuery.setFirstResult(page.offset());
     dataQuery.setMaxResults(page.size());
 
@@ -132,7 +132,7 @@ public class IdentityReaderAdapter implements IdentityReader {
     return sb.toString();
   }
 
-  private static <T> void applyParams(TypedQuery<T> query, UserFilter filter, String q) {
+  private static <T> void applyParams(TypedQuery<T> query, String q) {
     if (q != null && !q.isBlank()) {
       query.setParameter("q", "%" + q.toLowerCase(java.util.Locale.ROOT) + "%");
     }
