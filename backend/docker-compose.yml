@@ -104,10 +104,16 @@ services:
     ports:
       - "8026:8026" # HTTP send endpoint + capture UI
     healthcheck:
+      # Each probe spawns a fresh Python interpreter (no curl/wget in python:3-alpine), making this
+      # the heaviest healthcheck in the stack. retries/start_period sized to match db/objectstore
+      # (10 retries) rather than the previous 5 — under host load, 5 retries * 10s was observed
+      # timing out before the container (and its interpreter-per-probe check) could settle, even
+      # though the stub itself was healthy — a false "sms failed to start" with no app-code cause.
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8026/livez')"]
       interval: 10s
       timeout: 5s
-      retries: 5
+      retries: 10
+      start_period: 20s
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
