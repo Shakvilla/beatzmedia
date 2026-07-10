@@ -103,6 +103,24 @@ public class JpaAudienceRollupRepository implements AudienceRollupRepository {
     return rows.stream().map(JpaAudienceRollupRepository::toDomain).toList();
   }
 
+  /**
+   * Unscoped counterpart to {@link #findRange} — no artist filter, all artists in the window.
+   * Backs the admin overview (WU-ADM-1). Plain JPA entity read after rollups have already settled.
+   */
+  @Override
+  public List<AudienceRollup> findAllArtistsRange(Grain grain, LocalDate from, LocalDate to) {
+    List<AudienceRollupEntity> rows =
+        em.createQuery(
+                "SELECT r FROM AudienceRollupEntity r WHERE r.grain = :grain "
+                    + "AND r.bucket BETWEEN :from AND :to ORDER BY r.bucket ASC",
+                AudienceRollupEntity.class)
+            .setParameter("grain", grain.name())
+            .setParameter("from", from)
+            .setParameter("to", to)
+            .getResultList();
+    return rows.stream().map(JpaAudienceRollupRepository::toDomain).toList();
+  }
+
   private static AudienceRollup toDomain(AudienceRollupEntity e) {
     return new AudienceRollup(
         new ArtistId(e.artistId),

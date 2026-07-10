@@ -19,4 +19,11 @@ public interface AudienceRollupRepository {
   Optional<AudienceRollup> find(ArtistId artistId, LocalDate bucket, Grain grain);
 
   List<AudienceRollup> findRange(ArtistId artistId, Grain grain, LocalDate from, LocalDate to);
+
+  /**
+   * All rows across EVERY artist at one grain within {@code [from, to]} inclusive, bucket
+   * ascending — the unscoped counterpart to {@link #findRange}. Backs platform-wide reads (admin
+   * overview, WU-ADM-1). Read-only, post-window query — safe as a plain JPA entity query.
+   */
+  List<AudienceRollup> findAllArtistsRange(Grain grain, LocalDate from, LocalDate to);
 }

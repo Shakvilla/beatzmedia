@@ -22,4 +22,13 @@ public interface SalesRollupRepository {
 
   /** All rows for one artist at one grain within {@code [from, to]} inclusive, bucket ascending. */
   List<SalesRollup> findRange(ArtistId artistId, Grain grain, LocalDate from, LocalDate to);
+
+  /**
+   * All rows across EVERY artist at one grain within {@code [from, to]} inclusive, bucket
+   * ascending — the unscoped counterpart to {@link #findRange}. Backs platform-wide reads (admin
+   * overview, WU-ADM-1); never used by per-artist studio reads. Read-only, post-window query — safe
+   * to implement as a plain JPA entity query (no same-transaction fold-in-a-fact write path here,
+   * unlike {@link #find}/{@link #upsert}).
+   */
+  List<SalesRollup> findAllArtistsRange(Grain grain, LocalDate from, LocalDate to);
 }
