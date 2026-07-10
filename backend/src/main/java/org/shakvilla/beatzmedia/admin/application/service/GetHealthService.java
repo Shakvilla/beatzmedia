@@ -16,7 +16,7 @@ import org.shakvilla.beatzmedia.admin.application.port.in.HealthView;
  * always empty, never fabricated. {@code status} is hardcoded {@code "normal"}: the one honest
  * signal available is that this endpoint answering an HTTP request at all means the app is up; there
  * is no failure-detection logic to ever honestly return {@code "degraded"}. See {@link HealthView}
- * and admin ADD §16 as-built for the full rationale.
+ * and admin ADD §13 as-built for the full rationale.
  */
 @ApplicationScoped
 public class GetHealthService implements GetHealth {

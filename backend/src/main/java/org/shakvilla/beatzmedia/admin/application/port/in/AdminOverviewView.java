@@ -9,7 +9,7 @@ import java.util.List;
  * {amount,currency}} envelope — matching {@code admin-data.ts}'s {@code AdminOverview.kpis.gmv:
  * number} / {@code RevenueArtist.revenue: number} / {@code PayMethod.value: number}, the same
  * convention already established for {@code StudioDefaultsView#trackPrice} (Studio ADD §16 /
- * WU-STU-4 as-built). Admin ADD §6 / §16 (WU-ADM-1).
+ * WU-STU-4 as-built). Admin ADD §6 / §13 (WU-ADM-1).
  */
 public record AdminOverviewView(
     String rangeLabel,

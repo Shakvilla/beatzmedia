@@ -10,7 +10,7 @@ import org.shakvilla.beatzmedia.admin.application.service.GetHealthService;
 
 /**
  * Unit test for {@link GetHealthService} (LLFR-ADMIN-01.2) — asserts the honest static shape: no
- * fabricated metrics/listeners/incidents. Admin ADD §16 (WU-ADM-1).
+ * fabricated metrics/listeners/incidents. Admin ADD §13 (WU-ADM-1).
  */
 @Tag("unit")
 class GetHealthServiceTest {

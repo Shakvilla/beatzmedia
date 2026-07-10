@@ -2,7 +2,7 @@ package org.shakvilla.beatzmedia.admin.domain;
 
 /**
  * The overview/health time window for {@code GET /admin/overview}, mirroring {@code
- * Frontend/src/lib/admin-data.ts}'s {@code AdminRange = '24h' | '7d' | '30d'}. Admin ADD §16
+ * Frontend/src/lib/admin-data.ts}'s {@code AdminRange = '24h' | '7d' | '30d'}. Admin ADD §13
  * (WU-ADM-1) — a NEW, admin-owned enum, distinct from {@code analytics.domain.AnalyticsRange} and
  * {@code studio.domain.AnalyticsRange}/{@code AudienceRange} (`7d|28d|90d|12m|all`); admin never
  * imports another module's range type.
@@ -11,7 +11,7 @@ package org.shakvilla.beatzmedia.admin.domain;
  * DAILY|WEEKLY|MONTHLY} only), so every {@link AdminRange} maps to {@link
  * org.shakvilla.beatzmedia.analytics.domain.Grain#DAILY}: {@code 24h} reads a single bucket
  * (today), {@code 7d} the trailing 7 daily buckets, {@code 30d} the trailing 30 daily buckets
- * (admin ADD §16 as-built).
+ * (admin ADD §13 as-built).
  */
 public enum AdminRange {
   TWENTY_FOUR_HOURS("24h", "last 24 hours", 1),

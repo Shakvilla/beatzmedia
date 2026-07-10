@@ -14,7 +14,7 @@ import org.shakvilla.beatzmedia.analytics.domain.Grain;
  * output-port pattern (own shapes, no other module's domain type crosses this boundary except the
  * shared read-model parameter {@link Grain}, which — like {@code identity}'s {@code AccountEntity}
  * in {@link IdentityReader}'s adapter — is treated as a read-model concept safe to reuse rather than
- * mirror). Admin ADD §4.3 / §16 (WU-ADM-1 as-built).
+ * mirror). Admin ADD §4.3 / §13 (WU-ADM-1 as-built).
  */
 public interface AnalyticsAdminReader {
 

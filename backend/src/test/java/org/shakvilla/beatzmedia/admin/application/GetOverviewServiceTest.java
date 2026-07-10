@@ -21,7 +21,7 @@ import org.shakvilla.beatzmedia.platform.fakes.FakeClock;
 
 /**
  * Unit tests for {@link GetOverviewService} (LLFR-ADMIN-01.1) using fakes for {@link
- * AnalyticsAdminReader}/{@code IdentityReader}. Admin ADD §16 (WU-ADM-1).
+ * AnalyticsAdminReader}/{@code IdentityReader}. Admin ADD §13 (WU-ADM-1).
  */
 @Tag("unit")
 class GetOverviewServiceTest {
@@ -86,8 +86,8 @@ class GetOverviewServiceTest {
     assertEquals("artist-2", view.topArtists().get(1).name(), "falls back to the raw id when no display name");
     assertEquals(new BigDecimal("40.00"), view.topArtists().get(1).revenue());
 
-    assertEquals(List.of(), view.needsAttention(), "honest empty default (Category B, admin ADD §16)");
-    assertEquals(List.of(), view.paymentMethods(), "honest empty default (Category B, admin ADD §16)");
+    assertEquals(List.of(), view.needsAttention(), "honest empty default (Category B, admin ADD §13)");
+    assertEquals(List.of(), view.paymentMethods(), "honest empty default (Category B, admin ADD §13)");
   }
 
   @Test

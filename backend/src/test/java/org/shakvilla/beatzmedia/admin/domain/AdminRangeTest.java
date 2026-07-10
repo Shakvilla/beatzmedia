@@ -7,7 +7,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Tag;
 
 /**
- * Unit tests for {@link AdminRange#fromWireValue(String)} (LLFR-ADMIN-01.1). Admin ADD §16
+ * Unit tests for {@link AdminRange#fromWireValue(String)} (LLFR-ADMIN-01.1). Admin ADD §13
  * (WU-ADM-1).
  */
 @Tag("unit")

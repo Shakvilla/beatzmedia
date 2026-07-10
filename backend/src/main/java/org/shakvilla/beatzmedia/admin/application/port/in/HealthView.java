@@ -4,7 +4,7 @@ import java.util.List;
 
 /**
  * Wire-shaped view for {@code GET /admin/health}, matching {@code Health} in {@code
- * Frontend/src/lib/admin-data.ts}. Admin ADD §6 / §16 (WU-ADM-1).
+ * Frontend/src/lib/admin-data.ts}. Admin ADD §6 / §13 (WU-ADM-1).
  *
  * <p><strong>Almost entirely a placeholder (Category B, honest-empty).</strong> There is no APM/
  * observability pipeline, incident-tracking system, payment-gateway health monitor, or
@@ -14,7 +14,7 @@ import java.util.List;
  * {@code status} is hardcoded {@code "normal"}: the one honest signal available is that if this
  * endpoint answers an HTTP request at all, the app is up — there is no failure-detection logic to
  * ever honestly return {@code "degraded"}. Real observability infrastructure is a future WU, not
- * invented here (admin ADD §16 as-built).
+ * invented here (admin ADD §13 as-built).
  */
 public record HealthView(String status, List<Metric> metrics, List<Double> listeners, List<Incident> incidents) {
 

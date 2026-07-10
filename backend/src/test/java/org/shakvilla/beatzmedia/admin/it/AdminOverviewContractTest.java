@@ -33,7 +33,7 @@ import org.shakvilla.beatzmedia.admin.application.port.in.HealthView;
  * <p><strong>Money is a bare decimal number, NOT {@code {amount,currency}}.</strong> {@code
  * kpis.gmv}, {@code topArtists[].revenue}, {@code paymentMethods[].value}, and every {@code
  * gmvByDay[]} entry are {@link BigDecimal} — serialising as a plain JSON number, matching {@code
- * admin-data.ts}'s {@code number} types exactly (admin ADD §16 as-built deviation from the ADD's
+ * admin-data.ts}'s {@code number} types exactly (admin ADD §13 as-built deviation from the ADD's
  * illustrative {@code Money} prose, same resolution as WU-STU-4's {@code trackPrice}).
  */
 @Tag("unit")

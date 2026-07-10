@@ -18,7 +18,7 @@ import org.shakvilla.beatzmedia.analytics.domain.Grain;
  * {@code audience_rollup} directly (the aggregation logic lives in {@code analytics}'s application
  * service, not duplicated here). Placed alongside {@link IdentityReaderAdapter} in {@code
  * adapter.out.persistence} — this module has no {@code adapter.out.integration} package yet; admin
- * ADD §4.3 / §16 (WU-ADM-1 as-built).
+ * ADD §4.3 / §13 (WU-ADM-1 as-built).
  */
 @ApplicationScoped
 public class AnalyticsAdminReaderAdapter implements AnalyticsAdminReader {

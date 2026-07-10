@@ -11,7 +11,7 @@ import org.shakvilla.beatzmedia.admin.application.port.in.AdminOverviewView;
  * gmvByDay, needsAttention, topArtists, paymentMethods } }. Money fields ({@code kpis.gmv}, {@code
  * topArtists[].revenue}, {@code paymentMethods[].value}, {@code gmvByDay[]}) are bare decimal-cedis
  * numbers, NOT the {@code {amount,currency}} envelope — see {@link AdminOverviewView}'s javadoc for
- * the precedent this follows (Studio ADD §16 / WU-STU-4). Admin ADD §6 / §16 (WU-ADM-1).
+ * the precedent this follows (Studio ADD §16 / WU-STU-4). Admin ADD §6 / §13 (WU-ADM-1).
  */
 public record AdminOverviewDto(
     String rangeLabel,

@@ -7,7 +7,7 @@ import org.shakvilla.beatzmedia.admin.application.port.in.HealthView;
 /**
  * Response DTO matching {@code Health} in {@code Frontend/src/lib/admin-data.ts}: {@code { status,
  * metrics, listeners, incidents } }. See {@link HealthView}'s javadoc — this is almost entirely a
- * Category B honest-empty placeholder (no observability pipeline exists). Admin ADD §6 / §16
+ * Category B honest-empty placeholder (no observability pipeline exists). Admin ADD §6 / §13
  * (WU-ADM-1).
  */
 public record HealthDto(String status, List<MetricDto> metrics, List<Double> listeners, List<IncidentDto> incidents) {

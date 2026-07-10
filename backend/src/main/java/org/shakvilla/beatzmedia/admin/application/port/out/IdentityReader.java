@@ -18,7 +18,7 @@ public interface IdentityReader {
    * Count of accounts with {@code status = 'active'}, right now. Backs {@code
    * AdminOverview.kpis.activeUsers} (WU-ADM-1). Deliberately NOT time-boxed by a range — there is
    * no session/login-activity tracking anywhere in this codebase to compute a true "active in the
-   * last N days" figure, so this is an honest, range-independent proxy (admin ADD §16 as-built).
+   * last N days" figure, so this is an honest, range-independent proxy (admin ADD §13 as-built).
    */
   int countActiveAccounts();
 

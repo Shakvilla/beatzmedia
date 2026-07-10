@@ -22,7 +22,7 @@ import org.shakvilla.beatzmedia.platform.domain.Money;
 /**
  * Application service for LLFR-ADMIN-01.1 (overview). Read-only; not audited. Composes real
  * platform-wide facts from {@link AnalyticsAdminReader} (settled GMV, streams, GMV-by-day, top
- * artists) and {@link IdentityReader} (active users, new artists) — see admin ADD §16 as-built for
+ * artists) and {@link IdentityReader} (active users, new artists) — see admin ADD §13 as-built for
  * the full Category A (real) / Category B (honest static default) field breakdown.
  *
  * <p><strong>Range → grain.</strong> Every {@link AdminRange} reads at {@link Grain#DAILY} (no
@@ -71,7 +71,7 @@ public class GetOverviewService implements GetOverview {
 
     int deltaGmv = pctChange(current.totalSalesMinor(), previous.totalSalesMinor());
     int deltaStreams = pctChange(current.totalPlays(), previous.totalPlays());
-    int deltaUsers = 0; // activeUsers is not time-boxed (documented deviation, admin ADD §16)
+    int deltaUsers = 0; // activeUsers is not time-boxed (documented deviation, admin ADD §13)
 
     List<BigDecimal> gmvByDay = current.salesByBucket().stream().map(GetOverviewService::toCedis).toList();
 
