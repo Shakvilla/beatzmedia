@@ -49,11 +49,15 @@ public interface AccountAdminPort {
    * Issues a scoped, time-boxed impersonation token for the target account. Admin roles are
    * excluded from {@code scopes} even if the target happens to be an admin member (deliberate
    * security default — impersonation investigates regular users; see admin ADD WU-ADM-2 as-built
-   * notes).
+   * notes). {@code actorId} (the real admin performing the impersonation) is threaded through to
+   * identity's token-issuance layer so the token can carry an {@code act} claim naming the real
+   * actor (security-authz.md §3) — it is NOT recorded on the token's own {@code sub}/roles.
    *
+   * @param actorId the real admin account performing the impersonation
+   * @param accountId the account being impersonated
    * @throws org.shakvilla.beatzmedia.identity.domain.AccountNotFoundException if no such account
    */
-  ImpersonationResult issueImpersonationToken(String accountId);
+  ImpersonationResult issueImpersonationToken(String actorId, String accountId);
 
   /** Updated account row after a verify/suspend/reactivate mutation. */
   record AccountMutationResult(

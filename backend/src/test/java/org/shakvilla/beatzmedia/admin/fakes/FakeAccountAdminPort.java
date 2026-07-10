@@ -18,6 +18,7 @@ public class FakeAccountAdminPort implements AccountAdminPort {
   private Instant impersonationExpiresAt = Instant.parse("2026-01-01T00:15:00Z");
   private Set<String> impersonationScopes = Set.of("fan");
   private String impersonationToken = "fake-impersonation-token";
+  private String lastImpersonationActorId;
 
   public void seed(AccountMutationResult account) {
     accounts.put(account.id(), account);
@@ -69,9 +70,15 @@ public class FakeAccountAdminPort implements AccountAdminPort {
   }
 
   @Override
-  public ImpersonationResult issueImpersonationToken(String accountId) {
+  public ImpersonationResult issueImpersonationToken(String actorId, String accountId) {
     require(accountId);
+    this.lastImpersonationActorId = actorId;
     return new ImpersonationResult(impersonationToken, impersonationExpiresAt, impersonationScopes);
+  }
+
+  /** The {@code actorId} passed to the most recent {@link #issueImpersonationToken} call. */
+  public String lastImpersonationActorId() {
+    return lastImpersonationActorId;
   }
 
   private AccountMutationResult require(String accountId) {

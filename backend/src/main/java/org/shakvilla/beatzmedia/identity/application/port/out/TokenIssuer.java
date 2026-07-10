@@ -28,4 +28,22 @@ public interface TokenIssuer {
   default String issue(AccountId subject, Set<String> roles, Duration ttl) {
     return issue(subject, roles);
   }
+
+  /**
+   * Issues a signed JWT for LLFR-ADMIN-02.5 (admin impersonation) that carries the target's own
+   * {@code sub}/roles PLUS an {@code act} claim naming the real admin actor (never the target's
+   * own claims — see security-authz.md §3) and a distinct {@code jti} for revocation/correlation.
+   * Distinct from {@link #issue(AccountId, Set, Duration)} — plain login tokens never carry an
+   * {@code act} claim. Default implementation delegates to the TTL-aware {@link #issue(AccountId,
+   * Set, Duration)} (dropping {@code act}/{@code jti}) so existing fakes/callers that only
+   * implement the earlier methods keep compiling; real issuance overrides this.
+   *
+   * @param subject the impersonated (target) account — becomes the token's {@code sub}
+   * @param roles the target's own roles only — never the admin's scopes (cannot self-escalate)
+   * @param actor the real admin account performing the impersonation — becomes {@code act.sub}
+   * @param ttl the short, independently-tunable impersonation TTL
+   */
+  default String issueImpersonation(AccountId subject, Set<String> roles, AccountId actor, Duration ttl) {
+    return issue(subject, roles, ttl);
+  }
 }
