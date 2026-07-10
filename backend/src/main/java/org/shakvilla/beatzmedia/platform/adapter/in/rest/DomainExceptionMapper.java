@@ -73,7 +73,10 @@ public class DomainExceptionMapper implements ExceptionMapper<DomainException> {
               PAYOUT_METHOD_IN_USE,
               TIER_SOLD_OUT,
               USERNAME_TAKEN,
-              EPISODE_PUBLISHED ->
+              EPISODE_PUBLISHED,
+              ALREADY_VERIFIED,
+              ALREADY_SUSPENDED,
+              NOT_SUSPENDED ->
           Response.Status.CONFLICT.getStatusCode();
       case MISSING_IDEMPOTENCY_KEY -> Response.Status.BAD_REQUEST.getStatusCode();
       case PROVIDER_ERROR -> BAD_GATEWAY;

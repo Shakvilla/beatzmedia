@@ -24,6 +24,7 @@ final class AccountMapper {
     entity.avatar = account.getAvatar();
     entity.isArtist = account.isArtist();
     entity.isAdmin = account.isAdmin();
+    entity.verified = account.isVerified();
     entity.status = account.getStatus().name();
     entity.createdAt = account.getCreatedAt();
     entity.updatedAt = account.getUpdatedAt();
@@ -53,6 +54,7 @@ final class AccountMapper {
         accountEntity.avatar,
         accountEntity.isArtist,
         accountEntity.isAdmin,
+        accountEntity.verified,
         AccountStatus.valueOf(accountEntity.status),
         accountEntity.createdAt,
         accountEntity.updatedAt,

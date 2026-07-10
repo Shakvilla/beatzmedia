@@ -86,7 +86,7 @@ class UpgradeToArtistServiceTest {
   void upgrade_already_artist_returns_success_without_republishing() {
     AccountId id = new AccountId("acc-3");
     Account alreadyArtist = Account.reconstitute(id, "Art", "art@x.com", null,
-        true, false, org.shakvilla.beatzmedia.identity.domain.AccountStatus.active,
+        true, false, false, org.shakvilla.beatzmedia.identity.domain.AccountStatus.active,
         Instant.now(), Instant.now(), null);
     accountRepository.seed(alreadyArtist);
 

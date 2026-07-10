@@ -54,14 +54,14 @@ class LoginServiceTest {
     AccountId id = new AccountId("acc-2");
     Credential cred = new Credential(id, VALID_HASH);
     return Account.reconstitute(
-        id, "Bob", email, null, false, false, AccountStatus.suspended, NOW, NOW, cred);
+        id, "Bob", email, null, false, false, false, AccountStatus.suspended, NOW, NOW, cred);
   }
 
   private Account bannedAccount(String email) {
     AccountId id = new AccountId("acc-3");
     Credential cred = new Credential(id, VALID_HASH);
     return Account.reconstitute(
-        id, "Carol", email, null, false, false, AccountStatus.banned, NOW, NOW, cred);
+        id, "Carol", email, null, false, false, false, AccountStatus.banned, NOW, NOW, cred);
   }
 
   // ---- LLFR-IDENTITY-01.2: success ----

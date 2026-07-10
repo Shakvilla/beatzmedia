@@ -62,7 +62,7 @@ public class AdminAuditResource {
       @QueryParam("size") @DefaultValue("20") int size) {
 
     AuditType type = parseType(typeParam);
-    AuditFilter filter = new AuditFilter(type, actor, q);
+    AuditFilter filter = new AuditFilter(type, actor, q, null);
     PageRequest pageRequest = new PageRequest(page, size);
 
     Page<org.shakvilla.beatzmedia.audit.domain.AuditEntry> raw =

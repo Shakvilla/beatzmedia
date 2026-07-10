@@ -1,0 +1,71 @@
+package org.shakvilla.beatzmedia.admin.application.port.out;
+
+import java.time.Instant;
+import java.util.Set;
+
+/**
+ * Output port for mutating account state on admin's behalf (verify/suspend/reactivate/
+ * impersonate). Implemented by an adapter that calls {@code identity}'s input ports
+ * ({@code SuspendAccount}, {@code ReactivateAccount}, {@code VerifyArtist},
+ * {@code IssueImpersonationToken}) in-process — a genuine cross-module input-port call, the SAME
+ * pattern as WU-ADM-1's {@code AnalyticsAdminReaderAdapter} calling {@code
+ * GetPlatformSalesSummary}, NOT the direct-JPA-read exception {@link IdentityReader} uses. Admin
+ * ADD §4.3.
+ *
+ * <p>Deliberately does NOT append an AuditEntry — {@code admin}'s own application services own
+ * INV-10 for these admin-driven mutations (the actor-facing boundary), per admin ADD §9 / the
+ * suspend-user sequence diagram (§8 flow (a)).
+ */
+public interface AccountAdminPort {
+
+  /**
+   * Marks the target account as verified.
+   *
+   * @throws org.shakvilla.beatzmedia.identity.domain.AccountNotFoundException if no such account
+   * @throws org.shakvilla.beatzmedia.identity.domain.AccountAlreadyVerifiedException if already
+   *     verified (409 ALREADY_VERIFIED)
+   */
+  AccountMutationResult verifyArtist(String accountId);
+
+  /**
+   * Suspends the target account.
+   *
+   * @throws org.shakvilla.beatzmedia.identity.domain.AccountNotFoundException if no such account
+   * @throws org.shakvilla.beatzmedia.identity.domain.AccountAlreadySuspendedException if already
+   *     suspended (409 ALREADY_SUSPENDED)
+   */
+  AccountMutationResult suspend(String accountId);
+
+  /**
+   * Reactivates the target account.
+   *
+   * @throws org.shakvilla.beatzmedia.identity.domain.AccountNotFoundException if no such account
+   * @throws org.shakvilla.beatzmedia.identity.domain.AccountNotSuspendedException if not currently
+   *     suspended (409 NOT_SUSPENDED)
+   */
+  AccountMutationResult reactivate(String accountId);
+
+  /**
+   * Issues a scoped, time-boxed impersonation token for the target account. Admin roles are
+   * excluded from {@code scopes} even if the target happens to be an admin member (deliberate
+   * security default — impersonation investigates regular users; see admin ADD WU-ADM-2 as-built
+   * notes).
+   *
+   * @throws org.shakvilla.beatzmedia.identity.domain.AccountNotFoundException if no such account
+   */
+  ImpersonationResult issueImpersonationToken(String accountId);
+
+  /** Updated account row after a verify/suspend/reactivate mutation. */
+  record AccountMutationResult(
+      String id,
+      String name,
+      String email,
+      boolean isArtist,
+      boolean verified,
+      String status,
+      Instant createdAt,
+      Instant updatedAt) {}
+
+  /** Scoped, time-boxed impersonation token. */
+  record ImpersonationResult(String token, Instant expiresAt, Set<String> scopes) {}
+}

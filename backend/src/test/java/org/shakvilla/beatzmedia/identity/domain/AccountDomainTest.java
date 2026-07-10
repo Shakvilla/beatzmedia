@@ -77,7 +77,8 @@ class AccountDomainTest {
   @Test
   void canAuthenticate_banned_returns_false() {
     Account account = Account.reconstitute(
-        ID, "Alice", "alice@example.com", null, false, false, AccountStatus.banned, NOW, NOW, CRED);
+        ID, "Alice", "alice@example.com", null, false, false, false, AccountStatus.banned, NOW, NOW,
+        CRED);
     assertFalse(account.canAuthenticate());
   }
 
