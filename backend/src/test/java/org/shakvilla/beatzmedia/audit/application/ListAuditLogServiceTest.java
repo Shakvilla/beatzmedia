@@ -65,7 +65,7 @@ class ListAuditLogServiceTest {
 
   @Test
   void list_filters_by_type() {
-    AuditFilter filter = new AuditFilter(AuditType.USER, null, null);
+    AuditFilter filter = new AuditFilter(AuditType.USER, null, null, null);
     Page<AuditEntry> page = service.list(filter, PageRequest.defaults());
     assertEquals(1, page.total());
     assertEquals("e2", page.items().get(0).getId());
@@ -73,14 +73,14 @@ class ListAuditLogServiceTest {
 
   @Test
   void list_filters_by_actor_display_name() {
-    AuditFilter filter = new AuditFilter(null, "alice", null);
+    AuditFilter filter = new AuditFilter(null, "alice", null, null);
     Page<AuditEntry> page = service.list(filter, PageRequest.defaults());
     assertEquals(2, page.total());
   }
 
   @Test
   void list_filters_by_action_via_q() {
-    AuditFilter filter = new AuditFilter(null, null, "Suspended");
+    AuditFilter filter = new AuditFilter(null, null, "Suspended", null);
     Page<AuditEntry> page = service.list(filter, PageRequest.defaults());
     assertEquals(1, page.total());
     assertEquals("e2", page.items().get(0).getId());
@@ -88,7 +88,7 @@ class ListAuditLogServiceTest {
 
   @Test
   void list_returns_empty_page_when_no_match() {
-    AuditFilter filter = new AuditFilter(AuditType.FINANCE, null, null);
+    AuditFilter filter = new AuditFilter(AuditType.FINANCE, null, null, null);
     Page<AuditEntry> page = service.list(filter, PageRequest.defaults());
     assertEquals(0, page.total());
     assertTrue(page.items().isEmpty());

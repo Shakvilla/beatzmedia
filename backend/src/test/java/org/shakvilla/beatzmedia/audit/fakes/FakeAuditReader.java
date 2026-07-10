@@ -56,6 +56,9 @@ public class FakeAuditReader implements AuditReader {
               || (e.getTargetType() != null && e.getTargetType().toLowerCase().contains(lower))
               || (e.getTargetId() != null && e.getTargetId().toLowerCase().contains(lower)));
     }
+    if (filter.targetId() != null && !filter.targetId().isBlank()) {
+      stream = stream.filter(e -> filter.targetId().equals(e.getTargetId()));
+    }
 
     // Sort newest first
     List<AuditEntry> filtered = stream

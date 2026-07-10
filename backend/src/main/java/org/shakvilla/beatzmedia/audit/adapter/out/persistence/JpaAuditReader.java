@@ -74,6 +74,9 @@ public class JpaAuditReader implements AuditReader {
           " AND (LOWER(a.action) LIKE :q OR LOWER(a.targetType) LIKE :q OR"
               + " LOWER(a.targetId) LIKE :q)");
     }
+    if (filter.targetId() != null && !filter.targetId().isBlank()) {
+      sb.append(" AND a.targetId = :targetId");
+    }
     return sb.toString();
   }
 
@@ -86,6 +89,9 @@ public class JpaAuditReader implements AuditReader {
     }
     if (filter.q() != null && !filter.q().isBlank()) {
       q.setParameter("q", "%" + filter.q().toLowerCase(java.util.Locale.ROOT) + "%");
+    }
+    if (filter.targetId() != null && !filter.targetId().isBlank()) {
+      q.setParameter("targetId", filter.targetId());
     }
   }
 
