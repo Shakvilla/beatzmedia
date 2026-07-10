@@ -1150,8 +1150,10 @@ two-arg `issue` (so `FakeTokenIssuer` and any other minimal test double keep com
 `JwtTokenIssuer` overrides both: the two-arg form now delegates to the three-arg form using the
 existing `beatz.jwt.access-ttl-seconds` config, and the three-arg form does the real signing.
 Impersonation uses a NEW, independently-tunable config key, `beatz.jwt.impersonation-ttl-seconds`
-(default `900` = 15 min) — deliberately NOT reusing the login TTL config, so ops can shorten
-impersonation's blast radius without touching normal session length. `IssueImpersonationTokenService`
+(default `300` = 5 min, meaningfully shorter than the 900s login TTL — code-review finding on PR
+#103: the original 900s default numerically matched login TTL, so it did not actually shrink the
+blast radius despite the config being independent) — deliberately NOT reusing the login TTL
+config, so ops can shorten impersonation's blast radius without touching normal session length. `IssueImpersonationTokenService`
 builds `scopes` the same way `LoginService` builds its role set (`{"fan"}` + `"artist"` if
 applicable) but the admin-role-lookup step `LoginService` performs is INTENTIONALLY OMITTED — this
 is the deliberate security default called out in the WU brief: impersonation must never grant one
