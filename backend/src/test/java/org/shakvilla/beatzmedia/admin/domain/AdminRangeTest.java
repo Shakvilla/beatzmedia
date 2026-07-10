@@ -3,8 +3,8 @@ package org.shakvilla.beatzmedia.admin.domain;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
-import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Tag;
+import org.junit.jupiter.api.Test;
 
 /**
  * Unit tests for {@link AdminRange#fromWireValue(String)} (LLFR-ADMIN-01.1). Admin ADD §13
