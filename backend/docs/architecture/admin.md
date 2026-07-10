@@ -1086,3 +1086,123 @@ narrowing.** Overview/health is `R` for all five admin roles (admin ADD §8's ma
 applies here too. `GetOverview`/`GetHealth` take no `AdminActor`/scope parameter (unlike the ADD
 §4.1 sketch's `GetOverviewUseCase(AdminActor actor, AdminRange range)`); this matches the module's
 existing read-only naming/signature convention (`ListFeaturedSlots.list()` also takes no actor).
+
+## 14. Implementation notes (WU-ADM-2, as-built)
+
+Deviations and carryovers, recorded here per conventions §11. WU-ADM-2 implements user
+administration (`GET /admin/users`, `GET /admin/users/:id`, and the five mutation endpoints —
+verify/suspend/reactivate/impersonate/data-export) at `AdminUsersResource`
+(`org.shakvilla.beatzmedia.admin.adapter.in.rest`), base path `/v1/admin/users`. This is the
+first WU in this module to reach genuinely *cross-module mutation* territory (WU-ADM-1/WU-ADM-7
+were read-only or admin-owned-table only): five of the seven endpoints call INTO `identity` to
+change account state, so the write-up below is longer than §13's.
+
+**Identity input-port additions — pure domain mutations, no audit responsibility.** `identity`
+gained four new input ports (`identity.application.port.in`): `SuspendAccount`,
+`ReactivateAccount`, `VerifyArtist`, `IssueImpersonationToken`, each implemented by a small
+`@ApplicationScoped` service (`SuspendAccountService`, `ReactivateAccountService`,
+`VerifyArtistService`, `IssueImpersonationTokenService`) that does exactly: `AccountRepository
+.findById` → domain method → `AccountRepository.save` (or, for impersonation, `TokenIssuer.issue`).
+None of these four services calls `AuditWriter` — this is a deliberate departure from
+`UpgradeToArtistService`/`ChangeAdminRoleService` (which DO audit themselves, because the actor
+*is* the account or a same-module admin action). Here the actor is an `admin`-module caller and
+`admin` is the actor-facing REST boundary, so `admin`'s own application services own INV-10 for
+these mutations — matching the ADD §8 flow (a) sequence diagram exactly (`UC->>AX: (commit) audited
+boundary` happens in the admin-side use case, after `UC->>AP: setStatus(...)`). A new read-model
+record, `identity.application.port.in.AccountAdminView`, carries the admin-facing account shape
+(`id, name, email, isArtist, verified, status, createdAt, updatedAt`) — deliberately NOT the
+existing `AccountView` (used by `/me`, login, signup), so admin-only fields never touch those
+already-shipped wire contracts.
+
+**`AccountAdminPort` — the genuine cross-module input-port call, admin's own output port.** Per
+§4.3's original sketch, `admin.application.port.out.AccountAdminPort` is implemented by
+`AccountAdminPortAdapter` (`admin.adapter.out.persistence`, placed alongside `IdentityReaderAdapter`
+for the same reason WU-ADM-1's `AnalyticsAdminReaderAdapter` is there — this module has no
+`adapter.out.integration` package yet). The adapter constructor-injects identity's four new input
+ports and translates `String accountId` ↔ `identity.domain.AccountId` at the boundary — `admin`'s
+application layer never imports `identity.domain.AccountId` directly, only `String` ids, mirroring
+every other admin port in this module. This is the SAME "genuine input-port cross-module call"
+pattern as `AnalyticsAdminReaderAdapter` calling `GetPlatformSalesSummary` — NOT the
+`IdentityReader`/`IdentityReaderAdapter` direct-JPA-read exception (§4.3/§13), which is reserved for
+reads only.
+
+**`verified` column (V962) + `Account.verifyArtist`/`reactivate` guards.** `account.verified
+BOOLEAN NOT NULL DEFAULT FALSE` was added via `V962__account_verified.sql` (the actual next-free
+migration number at build time — allocated via `next-migration-version.sh`, which reports a global
+next-free number rather than a strict per-module band in practice; the V9xx range is shared across
+several late-landing WUs' migrations already, e.g. V958–V961 for `studio`). `Account.verifyArtist
+(Instant now)` mirrors `suspend`/`reactivate`'s style, throwing the new
+`AccountAlreadyVerifiedException` (409 `ALREADY_VERIFIED`) if already verified — deliberately NO
+"only artists can be verified" guard (a verified fan account is a harmless no-op-ish state; the
+frontend simply never renders the verify action for fans). `Account.suspend` itself still has no
+already-suspended guard (unchanged, plain status setter reused elsewhere) — the guard was added to
+the calling `SuspendAccountService` instead (`AccountAlreadySuspendedException`, 409
+`ALREADY_SUSPENDED`), a minimal, behavior-preserving choice that avoids touching `suspend`'s
+existing callers. `Account.reactivate`'s pre-existing raw `IllegalStateException` was replaced
+in-place with the new `AccountNotSuspendedException` (409 `NOT_SUSPENDED`) — same guard, better
+exception type, since `Account` is identity's own file and this is the minimal fix needed so the
+REST layer returns 409 instead of an unmapped 500.
+
+**`TokenIssuer` TTL extension + admin-role-exclusion security default (impersonation,
+LLFR-ADMIN-02.5).** `TokenIssuer` gained a second, TTL-parameterized method — `String issue(AccountId
+subject, Set<String> roles, Duration ttl)` — as a *default* method delegating to the original
+two-arg `issue` (so `FakeTokenIssuer` and any other minimal test double keep compiling unchanged).
+`JwtTokenIssuer` overrides both: the two-arg form now delegates to the three-arg form using the
+existing `beatz.jwt.access-ttl-seconds` config, and the three-arg form does the real signing.
+Impersonation uses a NEW, independently-tunable config key, `beatz.jwt.impersonation-ttl-seconds`
+(default `900` = 15 min) — deliberately NOT reusing the login TTL config, so ops can shorten
+impersonation's blast radius without touching normal session length. `IssueImpersonationTokenService`
+builds `scopes` the same way `LoginService` builds its role set (`{"fan"}` + `"artist"` if
+applicable) but the admin-role-lookup step `LoginService` performs is INTENTIONALLY OMITTED — this
+is the deliberate security default called out in the WU brief: impersonation must never grant one
+admin another admin's privileges, even when the target account happens to be an admin member. This
+is now the codebase's ONLY token-issuance path that can produce a JWT for an account without
+including that account's actual admin scope, by design.
+
+**`AuditFilter.targetId` extension (exact match, distinct from `q`).** `audit.domain.AuditFilter`
+gained a fourth field, `targetId` (record component, additive — the constructor signature changed
+from 3 to 4 args, so every existing call site was updated: `AdminAuditResource`,
+`ListAuditLogServiceTest`, `FakeAuditReader`). `JpaAuditReader`'s WHERE-clause builder appends
+`AND a.targetId = :targetId` when present. `admin`'s `GetUserService` depends directly on
+`audit.application.port.out.AuditReader` in-process — the brief's own suggested resolution: this is
+a genuine cross-module OUTPUT-port read (the same category as `AccountRepository`/
+`IdentityReader`'s JPA reads), not a raw table read, so no new `admin`-owned wrapper port was
+introduced for it. `UserDetail.actionLog` is capped at the most recent 20 entries
+(`AuditFilter.byTargetId(targetId)` + `PageRequest(1, 20)`), ordered `occurredAt DESC`.
+
+**Category A/B breakdown for `UserDetail`.** Same "honest empty/zero over invented data" principle
+established in studio ADD §15/§16 and admin ADD §13 (WU-ADM-1):
+
+| Field | Status | Note |
+|---|---|---|
+| `summary` | **Real** | The account row itself, via the extended `IdentityReader#findUser`. |
+| `actionLog` | **Real** | `audit_entry` rows targeting this account id, most-recent-20, via `audit`'s `AuditReader` (see above). Note this naturally also surfaces the account's own self-service audit rows (e.g. `BECOME_ARTIST` from `UpgradeToArtistService`) that happen to share the same `targetId` — not filtered out, since they are genuinely part of "what happened to this account". |
+| `activity` | **Honest empty `[]`** | No unified activity-feed subsystem exists anywhere in this codebase (purchases, follows, playlist creates, tips, sign-ins are each owned by a different module with no cross-module feed aggregator). Out of scope for this WU — would be its own WU. |
+| `orders` | **Honest empty `[]`** | `commerce`/`library` expose ownership *checks* only, not an enumerable purchase history with display names/amounts/dates. Building that reader is out of scope here. |
+| `devices` | **Honest empty `[]`** | No device/session tracking table exists anywhere in this codebase. Out of scope here. |
+
+**Data export (LLFR-ADMIN-02.6) — Category B, same precedent as WU-STU-3/4 and `/admin/health`.**
+`ExportUserDataService` verifies the target exists (via `IdentityReader#findUser`, 404 if not),
+generates a job id (`IdGenerator`), audits the action (`AuditType.USER`, action `"Requested data
+export"`), and returns `{ jobId, status: "queued" }` with `202`. There is no DSAR job queue/worker
+infrastructure anywhere in this codebase (checked) — building one is its own WU, not invented here.
+
+**Filter validation reuses the generic `VALIDATION` code, not a bespoke `INVALID_FILTER`.** The
+ADD's §5.1 sketch documents `422 INVALID_FILTER` for `GET /admin/users`; the as-built
+`admin.domain.UserFilter#fromWireValue` instead throws the existing generic
+`platform.domain.ValidationException` (422 `VALIDATION`) for an unrecognised `?filter=` value —
+same "reuse the generic code" convention the brief established for `suspend`'s `reason` field
+(Bean Validation `@NotBlank` → generic `VALIDATION`, not a bespoke `REASON_REQUIRED`). No new
+`ErrorCode` constant was added for this case.
+
+**Money-free module stays money-free.** None of the seven endpoints touch `PlatformSettings` or
+minor-unit money — `admin`'s WU-ADM-2 slice remains, like WU-ADM-1/WU-ADM-7 before it, a pure
+identity/audit composition with no money mechanics of its own.
+
+**RBAC matches the §8 matrix exactly, enforced entirely by the inbound `@RolesAllowed` (no extra
+application-layer narrowing beyond identity's own domain guards).** Reads (`list`, `get`): all five
+admin roles. `verify`/`suspend`/`reactivate`: `super-admin`, `moderator`. `impersonate`:
+`super-admin` ONLY. `data-export`: `super-admin`, `support`. This mirrors WU-ADM-1/WU-ADM-7's
+established "RBAC lives at the inbound filter" convention for this module — the only "application
+re-check" happening at all is identity's own domain-level guards (already-verified/
+already-suspended/not-suspended), which exist independently of RBAC.
