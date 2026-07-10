@@ -394,7 +394,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-IDN-4, WU-AUD-1]
     llfrs: [LLFR-ADMIN-01.1, LLFR-ADMIN-01.2]
-    status: todo
+    status: done   # PR #101 merged 2026-07-10 (squash 8902e70). New analytics.GetPlatformSalesSummary input port (platform-wide sales_rollup/audience_rollup aggregation) wrapped by admin's AnalyticsAdminReader; admin.IdentityReader extended with countActiveAccounts/countNewArtists. Category A (real): gmv/streams/newArtists/gmvByDay/topArtists/deltas. activeUsers is a real but range-independent proxy (no session history). Category B (honest empty, no backing subsystem): paymentMethods, needsAttention, and the ENTIRE /admin/health payload (no APM/incident-tracking infra exists) — documented as carryover in admin.md §13, same precedent as WU-STU-3/4.
   - id: WU-ADM-2
     title: User administration (verify/suspend/reactivate/impersonate/data-export)
     phase: 4
