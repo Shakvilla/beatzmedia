@@ -13,9 +13,18 @@ public interface IssueImpersonationToken {
   /**
    * Issues a short-lived JWT scoped to the target account's own roles ({@code "fan"} + {@code
    * "artist"} if applicable). Admin roles are never included, even if the target happens to be an
-   * admin member (deliberate security default — see {@link ImpersonationTokenView}).
+   * admin member (deliberate security default — see {@link ImpersonationTokenView}). The issued
+   * token additionally carries an {@code act} claim naming {@code actor} and a distinct {@code
+   * jti} (security-authz.md §3) so it is never byte-for-byte indistinguishable from the target's
+   * own normal login token.
    *
+   * <p><strong>Parameter order:</strong> {@code actor} first, {@code target} second — actor-first,
+   * matching the repo-wide convention for audited/actor-attributed operations (e.g. {@code
+   * ImpersonateUser#impersonate(actorId, targetId)} in the {@code admin} module).
+   *
+   * @param actor the real admin account performing the impersonation — becomes {@code act.sub}
+   * @param target the account being impersonated — becomes the token's {@code sub}
    * @throws org.shakvilla.beatzmedia.identity.domain.AccountNotFoundException if no such account
    */
-  ImpersonationTokenView issue(AccountId target);
+  ImpersonationTokenView issue(AccountId actor, AccountId target);
 }
