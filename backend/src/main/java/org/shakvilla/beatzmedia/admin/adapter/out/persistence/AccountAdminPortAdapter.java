@@ -57,8 +57,9 @@ public class AccountAdminPortAdapter implements AccountAdminPort {
   }
 
   @Override
-  public ImpersonationResult issueImpersonationToken(String accountId) {
-    ImpersonationTokenView view = issueImpersonationToken.issue(new AccountId(accountId));
+  public ImpersonationResult issueImpersonationToken(String actorId, String accountId) {
+    ImpersonationTokenView view =
+        issueImpersonationToken.issue(new AccountId(actorId), new AccountId(accountId));
     return new ImpersonationResult(view.token(), view.expiresAt(), view.scopes());
   }
 

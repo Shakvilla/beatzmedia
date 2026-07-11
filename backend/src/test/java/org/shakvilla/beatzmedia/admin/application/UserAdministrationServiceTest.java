@@ -230,6 +230,8 @@ class UserAdministrationServiceTest {
     assertEquals(TARGET_ID, audit.getTargetId());
     assertTrue(audit.getAction().contains(expiry.toString()), "audit records the token expiry");
     assertTrue(!audit.getAction().contains("secret-jwt-value"), "audit NEVER records the token itself");
+    assertEquals(ACTOR_ID, accountAdminPort.lastImpersonationActorId(),
+        "real admin actor id must be threaded through to the output port (act claim source)");
   }
 
   @Test

@@ -40,7 +40,8 @@ public class ImpersonateUserService implements ImpersonateUser {
   @Override
   @Transactional
   public ImpersonationTokenView impersonate(String actorId, String targetId) {
-    AccountAdminPort.ImpersonationResult result = accountAdminPort.issueImpersonationToken(targetId);
+    AccountAdminPort.ImpersonationResult result =
+        accountAdminPort.issueImpersonationToken(actorId, targetId);
 
     auditWriter.append(new AuditEntry(
         idGenerator.newId(),

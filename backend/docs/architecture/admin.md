@@ -1150,8 +1150,10 @@ two-arg `issue` (so `FakeTokenIssuer` and any other minimal test double keep com
 `JwtTokenIssuer` overrides both: the two-arg form now delegates to the three-arg form using the
 existing `beatz.jwt.access-ttl-seconds` config, and the three-arg form does the real signing.
 Impersonation uses a NEW, independently-tunable config key, `beatz.jwt.impersonation-ttl-seconds`
-(default `900` = 15 min) — deliberately NOT reusing the login TTL config, so ops can shorten
-impersonation's blast radius without touching normal session length. `IssueImpersonationTokenService`
+(default `300` = 5 min, meaningfully shorter than the 900s login TTL — code-review finding on PR
+#103: the original 900s default numerically matched login TTL, so it did not actually shrink the
+blast radius despite the config being independent) — deliberately NOT reusing the login TTL
+config, so ops can shorten impersonation's blast radius without touching normal session length. `IssueImpersonationTokenService`
 builds `scopes` the same way `LoginService` builds its role set (`{"fan"}` + `"artist"` if
 applicable) but the admin-role-lookup step `LoginService` performs is INTENTIONALLY OMITTED — this
 is the deliberate security default called out in the WU brief: impersonation must never grant one
@@ -1206,3 +1208,34 @@ admin roles. `verify`/`suspend`/`reactivate`: `super-admin`, `moderator`. `imper
 established "RBAC lives at the inbound filter" convention for this module — the only "application
 re-check" happening at all is identity's own domain-level guards (already-verified/
 already-suspended/not-suspended), which exist independently of RBAC.
+
+**Post-merge security-review fix: impersonation token now carries `act`/`jti` (security-authz.md
+§3).** The original WU-ADM-2 cut shipped `IssueImpersonationToken#issue(AccountId target)` /
+`TokenIssuer#issue(subject, roles, ttl)` — the real admin actor's id never reached identity's
+token-issuance layer at all, so an impersonation token was byte-for-byte indistinguishable from the
+target's own normal login token (no way to attribute actions taken under it back to the real actor,
+and no way to revoke it independently). Fixed by threading `actorId` end-to-end: `AdminUsersResource
+#impersonate` was already passing `jwt.getSubject()` into `ImpersonateUserService`, which now
+forwards it to `AccountAdminPort#issueImpersonationToken(actorId, accountId)` (additive param) →
+`AccountAdminPortAdapter` → `IssueImpersonationToken#issue(AccountId actor, AccountId target)`
+(actor-first, matching `ImpersonateUser#impersonate(actorId, targetId)`'s own order) →
+`IssueImpersonationTokenService`, which now calls a NEW `TokenIssuer#issueImpersonation(subject,
+roles, actor, ttl)` method instead of the plain TTL-aware `issue`. `JwtTokenIssuer`'s
+implementation adds `.claim("act", Map.of("sub", actor.value(), "scope", "impersonation"))` and a
+distinct `.claim("jti", "imp_" + idGenerator.newId())` (SmallRye's `JwtClaimsBuilder` has no
+dedicated `jwtId(String)` method — the generic `.claim(name, value)` is used for both); the plain
+`issue(subject, roles)` / `issue(subject, roles, ttl)` methods used by normal login are untouched,
+so a login token still never carries `act`. The `ImpersonationTokenView`/`ImpersonationTokenDto`
+response shape (`{token, expiresAt, scopes}`) is unchanged — only the token's internal claims
+gained `act`/`jti`.
+
+**Explicit scope boundary — downstream consumption of `act` is NOT wired.** This fix only makes the
+impersonation token itself carry the `act`/`jti` claims correctly. Security-authz.md §3's further
+requirement that "every mutation made under it is audited with the `act.sub` recorded as the real
+actor" — i.e. having `AuditInterceptor` (or any other module's JWT-actor-resolution logic) read the
+`act` claim when present and use it as the audit actor instead of `sub` — is a large, cross-cutting
+change spanning every module's privileged-mutation path and is explicitly OUT of scope here. Nothing
+in `AuditInterceptor`, `JwtTokenIssuer`'s other methods, or any other module was touched. Likewise,
+security-authz.md §3's mention of impersonation `jti`s being "tracked in the `session` table so they
+can be revoked early" is not implemented — no `session` table read/write was added by this fix. Both
+are flagged here as explicit follow-up work, not silently dropped.

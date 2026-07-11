@@ -44,13 +44,15 @@ class IssueImpersonationTokenServiceTest {
         repo, tokenIssuer, FakeClock.at(NOW), IMPERSONATION_TTL_SECONDS);
   }
 
+  private static final AccountId ACTOR = new AccountId("acc-admin");
+
   @Test
   void issue_for_fan_returns_fan_scope_only() {
     AccountId id = new AccountId("acc-1");
     repo.seed(Account.createFan(id, "Fan User", "acc-1@example.com",
         new Credential(id, "hash"), NOW));
 
-    ImpersonationTokenView view = service.issue(id);
+    ImpersonationTokenView view = service.issue(ACTOR, id);
 
     assertEquals(java.util.Set.of("fan"), view.scopes());
     assertEquals(NOW.plusSeconds(IMPERSONATION_TTL_SECONDS), view.expiresAt());
@@ -64,7 +66,7 @@ class IssueImpersonationTokenServiceTest {
         new Credential(id, "hash"), NOW).upgradeToArtist(NOW);
     repo.seed(artist);
 
-    ImpersonationTokenView view = service.issue(id);
+    ImpersonationTokenView view = service.issue(ACTOR, id);
 
     assertEquals(java.util.Set.of("fan", "artist"), view.scopes());
   }
@@ -79,7 +81,7 @@ class IssueImpersonationTokenServiceTest {
         org.shakvilla.beatzmedia.identity.domain.AccountStatus.active, NOW, NOW, null);
     repo.seed(adminAccount);
 
-    ImpersonationTokenView view = service.issue(id);
+    ImpersonationTokenView view = service.issue(ACTOR, id);
 
     assertEquals(java.util.Set.of("fan"), view.scopes());
     assertFalse(view.scopes().stream().anyMatch(s -> s.contains("admin")),
@@ -87,7 +89,21 @@ class IssueImpersonationTokenServiceTest {
   }
 
   @Test
+  void issue_threads_the_real_actor_into_token_issuance() {
+    // Confirms the actor id reaches TokenIssuer (security-review fix: the `act` claim source).
+    AccountId id = new AccountId("acc-4");
+    repo.seed(Account.createFan(id, "Fan User", "acc-4@example.com",
+        new Credential(id, "hash"), NOW));
+
+    ImpersonationTokenView view = service.issue(ACTOR, id);
+
+    assertTrue(view.token().contains("act=" + ACTOR.value()),
+        "the real admin actor must reach TokenIssuer#issueImpersonation for the `act` claim");
+  }
+
+  @Test
   void issue_unknown_account_throws_AccountNotFoundException() {
-    assertThrows(AccountNotFoundException.class, () -> service.issue(new AccountId("no-such")));
+    assertThrows(AccountNotFoundException.class,
+        () -> service.issue(ACTOR, new AccountId("no-such")));
   }
 }
