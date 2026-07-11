@@ -935,7 +935,7 @@ stateDiagram-v2
 |---|---|---|---|---|
 | **WU-ADM-1** ✅ | Overview & health (ADMIN-01.1/.2) | GetOverview, GetHealth; AnalyticsAdminReader | (reads rollups) | WU-IDN-4, WU-AUD-1 |
 | **WU-ADM-2** | User admin (ADMIN-02.1–.6) | List/GetUser, Verify, Suspend, Reactivate, Impersonate, ExportUserData; IdentityAdminReader, AccountAdminPort, AuditWriter, EventPublisher | (reads identity) | WU-IDN-4, WU-AUD-1 |
-| **WU-ADM-3** | Catalog moderation + queue (ADMIN-03/04) | Approve/Flag/Takedown, ModerationQueue + actions; CatalogAdminPort, AuditWriter | moderation_case | WU-IDN-4, WU-AUD-1, WU-CAT-4 |
+| **WU-ADM-3** ✅ | Catalog moderation + queue (ADMIN-03/04) | Approve/Flag/Takedown, ModerationQueue + actions; CatalogAdminPort, AuditWriter | moderation_case | WU-IDN-4, WU-AUD-1, WU-CAT-4 |
 | **WU-ADM-4** | Editorial (ADMIN-06.1) | ListFeatured/SaveFeatured, PushSchedule, CuratedPlaylists; AuditWriter | featured_slot, push_item, curated_playlist | WU-IDN-4, WU-AUD-1 |
 | **WU-ADM-5** | Trust & safety (ADMIN-07.1) | GetRisk + review/clear/ban; AccountAdminPort, AuditWriter, EventPublisher | risk_signal | WU-IDN-4, WU-AUD-1 |
 | **WU-ADM-6** | Support (ADMIN-08.1) | ListTickets/GetTicket/Reply/Assign/Resolve; AuditWriter | support_ticket, support_message | WU-IDN-4, WU-AUD-1 |
@@ -1239,3 +1239,188 @@ in `AuditInterceptor`, `JwtTokenIssuer`'s other methods, or any other module was
 security-authz.md §3's mention of impersonation `jti`s being "tracked in the `session` table so they
 can be revoked early" is not implemented — no `session` table read/write was added by this fix. Both
 are flagged here as explicit follow-up work, not silently dropped.
+
+## 15. Implementation notes (WU-ADM-3, as-built)
+
+Deviations and carryovers, recorded here per conventions §11. WU-ADM-3 implements catalog
+moderation (`GET /admin/catalog`, `GET /admin/catalog/:id`, `POST /admin/catalog/:id/{approve,
+flag,takedown,reinstate}` — LLFR-ADMIN-03.1/.2) and the moderation queue (`GET /admin/moderation`,
+`POST /admin/moderation/:id/{review,approve,remove,escalate,dismiss}` — LLFR-ADMIN-04.1) at two new
+resources, `admin.adapter.in.rest.AdminCatalogResource` (base path `/v1/admin/catalog`) and
+`AdminModerationResource` (base path `/v1/admin/moderation`).
+
+**Relocation from `catalog` — same paths, new response shape, no double-audit.** Catalog's own
+ADD (§5.1, WU-CAT-4) explicitly documented `catalog.adapter.in.rest.AdminCatalogResource` as a
+**temporary placeholder** for `approve`/`takedown`/`reinstate`, hosted there only because "no
+separate `admin` module REST layer exists yet", and said outright that "a future `admin`-module WU
+may relocate these three endpoints and/or add `flag`". This WU is that relocation: the old catalog
+class and its `catalog.it.AdminCatalogResourceIT` test are deleted; the same three `POST
+/v1/admin/catalog/:id/{approve,takedown,reinstate}` paths are now served by `admin`, returning
+`CatalogItemDetail` (tracklist/splits/action-log) instead of catalog's old `StudioRelease` shape.
+The underlying FSM (`catalog.application.port.in.PublishRelease`, `catalog.domain.Release`) is
+**completely unchanged** — `admin.application.port.out.CatalogAdminPort` is implemented by
+`CatalogAdminPortAdapter` (`admin.adapter.out.persistence`), which calls `PublishRelease.transition`
+in-process, the SAME "genuine cross-module input-port call, admin's own output port" pattern as
+WU-ADM-2's `AccountAdminPort`/`AccountAdminPortAdapter` calling identity's mutation ports.
+`PublishReleaseService` already self-audits every transition (`APPROVE_RELEASE`/`TAKEDOWN_RELEASE`/
+`REINSTATE_RELEASE`, `AuditType.MODERATION` — note: **not** `AuditType.CATALOG` as this ADD's own
+§8 flow-(b) sequence diagram sketch showed; the as-built type is `MODERATION` throughout, matching
+the wire `AuditType` union's actual semantics better than the sketch did) — the admin-side
+`Approve/Takedown/ReinstateCatalogItemService`s call `CatalogAdminPort` and then re-read the
+release via `CatalogAdminReader` to build the response DTO, but append **no second `AuditEntry`**
+(INV-10 "exactly one"; verified by an integration-test assertion counting `audit_entry` rows per
+action). `catalog.domain.ReleaseNotFoundException` (404)/`IllegalTransitionException` (409) are
+reused directly by admin's application layer — same "reuse another module's domain exception
+type directly" precedent as WU-ADM-2 reusing `identity.domain.AccountNotFoundException` in
+`GetUserService`. `reinstate` is additive beyond this ADD's §5.1 illustrative REST table (which
+lists only approve/flag/takedown) — it is one of catalog ADD's own "these three endpoints"
+earmarked for relocation, and dropping it would have been a silent capability regression, so it is
+preserved at `POST /admin/catalog/:id/reinstate` with the same `super-admin`/`moderator` RBAC.
+
+**`CatalogAdminReader` — the direct-JPA read half, mirrors `IdentityReader`.** Per this ADD's own
+§4.3/§13 precedent (`IdentityReader`/`IdentityReaderAdapter` reading identity's `account` table
+directly, "the SAME documented, accepted exception to strict hexagonal purity for admin's
+read-heavy cross-module queries"), `CatalogAdminReader` (`admin.application.port.out`) is
+implemented by `CatalogAdminReaderAdapter` (`admin.adapter.out.persistence`), which queries
+catalog's `release`/`release_track`/`track`/`split_entry`/`artist_profile` JPA entities directly via
+the shared `EntityManager` — no cross-module FK, no touching of catalog's repositories/services.
+This is a genuinely separate output port from `CatalogAdminPort` (reads vs. the `PublishRelease`
+pass-through for mutations) — the SAME `IdentityReader`/`AccountAdminPort` split WU-ADM-2
+established, applied to catalog. List/detail track counts and artist display names are batch-loaded
+(one `IN`-clause query per page, not N+1 per row).
+
+**Status-query-value mapping — illustrative 3-bucket filter over the real 5-state FSM, exposed
+un-bucketed in responses.** This ADD's §5.1 REST table documents `GET /admin/catalog?status=
+pending|published|takedown`, which does not literally match `catalog.domain.ReleaseStatus`'s five
+real states (`draft|in_review|scheduled|live|takedown`) — the same "reconcile the PRD's
+illustrative wire values against the real domain enum" judgment call WU-ADM-2 made for `UserFilter`.
+The as-built mapping (`CatalogAdminReaderAdapter#bucketStatuses`, also mirrored in the
+`FakeCatalogAdminReader` test double): `pending` → `{draft, in_review}`; `published` → `{scheduled,
+live}`; `takedown` → `{takedown}`. This bucketing applies **only to the query filter** — every
+response's own `status` field (list row and detail) returns the REAL, un-bucketed
+`ReleaseStatus` wire value (e.g. `"live"`, `"scheduled"`), not a re-bucketed bucket name and not
+the frontend mock's narrower `CatalogStatus` union (`pending|flagged|published|takedown`) — there
+is deliberately no synthetic `"flagged"` pseudo-status (see the next note on why `flag` does not
+touch release state at all). `admin.domain.CatalogFilter` is a plain 3-value wire enum with `null`
+= no filter (`UserFilter`'s established convention); its bucket-to-status mapping lives in the
+Adapter layer, not the Domain layer, because ArchUnit's layered-architecture rule treats
+`..domain..` as one global layer across every module — a Domain class in `admin.domain` may not
+import a Domain class from `catalog.domain` (only Application/Adapter code may reach into another
+module's Domain layer), so `CatalogFilter` itself carries no reference to `ReleaseStatus`.
+
+**`flag` → opens a `ModerationCase` — NOT a catalog FSM transition (verified design decision).**
+`PublishRelease`'s own javadoc lists only "approve/takedown/reinstate" as what it is invoked for;
+`ReleaseStatus` has no `flagged` value and `ReleaseTransition` has no `FLAG` case; the §8 state
+diagram in this same ADD shows `pending --> flagged: flag` only as an *illustrative* sketch, not
+traceable to any real catalog enum. Cross-checked against every flow/diagram in this ADD before
+committing to the alternative reading: nothing else suggests `flag` is catalog-owned. The as-built
+resolution is that `POST /admin/catalog/:id/flag` creates an admin-owned
+`admin.domain.ModerationCase` (`FlagCatalogItemService`) with `targetRef = "release:" + releaseId`
+— i.e. flagging a catalog item is exactly how an item lands in the moderation queue (HLFR-ADMIN-04),
+tying ADMIN-03's flag action and ADMIN-04's queue together coherently, and avoiding inventing a
+fake catalog-side state change that nothing else in the FSM would recognise. The release's own
+`status` is **unchanged** by `flag`. Because this is admin's own aggregate (not a catalog
+mutation), `FlagCatalogItemService` — unlike `Approve/Takedown/ReinstateCatalogItemService` — DOES
+own INV-10's `AuditEntry` for this action (`"Flagged release"`, `AuditType.MODERATION`, the
+optional `note` carried as the entry's `reason`). No conflict with the "catalog self-audits, don't
+double-audit" rule above, since `flag` never calls `CatalogAdminPort`/`PublishRelease` at all.
+
+**`ModerationCase.reason`/`.severity` defaults for catalog-sourced flags — a documented judgment
+call, not a hidden guess.** `POST /admin/catalog/:id/flag`'s request body is `{ note? }` only, per
+this ADD's own §5.1 table — it carries no `reason`/`severity`, yet `moderation_case.reason` is
+`NOT NULL` and CHECK-constrained to `ModReason`'s five fixed content-violation categories
+(`Copyright|Hate speech|Sexual content|Spam|Impersonation`), none of which cleanly describes a
+catalog-quality flag like "duplicate ISRC" or "metadata mismatch" (the frontend mock's own example
+notes). `FlagCatalogItemService` defaults every catalog-sourced flag to `ModReason.COPYRIGHT` /
+`ModSeverity.MED` — the closest real-world fit (most catalog flags are rights-integrity disputes)
+— and preserves the caller's free-text `note` only on the audit entry's `reason` field, not on the
+`ModerationCase` row itself (which has no free-text note column — see the schema note below). A
+future WU could extend the flag request body with explicit `reason`/`severity` fields, or add a
+`note` column to `moderation_case`, if product wants finer control; this is flagged as follow-up
+work, not silently dropped.
+
+**`moderation_case` migration (V963) — TEXT ids, not the ADD §7 sketch's UUID PK.** Copied the
+documented columns/CHECKs/indexes from this ADD's §7 SQL block, but — same as WU-ADM-7's V950
+(`support_ticket`) as-built deviation — uses `id TEXT PRIMARY KEY` and
+`<table>_<col>_chk`/`<table>_<col>_idx` naming, matching the codebase's already-established
+convention (every module's ids are opaque `String`s, never native `UUID` columns) rather than this
+ADD's illustrative `UUID PRIMARY KEY` sketch. An additional `moderation_case_target_ref_idx` index
+(not in the §7 sketch) was added since `ModerationCaseMapper`/queue reads never filter by
+`target_ref` yet but likely will once other content types (comments, profiles) start creating
+cases — a small, forward-looking addition, not required by this WU's own read paths.
+
+**Moderation-queue actions — one bundled input port, matches this ADD's own §4.1 sketch exactly.**
+Unlike catalog moderation's approve/flag/takedown/reinstate (four separate one-method interfaces,
+matching this codebase's established per-action-interface convention), `ModerationActionsUseCase`
+in this ADD's §4.1 is sketched as ONE interface bundling `review`/`approve`/`remove`/`escalate`/
+`dismiss` — the as-built `admin.application.port.in.ModerationActions` follows that sketch
+literally, backed by one `ModerationActionsService` with a small shared `apply(...)` helper (one
+`Consumer<ModerationCase>` per action) to avoid duplicating the load→transition→save→audit
+boilerplate five times. `ModerationCase.escalate()` is intentionally orthogonal to `status` — it
+sets `escalated=true` without moving the queue status (matches `admin-data.ts`'s
+`admin.moderation.tsx` UI, whose `onEscalate` handler only toasts and never calls `setItemStatus`);
+re-escalating an already-escalated (and not yet resolved) case is rejected with 409
+`ILLEGAL_TRANSITION`, and any of the five actions against an already-`resolved` case is likewise
+409 — both checked, and rejected, BEFORE any persistence/audit write (verified by a unit test
+asserting zero audit rows on the rejected path, the same "reason-required guard order" precedent
+established for `suspend`/catalog `takedown`).
+
+**Item-label resolution — only `"release:<id>"` targets are resolvable in this WU.** The moderation
+queue's `item` field (matching `admin-data.ts`'s `ModerationItem.item: string`, e.g. `"Track ·
+\"Free Money\" by @kwabz"`) is built by `ModerationCaseMapper`, which recognises only the
+`"release:"` `targetRef` prefix (the only source that creates cases here — `FlagCatalogItem`) and
+resolves it to `"Release · \"<title>\" by <artistName>"` via `CatalogAdminReader`; any other/
+unresolvable `targetRef` falls back to the raw opaque ref, the SAME "fallback to the raw id"
+precedent already established by `SupportTicketMapper`. Comment-thread/profile/playlist-sourced
+reports (the other `item` examples in `admin-data.ts`'s mock) have no creating WU yet and are out
+of scope — a future reporting-flow WU would add its own `targetRef` prefix and a matching resolver
+branch, additive to this one.
+
+**`ModerationQueue.summary` — real counts, fixed SLA constant.** `openCount`/`escalatedCount` are
+real, whole-queue counts independent of the request's filters (same "always whole-table" semantics
+as `UserCounts`/`CatalogCounts`); `slaHours` is the fixed `ModerationCase.DEFAULT_SLA_HOURS = 6`
+constant, mirroring `admin-data.ts`'s `MOD_SLA_HOURS`. `ModerationCase.open(...)` stamps
+`slaDueAt = createdAt + 6h` on every new case (currently only reachable via `flag`); there is no
+SLA-breach sweep/notification job in this WU — `slaDueAt` is exposed for a future SLA-monitoring
+WU to consume, not enforced here.
+
+**`ModerationCaseView.time` is a real ISO-8601 timestamp, not the frontend mock's pre-formatted
+`age: string`.** `admin-data.ts`'s `ModerationItem.age` is a hardcoded display string (`"6h"`,
+`"2h"`, `"1d"`); the as-built wire field is `time: ISO-8601` instead, the SAME "prefer a real ISO
+timestamp over a frontend-only cosmetic pre-formatted string" convention already established by
+`ActionLogEntryView.time()`/`AuditEntry.time` across every prior admin WU. Relative-time formatting
+(if ever wanted) is a presentation-layer concern for the (not-yet-built) real frontend integration,
+not something the API should compute and freeze server-side.
+
+**Category A/B breakdown for `CatalogItemDetail`.** Same "honest empty/zero over invented data"
+principle established in studio ADD §15/§16 and admin ADD §13/§14:
+
+| Field | Status | Note |
+|---|---|---|
+| `tracklist` (minus `isrc`) | **Real** | `position`/`trackId`/`title`/`durationSec`/`priceMinor`, sourced from catalog's `release_track`+`track` tables. |
+| `splits` | **Real** | `catalog.split_entry` rows for every track on the release (name/role/percent/confirmation). |
+| `actionLog` | **Real** | `audit_entry` rows targeting this release id, most-recent-20, via `audit`'s `AuditReader` — same pattern as `UserDetailView.actionLog` (WU-ADM-2). Naturally includes both catalog's self-audited `APPROVE_RELEASE`/`TAKEDOWN_RELEASE`/`REINSTATE_RELEASE` entries AND admin's own `"Flagged release"` entry, since they share the same `target_id`. |
+| `note` | **Honest `null`** | No free-text submission/flag-annotation field exists anywhere on `Release`/`ModerationCase`; `admin-data.ts`'s example notes ("submitted 2h ago", "duplicate ISRC") are illustrative UI copy, not a real persisted field. |
+| every track's `isrc` | **Honest `null`** | No ISRC column anywhere in `catalog` (`ReleaseTrack`/`ReleaseTrackEntity` carry only `trackId`/`position`/`priceMinor`) — checked directly, not guessed. |
+| `upc` | **Honest `null`** | Same — no UPC field anywhere on `Release`/`ReleaseEntity`. |
+
+Both `note`/`isrc`/`upc` are Category B carryovers in the same sense WU-STU-3/4 and WU-ADM-1/2
+already established this convention: no backing subsystem exists to source real ISRC/UPC/rights-
+registrar data, and inventing one is out of scope for this WU (would need its own dedicated WU,
+likely tied to a real rights/metadata-registrar integration).
+
+**RBAC matches the §8 matrix exactly, enforced entirely by the inbound `@RolesAllowed`.** Catalog
+moderation and the moderation queue are both `RW` for `super-admin`/`moderator`, `R`-only for
+`support`, and no access for `finance`/`editor` per this ADD's own §8 table — the as-built resources
+use `@RolesAllowed({"super-admin", "moderator", "support"})` on every `GET`, and
+`@RolesAllowed({"super-admin", "moderator"})` on every `POST`, with no additional application-layer
+narrowing (same "RBAC lives entirely at the inbound filter" convention already established by
+WU-ADM-1/WU-ADM-2/WU-ADM-7). This is a deliberate narrowing from the OLD `catalog.
+AdminCatalogResource`'s `@RolesAllowed({"moderator", "editor"})` (a WU-CAT-4-era placeholder that
+predates this ADD's §8 matrix) — `editor` no longer has catalog-moderation write access, matching
+this ADD's matrix; `super-admin` and `support` (read) are newly correct per the matrix.
+
+**Money-free module stays money-free; actor resolution unchanged.** Neither surface touches
+`PlatformSettings` or minor-unit money math (`priceMinor` is passed through read-only from
+catalog's own tables, never recomputed). Every mutation's actor is `jwt.getSubject()` only, never a
+path/body parameter — the same IDOR-prevention convention as every prior admin WU.
