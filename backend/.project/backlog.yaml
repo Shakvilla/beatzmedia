@@ -403,7 +403,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-IDN-4, WU-AUD-1]
     llfrs: [LLFR-ADMIN-02.1, LLFR-ADMIN-02.2, LLFR-ADMIN-02.3, LLFR-ADMIN-02.4, LLFR-ADMIN-02.5, LLFR-ADMIN-02.6]
-    status: todo
+    status: done   # PR #103 merged 2026-07-10 (squash 404e53d) + PR #105 merged 2026-07-11 (squash 61bad55, security fast-follow). 7 endpoints under /v1/admin/users: list/detail/verify/suspend/reactivate/impersonate/data-export, RBAC per admin.md §8. New identity mutation ports (SuspendAccount/ReactivateAccount/VerifyArtist/IssueImpersonationToken) called via admin's AccountAdminPort input-port pattern; admin owns INV-10 audit for these mutations, identity services deliberately do not self-audit. Category A (real): actionLog via audit.AuditReader with a new AuditFilter.targetId exact-match field. Category B (honest empty, no backing subsystem): activity/orders/devices, and the data-export "job" (no async job runner exists). PR #105 hardened the impersonation token to carry act/jti claims per security-authz.md §3 (missing in #103 — a security-reviewer finding caught after #103 had already auto-merged) and shortened the impersonation TTL default 900s→300s (code-review finding: TTL config was independent of login TTL but its default didn't actually shrink blast radius). Follow-up (not in scope): downstream audit-actor resolution doesn't yet read act.sub for mutations made under an impersonation token.
   - id: WU-ADM-3
     title: Catalog moderation + moderation queue
     phase: 4
