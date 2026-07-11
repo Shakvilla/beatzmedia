@@ -20,7 +20,6 @@ import org.shakvilla.beatzmedia.admin.application.service.ModerationActionsServi
 import org.shakvilla.beatzmedia.admin.domain.IllegalModerationTransitionException;
 import org.shakvilla.beatzmedia.admin.domain.ModReason;
 import org.shakvilla.beatzmedia.admin.domain.ModSeverity;
-import org.shakvilla.beatzmedia.admin.domain.ModStatus;
 import org.shakvilla.beatzmedia.admin.domain.ModerationCase;
 import org.shakvilla.beatzmedia.admin.domain.ModerationCaseNotFoundException;
 import org.shakvilla.beatzmedia.admin.fakes.FakeCatalogAdminReader;
