@@ -30,7 +30,7 @@ WU-SRCH-1), payment/ledger effects of a sale (`payments`), and moderation actor/
 ```mermaid
 flowchart LR
   subgraph catalog[catalog module]
-    IN[Inbound REST adapters\nPublicCatalogResource\nStudioReleaseResource\nAdminCatalogResource]
+    IN[Inbound REST adapters\nPublicCatalogResource\nStudioReleaseResource]
     SCHED[GoLiveJob\nadapter.in.job\nimplements platform ScheduledJob\njob name catalog.go-live]
     APP[Application use cases\nGetHomeFeed · Search · GetArtist\nGetAlbum · GetTrack · GetLyrics\nSubmitRelease · UpdateRelease\nUploadReleaseTrack · PublishRelease\nRunGoLiveSweep]
     DOM[Domain\nRelease aggregate · Track · Album\nSplitEntry · ReleaseStatus FSM\nINV-5 / INV-7 / INV-12 guards]
@@ -58,9 +58,13 @@ ticked every 60 s by the platform `SchedulerRegistry` (WU-PLT-2) under the job n
 `catalog.go-live`, and calls only the `RunGoLiveSweep` application input port — it does not touch
 persistence directly. **Cross-module calls** are via input ports only: `media` (`UploadReleaseTrack`
 → `MediaService`), `commerce`/`library` (per-caller `ownership`/`price` decoration via
-`OwnershipReader`), and `admin` — for WU-CAT-4, `AdminCatalogResource` (`catalog.adapter.in.rest`)
-hosts the approve/takedown/reinstate REST surface directly (no separate `admin` module REST layer
-exists yet), calling `PublishRelease` and requiring the `moderator`/`editor` admin scope. **Persistence is never shared**: `catalog`
+`OwnershipReader`), and `admin` — the approve/takedown/reinstate REST surface that WU-CAT-4
+temporarily hosted directly in `catalog.adapter.in.rest.AdminCatalogResource` (no separate `admin`
+module REST layer existed yet) has been **relocated to `admin.adapter.in.rest.AdminCatalogResource`
+(WU-ADM-3)**, per this section's own original note (§5.1 below). `catalog` still owns the FSM
+itself — `admin` calls `PublishRelease` in-process via its own `CatalogAdminPort` output port
+(admin ADD §4.3/§13); `catalog` requires no admin scope of its own any more since it no longer
+serves that REST surface. **Persistence is never shared**: `catalog`
 reads/writes only its own tables; other modules reference its rows by id. **Events published:**
 `ReleaseApproved`, `ReleaseWentLive`, `ContentTakenDown` (after-commit, ids + minimal snapshot).
 
@@ -289,8 +293,9 @@ public interface RunGoLiveSweep {                    // LLFR-PLATFORM-01.2 (WU-C
 
 For each: **trigger** REST resource or scheduler; **authorization** public reads are anonymous-OK,
 all `Studio*`/`*Release` require `artist` + owner re-check, `PublishRelease` (approve/takedown/
-reinstate) requires the admin `moderator`/`editor` scope (`@RolesAllowed({"moderator","editor"})` on
-`AdminCatalogResource`, `POST /v1/admin/catalog/:id/{approve,takedown,reinstate}` — WU-CAT-4),
+reinstate) requires an admin scope enforced by `admin.adapter.in.rest.AdminCatalogResource`
+(`POST /v1/admin/catalog/:id/{approve,takedown,reinstate}` — relocated there by WU-ADM-3, see §5.1
+note and admin ADD §15; `super-admin`/`moderator` write, `support` read),
 `GO_LIVE` is system-only (scheduler, never exposed on an HTTP path). **Idempotency** reads are nat.
 idempotent; `SubmitRelease` is keyed by `Idempotency-Key`; FSM transitions are guard-idempotent
 (re-issuing a settled transition throws `IllegalTransitionException` → 409 `ILLEGAL_TRANSITION`
@@ -374,20 +379,24 @@ role; public reads accept anonymous (token, if present, decorates `ownership`/`p
 | PATCH | `/studio/releases/:id` | artist (owner) | `UpdateReleaseRequest` | `StudioRelease` | 200 | 409 `ILLEGAL_TRANSITION`, 409 `RELEASE_LIVE` | 02.3 |
 | DELETE | `/studio/releases/:id` | artist (owner) | — | — | 204 | 409 `RELEASE_LIVE` | 02.3 |
 | POST | `/studio/releases/:id/tracks` | artist (owner) | multipart audio (WAV/FLAC) | `UploadedTrack` | 201 | 422 `UNSUPPORTED_FORMAT`, 413 | 02.4 |
-| POST | `/admin/catalog/:id/approve` | `moderator`\|`editor` | `{ date?: ISO-8601 }` | `StudioRelease` | 200 | 409 `ILLEGAL_TRANSITION` | 02.5 |
-| POST | `/admin/catalog/:id/takedown` | `moderator`\|`editor` | `{ reason }` | `StudioRelease` | 200 | 409 `ILLEGAL_TRANSITION` | 02.5 |
-| POST | `/admin/catalog/:id/reinstate` | `moderator`\|`editor` | — | `StudioRelease` | 200 | 409 `ILLEGAL_TRANSITION` | 02.5 |
 
-**WU-CAT-4 note on the admin surface.** `API-CONTRACT.md` §"Catalog moderation" lists
-`POST /admin/catalog/:id/{approve|flag|takedown}` under the (not-yet-built) `admin` module; this WU
-implements `approve`/`takedown` (as specified) plus `reinstate` (the FSM's `takedown → live` edge,
-called out in this ADD's §8 state diagram and PRD R6) directly inside `catalog.adapter.in.rest`
-(`AdminCatalogResource`), since no separate `admin` REST module exists yet to own them. `flag` is out
-of scope for WU-CAT-4 (belongs to the broader admin catalog-moderation work unit). A future
-`admin`-module WU may relocate these three endpoints and/or add `flag`; the underlying
-`PublishRelease` input port does not change. The scheduler's `GO_LIVE` transition is system-only and
-is never exposed on an HTTP path — it is driven exclusively by `GoLiveJob` via `RunGoLiveSweep`.
-Resources are thin: DTO → command → input port → DTO. No business logic in resources (conventions §5).
+**~~POST `/admin/catalog/:id/{approve,takedown,reinstate}`~~ — relocated to the `admin` module
+(WU-ADM-3).** WU-CAT-4 originally hosted these three endpoints directly in
+`catalog.adapter.in.rest.AdminCatalogResource` as an explicitly documented *temporary* placeholder
+("no separate `admin` REST module exists yet to own them ... a future `admin`-module WU may
+relocate these three endpoints and/or add `flag`"). That relocation has now happened: WU-ADM-3
+deleted `catalog.adapter.in.rest.AdminCatalogResource` (and its IT test) and moved
+`approve`/`takedown`/`reinstate` to `admin.adapter.in.rest.AdminCatalogResource` at the SAME `/v1/
+admin/catalog/:id/{approve,takedown,reinstate}` paths — see admin ADD §15 for the full write-up
+(RBAC narrowed from `moderator`\|`editor` to `super-admin`\|`moderator`\|`support`(read), per admin
+ADD §8's matrix; response is now `CatalogItemDetail`, not `StudioRelease`; `flag` was added there
+too, as an admin-owned `ModerationCase`, not a catalog FSM transition). The underlying
+`PublishRelease` input port, `Release` FSM, and every domain invariant on this page are
+**completely unchanged** — `admin` calls `PublishRelease` in-process via its own `CatalogAdminPort`
+output port, exactly as this note originally anticipated. The scheduler's `GO_LIVE` transition
+remains system-only and is never exposed on an HTTP path — it is driven exclusively by `GoLiveJob`
+via `RunGoLiveSweep`. Resources are thin: DTO → command → input port → DTO. No business logic in
+resources (conventions §5).
 
 ### 5.2 Outbound — persistence & integrations
 
@@ -647,14 +656,13 @@ stateDiagram-v2
 - **Auth/scope.** `studio.*` endpoints require the `artist` role (enforced at the REST adapter) **and**
   an owner re-check in the application layer (an artist touches only their own releases — else 403/404).
   Public reads accept anonymous; a present token only decorates `ownership`/`price`. `PublishRelease`
-  approve/takedown/reinstate require admin `moderator`/`editor` scope, enforced via
-  `@RolesAllowed({"moderator","editor"})` on `AdminCatalogResource` (WU-CAT-4 — see §5.1 note on why
-  this lives in `catalog` rather than a separate `admin` module for now); `GO_LIVE` is system-only
-  (scheduler, `GoLiveJob`), never exposed on an HTTP path.
+  approve/takedown/reinstate are invoked by `admin.adapter.in.rest.AdminCatalogResource` (relocated
+  there by WU-ADM-3 — see §5.1 note and admin ADD §15; `super-admin`/`moderator` write, `support`
+  read); `GO_LIVE` is system-only (scheduler, `GoLiveJob`), never exposed on an HTTP path.
 - **Idempotency.** `SubmitRelease` honors `Idempotency-Key`; FSM transitions are guard-idempotent
   (`went_live_at` makes go-live fire exactly once; a repeat call throws `IllegalTransitionException`
-  rather than re-firing side effects — verified by `RunGoLiveSweepServiceTest` and
-  `AdminCatalogResourceIT`).
+  rather than re-firing side effects — verified by `RunGoLiveSweepServiceTest` and (post-relocation)
+  `admin.it.AdminCatalogResourceIT`).
 - **Audit (INV-10).** Approve / takedown / reinstate are privileged mutations — `PublishReleaseService`
   appends exactly one `AuditEntry` (type `MODERATION`) per admin-triggered transition, atomically in
   the same transaction as the state change, via the `AuditWriter` output port (not the audit table
