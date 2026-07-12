@@ -430,7 +430,7 @@ work_units:
     owner: payments-specialist
     depends_on: [WU-IDN-4, WU-AUD-1, WU-PAY-4, WU-PAY-5]
     llfrs: [LLFR-ADMIN-05.1, LLFR-ADMIN-05.2, LLFR-ADMIN-05.3, LLFR-ADMIN-05.4]
-    status: in_progress
+    status: in_review
   - id: WU-ADM-6
     title: Trust & safety (risk review/clear/ban)
     phase: 4
