@@ -88,6 +88,17 @@ class GetFinanceOverviewServiceTest {
   }
 
   @Test
+  void gmvDeltaIsClampedForADegenerateNearZeroPriorWindow() {
+    // Prior window: a tiny 100-pesewa sale (gmv = 100 minor). Current window: a huge sale.
+    ledger.seedSale(ARTIST_A, 100, 30, Instant.parse("2026-06-10T00:00:00Z")); // prior GMV = 100 minor
+    ledger.seedSale(
+        ARTIST_B, 5_000_000_000L, 1_500_000_000L, Instant.parse("2026-06-18T00:00:00Z")); // current
+
+    // Raw percentage would overflow int; the service clamps to +100_000 instead of throwing.
+    assertEquals(100_000, service.overview(FinanceRange.SEVEN_DAYS).kpis().gmvDelta());
+  }
+
+  @Test
   void sumsPayoutsDueCountsDistinctArtistsAndMapsBareAmounts() {
     payable =
         List.of(

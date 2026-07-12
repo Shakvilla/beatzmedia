@@ -121,15 +121,22 @@ public class GetFinanceOverviewService implements GetFinanceOverview {
     return new FinanceOverviewView(kpis, pending, providerMix, openDisputes);
   }
 
-  /** Integer percentage change of {@code current} over {@code prior}; {@code 0} when prior is zero. */
+  /**
+   * Integer percentage change of {@code current} over {@code prior}; {@code 0} when prior is zero. A
+   * degenerate near-zero prior against a large current can produce an astronomically large percentage,
+   * so the result is clamped to {@code ±100_000%} rather than risking an {@code int} overflow (a
+   * dashboard delta beyond that range is meaningless anyway).
+   */
   private static int percentDelta(long current, long prior) {
     if (prior <= 0) {
       return 0;
     }
-    return BigDecimal.valueOf(current - prior)
-        .multiply(BigDecimal.valueOf(100))
-        .divide(BigDecimal.valueOf(prior), 0, java.math.RoundingMode.HALF_UP)
-        .intValueExact();
+    BigDecimal pct =
+        BigDecimal.valueOf(current - prior)
+            .multiply(BigDecimal.valueOf(100))
+            .divide(BigDecimal.valueOf(prior), 0, java.math.RoundingMode.HALF_UP);
+    BigDecimal cap = BigDecimal.valueOf(100_000);
+    return pct.max(cap.negate()).min(cap).intValue();
   }
 
   private static DisputeSummary disputeSummary(Dispute d) {
