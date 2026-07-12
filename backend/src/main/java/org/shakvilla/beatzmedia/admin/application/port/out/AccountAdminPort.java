@@ -46,6 +46,17 @@ public interface AccountAdminPort {
   AccountMutationResult reactivate(String accountId);
 
   /**
+   * Bans the target account ({@code → banned}, terminal) — the trust &amp; safety {@code ban} action
+   * (LLFR-ADMIN-07.1). Existing tokens expire naturally (stateless JWT, OQ-3); a banned account
+   * cannot obtain new ones. Idempotent (no 409 on an already-banned account). Does NOT append an
+   * AuditEntry — the {@code admin} risk service owns INV-10 for this admin-driven mutation.
+   *
+   * @throws org.shakvilla.beatzmedia.identity.domain.AccountNotFoundException if no such account
+   *     (404) — e.g. a risk signal whose {@code subjectRef} is not a resolvable account
+   */
+  AccountMutationResult ban(String accountId);
+
+  /**
    * Issues a scoped, time-boxed impersonation token for the target account. Admin roles are
    * excluded from {@code scopes} even if the target happens to be an admin member (deliberate
    * security default — impersonation investigates regular users; see admin ADD WU-ADM-2 as-built

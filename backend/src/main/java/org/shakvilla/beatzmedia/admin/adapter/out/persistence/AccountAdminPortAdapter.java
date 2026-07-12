@@ -5,6 +5,7 @@ import jakarta.inject.Inject;
 
 import org.shakvilla.beatzmedia.admin.application.port.out.AccountAdminPort;
 import org.shakvilla.beatzmedia.identity.application.port.in.AccountAdminView;
+import org.shakvilla.beatzmedia.identity.application.port.in.BanAccount;
 import org.shakvilla.beatzmedia.identity.application.port.in.ImpersonationTokenView;
 import org.shakvilla.beatzmedia.identity.application.port.in.IssueImpersonationToken;
 import org.shakvilla.beatzmedia.identity.application.port.in.ReactivateAccount;
@@ -28,17 +29,20 @@ public class AccountAdminPortAdapter implements AccountAdminPort {
   private final ReactivateAccount reactivateAccount;
   private final VerifyArtist verifyArtist;
   private final IssueImpersonationToken issueImpersonationToken;
+  private final BanAccount banAccount;
 
   @Inject
   public AccountAdminPortAdapter(
       SuspendAccount suspendAccount,
       ReactivateAccount reactivateAccount,
       VerifyArtist verifyArtist,
-      IssueImpersonationToken issueImpersonationToken) {
+      IssueImpersonationToken issueImpersonationToken,
+      BanAccount banAccount) {
     this.suspendAccount = suspendAccount;
     this.reactivateAccount = reactivateAccount;
     this.verifyArtist = verifyArtist;
     this.issueImpersonationToken = issueImpersonationToken;
+    this.banAccount = banAccount;
   }
 
   @Override
@@ -54,6 +58,11 @@ public class AccountAdminPortAdapter implements AccountAdminPort {
   @Override
   public AccountMutationResult reactivate(String accountId) {
     return toResult(reactivateAccount.reactivate(new AccountId(accountId)));
+  }
+
+  @Override
+  public AccountMutationResult ban(String accountId) {
+    return toResult(banAccount.ban(new AccountId(accountId)));
   }
 
   @Override

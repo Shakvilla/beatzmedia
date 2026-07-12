@@ -109,6 +109,17 @@ public final class Account {
   }
 
   /**
+   * Bans this account ({@code → banned}, terminal): the account can no longer authenticate
+   * ({@link #canAuthenticate()}). Idempotent — re-banning an already-banned account is a harmless
+   * no-op (no already-banned guard, matching the risk {@code ban} contract which has no 409). Caller
+   * is responsible for appending an AuditEntry (INV-10). LLFR-ADMIN-07.1.
+   */
+  public void ban(Instant now) {
+    this.status = AccountStatus.banned;
+    this.updatedAt = now;
+  }
+
+  /**
    * Reactivates a suspended account. Caller is responsible for appending an AuditEntry (INV-10).
    *
    * @throws AccountNotSuspendedException if the account is not currently suspended (409

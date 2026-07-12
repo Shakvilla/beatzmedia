@@ -484,6 +484,15 @@ stateDiagram-v2
   end note
 ```
 
+> **WU-ADM-6 as-built (BanAccount).** The `active/suspended → banned` transition is served by a new
+> `BanAccount` input port + `BanAccountService` (mirrors `SuspendAccount`), called in-process by the
+> `admin` trust & safety `ban` action via `AccountAdminPort.ban`. `Account.ban(now)` is a plain
+> terminal status setter; the service is **idempotent** (re-banning is a no-op success, no 409 —
+> matching the risk `ban` contract, admin ADD §12). It does **not** append an AuditEntry (admin owns
+> INV-10). Session revocation is bounded by the stateless-JWT **OQ-3** default: a banned account cannot
+> obtain new tokens (`Account.canAuthenticate()` false) but existing JWTs expire naturally (no
+> denylist) — the same bound as `suspend`.
+
 ## 9. Cross-cutting hooks
 
 - **Auth / scope rules** (PRD §9.1): stateless Bearer JWT; `sub`=account id, `roles`=`fan`/`artist`

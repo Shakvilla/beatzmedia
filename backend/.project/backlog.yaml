@@ -430,7 +430,7 @@ work_units:
     owner: payments-specialist
     depends_on: [WU-IDN-4, WU-AUD-1, WU-PAY-4, WU-PAY-5]
     llfrs: [LLFR-ADMIN-05.1, LLFR-ADMIN-05.2, LLFR-ADMIN-05.3, LLFR-ADMIN-05.4]
-    status: in_review
+    status: done   # PR #108 merged 2026-07-12 (squash 6b22a98). Finance overview GET /v1/admin/finance?range= (05.1) in the payments module — GetFinanceOverview port + AdminFinanceOverviewResource; LedgerRepository.financeSince (GMV/fee window aggregate) + DisputeRepository.findOpen. Action endpoints 05.2/05.3/05.4 were already delivered by WU-PAY-3/4/5 under /admin/finance/*. ADR-26: finance surface lives in payments (admin ADD §4.3 PaymentsFinancePort wrapper superseded). Category A (real): gmvMtd/gmvDelta/platformFee/feeTakePct + payoutsDue/artists/pending + open disputes. Category B (honest-empty): momoFloat=0, providerMix=[]. Carryover: GMV is sales-only, not yet net-of-refunds. Money is bare decimal cedis on this dashboard surface. Fixed gmvDelta int-overflow clamp (code-review LOW).
   - id: WU-ADM-6
     title: Trust & safety (risk review/clear/ban)
     phase: 4
@@ -439,7 +439,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-IDN-4, WU-AUD-1]
     llfrs: [LLFR-ADMIN-07.1]
-    status: todo
+    status: in_progress
   - id: WU-ADM-7
     title: Support tickets
     phase: 4
