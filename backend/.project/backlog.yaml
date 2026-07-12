@@ -439,7 +439,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-IDN-4, WU-AUD-1]
     llfrs: [LLFR-ADMIN-07.1]
-    status: in_progress
+    status: in_review
   - id: WU-ADM-7
     title: Support tickets
     phase: 4
