@@ -5,6 +5,7 @@ import java.math.BigDecimal;
 import jakarta.annotation.security.RolesAllowed;
 import jakarta.inject.Inject;
 import jakarta.validation.Valid;
+import jakarta.validation.constraints.DecimalMax;
 import jakarta.validation.constraints.Max;
 import jakarta.validation.constraints.Min;
 import jakarta.validation.constraints.NotBlank;
@@ -81,7 +82,7 @@ public class AdminSettingsResource {
   public record SettingsRequest(
       @Min(0) @Max(100) int platformFeePct,
       @NotBlank String payoutDay,
-      @NotNull @PositiveOrZero BigDecimal payoutMinimum,
+      @NotNull @PositiveOrZero @DecimalMax("1000000") BigDecimal payoutMinimum,
       @NotBlank String defaultCurrency,
       boolean maintenanceMode,
       @NotNull PlatformSettingsView.Providers providers,

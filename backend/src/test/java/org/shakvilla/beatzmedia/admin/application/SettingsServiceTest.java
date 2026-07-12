@@ -99,6 +99,16 @@ class SettingsServiceTest {
   }
 
   @Test
+  void saveWithAbsurdPayoutMinimumIs422NotOverflow() {
+    PlatformSettingsInput bad =
+        new PlatformSettingsInput(
+            30, "Friday", new BigDecimal("1000000000000000000000"), "GHS", false,
+            new PlatformSettingsView.Providers(true, true, true, true, true),
+            new PlatformSettingsView.Flags(true, true, true, true, false));
+    assertThrows(ValidationException.class, () -> saveService.save("admin-1", bad));
+  }
+
+  @Test
   void saveWithUnsupportedCurrencyIs422() {
     PlatformSettingsInput bad =
         new PlatformSettingsInput(

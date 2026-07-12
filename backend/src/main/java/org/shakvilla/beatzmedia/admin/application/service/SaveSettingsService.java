@@ -118,9 +118,18 @@ public class SaveSettingsService implements SaveSettings {
     }
   }
 
+  /** Upper bound on {@code payoutMinimum} (₵1,000,000) — a defence-in-depth ceiling mirroring the
+   * REST {@code @DecimalMax} so a direct port call with an absurd value surfaces a mapped 422 instead
+   * of an {@code ArithmeticException} / 500. */
+  private static final BigDecimal MAX_PAYOUT_MINIMUM_CEDIS = BigDecimal.valueOf(1_000_000);
+
   private static long toMinor(BigDecimal cedis) {
     if (cedis == null) {
       throw new ValidationException("payoutMinimum is required", "payoutMinimum");
+    }
+    if (cedis.signum() < 0 || cedis.compareTo(MAX_PAYOUT_MINIMUM_CEDIS) > 0) {
+      throw new ValidationException(
+          "payoutMinimum must be between 0 and " + MAX_PAYOUT_MINIMUM_CEDIS, "payoutMinimum");
     }
     return cedis.movePointRight(2).setScale(0, RoundingMode.HALF_UP).longValueExact();
   }
