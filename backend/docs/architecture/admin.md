@@ -550,6 +550,31 @@ the application layer. Money/side-effect POSTs (finance) require `Idempotency-Ke
 | POST | `/admin/risk/:id/clear` | moderator, super-admin | — | `RiskSignal` | 200 | `404`, `409` | 07.1 |
 | POST | `/admin/risk/:id/ban` | moderator, super-admin | `{ reason }` | `RiskSignal` | 200 | `422 REASON_REQUIRED`, `404` | 07.1 |
 
+> **WU-ADM-6 as-built (trust & safety).** Implemented in `admin` as `AdminRiskResource` +
+> `GetRisk`/`RiskActions` over a new `risk_signal` table (V964). Responses are the frontend `RiskSignal`
+> shape (`{ id, subject, type, detail, level, time, status }`, `time` = ISO `detectedAt`) and `RiskBoard`
+> = `{ kpis, signals }`.
+> - **KPIs — real vs. honest-empty.** `fraudFlags` is real (count of `open` signals). `chargebackRate`
+>   (`"0%"`), `suspiciousSignups` (`0`), `botStreams` (`"0%"`) are honest-empty — no fraud-detection/
+>   analytics subsystem backs them (same precedent as WU-ADM-1's health payload). Carryover: promote when
+>   an ingestion/analytics source lands. Risk signals themselves have no creation endpoint yet (no
+>   detection ingestion) — the table is empty in prod until then; the read + actions are the deliverable.
+> - **`review` guards but does not change status.** `RiskStatus` has no reviewed state (frontend enum is
+>   `open|cleared|banned`), so `review` is an audited acknowledgment that requires `open` (409 otherwise)
+>   and leaves the status `open`. `clear` → `cleared`, `ban` → `banned`. All three guard `open`-only →
+>   `409 ILLEGAL_TRANSITION` (the §12 ban row omitting 409 is superseded — ban guards too).
+> - **`ban` delegates to identity.** `subject_ref` is treated as the opaque **account** ref; `ban` calls
+>   `identity`'s new `BanAccount` port (via `AccountAdminPort.ban`) which sets the account `banned`. A
+>   non-account subject 404s at that boundary and rolls back the whole action (atomic, `@Transactional`).
+>   Session revocation is bounded by the stateless-JWT **OQ-3** default (a banned account cannot obtain
+>   new tokens — `Account.canAuthenticate()` is false — but existing JWTs expire naturally; no denylist),
+>   the same bound as `suspend`.
+> - **`reason` required = `@NotBlank` → 422.** The §12 `REASON_REQUIRED` label maps to the uniform 422
+>   `VALIDATION` envelope, identical to suspend/takedown (no dedicated `REASON_REQUIRED` code).
+> - **Audit (INV-10).** Every action appends exactly one `AuditEntry`. There is no risk/trust `AuditType`
+>   (the enum is `user|catalog|finance|moderation|settings|editorial`), so risk actions are audited as
+>   `USER` (their subject is an account), target = the risk signal id, `ban`'s reason recorded.
+
 #### §12 Support (HLFR-ADMIN-08)
 
 | Method | Path | Required scope | Request DTO | Response DTO | Code | Error codes | LLFR |

@@ -70,6 +70,16 @@ public class FakeAccountAdminPort implements AccountAdminPort {
   }
 
   @Override
+  public AccountMutationResult ban(String accountId) {
+    AccountMutationResult account = require(accountId); // 404 if the subject is not an account
+    AccountMutationResult updated = new AccountMutationResult(
+        account.id(), account.name(), account.email(), account.isArtist(), account.verified(),
+        "banned", account.createdAt(), Instant.now());
+    accounts.put(accountId, updated);
+    return updated;
+  }
+
+  @Override
   public ImpersonationResult issueImpersonationToken(String actorId, String accountId) {
     require(accountId);
     this.lastImpersonationActorId = actorId;
