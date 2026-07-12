@@ -158,6 +158,25 @@ public interface LedgerRepository {
    */
   Page<LedgerEntryRow> find(LedgerType type, String q, PageRequest page);
 
+  /**
+   * Aggregate GMV and platform-fee revenue from settled <strong>sale</strong> postings ({@code
+   * ref_type = 'intent'}) posted in the half-open window {@code [since, until)}, for the admin finance
+   * overview (LLFR-ADMIN-05.1). Amounts are minor units (INV-11).
+   *
+   * <p><strong>GMV</strong> is the gross split value of sales = Σ (creator-payable + platform-revenue)
+   * CREDIT legs of sale postings (the value that accrues to creators + the platform). <strong>Platform
+   * fee</strong> is the platform's take = Σ platform-revenue CREDIT legs. Tips ({@code ref_type =
+   * 'tip'}) are deliberately excluded — GMV is sales only. Refund reversals ({@code ref_type =
+   * 'refund'}) do not touch these legs and so are not netted here (an open carryover, see the ADD).
+   */
+  FinanceAggregate financeSince(Instant since, Instant until);
+
+  /**
+   * Sales GMV and platform-fee revenue over a window, minor units (INV-11). See {@link
+   * #financeSince(Instant, Instant)}.
+   */
+  record FinanceAggregate(long gmvMinor, long platformFeeMinor) {}
+
   /** The id of a ledger account (helper for entry construction). */
   LedgerAccountId idOf(LedgerAccount account);
 

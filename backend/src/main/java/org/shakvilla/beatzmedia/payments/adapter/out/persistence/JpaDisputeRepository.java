@@ -135,6 +135,23 @@ public class JpaDisputeRepository implements DisputeRepository {
   }
 
   @Override
+  public List<Dispute> findOpen(int limit) {
+    if (limit <= 0) {
+      return List.of();
+    }
+    return em
+        .createQuery(
+            "SELECT d FROM DisputeEntity d WHERE d.status = :st ORDER BY d.openedAt DESC",
+            DisputeEntity.class)
+        .setParameter("st", DisputeStatus.open.wire())
+        .setMaxResults(limit)
+        .getResultList()
+        .stream()
+        .map(JpaDisputeRepository::toDomain)
+        .toList();
+  }
+
+  @Override
   public List<DisputeEvent> timelineOf(DisputeId id) {
     return em
         .createQuery(

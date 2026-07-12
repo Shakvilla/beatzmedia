@@ -449,6 +449,15 @@ public interface PaymentsFinancePort {
 > wrappers; the *behaviour* (idempotency, ledger balancing, KYC gating, ownership clawback) is the
 > `payments` module's responsibility (WU-PAY-4/5). The `admin` wrapper checks the `finance` scope,
 > forwards an `Idempotency-Key`, and appends an `AuditEntry` of `type=finance`.
+>
+> **WU-ADM-5 as-built — this `PaymentsFinancePort` wrapper was NOT built (superseded, ADR-26).** By the
+> time WU-ADM-5 ran, WU-PAY-3/4/5 had already served the entire finance surface directly from the
+> `payments` module under `/v1/admin/finance/*` (finance/super-admin RBAC + INV-10 audit on every
+> mutation), and WU-ADM-5 added the one remaining endpoint — the finance overview `GET
+> /v1/admin/finance?range=` — there too (`payments` `GetFinanceOverview` + `AdminFinanceOverviewResource`).
+> No `admin`-module `PaymentsFinancePort` / `GetFinanceOverviewUseCase` exists; `admin` takes no
+> compile-time dependency on payments finance types. See ADR-26 and the payments ADD WU-ADM-5 as-built
+> note. The §4.3 `PaymentsFinancePort` interface above is retained only as the original design sketch.
 
 ## 5. Adapters
 
@@ -501,6 +510,14 @@ the application layer. Money/side-effect POSTs (finance) require `Idempotency-Ke
 | POST | `/admin/moderation/:id/dismiss` | moderator, super-admin | — | `ModerationCaseDto` | 200 | `404`, `409` | 04.1 |
 
 #### §12 Finance (HLFR-ADMIN-05 — **delegates to `payments` §6.6**)
+
+> **WU-ADM-5 as-built (ADR-26).** Every row below is served by the **`payments`** module, not `admin`
+> — the resources live under `org.shakvilla.beatzmedia.payments.adapter.in.rest` (`AdminFinance*Resource`).
+> The action rows shipped with WU-PAY-3/4/5; the overview row (`GET /admin/finance`) shipped with
+> WU-ADM-5 (`AdminFinanceOverviewResource`, response = frontend `Finance` shape, money as bare decimal
+> cedis). The `FinanceOverview`/`PayoutBatchResult`/`PagedLedger`/`DisputeDetail` type names below are
+> the ADD's original design names; the as-built response bodies match the frontend shapes documented in
+> the payments ADD §5.1. `admin` holds no finance code.
 
 | Method | Path | Required scope | Request DTO | Response DTO | Code | Error codes | LLFR (payments cross-ref) |
 |---|---|---|---|---|---|---|---|

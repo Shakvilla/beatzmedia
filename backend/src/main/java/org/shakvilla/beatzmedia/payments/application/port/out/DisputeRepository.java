@@ -64,6 +64,12 @@ public interface DisputeRepository {
   /** A dispute already opened for a provider chargeback case, or empty (first delivery). */
   Optional<Dispute> findByProviderCase(String providerCaseId);
 
+  /**
+   * The disputes still in {@code open} status, most recently opened first, capped at {@code limit} —
+   * the "needs attention" list on the admin finance overview (LLFR-ADMIN-05.1). Read-only; no lock.
+   */
+  List<Dispute> findOpen(int limit);
+
   /** The dispute's timeline, oldest first (LLFR-PAYMENTS-04.1). */
   List<DisputeEvent> timelineOf(DisputeId id);
 
