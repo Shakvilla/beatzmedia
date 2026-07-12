@@ -457,4 +457,4 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-IDN-4, WU-AUD-1, WU-PLT-1]
     llfrs: [LLFR-ADMIN-09.1, LLFR-ADMIN-10.1]
-    status: in_review
+    status: done   # PR #110 merged 2026-07-12 (squash bd138fe). Compliance queue (GET /v1/admin/compliance + start/complete/export/notice) & platform settings/flags (GET+PUT /v1/admin/settings), super-admin only. ComplianceRequest FSM (new|overdue->in_progress->completed, illegal transitions 409); ComplianceType wire-map (DSAR export/delete, takedown, tax) 422 on unknown. Settings: forward-only platformFeePct change (audited SETTINGS, creatorSharePct kept complementary), all 5 real FeatureKeys persisted (incl FAN_MESSAGING), payoutMinimum bounded @DecimalMax + service range-guard (422 not overflow/500). V965 compliance_request migration. Category B honest-empty: providers.* (no per-provider enablement subsystem), export mints jobId returning queued (no async job runner). Fixed payoutMinimum longValueExact overflow (code-review LOW). Closes notification-retry-settings carryover from WU-NOT-2.
