@@ -439,7 +439,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-IDN-4, WU-AUD-1]
     llfrs: [LLFR-ADMIN-07.1]
-    status: in_review
+    status: done   # PR #109 merged 2026-07-12 (squash b27c829 + b82d3f5). Trust & safety: GET /v1/admin/risk (KPIs + RiskSignal[]) + POST /risk/:id/{review|clear|ban}, moderator/super-admin. New risk_signal table (V964); RiskSignal aggregate (open-only guards → 409). ban delegates to identity's new BanAccount port (Account.ban → banned) via AccountAdminPort.ban; subject_ref is the opaque account ref (non-account 404s, atomic rollback). Session revocation bounded by OQ-3 stateless JWT. review = audited no-status-change. fraudFlags KPI real (open count); chargebackRate/suspiciousSignups/botStreams honest-empty. Audited as AuditType.USER (no risk type in enum). Code+security review clean (removed unused RiskSignalId).
   - id: WU-ADM-7
     title: Support tickets
     phase: 4
@@ -457,4 +457,4 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-IDN-4, WU-AUD-1, WU-PLT-1]
     llfrs: [LLFR-ADMIN-09.1, LLFR-ADMIN-10.1]
-    status: todo
+    status: in_progress
