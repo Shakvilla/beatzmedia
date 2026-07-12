@@ -412,7 +412,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-IDN-4, WU-AUD-1, WU-CAT-4]
     llfrs: [LLFR-ADMIN-03.1, LLFR-ADMIN-03.2, LLFR-ADMIN-04.1]
-    status: todo
+    status: done   # PR #107 merged 2026-07-12 (squash 24d822e). Catalog moderation (approve/flag/takedown) + moderation queue (review/approve/remove/escalate/dismiss). Moderation_case migration (V963); ModerationCase domain; catalog moderation endpoints relocated from catalog module into admin. INV-10 audit on every mutation.
   - id: WU-ADM-4
     title: Editorial (featured/push/playlists)
     phase: 4
@@ -430,7 +430,7 @@ work_units:
     owner: payments-specialist
     depends_on: [WU-IDN-4, WU-AUD-1, WU-PAY-4, WU-PAY-5]
     llfrs: [LLFR-ADMIN-05.1, LLFR-ADMIN-05.2, LLFR-ADMIN-05.3, LLFR-ADMIN-05.4]
-    status: todo
+    status: in_progress
   - id: WU-ADM-6
     title: Trust & safety (risk review/clear/ban)
     phase: 4

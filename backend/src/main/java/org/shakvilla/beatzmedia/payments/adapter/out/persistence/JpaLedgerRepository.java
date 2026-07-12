@@ -559,6 +559,28 @@ public class JpaLedgerRepository implements LedgerRepository {
     return new Page<>(items, page.page(), page.size(), total);
   }
 
+  @Override
+  public FinanceAggregate financeSince(Instant since, Instant until) {
+    // Sale postings only (ref_type='intent'). GMV = the credit legs that make up the split gross
+    // (creator_payable + platform_revenue); platform fee = the platform_revenue credit legs. Both are
+    // over the half-open window [since, until) by posted_at. A window with no sales returns (0, 0).
+    Object[] agg =
+        (Object[])
+            em.createNativeQuery(
+                    "SELECT "
+                        + " COALESCE(SUM(CASE WHEN a.kind IN ('creator_payable','platform_revenue') "
+                        + "                   AND e.direction='CREDIT' THEN e.amount_minor ELSE 0 END),0) AS gmv, "
+                        + " COALESCE(SUM(CASE WHEN a.kind='platform_revenue' "
+                        + "                   AND e.direction='CREDIT' THEN e.amount_minor ELSE 0 END),0) AS fee "
+                        + "FROM ledger_entry e JOIN ledger_account a ON a.id = e.account_id "
+                        + "WHERE e.ref_type = 'intent' "
+                        + "AND e.posted_at >= :since AND e.posted_at < :until")
+                .setParameter("since", since)
+                .setParameter("until", until)
+                .getSingleResult();
+    return new FinanceAggregate(((Number) agg[0]).longValue(), ((Number) agg[1]).longValue());
+  }
+
   // ---- helpers ----------------------------------------------------------
 
   /**

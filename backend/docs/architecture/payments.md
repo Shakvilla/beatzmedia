@@ -628,6 +628,44 @@ public interface IdGenerator { String newId(); }
 > - **Audit (INV-10).** Every refund/reject/escalate appends exactly one `AuditEntry`; the refund audit
 >   logs the amount. Commerce audits the revocation.
 
+> **WU-ADM-5 implementation notes (as-built) — admin finance overview (LLFR-ADMIN-05.1).**
+> - **Only the overview was outstanding.** The finance *action* endpoints under `/v1/admin/finance/*`
+>   (payout runs 03.3/03.4, ledger 02.3, dispute adjudication 04.*) were already delivered by
+>   WU-PAY-3/4/5. WU-ADM-5 adds the one missing surface: `GET /v1/admin/finance?range=24h|7d|30d`
+>   (`GetFinanceOverview` → `AdminFinanceOverviewResource`, finance/super-admin), returning the frontend
+>   `Finance` shape `{ kpis, pendingPayouts, providerMix, disputes }`. Read-only; nothing audited.
+> - **Lives in `payments`, not `admin` (ADR-26).** The admin ADD §4.3 originally sketched a
+>   `PaymentsFinancePort` + `GetFinanceOverviewUseCase` *inside* the admin module wrapping payments.
+>   That wrapper was never built: WU-PAY-3/4/5 placed the sibling `/admin/finance/*` resources directly
+>   in `payments`, and this ADD's §5.1 table already lists `GET /v1/admin/finance → Finance` here. The
+>   overview follows that as-built precedent (one module owns the whole finance surface). See ADR-26.
+> - **Money convention (divergs from the other payments endpoints).** The admin dashboard reads money as
+>   **bare decimal-cedis numbers**, NOT the `{ amount, currency }` envelope — the frontend renders
+>   `₵${n.toLocaleString()}` over a plain `number` (`getFinance()` in `admin-data.ts`). `FinanceOverviewView`
+>   serialises `gmvMtd`/`platformFee`/`payoutsDue`/`momoFloat` and each payout/dispute `amount` as bare
+>   `BigDecimal` cedis, matching the WU-ADM-1 `AdminOverviewView` precedent. (The standalone
+>   `/admin/finance/payouts` + `/ledger` endpoints keep the envelope; the two surfaces have distinct
+>   frontend consumers.)
+> - **Category A (real).** `gmvMtd` (GMV = Σ creator-payable + platform-revenue CREDIT of `intent`
+>   sale postings in the trailing window), `platformFee` (Σ platform-revenue CREDIT), `feeTakePct`
+>   (`PlatformSettings.platformFeePct`), `gmvDelta` (integer % change vs the immediately-preceding window
+>   of equal length) — via the new `LedgerRepository.financeSince(since, until)` aggregate;
+>   `payoutsDue`/`payoutsArtists`/`pendingPayouts` (reuse of `ListPendingPayouts`, summed over all payable
+>   withdrawals + distinct artist count); open `disputes` (new `DisputeRepository.findOpen(limit)`, ≤20,
+>   newest-first).
+> - **Category B (honest-empty — same precedent as WU-ADM-1's health payload).** `momoFloat` is `0`
+>   (no provider-float/treasury feed exists) and `providerMix` is `[]` (no payment-provider volume
+>   analytics subsystem exists). Both are documented carryovers — promote when a provider-balance/
+>   analytics source lands.
+> - **GMV is sales-only; refunds are not netted (carryover).** `financeSince` sums `ref_type='intent'`
+>   legs only — tips (`'tip'`) are excluded (GMV = merchandise value) and refund reversals (`'refund'`)
+>   do NOT reduce GMV/fee for the window. Net-of-refunds GMV is a future refinement (needs a signed
+>   refund aggregate over the same window).
+> - **Range → 422.** `?range=` parses via `FinanceRange.fromWire` (payments-owned enum, so `payments`
+>   stays independent of `admin.domain.AdminRange`); an unknown token throws `payments.domain
+>   .InvalidRangeException` → 422 `INVALID_RANGE` (mirrors the studio range parser, WU-STU-3). Blank
+>   defaults to `7d`.
+
 ## 5. Adapters
 
 ### 5.1 Inbound — REST resources
@@ -658,7 +696,7 @@ public interface IdGenerator { String newId(); }
 | POST | `/v1/studio/payout-methods` | artist (own) | `{ label, detail, kind }` | `PayoutMethod` | 201 | 422 | 03.1 |
 | DELETE | `/v1/studio/payout-methods/:id` | artist (own) | — | — | 204 | 409 (in-flight withdrawal), 404 | 03.1 |
 | PATCH | `/v1/studio/payout-methods/:id/default` | artist (own) | — | `PayoutMethod` | 200 | 404 | 03.1 |
-| GET | `/v1/admin/finance` | finance/super-admin | `?range=` | `Finance` | 200 | 403 | 05.* (read) |
+| GET | `/v1/admin/finance` | finance/super-admin | `?range=24h\|7d\|30d` | `Finance` | 200 | 422 `INVALID_RANGE`, 403 | ADMIN-05.1 |
 | POST | `/v1/admin/finance/payouts/run-weekly` | finance/super-admin; `Idempotency-Key` | — | `PayoutBatch` | 200 | 403 | 03.3 |
 | POST | `/v1/admin/finance/payouts/:id/send` | finance/super-admin; `Idempotency-Key` | — | `PayoutTxn` | 200 | 409 `KYC_BLOCKED`, 403, 404 | 03.4 |
 | GET | `/v1/admin/finance/ledger` | finance/super-admin | `?type=&q=&page=` | `Page<LedgerEntry>` | 200 | 403 | 02.3 |

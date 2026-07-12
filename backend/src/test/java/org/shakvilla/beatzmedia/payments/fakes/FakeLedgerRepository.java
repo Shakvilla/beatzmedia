@@ -240,6 +240,40 @@ public class FakeLedgerRepository implements LedgerRepository {
                 m, "intent", "seed", now, now)));
   }
 
+  /**
+   * Seed a settled SALE at a specific instant: a provider_clearing DEBIT of {@code grossMinor}, a
+   * platform_revenue CREDIT of {@code feeMinor}, and a creator_payable CREDIT of the remainder
+   * ({@code ref_type='intent'}). Lets a test drive {@link #financeSince} over a controlled window.
+   */
+  public void seedSale(AccountId creator, long grossMinor, long feeMinor, Instant at) {
+    LedgerAccountId providerClearing =
+        idOf(accountFor(LedgerAccountKind.PROVIDER_CLEARING, "test"));
+    LedgerAccountId platformRevenue = idOf(accountFor(LedgerAccountKind.PLATFORM_REVENUE, null));
+    LedgerAccountId creatorPayable =
+        idOf(accountFor(LedgerAccountKind.CREATOR_PAYABLE, creator.value()));
+    TxnId txn = new TxnId("sale-" + txnSeq.incrementAndGet());
+    String refId = "intent-" + txnSeq.get();
+    var ccy = org.shakvilla.beatzmedia.platform.domain.Currency.GHS;
+    postBalanced(
+        txn,
+        List.of(
+            LedgerEntry.post(
+                "e-" + seq.incrementAndGet(), txn, providerClearing,
+                org.shakvilla.beatzmedia.payments.domain.Direction.DEBIT,
+                org.shakvilla.beatzmedia.platform.domain.Money.ofMinor(grossMinor, ccy),
+                "intent", refId, at, at),
+            LedgerEntry.post(
+                "e-" + seq.incrementAndGet(), txn, platformRevenue,
+                org.shakvilla.beatzmedia.payments.domain.Direction.CREDIT,
+                org.shakvilla.beatzmedia.platform.domain.Money.ofMinor(feeMinor, ccy),
+                "intent", refId, at, at),
+            LedgerEntry.post(
+                "e-" + seq.incrementAndGet(), txn, creatorPayable,
+                org.shakvilla.beatzmedia.payments.domain.Direction.CREDIT,
+                org.shakvilla.beatzmedia.platform.domain.Money.ofMinor(grossMinor - feeMinor, ccy),
+                "intent", refId, at, at)));
+  }
+
   @Override
   public LedgerAccount accountFor(LedgerAccountKind kind, String ownerAccountId) {
     String key = kind + ":" + ownerAccountId;
@@ -284,6 +318,33 @@ public class FakeLedgerRepository implements LedgerRepository {
   @Override
   public Page<LedgerEntryRow> find(LedgerType type, String q, PageRequest page) {
     return Page.empty(page.page(), page.size());
+  }
+
+  @Override
+  public FinanceAggregate financeSince(Instant since, Instant until) {
+    // Mirror the JPA adapter: sale postings only (ref_type='intent') in [since, until). GMV = the
+    // creator_payable + platform_revenue CREDIT legs; fee = the platform_revenue CREDIT legs.
+    long gmv = 0L;
+    long fee = 0L;
+    for (LedgerEntry e : entries) {
+      if (!"intent".equals(e.getRefType())
+          || e.getDirection() != org.shakvilla.beatzmedia.payments.domain.Direction.CREDIT) {
+        continue;
+      }
+      Instant at = e.getPostedAt();
+      if (at == null || at.isBefore(since) || !at.isBefore(until)) {
+        continue;
+      }
+      LedgerAccount a = accountById(e.getAccountId());
+      LedgerAccountKind kind = a == null ? null : a.getKind();
+      if (kind == LedgerAccountKind.CREATOR_PAYABLE) {
+        gmv += e.getAmount().minor();
+      } else if (kind == LedgerAccountKind.PLATFORM_REVENUE) {
+        gmv += e.getAmount().minor();
+        fee += e.getAmount().minor();
+      }
+    }
+    return new FinanceAggregate(gmv, fee);
   }
 
   @Override
