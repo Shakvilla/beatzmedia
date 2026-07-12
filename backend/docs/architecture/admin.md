@@ -606,6 +606,17 @@ the application layer. Money/side-effect POSTs (finance) require `Idempotency-Ke
 | POST | `/admin/compliance/:id/export` | super-admin | — | `DataExportJobRef` | 202 | `404` | 09.1 |
 | POST | `/admin/compliance/:id/notice` | super-admin | — | `ComplianceRequest` | 200 | `404` | 09.1 |
 
+> **WU-ADM-8 as-built (compliance).** `AdminComplianceResource` + `ListCompliance`/`ComplianceActions`
+> over a new `compliance_request` table (V965). `GET` returns a **bare array** of the frontend
+> `ComplianceRequest` shape (`{ id, type, subject, detail, due, status }`, `due` = ISO `due_at`), like
+> support/risk. State machine: `start` moves `new|overdue → in_progress` (409 from in_progress/
+> completed); `complete` moves any non-completed state `→ completed` (409 if already completed). `export`
+> is a **Category-B honest stub** — mints a job id + audits, returns `202 { jobId, status:"queued" }`;
+> no DSAR job worker exists (same precedent as WU-ADM-2's user data export). `notice` records a DMCA
+> notice (audited; status unchanged). No creation endpoint yet — the table is empty in prod until an
+> ingestion path lands. INV-10: one `AuditEntry` per action, audited as `USER` (a compliance subject is
+> a data subject; no dedicated compliance `AuditType`).
+
 #### §13 Audit log (HLFR-ADMIN-11)
 
 | Method | Path | Required scope | Request DTO | Response DTO | Code | Error codes | LLFR |
@@ -618,6 +629,23 @@ the application layer. Money/side-effect POSTs (finance) require `Idempotency-Ke
 |---|---|---|---|---|---|---|---|
 | GET | `/admin/settings` | super-admin | — | `PlatformSettings` | 200 | `403 SCOPE_REQUIRED` | 10.1 |
 | PUT | `/admin/settings` | **super-admin only** | `PlatformSettingsInput` | `PlatformSettings` | 200 | `403 SCOPE_REQUIRED`, `422` | 10.1 |
+
+> **WU-ADM-8 as-built (settings).** `AdminSettingsResource` + `GetSettings`/`SaveSettings` wrap the
+> platform-kernel `PlatformSettingsProvider` + `FeatureFlags` (WU-PLT-1) — `admin` adds no settings
+> table. Both endpoints are `@RolesAllowed("super-admin")` → any other role (e.g. moderator) gets 403.
+> Response is the frontend `PlatformSettings` shape; `payoutMinimum` is bare decimal cedis (WU-ADM-1
+> convention) from `payoutMinimumMinor`.
+> - **All five `flags.*` are real** platform `FeatureKey`s (`ARTIST_SIGNUPS/PODCASTS/EVENTS/TIPPING/
+>   FAN_MESSAGING`, seeded in V2 — `fanMessaging` false). `providers.*` is **honest-static `true`** (no
+>   per-provider enablement subsystem) — accepted on PUT but not persisted; documented carryover.
+> - **Fee change is forward-only + audited.** PUT stores `platformFeePct` (payments reads it at settle
+>   time, so settled sales are never re-priced) and keeps `creatorSharePct = 100 − fee` complementary;
+>   the other split constants (tip fee, bundle discount, service fee) are preserved from current — they
+>   are not on the frontend contract. Every PUT appends exactly one `AuditEntry` (`SETTINGS`), with a
+>   `platformFeePct: <old> -> <new>` reason when the fee changed (AC §14.2). `defaultCurrency` outside
+>   the `Currency` enum → 422. The "promote constant X to WU-ADM-8" notes on `PlatformSettings`
+>   (`MAX_CHARGE_MINOR`, withdrawal fees, notification retries) are **left deferred** — none are on the
+>   LLFR-ADMIN-10.1 `PlatformSettings` contract.
 
 > `/admin/team*` (§14) is owned by `identity` (WU-IDN-4), not `admin`; listed in `identity.md`.
 
