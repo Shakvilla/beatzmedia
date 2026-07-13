@@ -13,6 +13,8 @@ import jakarta.inject.Inject;
 
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway;
+
+import io.quarkus.arc.Identifier;
 import org.shakvilla.beatzmedia.payments.domain.OrderRef;
 import org.shakvilla.beatzmedia.payments.domain.PaymentMethodRef;
 import org.shakvilla.beatzmedia.payments.domain.Provider;
@@ -44,6 +46,7 @@ import org.shakvilla.beatzmedia.platform.domain.Money;
  * </ul>
  */
 @ApplicationScoped
+@Identifier("sandbox")
 public class SandboxPaymentGateway implements PaymentGateway {
 
   private static final String HMAC_ALGO = "HmacSHA256";

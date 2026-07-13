@@ -163,6 +163,7 @@ class HandleProviderWebhookServiceTest {
             providerRef,
             PaymentIntentStatus.pending,
             null,
+            null, // checkoutUrl (WU-PAY-6)
             "idem-" + id,
             "fp-" + id,
             NOW,

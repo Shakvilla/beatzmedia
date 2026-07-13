@@ -49,6 +49,9 @@ public class PaymentIntentEntity {
   @Column(name = "failure_reason")
   public String failureReason;
 
+  @Column(name = "checkout_url")
+  public String checkoutUrl;
+
   @Column(name = "idempotency_key", nullable = false)
   public String idempotencyKey;
 
