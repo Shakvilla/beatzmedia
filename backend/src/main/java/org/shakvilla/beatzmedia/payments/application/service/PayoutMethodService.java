@@ -13,11 +13,14 @@ import org.shakvilla.beatzmedia.payments.application.port.in.RemovePayoutMethod;
 import org.shakvilla.beatzmedia.payments.application.port.in.SetDefaultPayoutMethod;
 import org.shakvilla.beatzmedia.payments.application.port.out.PayoutRepository;
 import org.shakvilla.beatzmedia.payments.domain.AccountId;
+import org.shakvilla.beatzmedia.payments.domain.GhanaBankCode;
 import org.shakvilla.beatzmedia.payments.domain.MethodKind;
+import org.shakvilla.beatzmedia.payments.domain.PayoutDestination;
 import org.shakvilla.beatzmedia.payments.domain.PayoutMethod;
 import org.shakvilla.beatzmedia.payments.domain.PayoutMethodId;
 import org.shakvilla.beatzmedia.payments.domain.PayoutMethodInUseException;
 import org.shakvilla.beatzmedia.payments.domain.PayoutMethodNotFoundException;
+import org.shakvilla.beatzmedia.payments.domain.Provider;
 import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
 import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
 import org.shakvilla.beatzmedia.platform.domain.ValidationException;
@@ -61,6 +64,7 @@ public class PayoutMethodService
     }
     requireText(cmd.label(), "label");
     requireText(cmd.detail(), "detail");
+    PayoutDestination destination = destinationFrom(cmd);
 
     // The first method a creator adds becomes their default.
     boolean makeDefault = !repository.hasAnyMethod(creator);
@@ -71,14 +75,53 @@ public class PayoutMethodService
         PayoutMethod.create(
             ids.newId(),
             creator,
-            cmd.kind(),
             cmd.label().trim(),
             cmd.detail().trim(),
+            destination,
             makeDefault,
             clock.now());
     repository.saveMethod(method);
     audit(creator, "ADD_PAYOUT_METHOD", method.getId().value());
     return PayoutMethodView.of(method);
+  }
+
+  /**
+   * Build a validated {@link PayoutDestination} from the add command, translating the domain's
+   * {@link IllegalArgumentException} (blank/unknown structured field) into a mapped {@code 422}. The
+   * required subset is per-kind: momo needs a MoMo network + wallet; bank needs a known Ghana bank
+   * code + name + account name/number.
+   */
+  private static PayoutDestination destinationFrom(Command cmd) {
+    try {
+      return switch (cmd.kind()) {
+        case momo -> {
+          requireText(cmd.network(), "network");
+          requireText(cmd.walletNumber(), "walletNumber");
+          Provider network = Provider.fromWire(cmd.network().trim());
+          if (!network.isMomo()) {
+            throw new ValidationException(
+                "network must be a MoMo rail (mtn/telecel/airteltigo)", "network");
+          }
+          yield new PayoutDestination.Momo(network, cmd.walletNumber().trim());
+        }
+        case bank -> {
+          requireText(cmd.bankCode(), "bankCode");
+          requireText(cmd.bankName(), "bankName");
+          requireText(cmd.accountName(), "accountName");
+          requireText(cmd.accountNumber(), "accountNumber");
+          yield new PayoutDestination.Bank(
+              GhanaBankCode.of(cmd.bankCode().trim()),
+              cmd.bankName().trim(),
+              cmd.accountName().trim(),
+              cmd.accountNumber().trim());
+        }
+        case card -> throw new ValidationException("a card is not a valid payout destination", "kind");
+      };
+    } catch (IllegalArgumentException e) {
+      // Provider.fromWire / GhanaBankCode.of / PayoutDestination record ctors reject unknown or blank
+      // structured fields — surface as a clean 422 rather than a 500.
+      throw new ValidationException(e.getMessage(), "destination");
+    }
   }
 
   @Override

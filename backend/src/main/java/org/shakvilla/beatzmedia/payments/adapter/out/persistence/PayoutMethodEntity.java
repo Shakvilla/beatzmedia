@@ -28,6 +28,25 @@ public class PayoutMethodEntity {
   @Column(name = "detail", nullable = false)
   public String detail;
 
+  // Structured destination columns (V967, WU-PAY-7). Nullable; each kind uses only its own subset.
+  @Column(name = "network")
+  public String network; // momo only (mtn/telecel/airteltigo)
+
+  @Column(name = "wallet_number")
+  public String walletNumber; // momo only
+
+  @Column(name = "bank_name")
+  public String bankName; // bank only
+
+  @Column(name = "bank_code")
+  public String bankCode; // bank only (a GhanaBankCode token)
+
+  @Column(name = "account_name")
+  public String accountName; // bank only
+
+  @Column(name = "account_number")
+  public String accountNumber; // bank only
+
   @Column(name = "is_default", nullable = false)
   public boolean isDefault;
 

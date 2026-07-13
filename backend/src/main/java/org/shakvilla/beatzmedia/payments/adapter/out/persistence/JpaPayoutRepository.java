@@ -18,6 +18,7 @@ import org.shakvilla.beatzmedia.payments.domain.PayoutBatchKind;
 import org.shakvilla.beatzmedia.payments.domain.PayoutMethod;
 import org.shakvilla.beatzmedia.payments.domain.PayoutMethodId;
 import org.shakvilla.beatzmedia.payments.domain.PayoutTxn;
+import org.shakvilla.beatzmedia.payments.domain.Provider;
 import org.shakvilla.beatzmedia.payments.domain.TxnId;
 import org.shakvilla.beatzmedia.payments.domain.WithdrawalId;
 import org.shakvilla.beatzmedia.payments.domain.WithdrawalRequest;
@@ -59,6 +60,12 @@ public class JpaPayoutRepository implements PayoutRepository {
     entity.kind = method.getKind().name();
     entity.label = method.getLabel();
     entity.detail = method.getDetail();
+    entity.network = method.getNetwork() == null ? null : method.getNetwork().name();
+    entity.walletNumber = method.getWalletNumber();
+    entity.bankName = method.getBankName();
+    entity.bankCode = method.getBankCode();
+    entity.accountName = method.getAccountName();
+    entity.accountNumber = method.getAccountNumber();
     entity.isDefault = method.isDefault();
     em.merge(entity);
     // Flush so the partial-unique default index is checked in this txn (after clearDefaultMethods).
@@ -308,6 +315,12 @@ public class JpaPayoutRepository implements PayoutRepository {
         MethodKind.fromWire(e.kind),
         e.label,
         e.detail,
+        e.network == null ? null : Provider.fromWire(e.network),
+        e.walletNumber,
+        e.bankName,
+        e.bankCode,
+        e.accountName,
+        e.accountNumber,
         e.isDefault,
         e.createdAt);
   }
