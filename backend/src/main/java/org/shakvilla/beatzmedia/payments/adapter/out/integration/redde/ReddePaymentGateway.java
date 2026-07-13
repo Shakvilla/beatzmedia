@@ -4,7 +4,6 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
 import org.eclipse.microprofile.config.inject.ConfigProperty;
-import org.eclipse.microprofile.rest.client.inject.RestClient;
 import org.shakvilla.beatzmedia.payments.adapter.out.integration.PspGateway;
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway;
 import org.shakvilla.beatzmedia.payments.domain.OrderRef;
@@ -49,7 +48,7 @@ public class ReddePaymentGateway implements PaymentGateway {
 
   @Inject
   public ReddePaymentGateway(
-      @RestClient ReddeClient client,
+      ReddeClient client,
       ReddeClientTransIdGenerator clientTransIds,
       ObjectMapper objectMapper,
       @ConfigProperty(name = "beatz.redde.api-key") String apiKey,
