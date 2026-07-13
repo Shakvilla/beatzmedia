@@ -5,8 +5,6 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 import jakarta.inject.Inject;
-import jakarta.persistence.EntityManager;
-import jakarta.transaction.Transactional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -22,7 +20,8 @@ import io.restassured.response.Response;
  * real {@code POST /v1/payments/webhooks/redde/receive} endpoint + {@code HandleReddeReceiptService}
  * + Postgres. The pull-back ({@code gateway.queryStatus}) is steered via {@link
  * CountingPaymentGateway} — the global test gateway — so the full webhook → pull-back → settle wiring
- * is exercised end-to-end (the Redde HTTP mapping itself is unit-tested in ReddePaymentGatewayTest).
+ * is exercised end-to-end; settlement is observed via {@link PaymentEventRecorder} (the Redde HTTP
+ * mapping itself is unit-tested in {@code ReddePaymentGatewayTest}).
  */
 @QuarkusTest
 @Tag("integration")
@@ -36,13 +35,14 @@ class ReddeWebhookIT {
   private static final String FAN_EMAIL = "redde-fan-it@example.com";
   private static final String FAN_PASSWORD = "password123";
 
-  @Inject EntityManager em;
+  @Inject PaymentEventRecorder recorder;
 
   private String fanToken;
 
   @BeforeEach
   void setUp() {
     CountingPaymentGateway.reset();
+    recorder.clear();
     given()
         .contentType(ContentType.JSON)
         .body(
@@ -76,7 +76,7 @@ class ReddeWebhookIT {
         .then()
         .statusCode(200);
 
-    assertEquals("settled", statusOf(intent.providerRef()));
+    assertEquals(1, recorder.settledCountFor(intent.id()));
   }
 
   @Test
@@ -86,13 +86,26 @@ class ReddeWebhookIT {
 
     given()
         .contentType(ContentType.JSON)
-        .body(callback(intent.providerRef(), "PAID")) // body lies; pull-back is the truth
+        .body(callback(intent.providerRef(), "PAID")) // body lies; the pull-back is the truth
         .when()
         .post(REDDE_URL)
         .then()
         .statusCode(200);
 
-    assertEquals("pending", statusOf(intent.providerRef()));
+    assertEquals(0, recorder.settledCountFor(intent.id()));
+  }
+
+  @Test
+  void duplicate_delivery_settles_exactly_once() {
+    Intent intent = createIntent("idem-redde-dup");
+    CountingPaymentGateway.setStatus(intent.providerRef(), ProviderStatus.settled());
+
+    given().contentType(ContentType.JSON).body(callback(intent.providerRef(), "PAID"))
+        .when().post(REDDE_URL).then().statusCode(200);
+    given().contentType(ContentType.JSON).body(callback(intent.providerRef(), "PAID"))
+        .when().post(REDDE_URL).then().statusCode(200);
+
+    assertEquals(1, recorder.settledCountFor(intent.id()));
   }
 
   @Test
@@ -148,14 +161,6 @@ class ReddeWebhookIT {
   private static String callback(String transactionId, String status) {
     return "{ \"transactionid\": \"%s\", \"status\": \"%s\", \"reason\": \"x\" }"
         .formatted(transactionId, status);
-  }
-
-  @Transactional
-  String statusOf(String providerRef) {
-    return (String)
-        em.createNativeQuery("SELECT status FROM payment_intent WHERE provider_ref = :ref")
-            .setParameter("ref", providerRef)
-            .getSingleResult();
   }
 
   private record Intent(String id, String providerRef) {}
