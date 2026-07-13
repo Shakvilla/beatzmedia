@@ -279,6 +279,41 @@ work_units:
     depends_on: [WU-PAY-3, WU-COM-2]
     llfrs: [LLFR-PAYMENTS-04.1, LLFR-PAYMENTS-04.2, LLFR-PAYMENTS-04.3]
     status: done   # PR #69 merged 2026-07-04 (squash c46c8d7). Phase 3 complete. Prod gates: OQ-2 fee %, F2 withdrawal-fee=rail-cost, webhook-secret %prod fail-fast (devops) await confirmation.
+  - id: WU-PAY-6
+    title: Redde PSP gateway — MoMo direct debit + card hosted checkout (pluggable)
+    phase: 3
+    module: payments
+    add: payments.md
+    owner: payments-specialist
+    depends_on: [WU-PAY-2, WU-PLT-2]
+    llfrs: [LLFR-PAYMENTS-06.1, LLFR-PAYMENTS-06.2, LLFR-PAYMENTS-06.3]
+    human_gate: [BEATZ_REDDE_API_KEY, BEATZ_REDDE_APP_ID]   # real merchant creds are deploy secrets; sandbox stands in, PSP_REDDE flag off by default
+    status: todo   # Redde (developers.reddeonline.com) as a real PSP behind the existing PaymentGateway
+    # port, selected by a new FeatureKey.PSP_REDDE via a PaymentGatewayRouter (sole unqualified bean).
+    # MoMo charges via POST /v1/receive (msisdn = PaymentMethodRef.token, zero contract change); card
+    # via hosted-checkout redirect (POST /v1/checkout/) adds ONE additive nullable field checkoutUrl to
+    # PaymentIntentView. Redde callbacks carry NO HMAC → trust via "verify by pull-back": verifySignature
+    # re-queries GET /v1/status/{transactionid} with our apikey (ADR-28). One vendor covers all 5 Provider
+    # rails (mtn/telecel/airteltigo/card/bank), no Provider enum change (ADR-27). PSP_REDDE seeded FALSE
+    # in migration (FeatureFlagsAdapter.isEnabled fails OPEN for unknown keys). Frontend redirect consumption
+    # is a follow-up (checkout.tsx is a client-only mock). Plan: /Users/mac/.claude/plans/virtual-conjuring-robin.md
+  - id: WU-PAY-7
+    title: Redde real payout disbursement (cashout) — replaces ledger-only bookkeeping
+    phase: 3
+    module: payments
+    add: payments.md
+    owner: payments-specialist
+    depends_on: [WU-PAY-6, WU-PAY-4]
+    llfrs: [LLFR-PAYMENTS-07.1, LLFR-PAYMENTS-07.2]
+    human_gate: [BEATZ_REDDE_API_KEY, BEATZ_REDDE_APP_ID]
+    status: todo   # Real disbursement via Redde POST /v1/cashout (MoMo + bank), replacing PayoutDisburser's
+    # ledger-only bookkeeping. Adds disburse(...) to PaymentGateway; structured PayoutMethod fields
+    # (network/walletNumber for momo, bank*/account* for bank) replacing free-text detail (closes the
+    # WU-PAY-4 encrypt-detail carryover direction); fixes railFor() momo→mtn hardcode. Flips disbursement
+    # synchronous-optimistic → async-confirmed: new WithdrawalStatus.SENT, ledger post MOVES to cashout-
+    # webhook confirmation time (POST /v1/payments/webhooks/redde/cashout, separate payout_event idempotency
+    # table); new PayoutReconJob (30s) polls SENT withdrawals. Failed-after-reserved reversal is an explicit
+    # non-goal (ADR-28 addendum, per ADR-24/25 precedent). Plan: /Users/mac/.claude/plans/virtual-conjuring-robin.md
 
   # ---------------- Phase 4 — Surfaces & proposals ----------------
   - id: WU-STO-1
