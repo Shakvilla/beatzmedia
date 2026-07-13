@@ -147,6 +147,81 @@ class ReddePaymentGatewayTest {
   }
 
   @Test
+  void confirmsDisbursementAsyncIsTrue() {
+    assertTrue(gateway().confirmsDisbursementAsync());
+  }
+
+  @Test
+  void disburseMomoMapsTelcoAndWalletAndReturnsTransactionId() {
+    client.onCashout(new ReddeInitialResponse("OK", "accepted", "CX-77", "42", "2026-07-13"));
+
+    var handle =
+        gateway()
+            .disburse(
+                Provider.telecel,
+                new org.shakvilla.beatzmedia.payments.domain.WithdrawalId("wd-1"),
+                TEN_CEDIS,
+                new org.shakvilla.beatzmedia.payments.domain.PayoutDestination.Momo(
+                    Provider.telecel, "233241234567"));
+
+    assertEquals("CX-77", handle.providerRef());
+    assertEquals("VODAFONE", client.cashoutRequests.get(0).paymentoption());
+    assertEquals("233241234567", client.cashoutRequests.get(0).recipientnumber());
+  }
+
+  @Test
+  void disburseBankMapsBankOptionCodeAndAccount() {
+    client.onCashout(new ReddeInitialResponse("OK", "accepted", "CX-88", "42", "d"));
+
+    var handle =
+        gateway()
+            .disburse(
+                Provider.bank,
+                new org.shakvilla.beatzmedia.payments.domain.WithdrawalId("wd-2"),
+                TEN_CEDIS,
+                new org.shakvilla.beatzmedia.payments.domain.PayoutDestination.Bank(
+                    org.shakvilla.beatzmedia.payments.domain.GhanaBankCode.GCB,
+                    "GCB Bank",
+                    "Ama Owner",
+                    "1234567890"));
+
+    assertEquals("CX-88", handle.providerRef());
+    assertEquals("BANK", client.cashoutRequests.get(0).paymentoption());
+    assertEquals("GCB", client.cashoutRequests.get(0).bankcode());
+    assertEquals("1234567890", client.cashoutRequests.get(0).recipientnumber());
+    assertEquals("Ama Owner", client.cashoutRequests.get(0).recipientname());
+  }
+
+  @Test
+  void disburseThrowsProviderExceptionOnFailedStatus() {
+    client.onCashout(new ReddeInitialResponse("FAILED", "no float", null, "42", "d"));
+    assertThrows(
+        ProviderException.class,
+        () ->
+            gateway()
+                .disburse(
+                    Provider.mtn,
+                    new org.shakvilla.beatzmedia.payments.domain.WithdrawalId("wd-3"),
+                    TEN_CEDIS,
+                    new org.shakvilla.beatzmedia.payments.domain.PayoutDestination.Momo(
+                        Provider.mtn, "0244")));
+  }
+
+  @Test
+  void disburseFailsClosedWhenApiKeyBlank() {
+    assertThrows(
+        ProviderException.class,
+        () ->
+            gateway("", "app-1")
+                .disburse(
+                    Provider.mtn,
+                    new org.shakvilla.beatzmedia.payments.domain.WithdrawalId("wd-4"),
+                    TEN_CEDIS,
+                    new org.shakvilla.beatzmedia.payments.domain.PayoutDestination.Momo(
+                        Provider.mtn, "0244")));
+  }
+
+  @Test
   void verifySignaturePullsBackTrueOnTerminalFalseOnPending() {
     byte[] body = "{\"transactionid\":\"103046\",\"status\":\"PAID\"}".getBytes();
 

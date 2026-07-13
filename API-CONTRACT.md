@@ -230,6 +230,15 @@ UI: studio overview, releases, 4-step release wizard, analytics, audience, payou
 | POST | `/studio/payouts/withdraw` | `{ amount, methodId }` → cash-out (fee + arrival from server) |
 | POST/DELETE | `/studio/payout-methods` | add / remove; `PATCH …/default` |
 
+> **WU-PAY-7 (additive).** The add body carries structured destination fields the real payout rail
+> (Redde `/v1/cashout`) needs, alongside `{ label, detail, kind }`. For `kind:"momo"`:
+> `{ network: "mtn"|"telecel"|"airteltigo", walletNumber }`. For `kind:"bank"`:
+> `{ bankCode, bankName, accountName, accountNumber }` (`bankCode` is a validated Ghana bank token;
+> an unknown code or a missing required field is a `422`). The unused subset for a kind may be omitted.
+> The `PayoutMethod` read model is **unchanged** (no raw wallet/account numbers are returned — the
+> masked `detail` remains the display value). Real disbursement is a deploy-secret human gate; with it
+> off the sandbox pays exactly as before.
+
 ### Studio settings
 | GET/PUT | `/studio/settings` | notifications, sales defaults, payouts, privacy, team, security |
 
