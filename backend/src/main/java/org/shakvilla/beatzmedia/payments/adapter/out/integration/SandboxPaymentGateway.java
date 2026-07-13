@@ -13,14 +13,14 @@ import jakarta.inject.Inject;
 
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway;
-
-import io.quarkus.arc.Identifier;
 import org.shakvilla.beatzmedia.payments.domain.OrderRef;
 import org.shakvilla.beatzmedia.payments.domain.PaymentMethodRef;
 import org.shakvilla.beatzmedia.payments.domain.Provider;
 import org.shakvilla.beatzmedia.payments.domain.ProviderException;
 import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
 import org.shakvilla.beatzmedia.platform.domain.Money;
+
+import io.quarkus.arc.Identifier;
 
 /**
  * Sandbox implementation of {@link PaymentGateway} that stands in for the real rails (MTN /

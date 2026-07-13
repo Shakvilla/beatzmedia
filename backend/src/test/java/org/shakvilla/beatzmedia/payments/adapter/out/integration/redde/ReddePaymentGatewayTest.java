@@ -9,7 +9,6 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway.ChargeHandle;
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway.CheckoutHandle;
-import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway.ProviderStatus;
 import org.shakvilla.beatzmedia.payments.domain.OrderRef;
 import org.shakvilla.beatzmedia.payments.domain.PaymentEventType;
 import org.shakvilla.beatzmedia.payments.domain.PaymentMethodRef;
