@@ -59,12 +59,54 @@ public interface PaymentGateway {
    */
   ProviderStatus queryStatus(Provider provider, String providerRef);
 
+  /**
+   * Whether this gateway can charge the given rail <em>directly</em> (synchronous initiate + async
+   * settlement, no browser redirect). {@code true} for every rail on the sandbox and for MoMo on
+   * Redde; {@code false} only for {@code card} on Redde, which has no server-side card API and must
+   * go through a hosted-checkout redirect (see {@link #initiateCheckout}). The application uses this
+   * to decide which path to take, without knowing which concrete gateway is active (WU-PAY-6).
+   */
+  default boolean supportsDirectCharge(Provider provider) {
+    return true;
+  }
+
+  /**
+   * Initiate a hosted-checkout redirect for a rail that {@link #supportsDirectCharge} returns
+   * {@code false} for (Redde card). Returns the provider's checkout transaction reference plus the
+   * URL to redirect the customer's browser to. Settlement is confirmed server-side later (via the
+   * pull-back-verified webhook or the recon poll's status query) — never off the browser redirect
+   * (ADR-28). Gateways that only charge directly throw {@link UnsupportedOperationException}.
+   *
+   * @throws org.shakvilla.beatzmedia.payments.domain.ProviderException if the rail rejects the
+   *     checkout initiation
+   */
+  default CheckoutHandle initiateCheckout(OrderRef ref, Money amount) {
+    throw new UnsupportedOperationException("this gateway does not support hosted checkout");
+  }
+
   /** Result of a successful {@link #initiate} call: the provider's opaque charge reference. */
   record ChargeHandle(String providerRef) {
 
     public ChargeHandle {
       if (providerRef == null || providerRef.isBlank()) {
         throw new IllegalArgumentException("providerRef must not be blank");
+      }
+    }
+  }
+
+  /**
+   * Result of a successful {@link #initiateCheckout} call: the provider's checkout transaction
+   * reference (stored as the intent's {@code providerRef} for status lookups) and the hosted-page
+   * URL the customer's browser is redirected to.
+   */
+  record CheckoutHandle(String checkoutTransId, String checkoutUrl) {
+
+    public CheckoutHandle {
+      if (checkoutTransId == null || checkoutTransId.isBlank()) {
+        throw new IllegalArgumentException("checkoutTransId must not be blank");
+      }
+      if (checkoutUrl == null || checkoutUrl.isBlank()) {
+        throw new IllegalArgumentException("checkoutUrl must not be blank");
       }
     }
   }

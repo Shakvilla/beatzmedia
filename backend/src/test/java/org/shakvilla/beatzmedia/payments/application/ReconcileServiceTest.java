@@ -206,6 +206,7 @@ class ReconcileServiceTest {
             providerRef,
             status,
             status == PaymentIntentStatus.timeout ? "timeout" : null,
+            null, // checkoutUrl (WU-PAY-6)
             "idem-" + id,
             "fp-" + id,
             createdAt,

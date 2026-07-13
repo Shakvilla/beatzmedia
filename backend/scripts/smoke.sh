@@ -96,6 +96,20 @@ cleanup() {
 }
 trap cleanup EXIT INT TERM
 
+# Package a fresh fast-jar before building the image. The Dockerfile.jvm COPYs
+# target/quarkus-app/, but neither verify.sh nor this script produce that layout
+# (verify only compiles target/classes + runs tests). Without this, `up --build`
+# faithfully rebuilds an image around a STALE jar from some earlier package — the
+# trap that made a boot-crash fix look un-applied across two full gate cycles.
+if [ -x "$BACKEND_DIR/mvnw" ] && [ -f "$BACKEND_DIR/pom.xml" ]; then
+  section "Packaging runnable jar (fresh fast-jar for the image)"
+  if ! ( cd "$BACKEND_DIR" && ./mvnw -q -DskipTests package ); then
+    err "Maven package failed — refusing to smoke-test a stale image."
+    exit 1
+  fi
+  ok "Packaged target/quarkus-app."
+fi
+
 section "Booting stack (compose dir: $COMPOSE_DIR)"
 if ! DC up -d --build; then
   err "docker compose up failed. Recent logs:"

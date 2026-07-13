@@ -14,5 +14,15 @@ public enum FeatureKey {
   /** Tipping creators. */
   TIPPING,
   /** Fan-to-fan direct messaging (ships disabled per PRD §1.4). */
-  FAN_MESSAGING
+  FAN_MESSAGING,
+  /**
+   * Route real payment charges/payouts through the Redde PSP (WU-PAY-6/7, ADR-27). When enabled,
+   * {@code PaymentGatewayRouter} dispatches to {@code ReddePaymentGateway}; when disabled (the
+   * default), to the {@code SandboxPaymentGateway}. This is an operational payments toggle, NOT part
+   * of the admin {@code PlatformSettings} surface — the five keys above are the ones surfaced by
+   * {@code GET/PUT /v1/admin/settings}; this one is toggled out-of-band. Ships disabled and MUST be
+   * seeded {@code false} (V966), because {@code FeatureFlagsAdapter.isEnabled} fails OPEN for a key
+   * with no row and real Redde credentials are a deploy-secret human gate.
+   */
+  PSP_REDDE
 }

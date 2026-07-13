@@ -17,6 +17,7 @@ import org.shakvilla.beatzmedia.payments.application.port.in.InitiateCharge;
 import org.shakvilla.beatzmedia.payments.application.port.in.PaymentIntentView;
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway;
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway.ChargeHandle;
+import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway.CheckoutHandle;
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentRepository;
 import org.shakvilla.beatzmedia.payments.domain.AccountId;
 import org.shakvilla.beatzmedia.payments.domain.IdempotencyConflictException;
@@ -116,9 +117,16 @@ public class InitiateChargeService implements InitiateCharge {
             clock.now());
 
     try {
-      ChargeHandle handle =
-          gateway.initiate(method.provider(), orderRef, amount, method);
-      intent.markInitiated(handle.providerRef(), clock.now());
+      if (gateway.supportsDirectCharge(method.provider())) {
+        // Direct charge (MoMo, or anything on the sandbox): synchronous initiate, async settlement.
+        ChargeHandle handle = gateway.initiate(method.provider(), orderRef, amount, method);
+        intent.markInitiated(handle.providerRef(), clock.now());
+      } else {
+        // Hosted-checkout redirect (Redde card): the response carries a checkoutUrl the browser is
+        // redirected to; settlement is confirmed server-side later, never off that redirect (ADR-28).
+        CheckoutHandle handle = gateway.initiateCheckout(orderRef, amount);
+        intent.markCheckoutInitiated(handle.checkoutUrl(), handle.checkoutTransId(), clock.now());
+      }
     } catch (ProviderException e) {
       // Consume the key with a failed intent so a retry with the same key is not double-charged,
       // and the failure is auditable. Re-throw so the caller sees the provider error.

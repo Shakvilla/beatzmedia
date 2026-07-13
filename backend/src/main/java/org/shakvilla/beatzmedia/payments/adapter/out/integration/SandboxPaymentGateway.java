@@ -44,6 +44,7 @@ import org.shakvilla.beatzmedia.platform.domain.Money;
  * </ul>
  */
 @ApplicationScoped
+@PspGateway(PspGateway.Vendor.SANDBOX)
 public class SandboxPaymentGateway implements PaymentGateway {
 
   private static final String HMAC_ALGO = "HmacSHA256";

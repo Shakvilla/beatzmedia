@@ -29,6 +29,7 @@ final class PaymentIntentMapper {
     e.providerRef = intent.getProviderRef();
     e.status = intent.getStatus().name();
     e.failureReason = intent.getFailureReason();
+    e.checkoutUrl = intent.getCheckoutUrl();
     e.idempotencyKey = intent.getIdempotencyKey();
     e.requestFingerprint = intent.getRequestFingerprint();
     e.createdAt = intent.getCreatedAt();
@@ -47,6 +48,7 @@ final class PaymentIntentMapper {
         e.providerRef,
         PaymentIntentStatus.valueOf(e.status),
         e.failureReason,
+        e.checkoutUrl,
         e.idempotencyKey,
         e.requestFingerprint,
         e.createdAt,

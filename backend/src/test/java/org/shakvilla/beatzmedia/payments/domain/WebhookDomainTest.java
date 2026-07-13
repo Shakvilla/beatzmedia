@@ -92,6 +92,7 @@ class WebhookDomainTest {
             "MTN-2",
             PaymentIntentStatus.timeout,
             "timeout",
+            null, // checkoutUrl (WU-PAY-6)
             "idem-2",
             "fp-2",
             NOW,
@@ -114,6 +115,7 @@ class WebhookDomainTest {
         "MTN-1",
         PaymentIntentStatus.settled,
         null,
+        null, // checkoutUrl (WU-PAY-6)
         "idem-1",
         "fp-1",
         NOW,

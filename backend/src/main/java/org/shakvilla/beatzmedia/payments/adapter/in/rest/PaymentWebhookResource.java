@@ -12,6 +12,7 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
 import org.shakvilla.beatzmedia.payments.application.port.in.HandleProviderWebhook;
+import org.shakvilla.beatzmedia.payments.application.port.in.HandleReddeReceipt;
 import org.shakvilla.beatzmedia.payments.application.port.in.WebhookResult;
 import org.shakvilla.beatzmedia.payments.domain.Provider;
 import org.shakvilla.beatzmedia.platform.domain.ValidationException;
@@ -35,10 +36,13 @@ public class PaymentWebhookResource {
   static final String SIGNATURE_HEADER = "X-Beatz-Signature";
 
   private final HandleProviderWebhook handler;
+  private final HandleReddeReceipt reddeReceiptHandler;
 
   @Inject
-  public PaymentWebhookResource(HandleProviderWebhook handler) {
+  public PaymentWebhookResource(
+      HandleProviderWebhook handler, HandleReddeReceipt reddeReceiptHandler) {
     this.handler = handler;
+    this.reddeReceiptHandler = reddeReceiptHandler;
   }
 
   /** POST /v1/payments/webhooks/{provider} — receive a signed provider callback. */
@@ -54,6 +58,25 @@ public class PaymentWebhookResource {
 
     Provider provider = parseProvider(providerPath);
     WebhookResult result = handler.handle(provider, signature, rawBody);
+    return toResponse(result);
+  }
+
+  /**
+   * POST /v1/payments/webhooks/redde/receive — Redde "Receive Callback URL" (WU-PAY-6). Redde
+   * configures one such URL per app (not per rail), so this is a fixed path rather than the generic
+   * {@code /{provider}} one. Redde signs nothing; trust comes from the pull-back in {@link
+   * HandleReddeReceipt} (ADR-28), so there is no signature header to read here.
+   */
+  @POST
+  @Path("/redde/receive")
+  @PermitAll
+  @Consumes(MediaType.WILDCARD)
+  @Produces(MediaType.APPLICATION_JSON)
+  public Response receiveRedde(byte[] rawBody) {
+    return toResponse(reddeReceiptHandler.handle(rawBody));
+  }
+
+  private static Response toResponse(WebhookResult result) {
     return switch (result) {
       case HANDLED, DUPLICATE -> Response.ok().build();
       case IGNORED_UNKNOWN -> Response.accepted().build();

@@ -39,6 +39,7 @@ public final class PaymentIntent {
   private String providerRef;
   private PaymentIntentStatus status;
   private String failureReason;
+  private String checkoutUrl;
   private final String idempotencyKey;
   private final String requestFingerprint;
   private final Instant createdAt;
@@ -54,6 +55,7 @@ public final class PaymentIntent {
       String providerRef,
       PaymentIntentStatus status,
       String failureReason,
+      String checkoutUrl,
       String idempotencyKey,
       String requestFingerprint,
       Instant createdAt,
@@ -67,6 +69,7 @@ public final class PaymentIntent {
     this.providerRef = providerRef;
     this.status = status;
     this.failureReason = failureReason;
+    this.checkoutUrl = checkoutUrl;
     this.idempotencyKey = idempotencyKey;
     this.requestFingerprint = requestFingerprint;
     this.createdAt = createdAt;
@@ -109,6 +112,7 @@ public final class PaymentIntent {
         null,
         PaymentIntentStatus.pending,
         null,
+        null,
         idempotencyKey.value(),
         requestFingerprint,
         now,
@@ -126,13 +130,14 @@ public final class PaymentIntent {
       String providerRef,
       PaymentIntentStatus status,
       String failureReason,
+      String checkoutUrl,
       String idempotencyKey,
       String requestFingerprint,
       Instant createdAt,
       Instant updatedAt) {
     return new PaymentIntent(
         id, accountId, orderRef, amount, provider, methodKind, providerRef, status, failureReason,
-        idempotencyKey, requestFingerprint, createdAt, updatedAt);
+        checkoutUrl, idempotencyKey, requestFingerprint, createdAt, updatedAt);
   }
 
   /**
@@ -145,6 +150,26 @@ public final class PaymentIntent {
       throw new IllegalArgumentException("providerRef must not be blank");
     }
     this.providerRef = providerRef;
+    this.updatedAt = now;
+  }
+
+  /**
+   * Record a hosted-checkout initiation (Redde card path, WU-PAY-6). Legal only while {@code
+   * pending}; keeps status {@code pending} (settlement is confirmed later server-side, never off the
+   * browser redirect). {@code checkoutTransId} is the provider's checkout reference (stored as the
+   * {@code providerRef} so status lookups use the one existing path); {@code checkoutUrl} is the page
+   * the customer's browser is redirected to and is surfaced on the API response only.
+   */
+  public void markCheckoutInitiated(String checkoutUrl, String checkoutTransId, Instant now) {
+    requirePending("attach checkout url");
+    if (checkoutTransId == null || checkoutTransId.isBlank()) {
+      throw new IllegalArgumentException("checkoutTransId must not be blank");
+    }
+    if (checkoutUrl == null || checkoutUrl.isBlank()) {
+      throw new IllegalArgumentException("checkoutUrl must not be blank");
+    }
+    this.providerRef = checkoutTransId;
+    this.checkoutUrl = checkoutUrl;
     this.updatedAt = now;
   }
 
@@ -242,6 +267,14 @@ public final class PaymentIntent {
 
   public String getFailureReason() {
     return failureReason;
+  }
+
+  /**
+   * The hosted-checkout redirect URL, set only for a card intent that went through {@link
+   * #markCheckoutInitiated}; {@code null} for every direct-charge/MoMo/sandbox intent.
+   */
+  public String getCheckoutUrl() {
+    return checkoutUrl;
   }
 
   public String getIdempotencyKey() {

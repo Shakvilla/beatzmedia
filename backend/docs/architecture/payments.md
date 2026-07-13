@@ -666,6 +666,36 @@ public interface IdGenerator { String newId(); }
 >   .InvalidRangeException` → 422 `INVALID_RANGE` (mirrors the studio range parser, WU-STU-3). Blank
 >   defaults to `7d`.
 
+> **WU-PAY-6 implementation notes (as-built) — Redde PSP gateway, pluggable (LLFR-PAYMENTS-06.*).** See
+> ADR-27 (one vendor, all rails, `PSP_REDDE`-selected) and ADR-28 (verify-by-pull-back, no HMAC).
+> - **Pluggability.** `PaymentGatewayRouter` is the sole unqualified `PaymentGateway` bean; it delegates
+>   per-call to `@PspGateway(SANDBOX)` `SandboxPaymentGateway` or `@PspGateway(REDDE)`
+>   `ReddePaymentGateway` based on `FeatureKey.PSP_REDDE` (new key; seeded **false** in V966 because
+>   `FeatureFlagsAdapter` fails OPEN for unknown keys). It is NOT an admin-settings flag (out-of-band ops
+>   toggle). Every existing `@Inject PaymentGateway` site is unchanged; flag off = today's sandbox
+>   behaviour byte-for-byte.
+> - **MoMo direct debit.** `ReddePaymentGateway.initiate` → Redde `POST /v1/receive` (`paymentoption`
+>   mtn→MTN / telecel→VODAFONE / airteltigo→AIRTELTIGO; `walletnumber` = `PaymentMethodRef.token`;
+>   `clienttransid` ≤10 digits from a DB sequence `redde_clienttransid_seq`). `status:OK` → `ChargeHandle`
+>   (Redde `transactionid` stored as `providerRef`); `FAILED` / HTTP error → `ProviderException`.
+> - **Card hosted checkout.** `PaymentGateway.supportsDirectCharge(card)` is false on Redde, so
+>   `InitiateChargeService` calls `initiateCheckout` → `POST /v1/checkout/`, and the intent carries a new
+>   additive nullable `checkoutUrl` (V966 `payment_intent.checkout_url`; surfaced on `PaymentIntentView`,
+>   null for every non-card/MoMo/sandbox intent). The Redde `checkouttransid` is stored as `providerRef`;
+>   `queryStatus` branches on `provider==card` → `GET /v1/checkoutstatus/{id}`.
+> - **Trust (ADR-28).** Redde receive callbacks hit a dedicated `POST /v1/payments/webhooks/redde/receive`
+>   (`HandleReddeReceiptService`, `@PermitAll`, no signature). The body is a hint only: extract
+>   `transactionid`, confirm via the authenticated `queryStatus` pull-back, settle/fail on the **pulled**
+>   terminal outcome via the shared `PaymentSettlementService`. Idempotent on `redde:<transactionid>`
+>   (`payment_event`); transient pull-back failure → 202, deferred to the existing 30s recon poll.
+> - **Config / human gate.** `beatz.redde.*` (`api-key`, `app-id`, `merchant-name`, `logo-link`, checkout
+>   success/failure URLs) + `quarkus.rest-client.redde-api.url` (sandbox `demoapi.reddeonline.com` by
+>   default). Blank creds by default; the gateway fails closed even with the flag on. Real creds are deploy
+>   secrets (GitHub Environment), like the pre-existing `BEATZ_PAYMENT_*` gate.
+> - **Not in this WU.** Redde payout disbursement (`/v1/cashout`) is WU-PAY-7. Frontend consumption of
+>   `checkoutUrl` (the redirect in `checkout.tsx`, a client-only mock) is a follow-up. Empirically confirm
+>   in the Redde sandbox whether checkout also fires the receive callback (design works either way).
+
 ## 5. Adapters
 
 ### 5.1 Inbound — REST resources

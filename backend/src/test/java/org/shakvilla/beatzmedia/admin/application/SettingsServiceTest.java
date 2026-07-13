@@ -86,7 +86,16 @@ class SettingsServiceTest {
   @Test
   void savePersistsAllFiveFlags() {
     saveService.save("admin-1", input(30, false));
-    for (FeatureKey key : FeatureKey.values()) {
+    // Only the five admin-surfaced flags are persisted by SaveSettings; PSP_REDDE is an out-of-band
+    // operational payments toggle (WU-PAY-6) and is deliberately NOT touched by this endpoint.
+    for (FeatureKey key :
+        new FeatureKey[] {
+          FeatureKey.ARTIST_SIGNUPS,
+          FeatureKey.PODCASTS,
+          FeatureKey.EVENTS,
+          FeatureKey.TIPPING,
+          FeatureKey.FAN_MESSAGING
+        }) {
       assertFalse(flags.isEnabled(key), key + " should be disabled after save");
     }
   }
