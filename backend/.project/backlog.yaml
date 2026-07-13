@@ -288,7 +288,7 @@ work_units:
     depends_on: [WU-PAY-2, WU-PLT-2]
     llfrs: [LLFR-PAYMENTS-06.1, LLFR-PAYMENTS-06.2, LLFR-PAYMENTS-06.3]
     human_gate: [BEATZ_REDDE_API_KEY, BEATZ_REDDE_APP_ID]   # real merchant creds are deploy secrets; sandbox stands in, PSP_REDDE flag off by default
-    status: todo   # Redde (developers.reddeonline.com) as a real PSP behind the existing PaymentGateway
+    status: done   # merged in PR #112 (bdfadbb). Redde (developers.reddeonline.com) as a real PSP behind the existing PaymentGateway
     # port, selected by a new FeatureKey.PSP_REDDE via a PaymentGatewayRouter (sole unqualified bean).
     # MoMo charges via POST /v1/receive (msisdn = PaymentMethodRef.token, zero contract change); card
     # via hosted-checkout redirect (POST /v1/checkout/) adds ONE additive nullable field checkoutUrl to
