@@ -95,7 +95,7 @@ jobs:
       # never transit the runner.
       # -----------------------------------------------------------------------
       - name: Deploy over SSH (compose pull + up)
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
@@ -125,7 +125,7 @@ jobs:
       # Rollback: re-pin to the last known-good image recorded on the host.
       - name: Rollback on failure
         if: failure()
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
@@ -139,7 +139,7 @@ jobs:
 
       - name: Record last-good image
         if: success()
-        uses: appleboy/ssh-action@v1.0.3
+        uses: appleboy/ssh-action@v1.2.5
         with:
           host: ${{ secrets.DEPLOY_HOST }}
           username: ${{ secrets.DEPLOY_USER }}
