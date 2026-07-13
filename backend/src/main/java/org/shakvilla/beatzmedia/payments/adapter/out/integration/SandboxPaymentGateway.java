@@ -15,8 +15,10 @@ import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway;
 import org.shakvilla.beatzmedia.payments.domain.OrderRef;
 import org.shakvilla.beatzmedia.payments.domain.PaymentMethodRef;
+import org.shakvilla.beatzmedia.payments.domain.PayoutDestination;
 import org.shakvilla.beatzmedia.payments.domain.Provider;
 import org.shakvilla.beatzmedia.payments.domain.ProviderException;
+import org.shakvilla.beatzmedia.payments.domain.WithdrawalId;
 import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
 import org.shakvilla.beatzmedia.platform.domain.Money;
 
@@ -86,6 +88,25 @@ public class SandboxPaymentGateway implements PaymentGateway {
   @Override
   public ProviderStatus queryStatus(Provider provider, String providerRef) {
     return ProviderStatus.pending();
+  }
+
+  /**
+   * Synchronous-optimistic disbursement: accept the cashout and return a deterministic reference. The
+   * sandbox has no real rail, so with {@code PSP_REDDE} off the payout path stays exactly as WU-PAY-4
+   * behaved — the caller's {@code PayoutReconJob} pull-back ({@link #queryStatus} → PENDING) never
+   * force-fails it, and a sandbox cashout is confirmed only if a (test) webhook drives it.
+   */
+  @Override
+  public DisburseHandle disburse(
+      Provider provider, WithdrawalId withdrawalId, Money amount, PayoutDestination destination) {
+    if (amount == null || !amount.isPositive()) {
+      throw new ProviderException("sandbox rail rejected cashout: amount must be positive");
+    }
+    if (destination == null) {
+      throw new ProviderException("sandbox rail rejected cashout: destination is required");
+    }
+    String providerRef = "CASHOUT-" + provider.name().toUpperCase() + "-" + ids.newId();
+    return new DisburseHandle(providerRef);
   }
 
   /**

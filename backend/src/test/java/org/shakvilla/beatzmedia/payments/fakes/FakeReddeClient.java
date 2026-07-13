@@ -3,6 +3,7 @@ package org.shakvilla.beatzmedia.payments.fakes;
 import java.util.ArrayList;
 import java.util.List;
 
+import org.shakvilla.beatzmedia.payments.adapter.out.integration.redde.ReddeCashoutRequest;
 import org.shakvilla.beatzmedia.payments.adapter.out.integration.redde.ReddeCheckoutRequest;
 import org.shakvilla.beatzmedia.payments.adapter.out.integration.redde.ReddeCheckoutResponse;
 import org.shakvilla.beatzmedia.payments.adapter.out.integration.redde.ReddeClient;
@@ -19,12 +20,15 @@ import org.shakvilla.beatzmedia.payments.adapter.out.integration.redde.ReddeStat
 public class FakeReddeClient implements ReddeClient {
 
   public final List<ReddeReceiveRequest> receiveRequests = new ArrayList<>();
+  public final List<ReddeCashoutRequest> cashoutRequests = new ArrayList<>();
   public final List<ReddeCheckoutRequest> checkoutRequests = new ArrayList<>();
   public final List<String> statusLookups = new ArrayList<>();
   public final List<String> checkoutStatusLookups = new ArrayList<>();
 
   private ReddeInitialResponse receiveResponse;
   private RuntimeException receiveError;
+  private ReddeInitialResponse cashoutResponse;
+  private RuntimeException cashoutError;
   private ReddeStatusResponse statusResponse;
   private RuntimeException statusError;
   private ReddeCheckoutResponse checkoutResponse;
@@ -38,6 +42,17 @@ public class FakeReddeClient implements ReddeClient {
 
   public FakeReddeClient onReceiveThrow(RuntimeException e) {
     this.receiveError = e;
+    return this;
+  }
+
+  public FakeReddeClient onCashout(ReddeInitialResponse resp) {
+    this.cashoutResponse = resp;
+    this.cashoutError = null;
+    return this;
+  }
+
+  public FakeReddeClient onCashoutThrow(RuntimeException e) {
+    this.cashoutError = e;
     return this;
   }
 
@@ -70,6 +85,15 @@ public class FakeReddeClient implements ReddeClient {
       throw receiveError;
     }
     return require(receiveResponse, "receive");
+  }
+
+  @Override
+  public ReddeInitialResponse cashout(String apikey, ReddeCashoutRequest body) {
+    cashoutRequests.add(body);
+    if (cashoutError != null) {
+      throw cashoutError;
+    }
+    return require(cashoutResponse, "cashout");
   }
 
   @Override
