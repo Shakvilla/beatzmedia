@@ -103,6 +103,27 @@ public final class PayoutTxn {
         paidAt);
   }
 
+  /** Record a failed disbursement — {@link PayoutTxnStatus#FAILED}, no ledger posting. */
+  public static PayoutTxn failed(
+      String id,
+      String batchId,
+      WithdrawalId withdrawalId,
+      AccountId accountId,
+      Money amount,
+      String providerRef,
+      Instant at) {
+    return new PayoutTxn(
+        id,
+        batchId,
+        withdrawalId,
+        accountId,
+        amount,
+        PayoutTxnStatus.FAILED,
+        providerRef,
+        null,
+        at);
+  }
+
   public PayoutTxnStatus getStatus() {
     return status;
   }

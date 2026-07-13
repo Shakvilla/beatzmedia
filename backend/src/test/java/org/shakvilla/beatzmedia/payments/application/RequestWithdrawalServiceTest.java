@@ -19,7 +19,6 @@ import org.shakvilla.beatzmedia.payments.domain.IdempotencyKey;
 import org.shakvilla.beatzmedia.payments.domain.InsufficientBalanceException;
 import org.shakvilla.beatzmedia.payments.domain.KycRequiredException;
 import org.shakvilla.beatzmedia.payments.domain.LedgerEntry;
-import org.shakvilla.beatzmedia.payments.domain.MethodKind;
 import org.shakvilla.beatzmedia.payments.domain.PayoutMethod;
 import org.shakvilla.beatzmedia.payments.domain.PayoutMethodId;
 import org.shakvilla.beatzmedia.payments.fakes.FakeKycProvider;
@@ -62,7 +61,13 @@ class RequestWithdrawalServiceTest {
     // A momo method owned by the creator.
     payouts.saveMethod(
         PayoutMethod.create(
-            METHOD.value(), CREATOR, MethodKind.momo, "MTN MoMo", "024...9210", true,
+            METHOD.value(),
+            CREATOR,
+            "MTN MoMo",
+            "024...9210",
+            new org.shakvilla.beatzmedia.payments.domain.PayoutDestination.Momo(
+                org.shakvilla.beatzmedia.payments.domain.Provider.mtn, "0244009210"),
+            true,
             FakeClock.fixed().now()));
   }
 

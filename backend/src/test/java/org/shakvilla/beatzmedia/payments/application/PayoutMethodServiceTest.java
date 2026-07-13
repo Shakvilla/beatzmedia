@@ -53,7 +53,8 @@ class PayoutMethodServiceTest {
   }
 
   private AddPayoutMethod.Command momo(String label) {
-    return new AddPayoutMethod.Command(label, "024...", MethodKind.momo);
+    return new AddPayoutMethod.Command(
+        label, "024...", MethodKind.momo, "mtn", "0244000000", null, null, null, null);
   }
 
   @Test
@@ -95,7 +96,11 @@ class PayoutMethodServiceTest {
   void card_is_not_a_valid_payout_destination() {
     assertThrows(
         ValidationException.class,
-        () -> service.add(A, new AddPayoutMethod.Command("Visa", "****4242", MethodKind.card)));
+        () ->
+            service.add(
+                A,
+                new AddPayoutMethod.Command(
+                    "Visa", "****4242", MethodKind.card, null, null, null, null, null, null)));
   }
 
   @Test

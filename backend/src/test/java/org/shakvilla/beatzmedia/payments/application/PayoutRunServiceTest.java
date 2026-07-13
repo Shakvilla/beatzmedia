@@ -14,7 +14,6 @@ import org.shakvilla.beatzmedia.payments.domain.Direction;
 import org.shakvilla.beatzmedia.payments.domain.IdempotencyKey;
 import org.shakvilla.beatzmedia.payments.domain.KycBlockedException;
 import org.shakvilla.beatzmedia.payments.domain.LedgerEntry;
-import org.shakvilla.beatzmedia.payments.domain.MethodKind;
 import org.shakvilla.beatzmedia.payments.domain.PayoutMethod;
 import org.shakvilla.beatzmedia.payments.domain.TxnId;
 import org.shakvilla.beatzmedia.payments.domain.WithdrawalId;
@@ -54,9 +53,12 @@ class PayoutRunServiceTest {
     // plain collaborator (the boundary/SKIP-LOCKED behaviour is proven by the concurrency IT).
     var ids = FakeIds.sequential("po");
     var clock = FakeClock.fixed();
+    // Sandbox-style gateway (confirmsDisbursementAsync=false) → the synchronous disburse path, so a
+    // run posts the ledger + marks paid immediately, exactly as WU-PAY-4 behaved.
+    var gateway = new org.shakvilla.beatzmedia.payments.fakes.FakePaymentGateway();
     org.shakvilla.beatzmedia.payments.application.service.PayoutDisburser disburser =
         new org.shakvilla.beatzmedia.payments.application.service.PayoutDisburser(
-            payouts, ledger, kyc, ids, clock, audit);
+            payouts, ledger, kyc, gateway, ids, clock, audit);
     service = new PayoutRunService(disburser, ids, clock);
   }
 
@@ -68,7 +70,13 @@ class PayoutRunServiceTest {
   private WithdrawalRequest seedWithdrawal(String id, AccountId creator, long minor) {
     payouts.saveMethod(
         PayoutMethod.create(
-            "pm-" + creator.value(), creator, MethodKind.momo, "MoMo", "024...", true,
+            "pm-" + creator.value(),
+            creator,
+            "MoMo",
+            "024...",
+            new org.shakvilla.beatzmedia.payments.domain.PayoutDestination.Momo(
+                org.shakvilla.beatzmedia.payments.domain.Provider.mtn, "0244000000"),
+            true,
             FakeClock.fixed().now()));
     WithdrawalRequest w =
         WithdrawalRequest.reserved(

@@ -1,14 +1,18 @@
 package org.shakvilla.beatzmedia.payments.fakes;
 
+import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicInteger;
 
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway;
 import org.shakvilla.beatzmedia.payments.domain.OrderRef;
 import org.shakvilla.beatzmedia.payments.domain.PaymentMethodRef;
+import org.shakvilla.beatzmedia.payments.domain.PayoutDestination;
 import org.shakvilla.beatzmedia.payments.domain.Provider;
 import org.shakvilla.beatzmedia.payments.domain.ProviderException;
+import org.shakvilla.beatzmedia.payments.domain.WithdrawalId;
 import org.shakvilla.beatzmedia.platform.domain.Money;
 
 /**
@@ -34,6 +38,12 @@ public class FakePaymentGateway implements PaymentGateway {
   // ---- WU-PAY-6 controls -------------------------------------------------
   private boolean supportsDirectCharge = true;
   private CheckoutHandle checkoutHandle = new CheckoutHandle("cko-ref", "https://checkout.test/xyz");
+
+  // ---- WU-PAY-7 controls (disbursement) ----------------------------------
+  private boolean confirmsDisbursementAsync = false;
+  private boolean disburseThrows = false;
+  private final AtomicInteger disburseCalls = new AtomicInteger(0);
+  private final List<PayoutDestination> disburseDestinations = new ArrayList<>();
 
   /** Prime the gateway to throw a {@link ProviderException} on the next initiate call. */
   public void failOnNextInitiate() {
@@ -115,5 +125,41 @@ public class FakePaymentGateway implements PaymentGateway {
   @Override
   public CheckoutHandle initiateCheckout(OrderRef ref, Money amount) {
     return checkoutHandle;
+  }
+
+  /** Steer {@link #confirmsDisbursementAsync} — true makes the disburser take the async/SENT path. */
+  public void setConfirmsDisbursementAsync(boolean value) {
+    this.confirmsDisbursementAsync = value;
+  }
+
+  /** Prime {@link #disburse} to throw a {@link ProviderException} (rail rejected the cashout). */
+  public void failOnDisburse() {
+    this.disburseThrows = true;
+  }
+
+  @Override
+  public boolean confirmsDisbursementAsync() {
+    return confirmsDisbursementAsync;
+  }
+
+  @Override
+  public DisburseHandle disburse(
+      Provider provider, WithdrawalId withdrawalId, Money amount, PayoutDestination destination) {
+    disburseCalls.incrementAndGet();
+    disburseDestinations.add(destination);
+    if (disburseThrows) {
+      throw new ProviderException("simulated cashout rejection");
+    }
+    return new DisburseHandle("CASHOUT-" + provider.name().toUpperCase() + "-" + disburseCalls.get());
+  }
+
+  /** How many times {@code disburse} was called. */
+  public int disburseCalls() {
+    return disburseCalls.get();
+  }
+
+  /** The destinations passed to {@code disburse}, in order (asserts the structured mapping). */
+  public List<PayoutDestination> disburseDestinations() {
+    return disburseDestinations;
   }
 }
