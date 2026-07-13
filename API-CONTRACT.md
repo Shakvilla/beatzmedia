@@ -122,6 +122,17 @@ Cart kinds: `track | album | album-rest | store | episode | season-pass | ticket
 
 > `/checkout` is what unlocks tracks: on success the server adds the purchased track ids (and all
 > tracks of a purchased album) to the user's owned set, so playback stops being preview-gated.
+>
+> **Payment gateway (WU-PAY-6, backend-only for now).** MoMo/card charges are processed by a pluggable
+> PSP (Redde), toggled server-side via the `PSP_REDDE` feature flag; the sandbox stands in until real
+> credentials are supplied. Two additive, backward-compatible surfaces were introduced and are **not yet
+> consumed by the frontend** (forward-compatible):
+> - The internal payment-intent response gains an optional `checkoutUrl?: string | null` — non-null only
+>   for a **card** charge that requires a hosted-checkout redirect (Redde has no server-side card API).
+>   The client redirects the browser to it; ownership is never granted off that redirect — settlement is
+>   confirmed server-side (ADR-28). `null` for MoMo/sandbox charges.
+> - Provider settlement callbacks: `POST /v1/payments/webhooks/redde/receive` (unauthenticated; trusted by
+>   an authenticated pull-back, not a signature). Not a client-facing endpoint.
 
 ---
 
