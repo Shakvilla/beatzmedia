@@ -103,6 +103,18 @@ public interface PaymentGateway {
     throw new UnsupportedOperationException("this gateway does not support disbursement");
   }
 
+  /**
+   * Whether disbursements on this gateway are confirmed <em>asynchronously</em> (via the cashout
+   * webhook / recon poll) rather than synchronously at the {@link #disburse} call (WU-PAY-7). {@code
+   * true} for Redde's real cashout; {@code false} for the sandbox, which has no rail to confirm from —
+   * so with {@code PSP_REDDE} off the payout flow stays synchronous-optimistic, byte-for-byte with
+   * WU-PAY-4 (post the ledger + mark paid at trigger time). The payout disburser uses this to choose
+   * the path without importing {@code FeatureFlags}, mirroring {@link #supportsDirectCharge}.
+   */
+  default boolean confirmsDisbursementAsync() {
+    return false;
+  }
+
   /** Result of a successful {@link #initiate} call: the provider's opaque charge reference. */
   record ChargeHandle(String providerRef) {
 

@@ -99,16 +99,43 @@ public final class WithdrawalRequest {
   }
 
   /**
-   * Mark this withdrawal PAID after a payout run has disbursed it. Illegal unless currently payable
-   * (a re-run must not re-pay a PAID/FAILED withdrawal — the durable guard is the {@code
-   * uq_payout_per_withdrawal} constraint, this is the in-app backstop).
+   * Mark this withdrawal SENT — the cashout has been handed to an async rail (Redde) and is in flight
+   * (WU-PAY-7). Only a payable (reserved, not-yet-sent) withdrawal can be sent.
+   */
+  public void markSent() {
+    if (!status.isPayable()) {
+      throw new IllegalTransitionException(
+          "cannot send withdrawal " + id + " in status " + status + " (INV-6)");
+    }
+    this.status = WithdrawalStatus.SENT;
+  }
+
+  /**
+   * Mark this withdrawal PAID once disbursement is confirmed. Reachable from {@code SENT} (async
+   * cashout confirmed by webhook/recon) or directly from a payable state (the synchronous sandbox
+   * path). Illegal from a terminal state — a re-run/duplicate webhook must not re-pay; the durable
+   * guard is the {@code uq_payout_per_withdrawal} constraint, this is the in-app backstop (INV-6).
    */
   public void markPaid() {
-    if (!status.isPayable()) {
+    if (status.isTerminal()) {
       throw new IllegalTransitionException(
           "cannot pay withdrawal " + id + " in status " + status + " (INV-6)");
     }
     this.status = WithdrawalStatus.PAID;
+  }
+
+  /**
+   * Mark this withdrawal FAILED — the cashout was rejected outright or confirmed failed. Reachable
+   * from any non-terminal state. Auto-reversal of the funds reservation is a documented non-goal
+   * (ADR-28 addendum, per the ADR-24/25 orphaned-credit precedent) — the failure is audited and left
+   * for finance to reconcile.
+   */
+  public void markFailed() {
+    if (status.isTerminal()) {
+      throw new IllegalTransitionException(
+          "cannot fail withdrawal " + id + " in status " + status);
+    }
+    this.status = WithdrawalStatus.FAILED;
   }
 
   public WithdrawalId getId() {

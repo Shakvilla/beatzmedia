@@ -9,13 +9,17 @@ package org.shakvilla.beatzmedia.payments.domain;
  *       payout run.
  *   <li>{@link #READY} — a KYC-verified reserved request eligible for a run (synonym of pending
  *       here; the admin pending-payouts list surfaces both as payable).
- *   <li>{@link #PAID} — executed by a payout run; a {@link PayoutTxn} exists.
- *   <li>{@link #FAILED} — the reservation was reversed.
+ *   <li>{@link #SENT} — the cashout was sent to an async rail (Redde) and is in flight (WU-PAY-7);
+ *       confirmed settlement arrives via the cashout webhook or the payout recon poll. The
+ *       synchronous sandbox path (flag off) skips this state and lands straight on {@link #PAID}.
+ *   <li>{@link #PAID} — confirmed settled; a {@link PayoutTxn} exists and the disbursement is posted.
+ *   <li>{@link #FAILED} — the cashout failed (reservation reversal is a documented non-goal, ADR-28).
  * </ul>
  */
 public enum WithdrawalStatus {
   PENDING,
   READY,
+  SENT,
   PAID,
   FAILED;
 
@@ -32,8 +36,18 @@ public enum WithdrawalStatus {
     return valueOf(value.trim().toUpperCase());
   }
 
-  /** True iff a payout run may execute a withdrawal in this state (not already paid/failed). */
+  /** True iff a payout run may execute a withdrawal in this state (reserved, not yet sent/paid). */
   public boolean isPayable() {
     return this == PENDING || this == READY;
+  }
+
+  /** True iff a cashout is in flight on an async rail (awaiting webhook/recon confirmation). */
+  public boolean isSent() {
+    return this == SENT;
+  }
+
+  /** True iff this is a terminal state — no further disbursement transition is allowed. */
+  public boolean isTerminal() {
+    return this == PAID || this == FAILED;
   }
 }

@@ -13,12 +13,16 @@ import org.shakvilla.beatzmedia.payments.application.port.out.DuplicatePayoutExc
 import org.shakvilla.beatzmedia.payments.application.port.out.DuplicatePostingException;
 import org.shakvilla.beatzmedia.payments.application.port.out.KycProvider;
 import org.shakvilla.beatzmedia.payments.application.port.out.LedgerRepository;
+import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway;
+import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway.DisburseHandle;
 import org.shakvilla.beatzmedia.payments.application.port.out.PayoutRepository;
 import org.shakvilla.beatzmedia.payments.domain.KycBlockedException;
 import org.shakvilla.beatzmedia.payments.domain.MethodKind;
+import org.shakvilla.beatzmedia.payments.domain.PayoutDestination;
 import org.shakvilla.beatzmedia.payments.domain.PayoutMethod;
 import org.shakvilla.beatzmedia.payments.domain.PayoutTxn;
 import org.shakvilla.beatzmedia.payments.domain.Provider;
+import org.shakvilla.beatzmedia.payments.domain.ProviderException;
 import org.shakvilla.beatzmedia.payments.domain.TxnId;
 import org.shakvilla.beatzmedia.payments.domain.WithdrawalId;
 import org.shakvilla.beatzmedia.payments.domain.WithdrawalRequest;
@@ -47,6 +51,7 @@ public class PayoutDisburser {
   private final PayoutRepository payouts;
   private final LedgerRepository ledger;
   private final KycProvider kyc;
+  private final PaymentGateway gateway;
   private final IdGenerator ids;
   private final Clock clock;
   private final AuditWriter auditWriter;
@@ -56,12 +61,14 @@ public class PayoutDisburser {
       PayoutRepository payouts,
       LedgerRepository ledger,
       KycProvider kyc,
+      PaymentGateway gateway,
       IdGenerator ids,
       Clock clock,
       AuditWriter auditWriter) {
     this.payouts = payouts;
     this.ledger = ledger;
     this.kyc = kyc;
+    this.gateway = gateway;
     this.ids = ids;
     this.clock = clock;
     this.auditWriter = auditWriter;
@@ -103,7 +110,24 @@ public class PayoutDisburser {
       return Optional.empty();
     }
 
-    Provider rail = railFor(w);
+    PayoutMethod method = payouts.findMethod(w.getAccountId(), w.getMethodId()).orElse(null);
+    // Async rail (Redde): send the cashout and go SENT — the ledger disbursement is posted only when
+    // the cashout webhook / recon poll confirms settlement. Sync rail (sandbox, flag off): post the
+    // ledger + mark paid now, byte-for-byte with WU-PAY-4.
+    return gateway.confirmsDisbursementAsync()
+        ? sendAsync(batchId, w, method, adminActorId)
+        : disburseSync(batchId, w, method, adminActorId);
+  }
+
+  /**
+   * Synchronous-optimistic disbursement (sandbox / {@code PSP_REDDE} off): post the balanced
+   * disbursement clearing, record the payout txn already {@code paid}, mark the withdrawal paid, and
+   * audit — all atomically. Exactly WU-PAY-4's behaviour. A duplicate claim rolls back this
+   * REQUIRES_NEW tx in isolation (no double-debit, INV-6) and returns empty.
+   */
+  private Optional<PayoutTxn> disburseSync(
+      String batchId, WithdrawalRequest w, PayoutMethod method, String adminActorId) {
+    Provider rail = railFor(method);
     try {
       TxnId disburseTxn =
           ledger.postWithdrawalDisburse(w.getAmount(), w.getId().value(), rail, clock.now());
@@ -120,16 +144,7 @@ public class PayoutDisburser {
       payouts.savePayoutTxn(txn);
       w.markPaid();
       payouts.saveWithdrawal(w);
-      auditWriter.append(
-          new AuditEntry(
-              ids.newId(),
-              adminActorId,
-              "EXECUTE_PAYOUT",
-              "WithdrawalRequest",
-              w.getId().value(),
-              AuditType.FINANCE,
-              null,
-              clock.now()));
+      audit(adminActorId, "EXECUTE_PAYOUT", w.getId().value());
       return Optional.of(txn);
     } catch (DuplicatePayoutException | DuplicatePostingException e) {
       // Already paid — the disburse posting is exactly-once (ledger_posting header) AND the payout txn
@@ -137,6 +152,86 @@ public class PayoutDisburser {
       // isolation; the surrounding batch is untouched. No double-debit (INV-6).
       return Optional.empty();
     }
+  }
+
+  /**
+   * Send the cashout to an async rail (Redde) and record it {@code SENT} — <strong>no ledger posting
+   * yet</strong>; that happens when the cashout webhook / recon poll confirms settlement, so a cashout
+   * that later fails can never leave the ledger claiming money that never left (INV-6). If the method
+   * has no valid structured destination, or the rail rejects the cashout outright, the withdrawal is
+   * marked {@code failed} + audited (reservation reversal is a documented non-goal, ADR-28). An
+   * ambiguous send error is treated as failed to avoid a retry double-send — finance reconciles.
+   */
+  private Optional<PayoutTxn> sendAsync(
+      String batchId, WithdrawalRequest w, PayoutMethod method, String adminActorId) {
+    PayoutDestination destination;
+    try {
+      if (method == null) {
+        throw new IllegalStateException("withdrawal " + w.getId() + " has no payout method");
+      }
+      destination = method.toDestination();
+    } catch (IllegalStateException e) {
+      return failSend(w, adminActorId, "no valid destination");
+    }
+
+    DisburseHandle handle;
+    try {
+      handle = gateway.disburse(destinationRail(destination), w.getId(), w.getAmount(), destination);
+    } catch (ProviderException e) {
+      // Rejected outright (or an ambiguous rail error): mark failed — do NOT leave it payable, which
+      // would double-send on the next run (we mint a fresh clienttransid each attempt, so the rail
+      // would not dedup). A sent-but-errored cashout is a finance reconciliation item (ADR-28).
+      return failSend(w, adminActorId, "rail rejected cashout");
+    }
+
+    try {
+      PayoutTxn txn =
+          PayoutTxn.sent(
+              ids.newId(),
+              batchId,
+              w.getId(),
+              w.getAccountId(),
+              w.getAmount(),
+              handle.providerRef(),
+              clock.now());
+      payouts.savePayoutTxn(txn);
+      w.markSent();
+      payouts.saveWithdrawal(w);
+      audit(adminActorId, "SEND_PAYOUT", w.getId().value());
+      return Optional.of(txn);
+    } catch (DuplicatePayoutException e) {
+      // A concurrent run already recorded the send for this withdrawal — no-op, no double-send.
+      return Optional.empty();
+    }
+  }
+
+  /** Mark a withdrawal failed after a send could not be completed, audit it, and return empty. */
+  private Optional<PayoutTxn> failSend(WithdrawalRequest w, String adminActorId, String reason) {
+    w.markFailed();
+    payouts.saveWithdrawal(w);
+    audit(adminActorId, "FAIL_PAYOUT", w.getId().value());
+    return Optional.empty();
+  }
+
+  private void audit(String adminActorId, String action, String withdrawalId) {
+    auditWriter.append(
+        new AuditEntry(
+            ids.newId(),
+            adminActorId,
+            action,
+            "WithdrawalRequest",
+            withdrawalId,
+            AuditType.FINANCE,
+            null,
+            clock.now()));
+  }
+
+  /** Rail for an async cashout, derived from the structured destination. */
+  private static Provider destinationRail(PayoutDestination destination) {
+    return switch (destination) {
+      case PayoutDestination.Momo m -> m.network();
+      case PayoutDestination.Bank b -> Provider.bank;
+    };
   }
 
   /** Read the payable candidate ids (lock-free) in its own transaction. */
@@ -181,11 +276,18 @@ public class PayoutDisburser {
     return payouts.saveBatchTotals(batchId, totalMinor, count);
   }
 
-  private Provider railFor(WithdrawalRequest w) {
-    return payouts
-        .findMethod(w.getAccountId(), w.getMethodId())
-        .map(PayoutMethod::getKind)
-        .map(k -> k == MethodKind.bank ? Provider.bank : Provider.mtn)
-        .orElse(Provider.mtn);
+  /**
+   * The rail recorded on the sync (sandbox) ledger disbursement. Reads the structured {@code network}
+   * when present (fixing the WU-PAY-4 momo→mtn hardcode); falls back to a kind-based default for a
+   * legacy method with no structured fields, or {@code mtn} when the method is gone.
+   */
+  private static Provider railFor(PayoutMethod method) {
+    if (method == null) {
+      return Provider.mtn;
+    }
+    if (method.getNetwork() != null) {
+      return method.getNetwork();
+    }
+    return method.getKind() == MethodKind.bank ? Provider.bank : Provider.mtn;
   }
 }

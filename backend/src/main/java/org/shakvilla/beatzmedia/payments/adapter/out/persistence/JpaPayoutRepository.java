@@ -288,9 +288,9 @@ public class JpaPayoutRepository implements PayoutRepository {
     entity.withdrawalId = txn.getWithdrawalId().value();
     entity.accountId = txn.getAccountId().value();
     entity.amountMinor = txn.getAmount().minor();
-    entity.status = "paid";
+    entity.status = txn.getStatus().wire();
     entity.providerRef = txn.getProviderRef();
-    entity.disburseTxnId = txn.getDisburseTxnId().value();
+    entity.disburseTxnId = txn.getDisburseTxnId() == null ? null : txn.getDisburseTxnId().value();
     entity.paidAt = txn.getPaidAt();
     try {
       em.persist(entity);

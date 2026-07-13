@@ -85,4 +85,9 @@ public class PaymentGatewayRouter implements PaymentGateway {
       Provider provider, WithdrawalId withdrawalId, Money amount, PayoutDestination destination) {
     return active().disburse(provider, withdrawalId, amount, destination);
   }
+
+  @Override
+  public boolean confirmsDisbursementAsync() {
+    return active().confirmsDisbursementAsync();
+  }
 }

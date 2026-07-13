@@ -34,7 +34,8 @@ public class PayoutTxnEntity {
   @Column(name = "provider_ref")
   public String providerRef;
 
-  @Column(name = "disburse_txn_id", nullable = false)
+  // Nullable (V967): a SENT txn has no ledger trace yet; set when confirmed-settled at webhook time.
+  @Column(name = "disburse_txn_id")
   public String disburseTxnId;
 
   @Column(name = "paid_at", nullable = false)

@@ -83,6 +83,13 @@ public class ReddePaymentGateway implements PaymentGateway {
   }
 
   @Override
+  public boolean confirmsDisbursementAsync() {
+    // Redde cashouts settle asynchronously: the ledger posting waits for the pull-back-verified
+    // cashout webhook / recon poll (WU-PAY-7), never the synchronous /v1/cashout first-response.
+    return true;
+  }
+
+  @Override
   public ChargeHandle initiate(
       Provider provider, OrderRef ref, Money amount, PaymentMethodRef method) {
     requireConfigured();
