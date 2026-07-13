@@ -3,7 +3,9 @@ package org.shakvilla.beatzmedia.payments.application.port.out;
 import org.shakvilla.beatzmedia.payments.domain.OrderRef;
 import org.shakvilla.beatzmedia.payments.domain.PaymentEventType;
 import org.shakvilla.beatzmedia.payments.domain.PaymentMethodRef;
+import org.shakvilla.beatzmedia.payments.domain.PayoutDestination;
 import org.shakvilla.beatzmedia.payments.domain.Provider;
+import org.shakvilla.beatzmedia.payments.domain.WithdrawalId;
 import org.shakvilla.beatzmedia.platform.domain.Money;
 
 /**
@@ -84,10 +86,49 @@ public interface PaymentGateway {
     throw new UnsupportedOperationException("this gateway does not support hosted checkout");
   }
 
+  /**
+   * Disburse a creator withdrawal to a structured {@link PayoutDestination} (WU-PAY-7). Like {@link
+   * #initiate}, disbursement is <strong>asynchronous</strong>: this returns immediately with the
+   * provider's cashout reference, and confirmed settlement arrives later via the cashout webhook
+   * (pull-back-verified) or the payout recon poll — the ledger disbursement posting and {@code
+   * markPaid} happen only then, never off this call (INV-6). The sandbox gateway is
+   * synchronous-optimistic (fake ref, always "sent") so the flag-off path matches WU-PAY-4 behavior.
+   *
+   * @return a handle carrying the provider's cashout reference (stored as {@code payout_txn.provider_ref})
+   * @throws org.shakvilla.beatzmedia.payments.domain.ProviderException if the rail rejects the cashout
+   *     outright (unconfigured credentials, invalid destination, rail error)
+   */
+  default DisburseHandle disburse(
+      Provider provider, WithdrawalId withdrawalId, Money amount, PayoutDestination destination) {
+    throw new UnsupportedOperationException("this gateway does not support disbursement");
+  }
+
+  /**
+   * Whether disbursements on this gateway are confirmed <em>asynchronously</em> (via the cashout
+   * webhook / recon poll) rather than synchronously at the {@link #disburse} call (WU-PAY-7). {@code
+   * true} for Redde's real cashout; {@code false} for the sandbox, which has no rail to confirm from —
+   * so with {@code PSP_REDDE} off the payout flow stays synchronous-optimistic, byte-for-byte with
+   * WU-PAY-4 (post the ledger + mark paid at trigger time). The payout disburser uses this to choose
+   * the path without importing {@code FeatureFlags}, mirroring {@link #supportsDirectCharge}.
+   */
+  default boolean confirmsDisbursementAsync() {
+    return false;
+  }
+
   /** Result of a successful {@link #initiate} call: the provider's opaque charge reference. */
   record ChargeHandle(String providerRef) {
 
     public ChargeHandle {
+      if (providerRef == null || providerRef.isBlank()) {
+        throw new IllegalArgumentException("providerRef must not be blank");
+      }
+    }
+  }
+
+  /** Result of a successful {@link #disburse} call: the provider's opaque cashout reference. */
+  record DisburseHandle(String providerRef) {
+
+    public DisburseHandle {
       if (providerRef == null || providerRef.isBlank()) {
         throw new IllegalArgumentException("providerRef must not be blank");
       }

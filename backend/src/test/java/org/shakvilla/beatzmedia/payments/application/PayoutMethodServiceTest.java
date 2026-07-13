@@ -53,7 +53,41 @@ class PayoutMethodServiceTest {
   }
 
   private AddPayoutMethod.Command momo(String label) {
-    return new AddPayoutMethod.Command(label, "024...", MethodKind.momo);
+    return new AddPayoutMethod.Command(
+        label, "024...", MethodKind.momo, "mtn", "0244000000", null, null, null, null);
+  }
+
+  private AddPayoutMethod.Command bank(String bankCode) {
+    return new AddPayoutMethod.Command(
+        "GCB acct", "****7890", MethodKind.bank, null, null, "GCB Bank", bankCode, "Ama Owner",
+        "1234567890");
+  }
+
+  @Test
+  void adds_a_bank_method_with_structured_fields() {
+    PayoutMethodView view = service.add(A, bank("GCB"));
+    assertEquals("bank", view.kind());
+    assertEquals(
+        "GCB",
+        payouts.findMethod(A, new PayoutMethodId(view.id())).get().getBankCode(),
+        "structured bank code is persisted");
+    assertEquals("1234567890", payouts.findMethod(A, new PayoutMethodId(view.id())).get().getAccountNumber());
+  }
+
+  @Test
+  void rejects_momo_without_network_or_wallet() {
+    assertThrows(
+        ValidationException.class,
+        () ->
+            service.add(
+                A,
+                new AddPayoutMethod.Command(
+                    "MTN", "024...", MethodKind.momo, null, null, null, null, null, null)));
+  }
+
+  @Test
+  void rejects_bank_with_unknown_code() {
+    assertThrows(ValidationException.class, () -> service.add(A, bank("NOPE")));
   }
 
   @Test
@@ -95,7 +129,11 @@ class PayoutMethodServiceTest {
   void card_is_not_a_valid_payout_destination() {
     assertThrows(
         ValidationException.class,
-        () -> service.add(A, new AddPayoutMethod.Command("Visa", "****4242", MethodKind.card)));
+        () ->
+            service.add(
+                A,
+                new AddPayoutMethod.Command(
+                    "Visa", "****4242", MethodKind.card, null, null, null, null, null, null)));
   }
 
   @Test

@@ -6,7 +6,9 @@ import jakarta.inject.Inject;
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway;
 import org.shakvilla.beatzmedia.payments.domain.OrderRef;
 import org.shakvilla.beatzmedia.payments.domain.PaymentMethodRef;
+import org.shakvilla.beatzmedia.payments.domain.PayoutDestination;
 import org.shakvilla.beatzmedia.payments.domain.Provider;
+import org.shakvilla.beatzmedia.payments.domain.WithdrawalId;
 import org.shakvilla.beatzmedia.platform.application.port.out.FeatureFlags;
 import org.shakvilla.beatzmedia.platform.domain.FeatureKey;
 import org.shakvilla.beatzmedia.platform.domain.Money;
@@ -76,5 +78,16 @@ public class PaymentGatewayRouter implements PaymentGateway {
   @Override
   public CheckoutHandle initiateCheckout(OrderRef ref, Money amount) {
     return active().initiateCheckout(ref, amount);
+  }
+
+  @Override
+  public DisburseHandle disburse(
+      Provider provider, WithdrawalId withdrawalId, Money amount, PayoutDestination destination) {
+    return active().disburse(provider, withdrawalId, amount, destination);
+  }
+
+  @Override
+  public boolean confirmsDisbursementAsync() {
+    return active().confirmsDisbursementAsync();
   }
 }

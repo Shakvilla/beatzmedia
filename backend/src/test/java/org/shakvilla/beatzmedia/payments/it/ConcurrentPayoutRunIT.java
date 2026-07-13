@@ -116,7 +116,9 @@ class ConcurrentPayoutRunIT {
     setKycVerified(creator);
     PayoutMethodView m =
         addPayoutMethod.add(
-            creator, new AddPayoutMethod.Command("MTN", "024...", MethodKind.momo));
+            creator,
+            new AddPayoutMethod.Command(
+                "MTN", "024...", MethodKind.momo, "mtn", "0244000000", null, null, null, null));
     var view =
         requestWithdrawal.request(
             creator,

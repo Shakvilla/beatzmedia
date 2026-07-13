@@ -78,6 +78,7 @@ public class SchedulerRegistry {
   private static final String JOB_EPISODE_GO_LIVE  = "studio.episode-go-live";
   private static final String JOB_PAYOUT_WINDOW    = "payments.payout-window";
   private static final String JOB_PAYMENT_RECON    = "payments.payment-recon";
+  private static final String JOB_PAYOUT_RECON     = "payments.payout-recon";
   private static final String JOB_DIGEST           = "notifications.digest";
   private static final String JOB_DELIVERY_RETRY   = "notifications.delivery-retry-sweep";
   private static final String JOB_ANALYTICS_ROLLUP = "analytics.rollup";
@@ -125,6 +126,13 @@ public class SchedulerRegistry {
       concurrentExecution = ConcurrentExecution.SKIP)
   void reconcileAndTimeout() {
     runWithLock(JOB_PAYMENT_RECON);
+  }
+
+  /** Payout reconciliation / cashout confirmation poll (WU-PAY-7) — every 30 s. */
+  @Scheduled(every = "30s", identity = "payout-recon",
+      concurrentExecution = ConcurrentExecution.SKIP)
+  void reconcilePayouts() {
+    runWithLock(JOB_PAYOUT_RECON);
   }
 
   /** Digest emails — daily at 08:00 UTC. */

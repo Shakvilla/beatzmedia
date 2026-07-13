@@ -46,15 +46,39 @@ class PayoutDomainTest {
 
   @Test
   void payout_method_rejects_a_card_destination() {
+    // A card cannot be a payout destination: there is no card PayoutDestination, and reconstitute
+    // rejects the card kind (the domain invariant behind the service's 422).
     assertThrows(
         IllegalArgumentException.class,
-        () -> PayoutMethod.create("m1", new AccountId("a"), MethodKind.card, "Visa", "****", true, T));
+        () ->
+            PayoutMethod.reconstitute(
+                new org.shakvilla.beatzmedia.payments.domain.PayoutMethodId("m1"),
+                new AccountId("a"),
+                MethodKind.card,
+                "Visa",
+                "****",
+                null,
+                null,
+                null,
+                null,
+                null,
+                null,
+                true,
+                T));
   }
 
   @Test
   void payout_method_default_toggles() {
     PayoutMethod m =
-        PayoutMethod.create("m1", new AccountId("a"), MethodKind.momo, "MTN", "024...", false, T);
+        PayoutMethod.create(
+            "m1",
+            new AccountId("a"),
+            "MTN",
+            "024...",
+            new org.shakvilla.beatzmedia.payments.domain.PayoutDestination.Momo(
+                org.shakvilla.beatzmedia.payments.domain.Provider.mtn, "0244000000"),
+            false,
+            T);
     assertFalse(m.isDefault());
     m.makeDefault();
     assertTrue(m.isDefault());

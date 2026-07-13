@@ -696,6 +696,34 @@ public interface IdGenerator { String newId(); }
 >   `checkoutUrl` (the redirect in `checkout.tsx`, a client-only mock) is a follow-up. Empirically confirm
 >   in the Redde sandbox whether checkout also fires the receive callback (design works either way).
 
+> **WU-PAY-7 implementation notes (as-built) — real payout disbursement via Redde `/v1/cashout`
+> (LLFR-PAYMENTS-07.*).** See ADR-29 (async-confirmed lifecycle, failed-after-reserved non-goal) and
+> ADR-28 (verify-by-pull-back, reused for cashout).
+> - **Async lifecycle.** Disbursement flips from synchronous-optimistic to async-confirmed. New
+>   `WithdrawalStatus.SENT` (+ `payout_txn.status` `sent`/`paid`/`failed`, `disburse_txn_id` now nullable,
+>   V967) sits between the admin trigger and confirmed `PAID`. `PaymentGateway.confirmsDisbursementAsync()`
+>   (false sandbox / true Redde) selects the path in `PayoutDisburser` without importing `FeatureFlags`:
+>   **sync** posts the ledger + marks paid now (WU-PAY-4 behaviour byte-for-byte when `PSP_REDDE` is off);
+>   **async** calls `gateway.disburse` → `payout_txn` `sent` + `markSent`, **no** ledger posting.
+> - **Confirmation = money movement.** `HandleCashoutWebhookService` (both the `POST
+>   /v1/payments/webhooks/redde/cashout` path AND the recon poll's `confirmSent`) claims the withdrawal
+>   `FOR UPDATE SKIP LOCKED`, pulls `GET /v1/status`, and only on a terminal **pulled** `SETTLED` posts the
+>   balanced disbursement + marks the withdrawal/`payout_txn` `paid`; `FAILED` marks failed, posts nothing.
+>   Idempotent four ways: SKIP LOCKED, the `isSent` guard, `payout_event` UNIQUE (its own table, separate
+>   from `payment_event`), and the exactly-once `postWithdrawalDisburse` header. Redde's receive/cashout
+>   callbacks are structurally identical → disambiguated by PATH, not payload.
+> - **Recon fallback.** `PayoutReconJob` (`payments.payout-recon`, 30s) sweeps still-`SENT` cashouts older
+>   than `beatz.payout.recon.poll-after` (2m default) and confirms each in its own `REQUIRES_NEW` boundary.
+> - **Structured destinations.** `PayoutMethod` gains `network`/`walletNumber` (momo) and
+>   `bankCode`/`bankName`/`accountName`/`accountNumber` (bank), built from a validated `PayoutDestination`
+>   (sealed Momo/Bank); `GhanaBankCode` validates the bank code on add (clean 422). Legacy free-text
+>   `detail` stays a display label. `PayoutMethodView` is intentionally NOT extended — no raw wallet/account
+>   PII in the read model. `railFor` now reads the structured `network` (fixes the momo→mtn hardcode).
+> - **Residual risk (ADR-29).** A rejected/ambiguous cashout marks the withdrawal `FAILED` + audits but does
+>   NOT auto-reverse the reservation — a finance reconciliation item, explicit non-goal. Ambiguous errors
+>   are treated as FAILED to avoid a retry double-send. Real `BEATZ_REDDE_*` creds are the deploy-secret
+>   human gate; sandbox stays authoritative until they are supplied.
+
 ## 5. Adapters
 
 ### 5.1 Inbound — REST resources

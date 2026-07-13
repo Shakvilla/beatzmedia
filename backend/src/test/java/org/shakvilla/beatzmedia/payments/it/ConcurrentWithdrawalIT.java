@@ -105,7 +105,9 @@ class ConcurrentWithdrawalIT {
     setKycVerified(creator);
     PayoutMethodView m =
         addPayoutMethod.add(
-            creator, new AddPayoutMethod.Command("MTN", "024...", MethodKind.momo));
+            creator,
+            new AddPayoutMethod.Command(
+                "MTN", "024...", MethodKind.momo, "mtn", "0244000000", null, null, null, null));
     PayoutMethodId method = new PayoutMethodId(m.id());
 
     // Each asks ₵20 (≤ ₵30 alone), but ₵40 together > ₵30 → exactly one may win.

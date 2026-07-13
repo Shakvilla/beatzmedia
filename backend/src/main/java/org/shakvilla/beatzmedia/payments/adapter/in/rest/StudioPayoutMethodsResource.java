@@ -61,7 +61,17 @@ public class StudioPayoutMethodsResource {
     MethodKind kind = parseKind(body.kind());
     PayoutMethodView view =
         addPayoutMethod.add(
-            creator, new AddPayoutMethod.Command(body.label(), body.detail(), kind));
+            creator,
+            new AddPayoutMethod.Command(
+                body.label(),
+                body.detail(),
+                kind,
+                body.network(),
+                body.walletNumber(),
+                body.bankName(),
+                body.bankCode(),
+                body.accountName(),
+                body.accountNumber()));
     return Response.status(Response.Status.CREATED).entity(view).build();
   }
 
@@ -90,6 +100,19 @@ public class StudioPayoutMethodsResource {
     }
   }
 
-  /** Request body for adding a method: {@code { label, detail, kind }}. */
-  public record AddBody(String label, String detail, String kind) {}
+  /**
+   * Request body for adding a method: {@code { label, detail, kind }} plus the structured destination
+   * fields (WU-PAY-7). momo → {@code network, walletNumber}; bank → {@code bankName, bankCode,
+   * accountName, accountNumber}. The unused subset for a kind may be omitted (null).
+   */
+  public record AddBody(
+      String label,
+      String detail,
+      String kind,
+      String network,
+      String walletNumber,
+      String bankName,
+      String bankCode,
+      String accountName,
+      String accountNumber) {}
 }

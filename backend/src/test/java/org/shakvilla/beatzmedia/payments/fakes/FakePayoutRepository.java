@@ -1,20 +1,26 @@
 package org.shakvilla.beatzmedia.payments.fakes;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import org.shakvilla.beatzmedia.payments.application.port.out.DuplicatePayoutException;
 import org.shakvilla.beatzmedia.payments.application.port.out.PayoutRepository;
 import org.shakvilla.beatzmedia.payments.domain.AccountId;
 import org.shakvilla.beatzmedia.payments.domain.IdempotencyKey;
+import org.shakvilla.beatzmedia.payments.domain.PaymentEventType;
 import org.shakvilla.beatzmedia.payments.domain.PayoutBatch;
 import org.shakvilla.beatzmedia.payments.domain.PayoutMethod;
 import org.shakvilla.beatzmedia.payments.domain.PayoutMethodId;
 import org.shakvilla.beatzmedia.payments.domain.PayoutTxn;
+import org.shakvilla.beatzmedia.payments.domain.PayoutTxnStatus;
+import org.shakvilla.beatzmedia.payments.domain.TxnId;
 import org.shakvilla.beatzmedia.payments.domain.WithdrawalId;
 import org.shakvilla.beatzmedia.payments.domain.WithdrawalRequest;
 
@@ -30,6 +36,7 @@ public class FakePayoutRepository implements PayoutRepository {
   private final Map<String, PayoutBatch> batches = new LinkedHashMap<>();
   private final Map<String, PayoutTxn> txns = new LinkedHashMap<>();
   private final Map<String, PayoutTxn> txnsByWithdrawal = new LinkedHashMap<>();
+  private final Set<String> payoutEventIds = new HashSet<>();
 
   // ---- payout methods ----
   @Override
@@ -166,7 +173,86 @@ public class FakePayoutRepository implements PayoutRepository {
     return txn;
   }
 
+  // ---- async cashout confirmation (WU-PAY-7) ----
+  @Override
+  public Optional<WithdrawalId> findSentWithdrawalIdByCashoutRef(String cashoutRef) {
+    return txnsByWithdrawal.values().stream()
+        .filter(t -> t.getStatus() == PayoutTxnStatus.SENT && cashoutRef.equals(t.getProviderRef()))
+        .map(PayoutTxn::getWithdrawalId)
+        .findFirst();
+  }
+
+  @Override
+  public List<WithdrawalId> findSentWithdrawalIds(Instant sentBefore, int limit) {
+    return txnsByWithdrawal.values().stream()
+        .filter(t -> t.getStatus() == PayoutTxnStatus.SENT && t.getPaidAt().isBefore(sentBefore))
+        .sorted(Comparator.comparing(PayoutTxn::getPaidAt))
+        .limit(limit)
+        .map(PayoutTxn::getWithdrawalId)
+        .toList();
+  }
+
+  @Override
+  public Optional<String> findCashoutRef(WithdrawalId withdrawalId) {
+    return Optional.ofNullable(txnsByWithdrawal.get(withdrawalId.value()))
+        .map(PayoutTxn::getProviderRef);
+  }
+
+  @Override
+  public void markPayoutTxnPaid(WithdrawalId withdrawalId, TxnId disburseTxnId, Instant paidAt) {
+    PayoutTxn t = txnsByWithdrawal.get(withdrawalId.value());
+    if (t == null) {
+      return;
+    }
+    PayoutTxn paid =
+        PayoutTxn.executed(
+            t.getId(),
+            t.getBatchId(),
+            t.getWithdrawalId(),
+            t.getAccountId(),
+            t.getAmount(),
+            t.getProviderRef(),
+            disburseTxnId,
+            paidAt);
+    txns.put(t.getId(), paid);
+    txnsByWithdrawal.put(withdrawalId.value(), paid);
+  }
+
+  @Override
+  public void markPayoutTxnFailed(WithdrawalId withdrawalId, Instant at) {
+    PayoutTxn t = txnsByWithdrawal.get(withdrawalId.value());
+    if (t == null) {
+      return;
+    }
+    PayoutTxn failed =
+        PayoutTxn.failed(
+            t.getId(),
+            t.getBatchId(),
+            t.getWithdrawalId(),
+            t.getAccountId(),
+            t.getAmount(),
+            t.getProviderRef(),
+            at);
+    txns.put(t.getId(), failed);
+    txnsByWithdrawal.put(withdrawalId.value(), failed);
+  }
+
+  @Override
+  public boolean recordCashoutEventIfNew(
+      String id,
+      WithdrawalId withdrawalId,
+      String providerEventId,
+      PaymentEventType type,
+      String reason,
+      Instant receivedAt) {
+    return payoutEventIds.add(providerEventId);
+  }
+
   // ---- test helpers ----
+  public Optional<PayoutTxn> txnFor(WithdrawalId withdrawalId) {
+    return Optional.ofNullable(txnsByWithdrawal.get(withdrawalId.value()));
+  }
+
   public List<PayoutTxn> allTxns() {
     return new ArrayList<>(txns.values());
   }

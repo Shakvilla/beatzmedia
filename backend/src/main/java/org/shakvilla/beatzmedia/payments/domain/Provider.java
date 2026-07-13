@@ -21,4 +21,9 @@ public enum Provider {
     }
     return Provider.valueOf(value.trim().toLowerCase());
   }
+
+  /** True for the mobile-money rails (mtn/telecel/airteltigo), which Redde charges/pays directly. */
+  public boolean isMomo() {
+    return this == mtn || this == telecel || this == airteltigo;
+  }
 }

@@ -111,7 +111,10 @@ class PayoutFlowIT {
   private PayoutMethodId addMomo(AccountId creator) {
     PayoutMethodView v =
         addPayoutMethod.add(
-            creator, new AddPayoutMethod.Command("MTN MoMo", "024...9210", MethodKind.momo));
+            creator,
+            new AddPayoutMethod.Command(
+                "MTN MoMo", "024...9210", MethodKind.momo, "mtn", "0244009210", null, null, null,
+                null));
     return new PayoutMethodId(v.id());
   }
 

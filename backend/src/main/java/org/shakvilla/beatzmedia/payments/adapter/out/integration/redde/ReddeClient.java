@@ -17,6 +17,13 @@ public interface ReddeClient {
   ReddeInitialResponse receive(String apikey, ReddeReceiveRequest body);
 
   /**
+   * Pay OUT from the merchant to a recipient (MoMo or bank), i.e. a creator withdrawal (WU-PAY-7).
+   * Returns the synchronous first-response; the confirmed PAID/FAILED arrives later via the cashout
+   * callback or a {@link #status} pull-back.
+   */
+  ReddeInitialResponse cashout(String apikey, ReddeCashoutRequest body);
+
+  /**
    * Authoritative status of a transaction by Redde's {@code transactionid}. This is the trusted
    * pull-back used to settle charges (ADR-28) — never the callback body alone.
    */

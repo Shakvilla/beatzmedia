@@ -18,6 +18,7 @@ import org.shakvilla.beatzmedia.payments.domain.PayoutBatchKind;
 import org.shakvilla.beatzmedia.payments.domain.PayoutMethod;
 import org.shakvilla.beatzmedia.payments.domain.PayoutMethodId;
 import org.shakvilla.beatzmedia.payments.domain.PayoutTxn;
+import org.shakvilla.beatzmedia.payments.domain.Provider;
 import org.shakvilla.beatzmedia.payments.domain.TxnId;
 import org.shakvilla.beatzmedia.payments.domain.WithdrawalId;
 import org.shakvilla.beatzmedia.payments.domain.WithdrawalRequest;
@@ -59,6 +60,12 @@ public class JpaPayoutRepository implements PayoutRepository {
     entity.kind = method.getKind().name();
     entity.label = method.getLabel();
     entity.detail = method.getDetail();
+    entity.network = method.getNetwork() == null ? null : method.getNetwork().name();
+    entity.walletNumber = method.getWalletNumber();
+    entity.bankName = method.getBankName();
+    entity.bankCode = method.getBankCode();
+    entity.accountName = method.getAccountName();
+    entity.accountNumber = method.getAccountNumber();
     entity.isDefault = method.isDefault();
     em.merge(entity);
     // Flush so the partial-unique default index is checked in this txn (after clearDefaultMethods).
@@ -281,9 +288,9 @@ public class JpaPayoutRepository implements PayoutRepository {
     entity.withdrawalId = txn.getWithdrawalId().value();
     entity.accountId = txn.getAccountId().value();
     entity.amountMinor = txn.getAmount().minor();
-    entity.status = "paid";
+    entity.status = txn.getStatus().wire();
     entity.providerRef = txn.getProviderRef();
-    entity.disburseTxnId = txn.getDisburseTxnId().value();
+    entity.disburseTxnId = txn.getDisburseTxnId() == null ? null : txn.getDisburseTxnId().value();
     entity.paidAt = txn.getPaidAt();
     try {
       em.persist(entity);
@@ -299,6 +306,92 @@ public class JpaPayoutRepository implements PayoutRepository {
     return txn;
   }
 
+  // ---- async cashout confirmation (WU-PAY-7) ------------------------------
+
+  @Override
+  public Optional<WithdrawalId> findSentWithdrawalIdByCashoutRef(String cashoutRef) {
+    @SuppressWarnings("unchecked")
+    List<String> rows =
+        em.createNativeQuery(
+                "SELECT withdrawal_id FROM payout_txn "
+                    + "WHERE provider_ref = :ref AND status = 'sent' LIMIT 1")
+            .setParameter("ref", cashoutRef)
+            .getResultList();
+    return rows.stream().findFirst().map(WithdrawalId::new);
+  }
+
+  @Override
+  public List<WithdrawalId> findSentWithdrawalIds(java.time.Instant sentBefore, int limit) {
+    // Lock-free candidate read (oldest send first). The per-withdrawal lock is taken inside the
+    // confirm boundary (findWithdrawalForUpdate, SKIP LOCKED), so this scan must not hold locks.
+    @SuppressWarnings("unchecked")
+    List<String> rows =
+        em.createNativeQuery(
+                "SELECT withdrawal_id FROM payout_txn "
+                    + "WHERE status = 'sent' AND paid_at < :before "
+                    + "ORDER BY paid_at ASC LIMIT :lim")
+            .setParameter("before", sentBefore)
+            .setParameter("lim", limit)
+            .getResultList();
+    return rows.stream().map(WithdrawalId::new).toList();
+  }
+
+  @Override
+  public Optional<String> findCashoutRef(WithdrawalId withdrawalId) {
+    @SuppressWarnings("unchecked")
+    List<String> rows =
+        em.createNativeQuery(
+                "SELECT provider_ref FROM payout_txn WHERE withdrawal_id = :wid LIMIT 1")
+            .setParameter("wid", withdrawalId.value())
+            .getResultList();
+    return rows.stream().findFirst();
+  }
+
+  @Override
+  public void markPayoutTxnPaid(
+      WithdrawalId withdrawalId, TxnId disburseTxnId, java.time.Instant paidAt) {
+    em.createNativeQuery(
+            "UPDATE payout_txn SET status = 'paid', disburse_txn_id = :txn, paid_at = :at "
+                + "WHERE withdrawal_id = :wid")
+        .setParameter("txn", disburseTxnId.value())
+        .setParameter("at", paidAt)
+        .setParameter("wid", withdrawalId.value())
+        .executeUpdate();
+  }
+
+  @Override
+  public void markPayoutTxnFailed(WithdrawalId withdrawalId, java.time.Instant at) {
+    em.createNativeQuery(
+            "UPDATE payout_txn SET status = 'failed', paid_at = :at WHERE withdrawal_id = :wid")
+        .setParameter("at", at)
+        .setParameter("wid", withdrawalId.value())
+        .executeUpdate();
+  }
+
+  @Override
+  public boolean recordCashoutEventIfNew(
+      String id,
+      WithdrawalId withdrawalId,
+      String providerEventId,
+      org.shakvilla.beatzmedia.payments.domain.PaymentEventType type,
+      String reason,
+      java.time.Instant receivedAt) {
+    int rows =
+        em.createNativeQuery(
+                "INSERT INTO payout_event "
+                    + "(id, withdrawal_id, provider_event_id, type, reason, received_at) "
+                    + "VALUES (:id, :wid, :eid, :type, :reason, :at) "
+                    + "ON CONFLICT (provider_event_id) DO NOTHING")
+            .setParameter("id", id)
+            .setParameter("wid", withdrawalId.value())
+            .setParameter("eid", providerEventId)
+            .setParameter("type", type.name())
+            .setParameter("reason", reason)
+            .setParameter("at", receivedAt)
+            .executeUpdate();
+    return rows == 1;
+  }
+
   // ---- helpers ------------------------------------------------------------
 
   private static PayoutMethod toMethodDomain(PayoutMethodEntity e) {
@@ -308,6 +401,12 @@ public class JpaPayoutRepository implements PayoutRepository {
         MethodKind.fromWire(e.kind),
         e.label,
         e.detail,
+        e.network == null ? null : Provider.fromWire(e.network),
+        e.walletNumber,
+        e.bankName,
+        e.bankCode,
+        e.accountName,
+        e.accountNumber,
         e.isDefault,
         e.createdAt);
   }

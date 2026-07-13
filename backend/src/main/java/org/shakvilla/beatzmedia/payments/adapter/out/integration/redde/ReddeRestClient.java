@@ -34,6 +34,11 @@ public interface ReddeRestClient extends ReddeClient {
   ReddeInitialResponse receive(@HeaderParam("apikey") String apikey, ReddeReceiveRequest body);
 
   @Override
+  @POST
+  @Path("/cashout")
+  ReddeInitialResponse cashout(@HeaderParam("apikey") String apikey, ReddeCashoutRequest body);
+
+  @Override
   @GET
   @Path("/status/{transactionid}")
   ReddeStatusResponse status(

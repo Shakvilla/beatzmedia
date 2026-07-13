@@ -11,8 +11,10 @@ import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway;
 import org.shakvilla.beatzmedia.payments.domain.OrderRef;
 import org.shakvilla.beatzmedia.payments.domain.PaymentEventType;
 import org.shakvilla.beatzmedia.payments.domain.PaymentMethodRef;
+import org.shakvilla.beatzmedia.payments.domain.PayoutDestination;
 import org.shakvilla.beatzmedia.payments.domain.Provider;
 import org.shakvilla.beatzmedia.payments.domain.ProviderException;
+import org.shakvilla.beatzmedia.payments.domain.WithdrawalId;
 import org.shakvilla.beatzmedia.platform.domain.Money;
 
 import com.fasterxml.jackson.databind.JsonNode;
@@ -81,6 +83,13 @@ public class ReddePaymentGateway implements PaymentGateway {
   }
 
   @Override
+  public boolean confirmsDisbursementAsync() {
+    // Redde cashouts settle asynchronously: the ledger posting waits for the pull-back-verified
+    // cashout webhook / recon poll (WU-PAY-7), never the synchronous /v1/cashout first-response.
+    return true;
+  }
+
+  @Override
   public ChargeHandle initiate(
       Provider provider, OrderRef ref, Money amount, PaymentMethodRef method) {
     requireConfigured();
@@ -139,6 +148,63 @@ public class ReddePaymentGateway implements PaymentGateway {
       throw new ProviderException("Redde rejected checkout: " + reasonOf(resp));
     }
     return new CheckoutHandle(requireRef(resp.checkouttransid()), requireRef(resp.checkouturl()));
+  }
+
+  @Override
+  public DisburseHandle disburse(
+      Provider provider, WithdrawalId withdrawalId, Money amount, PayoutDestination destination) {
+    requireConfigured();
+    if (amount == null || !amount.isPositive()) {
+      throw new ProviderException("Redde rejected cashout: amount must be positive");
+    }
+    if (destination == null) {
+      throw new ProviderException("Redde rejected cashout: destination is required");
+    }
+    ReddeCashoutRequest body = cashoutRequest(withdrawalId, amount, destination);
+
+    ReddeInitialResponse resp;
+    try {
+      resp = client.cashout(apiKey, body);
+    } catch (RuntimeException e) {
+      throw new ProviderException("Redde cashout call failed: " + e.getMessage());
+    }
+    if (resp == null || !"OK".equalsIgnoreCase(nullToEmpty(resp.status()))) {
+      throw new ProviderException("Redde rejected cashout: " + reasonOf(resp));
+    }
+    return new DisburseHandle(requireRef(resp.transactionid()));
+  }
+
+  /** Build the cashout body for a structured destination: MoMo telco+wallet, or BANK code+account. */
+  private ReddeCashoutRequest cashoutRequest(
+      WithdrawalId withdrawalId, Money amount, PayoutDestination destination) {
+    String clientRef = withdrawalId.value();
+    String description = "BeatzClik payout " + clientRef;
+    return switch (destination) {
+      case PayoutDestination.Momo m ->
+          new ReddeCashoutRequest(
+              amount.toCedis(),
+              appId,
+              clientRef,
+              clientTransIds.next(),
+              description,
+              merchantName,
+              momoPaymentOption(m.network()),
+              m.walletNumber(),
+              null,
+              null);
+      case PayoutDestination.Bank b ->
+          new ReddeCashoutRequest(
+              amount.toCedis(),
+              appId,
+              clientRef,
+              clientTransIds.next(),
+              description,
+              merchantName,
+              "BANK",
+              b.accountNumber(),
+              b.accountName(),
+              b.bankCode().name());
+    };
   }
 
   @Override
