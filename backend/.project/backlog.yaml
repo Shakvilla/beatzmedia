@@ -306,7 +306,7 @@ work_units:
     depends_on: [WU-PAY-6, WU-PAY-4]
     llfrs: [LLFR-PAYMENTS-07.1, LLFR-PAYMENTS-07.2]
     human_gate: [BEATZ_REDDE_API_KEY, BEATZ_REDDE_APP_ID]
-    status: todo   # Real disbursement via Redde POST /v1/cashout (MoMo + bank), replacing PayoutDisburser's
+    status: done   # merged in PR #114 (aa64321). Real disbursement via Redde POST /v1/cashout (MoMo + bank), replacing PayoutDisburser's
     # ledger-only bookkeeping. Adds disburse(...) to PaymentGateway; structured PayoutMethod fields
     # (network/walletNumber for momo, bank*/account* for bank) replacing free-text detail (closes the
     # WU-PAY-4 encrypt-detail carryover direction); fixes railFor() momo→mtn hardcode. Flips disbursement
