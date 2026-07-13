@@ -73,6 +73,24 @@ class InitiateChargeServiceTest {
     assertTrue(repo.lockCalls() >= 1, "idempotency lock is taken before the read/provider window");
   }
 
+  /** WU-PAY-6: a rail that can't be charged directly (Redde card) takes the hosted-checkout path. */
+  @Test
+  void routes_card_to_hosted_checkout_and_surfaces_checkout_url() {
+    gateway.setSupportsDirectCharge(false);
+    gateway.setCheckoutHandle(
+        new org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway.CheckoutHandle(
+            "cko-54", "https://checkout.reddeonline.com?token=abc"));
+    PaymentMethodRef card = new PaymentMethodRef(Provider.card, MethodKind.card, "n/a");
+
+    PaymentIntentView view =
+        service.charge(ACCOUNT, ORDER, TEN_CEDIS, card, new IdempotencyKey("idem-card"));
+
+    assertEquals("pending", view.status());
+    assertEquals("https://checkout.reddeonline.com?token=abc", view.checkoutUrl());
+    assertEquals("cko-54", view.providerRef()); // checkoutTransId stored as the provider ref
+    assertEquals(0, gateway.initiateCalls(), "direct initiate is not called for the checkout path");
+  }
+
   /** AC: same idempotency key twice -> exactly one provider charge and one intent. */
   @Test
   void same_key_same_body_returns_same_intent_no_double_charge() {

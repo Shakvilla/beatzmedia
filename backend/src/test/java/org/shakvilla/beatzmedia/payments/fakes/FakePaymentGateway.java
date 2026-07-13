@@ -29,6 +29,11 @@ public class FakePaymentGateway implements PaymentGateway {
   private final Map<String, ProviderStatus> statusByRef = new HashMap<>();
   private ProviderStatus defaultStatus = ProviderStatus.pending();
   private boolean queryThrows = false;
+  private final AtomicInteger queryStatusCalls = new AtomicInteger(0);
+
+  // ---- WU-PAY-6 controls -------------------------------------------------
+  private boolean supportsDirectCharge = true;
+  private CheckoutHandle checkoutHandle = new CheckoutHandle("cko-ref", "https://checkout.test/xyz");
 
   /** Prime the gateway to throw a {@link ProviderException} on the next initiate call. */
   public void failOnNextInitiate() {
@@ -80,9 +85,35 @@ public class FakePaymentGateway implements PaymentGateway {
 
   @Override
   public ProviderStatus queryStatus(Provider provider, String providerRef) {
+    queryStatusCalls.incrementAndGet();
     if (queryThrows) {
       throw new ProviderException("simulated rail unreachable");
     }
     return statusByRef.getOrDefault(providerRef, defaultStatus);
+  }
+
+  /** How many times {@code queryStatus} was called. */
+  public int queryStatusCalls() {
+    return queryStatusCalls.get();
+  }
+
+  /** Steer {@link #supportsDirectCharge} (default: true). */
+  public void setSupportsDirectCharge(boolean value) {
+    this.supportsDirectCharge = value;
+  }
+
+  /** Prime the handle {@link #initiateCheckout} returns. */
+  public void setCheckoutHandle(CheckoutHandle handle) {
+    this.checkoutHandle = handle;
+  }
+
+  @Override
+  public boolean supportsDirectCharge(Provider provider) {
+    return supportsDirectCharge;
+  }
+
+  @Override
+  public CheckoutHandle initiateCheckout(OrderRef ref, Money amount) {
+    return checkoutHandle;
   }
 }
