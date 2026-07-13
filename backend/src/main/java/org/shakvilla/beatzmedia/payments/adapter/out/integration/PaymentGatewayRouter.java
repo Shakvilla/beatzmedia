@@ -11,13 +11,11 @@ import org.shakvilla.beatzmedia.platform.application.port.out.FeatureFlags;
 import org.shakvilla.beatzmedia.platform.domain.FeatureKey;
 import org.shakvilla.beatzmedia.platform.domain.Money;
 
-import io.quarkus.arc.Identifier;
-
 /**
  * The one unqualified {@link PaymentGateway} bean the application injects (WU-PAY-6). It holds the
- * two qualified implementations — {@code @Identifier("sandbox")} {@link SandboxPaymentGateway} and
- * {@code @Identifier("redde")} {@code ReddePaymentGateway} — and delegates each call to whichever is
- * active, decided per-call by {@link FeatureKey#PSP_REDDE}.
+ * two {@link PspGateway}-qualified implementations — {@code @PspGateway(SANDBOX)}
+ * {@link SandboxPaymentGateway} and {@code @PspGateway(REDDE)} {@code ReddePaymentGateway} — and
+ * delegates each call to whichever is active, decided per-call by {@link FeatureKey#PSP_REDDE}.
  *
  * <p><strong>Why a router (not build-time selection):</strong> the toggle must be flippable at
  * runtime without a redeploy (the feature's whole point — go live on Redde, or fall back to the
@@ -41,8 +39,8 @@ public class PaymentGatewayRouter implements PaymentGateway {
 
   @Inject
   public PaymentGatewayRouter(
-      @Identifier("sandbox") PaymentGateway sandbox,
-      @Identifier("redde") PaymentGateway redde,
+      @PspGateway(PspGateway.Vendor.SANDBOX) PaymentGateway sandbox,
+      @PspGateway(PspGateway.Vendor.REDDE) PaymentGateway redde,
       FeatureFlags featureFlags) {
     this.sandbox = sandbox;
     this.redde = redde;

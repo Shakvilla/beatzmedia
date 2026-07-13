@@ -5,6 +5,7 @@ import jakarta.inject.Inject;
 
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.rest.client.inject.RestClient;
+import org.shakvilla.beatzmedia.payments.adapter.out.integration.PspGateway;
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway;
 import org.shakvilla.beatzmedia.payments.domain.OrderRef;
 import org.shakvilla.beatzmedia.payments.domain.PaymentEventType;
@@ -15,8 +16,6 @@ import org.shakvilla.beatzmedia.platform.domain.Money;
 
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
-
-import io.quarkus.arc.Identifier;
 
 /**
  * Real {@link PaymentGateway} backed by the Redde (Wigal) PSP (WU-PAY-6, ADR-27). One vendor covers
@@ -35,7 +34,7 @@ import io.quarkus.arc.Identifier;
  * so flipping {@code PSP_REDDE} without credentials cannot silently mis-charge.
  */
 @ApplicationScoped
-@Identifier("redde")
+@PspGateway(PspGateway.Vendor.REDDE)
 public class ReddePaymentGateway implements PaymentGateway {
 
   private final ReddeClient client;

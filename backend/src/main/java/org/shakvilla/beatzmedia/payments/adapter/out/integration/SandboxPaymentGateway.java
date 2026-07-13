@@ -20,8 +20,6 @@ import org.shakvilla.beatzmedia.payments.domain.ProviderException;
 import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
 import org.shakvilla.beatzmedia.platform.domain.Money;
 
-import io.quarkus.arc.Identifier;
-
 /**
  * Sandbox implementation of {@link PaymentGateway} that stands in for the real rails (MTN /
  * Telecel / AirtelTigo MoMo, card PSP, bank) until production provider credentials are supplied.
@@ -46,7 +44,7 @@ import io.quarkus.arc.Identifier;
  * </ul>
  */
 @ApplicationScoped
-@Identifier("sandbox")
+@PspGateway(PspGateway.Vendor.SANDBOX)
 public class SandboxPaymentGateway implements PaymentGateway {
 
   private static final String HMAC_ALGO = "HmacSHA256";

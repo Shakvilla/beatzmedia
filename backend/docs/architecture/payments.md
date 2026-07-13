@@ -669,7 +669,7 @@ public interface IdGenerator { String newId(); }
 > **WU-PAY-6 implementation notes (as-built) — Redde PSP gateway, pluggable (LLFR-PAYMENTS-06.*).** See
 > ADR-27 (one vendor, all rails, `PSP_REDDE`-selected) and ADR-28 (verify-by-pull-back, no HMAC).
 > - **Pluggability.** `PaymentGatewayRouter` is the sole unqualified `PaymentGateway` bean; it delegates
->   per-call to `@Identifier("sandbox")` `SandboxPaymentGateway` or `@Identifier("redde")`
+>   per-call to `@PspGateway(SANDBOX)` `SandboxPaymentGateway` or `@PspGateway(REDDE)`
 >   `ReddePaymentGateway` based on `FeatureKey.PSP_REDDE` (new key; seeded **false** in V966 because
 >   `FeatureFlagsAdapter` fails OPEN for unknown keys). It is NOT an admin-settings flag (out-of-band ops
 >   toggle). Every existing `@Inject PaymentGateway` site is unchanged; flag off = today's sandbox
