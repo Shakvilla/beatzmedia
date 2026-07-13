@@ -165,6 +165,27 @@ class HandleCashoutWebhookServiceTest {
   }
 
   @Test
+  void recon_reads_sent_candidates_and_confirms_each() {
+    WithdrawalId wid = seedSent("w7");
+    gateway.setStatus(CASHOUT_REF, ProviderStatus.settled());
+
+    // The recon job path: read the SENT candidates, then confirm each in its own boundary.
+    var candidates = service.readSentCandidates(FakeClock.fixed().now().plusSeconds(60), 10);
+    assertTrue(candidates.contains(wid), "the SENT withdrawal is a recon candidate");
+    service.confirmSent(wid);
+
+    assertEquals(WithdrawalStatus.PAID, payouts.findWithdrawal(wid).get().getStatus());
+    assertTrue(payoutLedgerEntries() > 0);
+  }
+
+  @Test
+  void confirmSent_is_a_no_op_when_no_cashout_ref() {
+    // A withdrawal with no payout txn (no cashout ref) is skipped cleanly.
+    service.confirmSent(new WithdrawalId("no-txn"));
+    assertEquals(0, payoutLedgerEntries());
+  }
+
+  @Test
   void malformed_body_is_rejected() {
     assertThrows(ValidationException.class, () -> service.handle("not json".getBytes()));
   }

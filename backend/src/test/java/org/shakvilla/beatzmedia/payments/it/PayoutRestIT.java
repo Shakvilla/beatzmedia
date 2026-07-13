@@ -114,7 +114,9 @@ class PayoutRestIT {
         given()
             .header("Authorization", "Bearer " + artistToken)
             .contentType(ContentType.JSON)
-            .body("{\"label\":\"MTN MoMo\",\"detail\":\"024...9210\",\"kind\":\"momo\"}")
+            .body(
+                "{\"label\":\"MTN MoMo\",\"detail\":\"024...9210\",\"kind\":\"momo\","
+                    + "\"network\":\"mtn\",\"walletNumber\":\"0244009210\"}")
             .when().post(METHODS_URL)
             .then().statusCode(201)
             .body("isDefault", equalTo(true))
