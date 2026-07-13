@@ -5,6 +5,8 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.Optional;
+
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway.ChargeHandle;
@@ -42,7 +44,15 @@ class ReddePaymentGatewayTest {
           }
         };
     return new ReddePaymentGateway(
-        client, ids, new ObjectMapper(), apiKey, appId, "BeatzClik", "logo", "https://ok", "https://no");
+        client,
+        ids,
+        new ObjectMapper(),
+        Optional.of(apiKey),
+        Optional.of(appId),
+        "BeatzClik",
+        Optional.of("logo"),
+        Optional.of("https://ok"),
+        Optional.of("https://no"));
   }
 
   private ReddePaymentGateway gateway() {

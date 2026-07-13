@@ -1,5 +1,7 @@
 package org.shakvilla.beatzmedia.payments.adapter.out.integration.redde;
 
+import java.util.Optional;
+
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
@@ -51,21 +53,25 @@ public class ReddePaymentGateway implements PaymentGateway {
       ReddeClient client,
       ReddeClientTransIdGenerator clientTransIds,
       ObjectMapper objectMapper,
-      @ConfigProperty(name = "beatz.redde.api-key") String apiKey,
-      @ConfigProperty(name = "beatz.redde.app-id") String appId,
+      @ConfigProperty(name = "beatz.redde.api-key") Optional<String> apiKey,
+      @ConfigProperty(name = "beatz.redde.app-id") Optional<String> appId,
       @ConfigProperty(name = "beatz.redde.merchant-name", defaultValue = "BeatzClik") String merchantName,
-      @ConfigProperty(name = "beatz.redde.logo-link", defaultValue = "") String logoLink,
-      @ConfigProperty(name = "beatz.redde.checkout-success-url", defaultValue = "") String checkoutSuccessUrl,
-      @ConfigProperty(name = "beatz.redde.checkout-failure-url", defaultValue = "") String checkoutFailureUrl) {
+      @ConfigProperty(name = "beatz.redde.logo-link") Optional<String> logoLink,
+      @ConfigProperty(name = "beatz.redde.checkout-success-url") Optional<String> checkoutSuccessUrl,
+      @ConfigProperty(name = "beatz.redde.checkout-failure-url") Optional<String> checkoutFailureUrl) {
     this.client = client;
     this.clientTransIds = clientTransIds;
     this.objectMapper = objectMapper;
-    this.apiKey = apiKey;
-    this.appId = appId;
+    // The credential/URL properties default to an EMPTY value (human gate), which SmallRye rejects
+    // for a plain String @ConfigProperty ("Failed to load config value ... for java.lang.String").
+    // Inject as Optional (empty value -> Optional.empty()) and resolve to "" so the app boots with
+    // Redde unconfigured; the fail-closed guard then blocks calls until real secrets are supplied.
+    this.apiKey = apiKey.orElse("");
+    this.appId = appId.orElse("");
     this.merchantName = merchantName;
-    this.logoLink = logoLink;
-    this.checkoutSuccessUrl = checkoutSuccessUrl;
-    this.checkoutFailureUrl = checkoutFailureUrl;
+    this.logoLink = logoLink.orElse("");
+    this.checkoutSuccessUrl = checkoutSuccessUrl.orElse("");
+    this.checkoutFailureUrl = checkoutFailureUrl.orElse("");
   }
 
   @Override

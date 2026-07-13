@@ -3,12 +3,15 @@ package org.shakvilla.beatzmedia.payments.it;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import jakarta.inject.Inject;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.shakvilla.beatzmedia.payments.adapter.out.integration.PspGateway;
+import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway;
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway.ProviderStatus;
 
 import io.quarkus.test.junit.QuarkusTest;
@@ -37,6 +40,14 @@ class ReddeWebhookIT {
 
   @Inject PaymentEventRecorder recorder;
 
+  // Force ReddePaymentGateway to be instantiated (CountingPaymentGateway otherwise shadows the
+  // unqualified router, so the Redde bean — and its @ConfigProperty injection — is never exercised
+  // by the suite). Guards against the boot crash the smoke test caught: SmallRye rejects an empty
+  // String @ConfigProperty, so the blank-by-default Redde credentials must inject as Optional.
+  @Inject
+  @PspGateway(PspGateway.Vendor.REDDE)
+  PaymentGateway reddeGateway;
+
   private String fanToken;
 
   @BeforeEach
@@ -60,6 +71,12 @@ class ReddeWebhookIT {
             .extract()
             .jsonPath()
             .getString("token");
+  }
+
+  @Test
+  void redde_gateway_bean_boots_with_blank_credentials() {
+    // If the empty credential defaults failed @ConfigProperty conversion, the app would not start.
+    assertNotNull(reddeGateway);
   }
 
   @Test
