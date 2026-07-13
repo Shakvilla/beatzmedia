@@ -1,14 +1,17 @@
 package org.shakvilla.beatzmedia.payments.application.port.out;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
 import org.shakvilla.beatzmedia.payments.domain.AccountId;
 import org.shakvilla.beatzmedia.payments.domain.IdempotencyKey;
+import org.shakvilla.beatzmedia.payments.domain.PaymentEventType;
 import org.shakvilla.beatzmedia.payments.domain.PayoutBatch;
 import org.shakvilla.beatzmedia.payments.domain.PayoutMethod;
 import org.shakvilla.beatzmedia.payments.domain.PayoutMethodId;
 import org.shakvilla.beatzmedia.payments.domain.PayoutTxn;
+import org.shakvilla.beatzmedia.payments.domain.TxnId;
 import org.shakvilla.beatzmedia.payments.domain.WithdrawalId;
 import org.shakvilla.beatzmedia.payments.domain.WithdrawalRequest;
 
@@ -117,4 +120,44 @@ public interface PayoutRepository {
    * @throws DuplicatePayoutException if a payout txn already exists for the withdrawal
    */
   PayoutTxn savePayoutTxn(PayoutTxn txn);
+
+  // ---- async cashout confirmation (WU-PAY-7) ------------------------------
+
+  /**
+   * The withdrawal id whose {@code SENT} payout txn carries the given cashout {@code provider_ref} —
+   * how the cashout webhook resolves which withdrawal an (unsigned) Redde callback refers to. Empty
+   * if no in-flight cashout matches (unknown/duplicate-after-settle → the webhook 202s).
+   */
+  Optional<WithdrawalId> findSentWithdrawalIdByCashoutRef(String cashoutRef);
+
+  /**
+   * Ids of withdrawals still {@code SENT} whose cashout was sent before {@code sentBefore} (a
+   * poll-after window), oldest first — the {@code PayoutReconJob} candidates for a pull-back when the
+   * cashout webhook never arrived. Lock-free read; the per-withdrawal lock is taken inside the
+   * confirm boundary.
+   */
+  List<WithdrawalId> findSentWithdrawalIds(Instant sentBefore, int limit);
+
+  /** The cashout {@code provider_ref} recorded on a withdrawal's payout txn, or empty. */
+  Optional<String> findCashoutRef(WithdrawalId withdrawalId);
+
+  /** Update a withdrawal's payout txn to {@code paid}, tracing the posted disbursement ledger txn. */
+  void markPayoutTxnPaid(WithdrawalId withdrawalId, TxnId disburseTxnId, Instant paidAt);
+
+  /** Update a withdrawal's payout txn to {@code failed} (no ledger disbursement is posted). */
+  void markPayoutTxnFailed(WithdrawalId withdrawalId, Instant at);
+
+  /**
+   * Idempotency backstop for the cashout webhook: atomically {@code INSERT … ON CONFLICT
+   * (provider_event_id) DO NOTHING} into {@code payout_event}. Returns {@code true} on the first
+   * delivery, {@code false} for a duplicate/replay — so a repeated cashout callback confirms the
+   * withdrawal at most once (INV-6), the payout analog of {@code PaymentEventRepository.recordEvent}.
+   */
+  boolean recordCashoutEventIfNew(
+      String id,
+      WithdrawalId withdrawalId,
+      String providerEventId,
+      PaymentEventType type,
+      String reason,
+      Instant receivedAt);
 }

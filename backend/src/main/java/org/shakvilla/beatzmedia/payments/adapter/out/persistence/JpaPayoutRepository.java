@@ -306,6 +306,92 @@ public class JpaPayoutRepository implements PayoutRepository {
     return txn;
   }
 
+  // ---- async cashout confirmation (WU-PAY-7) ------------------------------
+
+  @Override
+  public Optional<WithdrawalId> findSentWithdrawalIdByCashoutRef(String cashoutRef) {
+    @SuppressWarnings("unchecked")
+    List<String> rows =
+        em.createNativeQuery(
+                "SELECT withdrawal_id FROM payout_txn "
+                    + "WHERE provider_ref = :ref AND status = 'sent' LIMIT 1")
+            .setParameter("ref", cashoutRef)
+            .getResultList();
+    return rows.stream().findFirst().map(WithdrawalId::new);
+  }
+
+  @Override
+  public List<WithdrawalId> findSentWithdrawalIds(java.time.Instant sentBefore, int limit) {
+    // Lock-free candidate read (oldest send first). The per-withdrawal lock is taken inside the
+    // confirm boundary (findWithdrawalForUpdate, SKIP LOCKED), so this scan must not hold locks.
+    @SuppressWarnings("unchecked")
+    List<String> rows =
+        em.createNativeQuery(
+                "SELECT withdrawal_id FROM payout_txn "
+                    + "WHERE status = 'sent' AND paid_at < :before "
+                    + "ORDER BY paid_at ASC LIMIT :lim")
+            .setParameter("before", sentBefore)
+            .setParameter("lim", limit)
+            .getResultList();
+    return rows.stream().map(WithdrawalId::new).toList();
+  }
+
+  @Override
+  public Optional<String> findCashoutRef(WithdrawalId withdrawalId) {
+    @SuppressWarnings("unchecked")
+    List<String> rows =
+        em.createNativeQuery(
+                "SELECT provider_ref FROM payout_txn WHERE withdrawal_id = :wid LIMIT 1")
+            .setParameter("wid", withdrawalId.value())
+            .getResultList();
+    return rows.stream().findFirst();
+  }
+
+  @Override
+  public void markPayoutTxnPaid(
+      WithdrawalId withdrawalId, TxnId disburseTxnId, java.time.Instant paidAt) {
+    em.createNativeQuery(
+            "UPDATE payout_txn SET status = 'paid', disburse_txn_id = :txn, paid_at = :at "
+                + "WHERE withdrawal_id = :wid")
+        .setParameter("txn", disburseTxnId.value())
+        .setParameter("at", paidAt)
+        .setParameter("wid", withdrawalId.value())
+        .executeUpdate();
+  }
+
+  @Override
+  public void markPayoutTxnFailed(WithdrawalId withdrawalId, java.time.Instant at) {
+    em.createNativeQuery(
+            "UPDATE payout_txn SET status = 'failed', paid_at = :at WHERE withdrawal_id = :wid")
+        .setParameter("at", at)
+        .setParameter("wid", withdrawalId.value())
+        .executeUpdate();
+  }
+
+  @Override
+  public boolean recordCashoutEventIfNew(
+      String id,
+      WithdrawalId withdrawalId,
+      String providerEventId,
+      org.shakvilla.beatzmedia.payments.domain.PaymentEventType type,
+      String reason,
+      java.time.Instant receivedAt) {
+    int rows =
+        em.createNativeQuery(
+                "INSERT INTO payout_event "
+                    + "(id, withdrawal_id, provider_event_id, type, reason, received_at) "
+                    + "VALUES (:id, :wid, :eid, :type, :reason, :at) "
+                    + "ON CONFLICT (provider_event_id) DO NOTHING")
+            .setParameter("id", id)
+            .setParameter("wid", withdrawalId.value())
+            .setParameter("eid", providerEventId)
+            .setParameter("type", type.name())
+            .setParameter("reason", reason)
+            .setParameter("at", receivedAt)
+            .executeUpdate();
+    return rows == 1;
+  }
+
   // ---- helpers ------------------------------------------------------------
 
   private static PayoutMethod toMethodDomain(PayoutMethodEntity e) {

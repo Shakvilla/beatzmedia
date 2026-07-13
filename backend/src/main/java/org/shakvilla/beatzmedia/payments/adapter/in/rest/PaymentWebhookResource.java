@@ -11,6 +11,7 @@ import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
+import org.shakvilla.beatzmedia.payments.application.port.in.HandleCashoutWebhook;
 import org.shakvilla.beatzmedia.payments.application.port.in.HandleProviderWebhook;
 import org.shakvilla.beatzmedia.payments.application.port.in.HandleReddeReceipt;
 import org.shakvilla.beatzmedia.payments.application.port.in.WebhookResult;
@@ -37,12 +38,16 @@ public class PaymentWebhookResource {
 
   private final HandleProviderWebhook handler;
   private final HandleReddeReceipt reddeReceiptHandler;
+  private final HandleCashoutWebhook cashoutHandler;
 
   @Inject
   public PaymentWebhookResource(
-      HandleProviderWebhook handler, HandleReddeReceipt reddeReceiptHandler) {
+      HandleProviderWebhook handler,
+      HandleReddeReceipt reddeReceiptHandler,
+      HandleCashoutWebhook cashoutHandler) {
     this.handler = handler;
     this.reddeReceiptHandler = reddeReceiptHandler;
+    this.cashoutHandler = cashoutHandler;
   }
 
   /** POST /v1/payments/webhooks/{provider} — receive a signed provider callback. */
@@ -74,6 +79,21 @@ public class PaymentWebhookResource {
   @Produces(MediaType.APPLICATION_JSON)
   public Response receiveRedde(byte[] rawBody) {
     return toResponse(reddeReceiptHandler.handle(rawBody));
+  }
+
+  /**
+   * POST /v1/payments/webhooks/redde/cashout — Redde "Cash Out Callback URL" (WU-PAY-7). Redde's
+   * receive and cashout callbacks are structurally identical (no type discriminator), so they are
+   * disambiguated by PATH: this one confirms disbursements via {@link HandleCashoutWebhook} (its own
+   * pull-back + idempotency table), never charges. Unsigned; trust comes from the pull-back (ADR-28).
+   */
+  @POST
+  @Path("/redde/cashout")
+  @PermitAll
+  @Consumes(MediaType.WILDCARD)
+  @Produces(MediaType.APPLICATION_JSON)
+  public Response cashoutRedde(byte[] rawBody) {
+    return toResponse(cashoutHandler.handle(rawBody));
   }
 
   private static Response toResponse(WebhookResult result) {
