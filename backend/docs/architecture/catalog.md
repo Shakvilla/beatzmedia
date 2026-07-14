@@ -373,6 +373,13 @@ role; public reads accept anonymous (token, if present, decorates `ownership`/`p
 | GET | `/tracks/:id` | public | — | `Track` | 200 | 404 `TRACK_NOT_FOUND` | 01.6 |
 | GET | `/tracks/:id/lyrics` | public | — | `{ lines: {time,text}[] }` | 200 | 404 `LYRICS_NOT_FOUND` | 01.6 |
 | GET | `/playlists/:id` | public | — | `Playlist (+tracks)` | 200 | 404 (private→404) | 01.7 |
+| POST | `/catalog/resolve` | public | `ResolveCatalogRequest` | `ResolvedCatalogView` | 200 | 422 `VALIDATION` (over-cap) | — |
+
+> **`POST /v1/catalog/resolve`** — batch id-list → full-object resolution across tracks/artists/albums/
+> playlists in one call, for list screens that hold only ids (e.g. the library). Reuses the existing
+> `CatalogRepository.*ByIds` batch reads + view mappers. Lenient (unknown ids omitted, never 404);
+> non-public playlists omitted (same rule as `/playlists/:id`); 200-ids-per-kind cap → 422 `VALIDATION`
+> with `field` = the offending list. Track ownership decorated per-caller via the optional JWT.
 | GET | `/studio/releases?status=&page=&size=` | artist (owner) | — | `{ items: StudioRelease[], page, size, total }` | 200 | 401/403 | 02.1 |
 | POST | `/studio/releases` | artist | `SubmitReleaseRequest` (full draft) | `StudioRelease` (`in_review`) | 201 | 422 `TRACK_COUNT_INVALID`, 422 `SPLIT_OVER_100` | 02.2 |
 | GET | `/studio/releases/:id` | artist (owner) | — | `StudioRelease` | 200 | 403/404 | 02.3 |
@@ -426,6 +433,9 @@ Field-level, traceable to `Frontend/src/types/index.ts`, `studio-data.ts`, and
   `bio?`, `location?`, `genres?: Genre[]`. Sub-collections returned by `/tracks`, `/albums`, `/shows`.
 - **Playlist** — `id`, `title`, `description?`, `creator`, `creatorAvatar?`, `image`, `isPublic`,
   `followers?`, `trackIds: ID[]`; detail embeds `tracks: Track[]`.
+- **ResolvedCatalogView** — `tracks: Track[]`, `artists: Artist[]`, `albums: Album[]`,
+  `playlists: Playlist[]`; response for `POST /catalog/resolve`, reusing the per-kind views verbatim.
+  Request `ResolveCatalogRequest` — `trackIds?`, `artistIds?`, `albumIds?`, `playlistIds?` (`ID[]`).
 - **StudioRelease** — `id`, `title`, `type` (`single|ep|album|mixtape`), `status`
   (`live|scheduled|in_review|draft|takedown`), `date` (display string; `—` for drafts), `trackCount`,
   `streams`, `revenue` (cedis), `price` (cedis, per-track list price).

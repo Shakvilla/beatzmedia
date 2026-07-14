@@ -68,6 +68,14 @@ UI: home, search, artist, album, track, playlist pages. Shapes: `Artist`, `Album
 | GET | `/tracks/:id` | track detail (credits, lyrics ref) | `Track` |
 | GET | `/tracks/:id/lyrics` | timed lyrics | `{ lines: { time, text }[] }` |
 | GET | `/playlists/:id` | + tracks | `Playlist` (+ `tracks: Track[]`) |
+| POST | `/catalog/resolve` | batch-resolve id-lists → full objects in one call (for list screens that hold only ids, e.g. the library); every request field optional | `{ tracks: Track[], artists: Artist[], albums: Album[], playlists: Playlist[] }` |
+
+> **`POST /catalog/resolve`** request: `{ trackIds?, artistIds?, albumIds?, playlistIds? }` (string[]).
+> Every response array is always present (possibly empty). **Lenient:** unknown/removed ids are
+> silently omitted — never a `404`. **Private playlists are omitted** (same visibility rule as
+> `GET /playlists/:id`). **Cap:** 200 ids per list → over-cap returns `422`
+> `{ error: { code: "VALIDATION", field: "<listName>" } }`. Track `ownership`/`price` reflect the
+> caller (anonymous callers get intrinsic ownership), exactly like `GET /tracks/:id`.
 
 ---
 
