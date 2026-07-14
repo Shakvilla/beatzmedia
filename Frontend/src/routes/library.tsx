@@ -1,21 +1,28 @@
 import { createFileRoute, useNavigate, Link } from '@tanstack/react-router'
+import { useSuspenseQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Heart, Check, Play, Plus, ListMusic } from 'lucide-react'
 import { Card, CardContent, CardImage, CardSubtitle, CardTitle } from '../components/ui/card'
 import { usePlayer } from '../features/player/player-context'
 import { useCollection } from '../features/collection/collection-context'
 import { CreatePlaylistModal } from '../features/collection/components/create-playlist-modal'
-import {
-  getAlbum,
-  getArtist,
-  getPlaylist,
-  getTracksByIds,
-  tracks as allTracks,
-} from '../lib/mock-data'
+import { resolveQuery } from '../lib/api/queries/catalog'
+import { collectionQuery } from '../lib/api/queries/collection'
 import { formatDuration } from '../lib/format'
 import { cn } from '../utils/cn'
 
 export const Route = createFileRoute('/library')({
+  loader: async ({ context: { queryClient } }) => {
+    const c = await queryClient.ensureQueryData(collectionQuery())
+    await queryClient.ensureQueryData(
+      resolveQuery({
+        trackIds: c.likedTracks,
+        artistIds: c.followedArtists,
+        albumIds: c.savedAlbums,
+        playlistIds: c.followedPlaylists,
+      }),
+    )
+  },
   component: LibraryComponent,
 })
 
@@ -27,13 +34,17 @@ function LibraryComponent() {
   const [createOpen, setCreateOpen] = useState(false)
   const navigate = useNavigate()
   const { playQueue } = usePlayer()
-  const { likedTracks, followedPlaylists, followedArtists, savedAlbums, userPlaylists } = useCollection()
+  const { likedTracks, followedPlaylists, followedArtists, savedAlbums, userPlaylists, ownedTracks } = useCollection()
 
-  const likedList = getTracksByIds(likedTracks)
-  const playlists = followedPlaylists.map(getPlaylist).filter((p): p is NonNullable<typeof p> => Boolean(p))
-  const artistsList = followedArtists.map(getArtist).filter((a): a is NonNullable<typeof a> => Boolean(a))
-  const albumsList = savedAlbums.map(getAlbum).filter((a): a is NonNullable<typeof a> => Boolean(a))
-  const ownedCount = allTracks.filter((t) => t.ownership === 'owned').length
+  const { data: resolved } = useSuspenseQuery(
+    resolveQuery({ trackIds: likedTracks, artistIds: followedArtists, albumIds: savedAlbums, playlistIds: followedPlaylists }),
+  )
+  const likedList = resolved.tracks
+  const playlists = resolved.playlists
+  const artistsList = resolved.artists
+  const albumsList = resolved.albums
+  const ownedCount = ownedTracks.length
+  const playlistCoverById = new Map(resolved.tracks.map((t) => [t.id, t.image]))
 
   const showSection = (s: Tab) => tab === 'All' || tab === s
 
@@ -119,7 +130,7 @@ function LibraryComponent() {
 
           {/* User-created playlists */}
           {showSection('Playlists') && userPlaylists.map((p) => {
-            const cover = getTracksByIds(p.trackIds)[0]?.image
+            const cover = p.trackIds.map((id) => playlistCoverById.get(id)).find(Boolean)
             return (
               <Card key={p.id} to={`/playlist/${p.id}`}>
                 {cover ? (
