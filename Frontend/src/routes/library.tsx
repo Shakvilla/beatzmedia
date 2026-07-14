@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, Link } from '@tanstack/react-router'
-import { useSuspenseQuery } from '@tanstack/react-query'
+import { useSuspenseQuery, CancelledError } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Heart, Check, Play, Plus, ListMusic } from 'lucide-react'
 import { Card, CardContent, CardImage, CardSubtitle, CardTitle } from '../components/ui/card'
@@ -13,15 +13,22 @@ import { cn } from '../utils/cn'
 
 export const Route = createFileRoute('/library')({
   loader: async ({ context: { queryClient } }) => {
-    const c = await queryClient.ensureQueryData(collectionQuery())
-    await queryClient.ensureQueryData(
-      resolveQuery({
-        trackIds: c.likedTracks,
-        artistIds: c.followedArtists,
-        albumIds: c.savedAlbums,
-        playlistIds: c.followedPlaylists,
-      }),
-    )
+    // Best-effort prefetch so the first render is populated. A concurrent collection
+    // mutation can cancel these in-flight; that's benign — the component's useSuspenseQuery
+    // fetches fresh — so swallow CancelledError and let any real error surface.
+    try {
+      const c = await queryClient.ensureQueryData(collectionQuery())
+      await queryClient.ensureQueryData(
+        resolveQuery({
+          trackIds: c.likedTracks,
+          artistIds: c.followedArtists,
+          albumIds: c.savedAlbums,
+          playlistIds: c.followedPlaylists,
+        }),
+      )
+    } catch (e) {
+      if (!(e instanceof CancelledError)) throw e
+    }
   },
   component: LibraryComponent,
 })

@@ -7,7 +7,7 @@
  * createPlaylist is async (the id is server-generated).
  */
 
-import { createContext, useContext, useEffect, useMemo, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, type ReactNode } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import type { UserPlaylist } from '../../types'
 import { useAuth } from '../auth/auth-context'
@@ -72,14 +72,21 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
   const { data } = useQuery({ ...collectionQuery(), enabled: isAuthenticated })
   const collection = data ?? EMPTY_COLLECTION
 
-  // Drop the collection cache when the session ends (server is the source of truth).
+  // Drop the collection cache on logout (server is the source of truth). Only on an actual
+  // authed→unauthed transition — not on first mount (before auth hydrates isAuthenticated is
+  // false), where removeQueries would cancel a loader's in-flight collection fetch.
+  const wasAuthed = useRef(isAuthenticated)
   useEffect(() => {
-    if (!isAuthenticated) queryClient.removeQueries({ queryKey: COLLECTION_KEY })
+    if (wasAuthed.current && !isAuthenticated) {
+      queryClient.removeQueries({ queryKey: COLLECTION_KEY })
+    }
+    wasAuthed.current = isAuthenticated
   }, [isAuthenticated, queryClient])
 
   // Generic optimistic-cache helper: apply `transform` immediately, run `call`, roll back on error.
+  // (No cancelQueries here: it would surface as a CancelledError in route loaders that
+  // ensureQueryData the collection. The onSettled invalidate reconciles with the server instead.)
   async function optimistic(transform: (d: CollectionData) => CollectionData, call: () => Promise<unknown>) {
-    await queryClient.cancelQueries({ queryKey: COLLECTION_KEY })
     const prev = queryClient.getQueryData<CollectionData>(COLLECTION_KEY) ?? EMPTY_COLLECTION
     queryClient.setQueryData<CollectionData>(COLLECTION_KEY, transform(prev))
     try {
