@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { apiFetch } from '../client'
-import { homeQuery, artistQuery, albumQuery, trackQuery, browseCategoriesQuery, lyricsQuery } from './catalog'
+import { homeQuery, artistQuery, albumQuery, trackQuery, browseCategoriesQuery, lyricsQuery, resolveQuery } from './catalog'
 
 vi.mock('../client', () => ({ apiFetch: vi.fn() }))
 
@@ -78,5 +78,26 @@ describe('catalog query factories', () => {
 
     expect(apiFetch).toHaveBeenCalledWith('/tracks/t1/lyrics')
     expect(result).toEqual([{ time: 0, text: 'la' }])
+  })
+
+  it('resolveQuery posts the id-lists and maps all four kinds', async () => {
+    vi.mocked(apiFetch).mockResolvedValue({
+      tracks: [{ id: 't1', title: 'A', artistId: 'a1', artistName: 'Art', albumId: null, albumTitle: null, duration: 10, image: 'i', ownership: 'free', price: null, plays: 1, audioUrl: null, credits: null, quality: null, year: null }],
+      artists: [{ id: 'a1', name: 'Art', image: 'im', coverImage: null, verified: null, monthlyListeners: null, followers: null, bio: null, location: null, genres: null }],
+      albums: [{ id: 'al1', title: 'Alb', artistId: 'a1', artistName: 'Art', year: 2024, coverImage: 'c', genres: null, trackIds: [], tracks: null }],
+      playlists: [{ id: 'p1', title: 'PL', description: null, creator: 'C', creatorAvatar: null, image: 'pi', isPublic: true, followers: null, trackIds: ['t1'], tracks: null }],
+    })
+
+    const result = await resolveQuery({ trackIds: ['t1'], artistIds: ['a1'], albumIds: ['al1'], playlistIds: ['p1'] }).queryFn!(ctx)
+
+    expect(apiFetch).toHaveBeenCalledWith('/catalog/resolve', {
+      method: 'POST',
+      body: { trackIds: ['t1'], artistIds: ['a1'], albumIds: ['al1'], playlistIds: ['p1'] },
+    })
+    expect(result.tracks[0].id).toBe('t1')
+    expect(result.artists[0].id).toBe('a1')
+    expect(result.albums[0].id).toBe('al1')
+    expect(result.playlists[0].id).toBe('p1')
+    expect(result.playlists[0].creator).toBe('C')
   })
 })

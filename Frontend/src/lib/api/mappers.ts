@@ -1,4 +1,4 @@
-import type { Artist, Album, Track, TrackCredit, BrowseCategory, Genre, OwnershipStatus, Money } from '../../types'
+import type { Artist, Album, Track, TrackCredit, BrowseCategory, Playlist, Genre, OwnershipStatus, Money } from '../../types'
 
 export interface ArtistWire {
   id: string
@@ -122,4 +122,32 @@ export interface LyricsWire {
 
 export function toLyricLines(wire: LyricsWire): LyricLineWire[] {
   return wire.lines
+}
+
+export interface PlaylistWire {
+  id: string
+  title: string
+  description: string | null
+  creator: string
+  creatorAvatar: string | null
+  image: string
+  isPublic: boolean
+  followers: number | null
+  trackIds: string[]
+  /** Populated by the detail endpoint; unused by list resolution. */
+  tracks: TrackWire[] | null
+}
+
+export function toPlaylist(wire: PlaylistWire): Playlist {
+  return {
+    id: wire.id,
+    title: wire.title,
+    description: wire.description ?? undefined,
+    creator: wire.creator,
+    creatorAvatar: wire.creatorAvatar ?? undefined,
+    image: wire.image,
+    isPublic: wire.isPublic,
+    followers: wire.followers ?? undefined,
+    trackIds: wire.trackIds,
+  }
 }
