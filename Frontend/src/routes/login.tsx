@@ -4,6 +4,7 @@ import { useState } from 'react'
 import logo from "../assets/logos/logo-with-name-flex.svg"
 import { useAuth } from '../features/auth/auth-context'
 import { SocialButtons } from '../components/auth/social-buttons'
+import { useToast } from '../components/ui/toast-provider'
 
 export const Route = createFileRoute('/login')({
   component: LoginComponent,
@@ -12,14 +13,21 @@ export const Route = createFileRoute('/login')({
 function LoginComponent() {
   const navigate = useNavigate()
   const { login } = useAuth()
+  const { toast } = useToast()
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
   const canSubmit = email.trim() !== '' && password !== ''
 
-  const submit = () => {
+  const submit = async () => {
     if (!canSubmit) return
-    login(email, password)
-    navigate({ to: '/' })
+    setError('')
+    try {
+      await login(email, password)
+      navigate({ to: '/' })
+    } catch {
+      setError('Incorrect email or password.')
+    }
   }
 
   return (
@@ -97,6 +105,8 @@ function LoginComponent() {
               />
             </div>
 
+            {error && <p className="text-sm font-medium text-red-500 -mt-2">{error}</p>}
+
             <button onClick={submit} disabled={!canSubmit} className="w-full h-14 bg-beatz-green text-black font-bold rounded-2xl mt-4 flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg shadow-beatz-green/20 group disabled:opacity-40 disabled:hover:scale-100">
               Log in <ArrowRight size={18} className="group-hover:translate-x-1 transition-transform" />
             </button>
@@ -108,7 +118,7 @@ function LoginComponent() {
              <div className="h-px bg-white/10 flex-1" />
           </div>
 
-          <SocialButtons onSelect={(provider) => { login(`${provider}@beatzclik.com`, provider); navigate({ to: '/' }) }} />
+          <SocialButtons onSelect={() => toast('Social sign-in is coming soon — use email for now.', 'info')} />
 
           <p className="text-center text-sm text-gray-500 dark:text-gray-300 font-medium">
             Don't have an account? <Link to="/signup" className="text-beatz-green font-bold hover:underline">Sign up for free</Link>

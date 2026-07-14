@@ -13,14 +13,17 @@ const AUTH_ROUTES = ['/login', '/signup']
 export function AppShell() {
   const location = useLocation()
   const navigate = useNavigate()
-  const { isAuthenticated } = useAuth()
+  const { isAuthenticated, isLoading } = useAuth()
   const onAuthRoute = AUTH_ROUTES.some((route) => location.pathname.startsWith(route))
 
-  // Gate the whole app: signed-out users are sent to the login screen.
+  // Gate the whole app: signed-out users are sent to the login screen. Wait for the
+  // initial session hydration (GET /v1/me) before deciding — otherwise a valid,
+  // already-logged-in session briefly bounces to /login on every page load.
   useEffect(() => {
-    if (!isAuthenticated && !onAuthRoute) navigate({ to: '/login' })
-  }, [isAuthenticated, onAuthRoute, navigate])
+    if (!isLoading && !isAuthenticated && !onAuthRoute) navigate({ to: '/login' })
+  }, [isLoading, isAuthenticated, onAuthRoute, navigate])
 
+  if (isLoading) return null
   if (!isAuthenticated && !onAuthRoute) return null
 
   const fullScreenRoutes = ['/lyrics', '/login', '/signup', '/studio', '/admin']
