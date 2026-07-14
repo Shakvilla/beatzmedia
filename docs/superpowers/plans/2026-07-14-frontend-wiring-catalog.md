@@ -1394,7 +1394,8 @@ Read the current file first (`Frontend/src/routes/index.tsx`). This route mixes 
 
 Replace the top of the file (imports through the `top10`/`quickPickPlaylists` consts) with:
 ```tsx
-import { createFileRoute, Link, useSuspenseQuery } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
+import { useSuspenseQuery } from '@tanstack/react-query'
 import { Heart, Play } from 'lucide-react'
 import { Card, CardContent, CardImage, CardSubtitle, CardTitle, QuickPickCard } from '../components/ui/card'
 import { MediaRail } from '../features/discover/components/media-rail'
@@ -1482,7 +1483,8 @@ git commit -m "feat(frontend): wire home route to GET /v1/home + /v1/browse-cate
 
 Read the current file first. Replace the imports and the two top-level components:
 ```tsx
-import { createFileRoute, Link, useSuspenseQuery } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
+import { useSuspenseQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Play, Pause, Check, Share2, MoreHorizontal, BadgeCheck, ShoppingCart, MapPin } from 'lucide-react'
 import { usePlayer } from '../../features/player/player-context'
@@ -1599,7 +1601,8 @@ git commit -m "feat(frontend): wire artist route to GET /v1/artists/:id(+tracks,
 
 Read the current file first. Replace the imports and the two top-level components:
 ```tsx
-import { createFileRoute, Link, useSuspenseQuery } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
+import { useSuspenseQuery } from '@tanstack/react-query'
 import { Play, Pause, Plus, Download, Share2, MoreHorizontal, Clock, ShoppingCart, Check } from 'lucide-react'
 import { cn } from '../../utils/cn'
 import { usePlayer } from '../../features/player/player-context'
@@ -1671,7 +1674,8 @@ git commit -m "feat(frontend): wire album route to GET /v1/albums/:id?tracks=tru
 
 Read the current file first. Replace the imports and the top of `TrackPageComponent`:
 ```tsx
-import { createFileRoute, Link, useSuspenseQuery } from '@tanstack/react-router'
+import { createFileRoute, Link } from '@tanstack/react-router'
+import { useSuspenseQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Play, Pause, Share2, Heart, Plus, ListPlus, Info, Users, Check, ShoppingCart, Mic2, Send, MoreHorizontal, Clock, CalendarDays } from 'lucide-react'
 import { cn } from '../utils/cn'
@@ -1720,7 +1724,14 @@ const WAVE = Array.from({ length: BAR_COUNT }, (_, i) => {
 
 function TrackPageComponent() {
   const { trackId } = Route.useParams()
+  // All hooks must run unconditionally and in a stable order every render — so every
+  // useSuspenseQuery goes ABOVE the `isLyricsMode` early return below. (The old mock code
+  // called plain functions like getArtist/getLyrics after the return, which was fine; hooks
+  // are not.) The loader has already cached all of these, so the reads resolve immediately.
   const { data: track } = useSuspenseQuery(trackQuery(trackId))
+  const { data: artist } = useSuspenseQuery(artistQuery(track.artistId))
+  const { data: lyricsLines } = useSuspenseQuery(lyricsQuery(trackId))
+  const { data: artistTracks } = useSuspenseQuery(artistTracksQuery(track.artistId))
   const [isLyricsMode, setIsLyricsMode] = useState(false)
   const [reaction, setReaction] = useState('')
   const [addOpen, setAddOpen] = useState(false)
@@ -1732,9 +1743,6 @@ function TrackPageComponent() {
 
   if (isLyricsMode) return <LyricsView onClose={() => setIsLyricsMode(false)} />
 
-  const { data: artist } = useSuspenseQuery(artistQuery(track.artistId))
-  const { data: lyricsLines } = useSuspenseQuery(lyricsQuery(trackId))
-  const { data: artistTracks } = useSuspenseQuery(artistTracksQuery(track.artistId))
   const liked = isTrackLiked(track.id)
   const isThis = currentTrack?.id === track.id
   const isThisPlaying = isPlaying && isThis
