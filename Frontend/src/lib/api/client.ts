@@ -15,7 +15,7 @@ export function setUnauthorizedHandler(handler: UnauthorizedHandler): void {
 }
 
 export interface ApiFetchOptions {
-  method?: 'GET' | 'POST' | 'PATCH' | 'DELETE'
+  method?: 'GET' | 'POST' | 'PUT' | 'PATCH' | 'DELETE'
   body?: unknown
   idempotencyKey?: string
 }

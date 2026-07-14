@@ -14,10 +14,10 @@ export function CreatePlaylistModal({ isOpen, onClose, onCreated }: CreatePlayli
   const { createPlaylist } = useCollection()
   const [name, setName] = useState('')
 
-  const submit = () => {
+  const submit = async () => {
     const title = name.trim()
     if (!title) return
-    const id = createPlaylist(title)
+    const id = await createPlaylist(title)
     setName('')
     onClose()
     onCreated?.(id)
