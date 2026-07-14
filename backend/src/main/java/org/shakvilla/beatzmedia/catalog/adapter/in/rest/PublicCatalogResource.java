@@ -5,8 +5,10 @@ import java.util.Optional;
 
 import jakarta.annotation.security.PermitAll;
 import jakarta.inject.Inject;
+import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
@@ -27,6 +29,8 @@ import org.shakvilla.beatzmedia.catalog.application.port.in.HomeFeedView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.ListBrowseCategories;
 import org.shakvilla.beatzmedia.catalog.application.port.in.LyricsView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.PlaylistView;
+import org.shakvilla.beatzmedia.catalog.application.port.in.ResolveCatalog;
+import org.shakvilla.beatzmedia.catalog.application.port.in.ResolvedCatalogView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.Search;
 import org.shakvilla.beatzmedia.catalog.application.port.in.SearchResultsView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.ShowView;
@@ -64,6 +68,7 @@ public class PublicCatalogResource {
   private final GetHomeFeed getHomeFeed;
   private final Search search;
   private final ListBrowseCategories listBrowseCategories;
+  private final ResolveCatalog resolveCatalog;
   private final JsonWebToken jwt;
 
   @Inject
@@ -76,6 +81,7 @@ public class PublicCatalogResource {
       GetHomeFeed getHomeFeed,
       Search search,
       ListBrowseCategories listBrowseCategories,
+      ResolveCatalog resolveCatalog,
       JsonWebToken jwt) {
     this.getArtist = getArtist;
     this.getAlbum = getAlbum;
@@ -85,6 +91,7 @@ public class PublicCatalogResource {
     this.getHomeFeed = getHomeFeed;
     this.search = search;
     this.listBrowseCategories = listBrowseCategories;
+    this.resolveCatalog = resolveCatalog;
     this.jwt = jwt;
   }
 
@@ -165,6 +172,17 @@ public class PublicCatalogResource {
   @Path("/browse-categories")
   public List<BrowseCategoryView> browseCategories() {
     return listBrowseCategories.list();
+  }
+
+  /** POST /v1/catalog/resolve — batch id-list resolution for list screens (e.g. library). */
+  @POST
+  @Path("/catalog/resolve")
+  @Consumes(MediaType.APPLICATION_JSON)
+  public ResolvedCatalogView resolveCatalog(ResolveCatalogRequest request) {
+    return resolveCatalog.resolve(
+        new ResolveCatalog.Command(
+            request.trackIds(), request.artistIds(), request.albumIds(), request.playlistIds()),
+        callerId());
   }
 
   /** Extract caller account id from JWT sub, if a valid token is present. */

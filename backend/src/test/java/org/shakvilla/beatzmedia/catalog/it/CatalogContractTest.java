@@ -159,6 +159,48 @@ class CatalogContractTest {
         .body("[0].venue", isA(String.class));
   }
 
+  // --- Batch resolve contract: { tracks: Track[], artists: Artist[], albums: Album[],
+  //                                playlists: Playlist[] } — every array present, ids-not-found
+  //                                silently omitted (200, not 404).
+
+  @Test
+  void resolve_response_has_all_four_arrays_and_matching_item_shapes() {
+    given()
+        .contentType(ContentType.JSON)
+        .body("""
+            {
+              "trackIds": ["last-last"],
+              "artistIds": ["black-sherif"],
+              "albumIds": ["iron-boy"],
+              "playlistIds": ["vibes-from-the-233"]
+            }
+            """)
+        .when().post("/v1/catalog/resolve")
+        .then()
+        .statusCode(200)
+        .body("tracks[0].id", equalTo("last-last"))
+        .body("tracks[0].ownership", isA(String.class))
+        .body("artists[0].id", equalTo("black-sherif"))
+        .body("artists[0].verified", isA(Boolean.class))
+        .body("albums[0].id", equalTo("iron-boy"))
+        .body("albums[0].year", isA(Integer.class))
+        .body("playlists[0].id", equalTo("vibes-from-the-233"))
+        .body("playlists[0].tracks[0].id", isA(String.class));
+  }
+
+  @Test
+  void resolve_unknown_id_omitted_not_404() {
+    given()
+        .contentType(ContentType.JSON)
+        .body("""
+            { "trackIds": ["totally-bogus-id"] }
+            """)
+        .when().post("/v1/catalog/resolve")
+        .then()
+        .statusCode(200)
+        .body("tracks", org.hamcrest.Matchers.empty());
+  }
+
   // --- Error envelope contract: { error: { code, message } }
 
   @Test
