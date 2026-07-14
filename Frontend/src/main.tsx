@@ -7,16 +7,6 @@ import './index.css'
 // Import the generated route tree
 import { routeTree } from './routeTree.gen'
 
-// Create a new router instance
-const router = createRouter({ routeTree })
-
-// Register the router instance for type safety
-declare module '@tanstack/react-router' {
-  interface Register {
-    router: typeof router
-  }
-}
-
 // Create a client
 const queryClient = new QueryClient({
   defaultOptions: {
@@ -26,6 +16,16 @@ const queryClient = new QueryClient({
     },
   },
 })
+
+// Create a new router instance, with the query client available to every loader
+const router = createRouter({ routeTree, context: { queryClient } })
+
+// Register the router instance for type safety
+declare module '@tanstack/react-router' {
+  interface Register {
+    router: typeof router
+  }
+}
 
 import { ThemeProvider } from './components/theme-provider'
 import { ToastProvider } from './components/ui/toast-provider'
