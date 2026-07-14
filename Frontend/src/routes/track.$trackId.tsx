@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
+import { useSuspenseQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Play, Pause, Share2, Heart, Plus, ListPlus, Info, Users, Check, ShoppingCart, Mic2, Send, MoreHorizontal, Clock, CalendarDays } from 'lucide-react'
 import { cn } from '../utils/cn'
@@ -9,12 +10,25 @@ import { usePlayer } from '../features/player/player-context'
 import { useCart } from '../features/cart/cart-context'
 import { useCollection } from '../features/collection/collection-context'
 import { useToast } from '../components/ui/toast-provider'
-import { getTrack, getArtist, getArtistTracks } from '../lib/mock-data'
-import { getLyrics } from '../lib/lyrics-data'
+import { trackQuery, artistQuery, lyricsQuery, artistTracksQuery } from '../lib/api/queries/catalog'
 import { formatCount, formatDuration, formatPrice } from '../lib/format'
 
 export const Route = createFileRoute('/track/$trackId')({
+  loader: async ({ context: { queryClient }, params: { trackId } }) => {
+    const track = await queryClient.ensureQueryData(trackQuery(trackId))
+    await Promise.all([
+      queryClient.ensureQueryData(artistQuery(track.artistId)),
+      queryClient.ensureQueryData(lyricsQuery(trackId)),
+      queryClient.ensureQueryData(artistTracksQuery(track.artistId)),
+    ])
+  },
   component: TrackPageComponent,
+  errorComponent: () => (
+    <div className="flex flex-col items-center justify-center text-center gap-4 py-32">
+      <h1 className="text-title text-beatz-dark-bg dark:text-white">Track not found</h1>
+      <Link to="/" className="h-11 px-6 rounded-full bg-beatz-green text-black font-bold flex items-center">Back to home</Link>
+    </div>
+  ),
 })
 
 // Deterministic, organic waveform amplitudes (0–100%), mirrored around a centre line.
@@ -34,7 +48,14 @@ const WAVE = Array.from({ length: BAR_COUNT }, (_, i) => {
 
 function TrackPageComponent() {
   const { trackId } = Route.useParams()
-  const track = getTrack(trackId)
+  // All hooks must run unconditionally and in a stable order every render — so every
+  // useSuspenseQuery goes ABOVE the `isLyricsMode` early return below. (The old mock code
+  // called plain functions like getArtist/getLyrics after the return, which was fine; hooks
+  // are not.) The loader has already cached all of these, so the reads resolve immediately.
+  const { data: track } = useSuspenseQuery(trackQuery(trackId))
+  const { data: artist } = useSuspenseQuery(artistQuery(track.artistId))
+  const { data: lyricsLines } = useSuspenseQuery(lyricsQuery(trackId))
+  const { data: artistTracks } = useSuspenseQuery(artistTracksQuery(track.artistId))
   const [isLyricsMode, setIsLyricsMode] = useState(false)
   const [reaction, setReaction] = useState('')
   const [addOpen, setAddOpen] = useState(false)
@@ -44,24 +65,14 @@ function TrackPageComponent() {
   const { isTrackLiked, toggleLikedTrack } = useCollection()
   const { toast } = useToast()
 
-  if (!track) {
-    return (
-      <div className="flex flex-col items-center justify-center text-center gap-4 py-32">
-        <h1 className="text-title text-beatz-dark-bg dark:text-white">Track not found</h1>
-        <Link to="/" className="h-11 px-6 rounded-full bg-beatz-green text-black font-bold flex items-center">Back to home</Link>
-      </div>
-    )
-  }
-
   if (isLyricsMode) return <LyricsView onClose={() => setIsLyricsMode(false)} />
 
-  const artist = getArtist(track.artistId)
   const liked = isTrackLiked(track.id)
   const isThis = currentTrack?.id === track.id
   const isThisPlaying = isPlaying && isThis
   const ratio = isThis && track.duration ? Math.min(1, progress / track.duration) : 0
-  const lyricLines = getLyrics(track.id, track.duration).filter((l) => l.text !== '♪').slice(0, 5)
-  const moreTracks = getArtistTracks(track.artistId).filter((t) => t.id !== track.id).slice(0, 5)
+  const lyricLines = lyricsLines.filter((l) => l.text !== '♪').slice(0, 5)
+  const moreTracks = artistTracks.filter((t) => t.id !== track.id).slice(0, 5)
 
   const handlePlay = () => {
     if (isThisPlaying) togglePlay()
