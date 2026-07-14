@@ -1,22 +1,23 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
+import { useSuspenseQuery } from '@tanstack/react-query'
 import { Heart, Play } from 'lucide-react'
 import { Card, CardContent, CardImage, CardSubtitle, CardTitle, QuickPickCard } from '../components/ui/card'
 import { MediaRail } from '../features/discover/components/media-rail'
 import { ArtistCircle } from '../features/discover/components/artist-circle'
 import { FeaturedCarousel } from '../features/discover/components/featured-carousel'
 import { usePlayer } from '../features/player/player-context'
-import {
-  albums,
-  artists,
-  browseCategories,
-  playlists,
-  tracks,
-  featuredAlbums,
-} from '../lib/mock-data'
+import { artists, playlists, albums } from '../lib/mock-data'
+import { homeQuery, browseCategoriesQuery } from '../lib/api/queries/catalog'
 import { formatCount } from '../lib/format'
 import { useAuth } from '../features/auth/auth-context'
 
 export const Route = createFileRoute('/')({
+  loader: async ({ context: { queryClient } }) => {
+    await Promise.all([
+      queryClient.ensureQueryData(homeQuery()),
+      queryClient.ensureQueryData(browseCategoriesQuery()),
+    ])
+  },
   component: HomeComponent,
 })
 
@@ -29,14 +30,17 @@ function greeting(): string {
 
 const RAIL_ITEM = 'snap-start shrink-0 w-44 sm:w-48 lg:w-52'
 
-const trending = [...tracks].sort((a, b) => (b.plays ?? 0) - (a.plays ?? 0))
-const top10 = trending.slice(0, 10)
 const quickPickPlaylists = playlists.slice(0, 3)
 
 function HomeComponent() {
   const { playQueue } = usePlayer()
   const { account } = useAuth()
   const firstName = (account?.name ?? 'there').split(' ')[0]
+  const { data: home } = useSuspenseQuery(homeQuery())
+  const { data: browseCategories } = useSuspenseQuery(browseCategoriesQuery())
+  const trending = home.trending
+  const top10 = home.top10
+  const featuredAlbums = home.featuredAlbums
 
   return (
     <div className="flex flex-col gap-14">

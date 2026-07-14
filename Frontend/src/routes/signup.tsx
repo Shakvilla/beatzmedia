@@ -4,6 +4,7 @@ import { useState } from 'react'
 import logo from "../assets/logos/logo-with-name-flex.svg"
 import { useAuth } from '../features/auth/auth-context'
 import { SocialButtons } from '../components/auth/social-buttons'
+import { useToast } from '../components/ui/toast-provider'
 
 export const Route = createFileRoute('/signup')({
   component: SignUpComponent,
@@ -12,15 +13,22 @@ export const Route = createFileRoute('/signup')({
 function SignUpComponent() {
   const navigate = useNavigate()
   const { signup } = useAuth()
+  const { toast } = useToast()
   const [name, setName] = useState('')
   const [email, setEmail] = useState('')
   const [password, setPassword] = useState('')
+  const [error, setError] = useState('')
   const canSubmit = email.trim() !== '' && password.length >= 8 && name.trim() !== ''
 
-  const submit = () => {
+  const submit = async () => {
     if (!canSubmit) return
-    signup(name, email, password)
-    navigate({ to: '/' })
+    setError('')
+    try {
+      await signup(name, email, password)
+      navigate({ to: '/' })
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Could not create your account.')
+    }
   }
 
   return (
@@ -102,6 +110,8 @@ function SignUpComponent() {
               />
             </div>
 
+            {error && <p className="text-sm font-medium text-red-500 -mt-2">{error}</p>}
+
             <button onClick={submit} disabled={!canSubmit} className="w-full h-14 bg-beatz-green text-black font-bold rounded-2xl mt-4 flex items-center justify-center gap-2 hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg shadow-beatz-green/20 group disabled:opacity-40 disabled:hover:scale-100">
               Get started <UserPlus size={18} className="group-hover:scale-110 transition-transform" />
             </button>
@@ -113,7 +123,7 @@ function SignUpComponent() {
              <div className="h-px bg-white/10 flex-1" />
           </div>
 
-          <SocialButtons onSelect={(provider) => { signup('', `${provider}@beatzclik.com`, provider); navigate({ to: '/' }) }} />
+          <SocialButtons onSelect={() => toast('Social sign-in is coming soon — use email for now.', 'info')} />
 
           <p className="text-center text-sm text-gray-100 font-medium">
             Already have an account? <Link to="/login" className="text-beatz-green font-bold hover:underline">Log in</Link>

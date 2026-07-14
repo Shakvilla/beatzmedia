@@ -1,13 +1,14 @@
 /**
- * Client-side auth store (mock).
+ * Client-side auth store.
  *
- * Holds the signed-in account + role and persists the session to localStorage.
- * Login/signup are mocked — any well-formed input authenticates — so the UI
- * can demonstrate gating without a backend. Swap the actions for real API
- * calls later; consumers keep using `useAuth()`.
+ * Holds the signed-in account + role, backed by the real /v1/auth and /v1/me
+ * endpoints. The JWT returned by login/signup is persisted via
+ * `lib/api/token.ts`; the session hydrates from GET /v1/me on load.
  */
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { apiFetch, setUnauthorizedHandler } from '../../lib/api/client'
+import { clearToken, getToken, setToken } from '../../lib/api/token'
 
 export interface Account {
   id: string
@@ -21,80 +22,78 @@ export interface Account {
 interface AuthContextValue {
   account: Account | null
   isAuthenticated: boolean
-  login: (email: string, password: string) => void
-  signup: (name: string, email: string, password: string) => void
-  logout: () => void
-  becomeArtist: () => void
+  /** True until the initial session hydration (GET /v1/me) has resolved. */
+  isLoading: boolean
+  login: (email: string, password: string) => Promise<void>
+  signup: (name: string, email: string, password: string) => Promise<void>
+  logout: () => Promise<void>
+  becomeArtist: () => Promise<void>
 }
 
-const PERSIST_KEY = 'beatzclik-auth'
-
-/** Default session: signed in as the demo artist so the app opens ready to use. */
-const seedAccount: Account = {
-  id: 'me',
-  name: 'Black Sherif',
-  email: 'hello@onepaygh.com',
-  avatar: null,
-  isArtist: true,
-  isAdmin: true,
-}
-
-const nameFromEmail = (email: string) =>
-  email.split('@')[0].replace(/[._-]+/g, ' ').replace(/\b\w/g, (c) => c.toUpperCase()) || 'Listener'
-
-/** Backfill flags missing from sessions saved before they existed. */
-function normalize(a: Partial<Account>): Account {
-  const isDemo = a.id === seedAccount.id
-  return {
-    id: a.id ?? seedAccount.id,
-    name: a.name ?? 'Listener',
-    email: a.email ?? '',
-    avatar: a.avatar ?? null,
-    isArtist: a.isArtist ?? isDemo,
-    isAdmin: a.isAdmin ?? isDemo,
-  }
-}
-
-function load(): Account | null {
-  try {
-    const raw = typeof window !== 'undefined' ? localStorage.getItem(PERSIST_KEY) : null
-    if (raw === null) return seedAccount // first visit → signed in
-    const parsed = JSON.parse(raw) as Partial<Account> | null
-    if (parsed === null) return null // signed out
-    return normalize(parsed)
-  } catch {
-    return seedAccount
-  }
+interface AuthResponse {
+  token: string
+  account: Account
 }
 
 const AuthContext = createContext<AuthContextValue | null>(null)
 
 export function AuthProvider({ children }: { children: ReactNode }) {
-  const [account, setAccount] = useState<Account | null>(load)
-  const first = useRef(true)
+  const [account, setAccount] = useState<Account | null>(null)
+  // Start "loading" only when there's a token to verify; a signed-out visitor is
+  // resolved immediately (no synchronous setState in the hydration effect below).
+  const [isLoading, setIsLoading] = useState(() => getToken() !== null)
+  const hydrated = useRef(false)
 
   useEffect(() => {
-    if (first.current) { first.current = false; return }
-    try { localStorage.setItem(PERSIST_KEY, JSON.stringify(account)) } catch { /* ignore */ }
-  }, [account])
+    setUnauthorizedHandler(() => setAccount(null))
+  }, [])
+
+  useEffect(() => {
+    if (hydrated.current) return
+    hydrated.current = true
+    if (getToken() === null) return // no session to hydrate; isLoading already false
+    apiFetch<Account>('/me')
+      .then(setAccount)
+      .catch(() => {
+        clearToken()
+        setAccount(null)
+      })
+      .finally(() => setIsLoading(false))
+  }, [])
 
   const value = useMemo<AuthContextValue>(() => ({
     account,
     isAuthenticated: account !== null,
-    // Mock: re-authenticate as the demo artist using the entered email.
-    login: (email) => setAccount({ ...seedAccount, email: email.trim() || seedAccount.email }),
-    // New signups start as fans; they can upgrade to an artist account.
-    signup: (name, email) => setAccount({
-      id: `u-${Date.now()}`,
-      name: name.trim() || nameFromEmail(email),
-      email: email.trim(),
-      avatar: null,
-      isArtist: false,
-      isAdmin: false,
-    }),
-    logout: () => setAccount(null),
-    becomeArtist: () => setAccount((a) => (a ? { ...a, isArtist: true } : a)),
-  }), [account])
+    isLoading,
+    login: async (email, password) => {
+      const result = await apiFetch<AuthResponse>('/auth/login', {
+        method: 'POST',
+        body: { email, password },
+      })
+      setToken(result.token)
+      setAccount(result.account)
+    },
+    signup: async (name, email, password) => {
+      const result = await apiFetch<AuthResponse>('/auth/signup', {
+        method: 'POST',
+        body: { name, email, password },
+      })
+      setToken(result.token)
+      setAccount(result.account)
+    },
+    logout: async () => {
+      try {
+        await apiFetch('/auth/logout', { method: 'POST' })
+      } finally {
+        clearToken()
+        setAccount(null)
+      }
+    },
+    becomeArtist: async () => {
+      const result = await apiFetch<Account>('/me/become-artist', { method: 'POST' })
+      setAccount(result)
+    },
+  }), [account, isLoading])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

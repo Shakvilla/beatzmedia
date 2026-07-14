@@ -1,39 +1,39 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
+import { useSuspenseQuery } from '@tanstack/react-query'
 import { Play, Pause, Plus, Download, Share2, MoreHorizontal, Clock, ShoppingCart, Check } from 'lucide-react'
 import { cn } from '../../utils/cn'
 import { usePlayer } from '../../features/player/player-context'
 import { useCart } from '../../features/cart/cart-context'
 import { useToast } from '../../components/ui/toast-provider'
-import { getAlbum, getAlbumTracks, getArtist } from '../../lib/mock-data'
+import { albumQuery, artistQuery } from '../../lib/api/queries/catalog'
 import { formatCount, formatDuration, formatPrice, formatTotalDuration } from '../../lib/format'
 import type { Track } from '../../types'
 
 export const Route = createFileRoute('/album/$albumId')({
+  loader: async ({ context: { queryClient }, params: { albumId } }) => {
+    const { album } = await queryClient.ensureQueryData(albumQuery(albumId))
+    await queryClient.ensureQueryData(artistQuery(album.artistId))
+  },
   component: AlbumComponent,
+  errorComponent: () => (
+    <div className="flex flex-col items-center justify-center text-center gap-4 py-32">
+      <h1 className="text-title text-beatz-dark-bg dark:text-white">Album not found</h1>
+      <Link to="/" className="h-11 px-6 rounded-full bg-beatz-green text-black font-bold flex items-center">
+        Back to home
+      </Link>
+    </div>
+  ),
 })
 
 function AlbumComponent() {
   const { albumId } = Route.useParams()
-  const album = getAlbum(albumId)
-
-  if (!album) {
-    return (
-      <div className="flex flex-col items-center justify-center text-center gap-4 py-32">
-        <h1 className="text-title text-beatz-dark-bg dark:text-white">Album not found</h1>
-        <Link to="/" className="h-11 px-6 rounded-full bg-beatz-green text-black font-bold flex items-center">
-          Back to home
-        </Link>
-      </div>
-    )
-  }
-
-  return <Album albumId={album.id} />
+  return <Album albumId={albumId} />
 }
 
 function Album({ albumId }: { albumId: string }) {
-  const album = getAlbum(albumId)!
-  const tracks = getAlbumTracks(albumId)
-  const artist = getArtist(album.artistId)
+  const { data: albumData } = useSuspenseQuery(albumQuery(albumId))
+  const { album, tracks } = albumData
+  const { data: artist } = useSuspenseQuery(artistQuery(album.artistId))
   const { currentTrack, isPlaying, playQueue, togglePlay } = usePlayer()
   const { addItem } = useCart()
   const { toast } = useToast()

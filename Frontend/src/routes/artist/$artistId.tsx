@@ -1,4 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
+import { useSuspenseQuery } from '@tanstack/react-query'
 import { useState } from 'react'
 import { Play, Pause, Check, Share2, MoreHorizontal, BadgeCheck, ShoppingCart, MapPin } from 'lucide-react'
 import { usePlayer } from '../../features/player/player-context'
@@ -8,34 +9,38 @@ import { useToast } from '../../components/ui/toast-provider'
 import { SupportModal } from '../../features/podcasts/components/support-modal'
 import { EventListRow } from '../../features/events/components/event-list-row'
 import { Card, CardContent, CardImage, CardSubtitle, CardTitle } from '../../components/ui/card'
-import { getArtist, getArtistTracks, albums } from '../../lib/mock-data'
+import { artistQuery, artistTracksQuery, artistAlbumsQuery } from '../../lib/api/queries/catalog'
 import { events } from '../../lib/event-data'
 import { formatCount, formatDuration, formatPrice } from '../../lib/format'
 import { cn } from '../../utils/cn'
 import type { Track } from '../../types'
 
 export const Route = createFileRoute('/artist/$artistId')({
+  loader: async ({ context: { queryClient }, params: { artistId } }) => {
+    await Promise.all([
+      queryClient.ensureQueryData(artistQuery(artistId)),
+      queryClient.ensureQueryData(artistTracksQuery(artistId)),
+      queryClient.ensureQueryData(artistAlbumsQuery(artistId)),
+    ])
+  },
   component: ArtistComponent,
+  errorComponent: () => (
+    <div className="flex flex-col items-center justify-center text-center gap-4 py-32">
+      <h1 className="text-title text-beatz-dark-bg dark:text-white">Artist not found</h1>
+      <Link to="/" className="h-11 px-6 rounded-full bg-beatz-green text-black font-bold flex items-center">Back to home</Link>
+    </div>
+  ),
 })
 
 function ArtistComponent() {
   const { artistId } = Route.useParams()
-  const artist = getArtist(artistId)
-
-  if (!artist) {
-    return (
-      <div className="flex flex-col items-center justify-center text-center gap-4 py-32">
-        <h1 className="text-title text-beatz-dark-bg dark:text-white">Artist not found</h1>
-        <Link to="/" className="h-11 px-6 rounded-full bg-beatz-green text-black font-bold flex items-center">Back to home</Link>
-      </div>
-    )
-  }
-
-  return <Artist artistId={artist.id} />
+  return <Artist artistId={artistId} />
 }
 
 function Artist({ artistId }: { artistId: string }) {
-  const artist = getArtist(artistId)!
+  const { data: artist } = useSuspenseQuery(artistQuery(artistId))
+  const { data: topTracks } = useSuspenseQuery(artistTracksQuery(artistId))
+  const { data: discography } = useSuspenseQuery(artistAlbumsQuery(artistId))
   const { currentTrack, isPlaying, playQueue, togglePlay } = usePlayer()
   const { addItem } = useCart()
   const { isArtistFollowed, toggleFollowedArtist } = useCollection()
@@ -55,8 +60,6 @@ function Artist({ artistId }: { artistId: string }) {
     toast(`“${track.title}” added to cart`, 'success')
   }
 
-  const topTracks = getArtistTracks(artistId)
-  const discography = albums.filter((a) => a.artistId === artistId)
   const shows = events.filter((e) => e.artistId === artistId).sort((a, b) => a.date.localeCompare(b.date))
 
   const isArtistPlaying = isPlaying && topTracks.some((t) => t.id === currentTrack?.id)
