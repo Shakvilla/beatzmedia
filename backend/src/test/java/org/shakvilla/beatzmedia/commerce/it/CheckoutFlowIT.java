@@ -463,6 +463,81 @@ class CheckoutFlowIT {
         .body("items[0].total.currency", equalTo("GHS"));
   }
 
+  // ---- GET /v1/me/orders/{orderId} (WU-COM-3) ------------------------------------
+
+  @Test
+  void getOrder_ownOrder_returns200WithDisplayFields() {
+    String token = signUp("co3-get-" + System.nanoTime() + "@example.com");
+    addToCart(token, "track", trackId);
+    Response co = checkout(token, "co3-getkey-" + System.nanoTime());
+    String orderId = co.then().statusCode(202).extract().jsonPath().getString("orderId");
+
+    given()
+        .header("Authorization", "Bearer " + token)
+        .when()
+        .get("/v1/me/orders/" + orderId)
+        .then()
+        .statusCode(200)
+        .body("orderId", equalTo(orderId))
+        .body("status", equalTo("pending"))
+        .body("items[0].kind", equalTo("track"))
+        .body("items[0].subtitle", notNullValue())
+        .body("items[0].image", notNullValue());
+  }
+
+  @Test
+  void getOrder_afterSettlement_statusIsPaid() {
+    String token = signUp("co3-settle-" + System.nanoTime() + "@example.com");
+    addToCart(token, "track", trackId);
+    Response co = checkout(token, "co3-settlekey-" + System.nanoTime());
+    String orderId = co.then().statusCode(202).extract().jsonPath().getString("orderId");
+    String intentId = co.jsonPath().getString("paymentIntentId");
+
+    settle(intentId, "co3-settle-ev-" + System.nanoTime());
+
+    given()
+        .header("Authorization", "Bearer " + token)
+        .when()
+        .get("/v1/me/orders/" + orderId)
+        .then()
+        .statusCode(200)
+        .body("status", equalTo("paid"));
+  }
+
+  @Test
+  void getOrder_unknownId_returns404() {
+    String token = signUp("co3-unknown-" + System.nanoTime() + "@example.com");
+
+    given()
+        .header("Authorization", "Bearer " + token)
+        .when()
+        .get("/v1/me/orders/no-such-order-xyz")
+        .then()
+        .statusCode(404);
+  }
+
+  @Test
+  void getOrder_someoneElsesOrder_returns404_notForbidden() {
+    String ownerToken = signUp("co3-owner-" + System.nanoTime() + "@example.com");
+    addToCart(ownerToken, "track", trackId);
+    Response co = checkout(ownerToken, "co3-strangerkey-" + System.nanoTime());
+    String orderId = co.then().statusCode(202).extract().jsonPath().getString("orderId");
+
+    String strangerToken = signUp("co3-stranger-" + System.nanoTime() + "@example.com");
+
+    given()
+        .header("Authorization", "Bearer " + strangerToken)
+        .when()
+        .get("/v1/me/orders/" + orderId)
+        .then()
+        .statusCode(404);
+  }
+
+  @Test
+  void getOrder_withoutToken_returns401() {
+    given().when().get("/v1/me/orders/some-id").then().statusCode(401);
+  }
+
   // ---- helpers -----------------------------------------------------------------
 
   @Transactional
