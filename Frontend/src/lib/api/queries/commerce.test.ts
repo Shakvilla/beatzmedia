@@ -49,7 +49,7 @@ describe('commerce API calls', () => {
       items: [{ ...wireCart.items[0], subtitle: null, image: null }],
     })
 
-    const result = await cartQuery().queryFn(expect.anything())
+    const result = await cartQuery().queryFn!(expect.anything())
 
     expect(apiFetch).toHaveBeenCalledWith('/me/cart', undefined)
     expect(result.items[0].subtitle).toBeUndefined()
@@ -126,7 +126,7 @@ describe('commerce API calls', () => {
       total: { amount: 5.5, currency: 'GHS' }, createdAt: '2026-07-15T10:00:00Z',
     })
 
-    const result = await orderQuery('o1').queryFn(expect.anything())
+    const result = await orderQuery('o1').queryFn!(expect.anything())
 
     expect(apiFetch).toHaveBeenCalledWith('/me/orders/o1', undefined)
     expect(result.status).toBe('paid')
