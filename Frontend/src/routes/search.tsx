@@ -38,8 +38,8 @@ function SearchComponent() {
   const needle = (q ?? '').trim()
   const debouncedNeedle = useDebouncedValue(needle, 300)
 
-  const { data: browseCategories } = useQuery(browseCategoriesQuery())
-  const { data: results, isLoading } = useQuery({
+  const { data: browseCategories, isLoading: categoriesLoading } = useQuery(browseCategoriesQuery())
+  const { data: results, isLoading, isError } = useQuery({
     ...searchQuery(debouncedNeedle),
     enabled: !!debouncedNeedle,
   })
@@ -51,7 +51,7 @@ function SearchComponent() {
 
   const buyTrack = (track: Track) => {
     addItem({ id: `track:${track.id}`, kind: 'track', title: track.title, subtitle: track.artistName, image: track.image, price: track.price ?? { amount: 0, currency: 'GHS' } })
-    toast(`"${track.title}" added to cart`, 'success')
+    toast(`“${track.title}” added to cart`, 'success')
   }
 
   return (
@@ -78,24 +78,28 @@ function SearchComponent() {
         <div className="flex flex-col gap-6 animate-in fade-in duration-500">
           <h2 className="text-title text-beatz-dark-bg dark:text-white">Browse all</h2>
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
-            {(browseCategories ?? []).map((category) => (
-              <Link
-                key={category.id}
-                to="/search"
-                search={{ q: category.title }}
-                className={cn('relative overflow-hidden rounded-xl p-4 aspect-[2/1] flex items-start shadow-md hover:scale-[1.02] transition-transform duration-300 group', category.colorClass)}
-              >
-                <h3 className="text-white font-bold text-lg md:text-xl z-10 relative">{category.title}</h3>
-                <div className="absolute -right-3 -bottom-3 w-16 h-16 bg-black/20 rounded-lg rotate-[25deg] shadow-lg group-hover:scale-110 transition-transform duration-300" />
-              </Link>
-            ))}
+            {categoriesLoading
+              ? Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="rounded-xl aspect-[2/1]" />)
+              : (browseCategories ?? []).map((category) => (
+                  <Link
+                    key={category.id}
+                    to="/search"
+                    search={{ q: category.title }}
+                    className={cn('relative overflow-hidden rounded-xl p-4 aspect-[2/1] flex items-start shadow-md hover:scale-[1.02] transition-transform duration-300 group', category.colorClass)}
+                  >
+                    <h3 className="text-white font-bold text-lg md:text-xl z-10 relative">{category.title}</h3>
+                    <div className="absolute -right-3 -bottom-3 w-16 h-16 bg-black/20 rounded-lg rotate-[25deg] shadow-lg group-hover:scale-110 transition-transform duration-300" />
+                  </Link>
+                ))}
           </div>
         </div>
+      ) : isError ? (
+        <SearchErrorState />
       ) : searching || !results ? (
         <SearchResultsSkeleton />
       ) : noResults ? (
         <div className="flex flex-col items-center gap-2 py-24 text-center">
-          <h2 className="text-title text-beatz-dark-bg dark:text-white">No results for "{q}"</h2>
+          <h2 className="text-title text-beatz-dark-bg dark:text-white">No results for “{q}”</h2>
           <p className="text-gray-500 dark:text-gray-300">Try a different spelling or search for something else.</p>
         </div>
       ) : (
@@ -245,6 +249,15 @@ function TopResultCard({ top }: { top: NonNullable<SearchTopResult> }) {
         <CardSubtitle>{card.subtitle}</CardSubtitle>
       </CardContent>
     </Card>
+  )
+}
+
+function SearchErrorState() {
+  return (
+    <div className="flex flex-col items-center gap-2 py-24 text-center">
+      <h2 className="text-title text-beatz-dark-bg dark:text-white">Search is unavailable</h2>
+      <p className="text-gray-500 dark:text-gray-300">Something went wrong running that search. Please try again.</p>
+    </div>
   )
 }
 
