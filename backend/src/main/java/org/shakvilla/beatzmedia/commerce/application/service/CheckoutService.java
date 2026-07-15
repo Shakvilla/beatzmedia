@@ -159,6 +159,8 @@ public class CheckoutService implements Checkout {
               kind,
               item.getRefId(),
               priced.title(),
+              priced.subtitle(),
+              priced.image(),
               priced.unitPrice(),
               item.getQty()));
     }
@@ -234,6 +236,8 @@ public class CheckoutService implements Checkout {
         CartItemKind.album_rest,
         item.getRefId(),
         display.title(),
+        display.subtitle(),
+        display.image(),
         Money.ofMinor(totalMinor, currency),
         1);
   }

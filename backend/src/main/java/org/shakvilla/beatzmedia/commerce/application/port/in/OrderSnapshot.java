@@ -32,6 +32,8 @@ public record OrderSnapshot(
                         l.getKind().wireValue(),
                         l.getRefId(),
                         l.getTitle(),
+                        l.getSubtitle(),
+                        l.getImage(),
                         MoneyView.ofMinor(l.getUnitPrice().minor(), currency),
                         l.getQty()))
             .toList();

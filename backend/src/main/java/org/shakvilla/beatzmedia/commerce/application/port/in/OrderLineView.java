@@ -1,9 +1,15 @@
 package org.shakvilla.beatzmedia.commerce.application.port.in;
 
 /**
- * Read-model / DTO for one order line. Mirrors the frontend {@code OrderLine} shape (Commerce ADD §6):
- * {@code { id, kind, refId, title, unitPrice: Money, quantity }}. Prices are the checkout snapshot,
- * never re-derived.
+ * Wire shape for one order line, including the display snapshot taken at checkout ({@code
+ * subtitle}/{@code image} — nullable, WU-COM-3). API-CONTRACT.md §6.
  */
 public record OrderLineView(
-    String id, String kind, String refId, String title, MoneyView unitPrice, int quantity) {}
+    String id,
+    String kind,
+    String refId,
+    String title,
+    String subtitle,
+    String image,
+    MoneyView unitPrice,
+    int quantity) {}
