@@ -34,7 +34,7 @@ function SearchComponent() {
   const { addItem } = useCart()
   const { toast } = useToast()
 
-  const needle = (q ?? '').trim()
+  const needle = (q ?? '').toLowerCase().trim()
   const debouncedNeedle = useDebouncedValue(needle, 300)
 
   const { data: browseCategories, isLoading: categoriesLoading } = useQuery(browseCategoriesQuery())
@@ -92,9 +92,11 @@ function SearchComponent() {
                 ))}
           </div>
         </div>
+      ) : searching ? (
+        <SearchResultsSkeleton />
       ) : isError ? (
         <SearchErrorState />
-      ) : searching || !results ? (
+      ) : !results ? (
         <SearchResultsSkeleton />
       ) : noResults ? (
         <div className="flex flex-col items-center gap-2 py-24 text-center">
