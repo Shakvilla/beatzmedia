@@ -1,4 +1,3 @@
-// Frontend/src/routes/search.tsx
 import { createFileRoute, useNavigate, Link } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useQuery } from '@tanstack/react-query'
