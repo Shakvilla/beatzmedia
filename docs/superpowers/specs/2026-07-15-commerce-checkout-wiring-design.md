@@ -42,17 +42,23 @@ instant unlock" UX cannot be preserved as-is; this design makes that gap explici
    `CheckoutResult` has no `checkoutUrl` field, so a hosted-checkout redirect is unreachable through
    `/v1/checkout` as it stands. Building a redirect now would be unverifiable against a real gateway.
    Card keeps its existing picker button and rides the same `202` + poll path; the redirect is logged
-   as a follow-up (`WU-COM-4`, alongside closing G3) tied to the Redde credential gate.
-4. **G3 pricing gate — wire all cart kinds now, close G3 as a parallel backend WU.** Checkout prices
-   `track`/`album`/`album-rest` authoritatively from the database, but `episode`/`season-pass`/
-   `ticket`/`store` from client-supplied `metadata.priceMinor` (`CatalogPricingServiceAdapter
-   .priceFromMetadata`) — a spoofing hole flagged and deliberately deferred at `WU-COM-2` (backlog G3,
-   security-reviewer sign-off required) because the owning modules (store/events/podcasts) didn't
-   exist yet. They have since shipped. The hole is pre-existing and reachable by curl regardless of
-   what the frontend does, and no real money can move while `PSP_REDDE` is off. So: wire all 7 cart
-   kinds in this slice (keeps the cart's brain in one place, matches the finished frontend), and
-   register `WU-COM-4` to replace the metadata echo with authoritative price lookups against the
-   now-shipped ports — gated to land before Redde go-live, alongside the deferred card redirect.
+   as a follow-up (`WU-COM-4`, alongside removing the checkout-kind gate — see Decision 4) tied to the
+   Redde credential gate.
+4. **G3 pricing gate — already closed at checkout; wire cart-add for all kinds, handle the checkout
+   rejection honestly.** Correcting an assumption from initial scoping: `CheckoutService.gateKind()`
+   already hard-rejects `episode`/`season-pass`/`ticket`/`store` with `409 CHECKOUT_KIND_UNSUPPORTED`
+   (`CheckoutKindUnsupportedException`, a documented ADR-23 safe-default) — for the *whole order* if
+   any line has one of those kinds, not just the offending line. So the client-supplied-price spoofing
+   risk (`CatalogPricingServiceAdapter.priceFromMetadata`) is **not** reachable through checkout today;
+   it's a feature gap (those kinds can't be bought yet), not an open security hole. `POST /me/cart/items`
+   itself has no such gate — it prices and adds any of the 7 kinds fine, so the existing store/events/
+   podcasts "add to cart" buttons already work unchanged against the real backend. What's new: slice 3b
+   must handle `409 CHECKOUT_KIND_UNSUPPORTED` on the "Pay" action with a specific, honest message
+   ("some items in your cart can't be checked out yet") rather than a generic error, since a cart mixing
+   a track with a ticket/store/episode/season-pass item will hit this today. Register `WU-COM-4` to add
+   authoritative price-lookup ports against the now-shipped store/events/podcasts modules and remove the
+   gate for those kinds — a feature-completion WU, not an urgent security patch — gated to land before
+   Redde go-live, alongside the deferred card redirect.
 
 ## Scope
 
@@ -62,7 +68,8 @@ Two work units, two PRs:
   columns (receipt fidelity — see Gap below).
 - **3b (frontend)** — cart/checkout/receipt wiring, on branch `feat/frontend-commerce-checkout`.
 
-`WU-COM-4` (close G3 pricing gate + card hosted-checkout redirect) is registered in the backlog but
+`WU-COM-4` (authoritative pricing for episode/season-pass/ticket/store so checkout stops rejecting
+them, + card hosted-checkout redirect) is registered in the backlog but
 **not built** in this slice — it's a prerequisite for real-money go-live, not for wiring the mock away.
 
 ## Slice 3a — backend: order retrieval + receipt fidelity (`WU-COM-3`)
@@ -151,7 +158,11 @@ double-submit-safety concern already solved for `AddCartItemsCommand` elsewhere)
 selected method to the backend's provider wire values (`mtn`, `telecel`, `airtel`→`airteltigo`, `card`),
 and calls `POST /v1/checkout` with `{ paymentMethodId }` and the `Idempotency-Key` header. On `202` it
 navigates to `/checkout/complete?orderId=<id>` (the route gains an `orderId` search param). A `429`
-surfaces as a toast using the response's `Retry-After` value instead of navigating.
+surfaces as a toast using the response's `Retry-After` value instead of navigating. A
+`409 CHECKOUT_KIND_UNSUPPORTED` (thrown today for the whole order if any line is `episode`/
+`season-pass`/`ticket`/`store` — Decision 4) surfaces as a specific toast — "Some items in your cart
+can't be checked out yet — remove them to continue" — instead of navigating or showing a generic
+error.
 
 `routes/checkout.complete.tsx` is rewritten around a `useQuery` polling `GET /me/orders/{orderId}`
 (`refetchInterval: (query) => query.state.data?.status === 'pending' ? 2000 : false`):
@@ -205,7 +216,8 @@ No `orderId` param (e.g. a stale bookmark, or navigating here directly) falls ba
 ## Explicitly out of scope
 
 - Card hosted-checkout redirect (`checkoutUrl`) — `WU-COM-4`.
-- Closing the G3 metadata-pricing spoofing gate — `WU-COM-4`.
+- Authoritative pricing for episode/season-pass/ticket/store (removing the `CHECKOUT_KIND_UNSUPPORTED`
+  gate) — `WU-COM-4`.
 - `GET /v1/me/orders` list view / order history page — the frontend has no such screen today; not
   invented here.
 - Refund/dispute UI — no mock screen exists for it.
