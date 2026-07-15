@@ -7,11 +7,13 @@ import {
   toAlbumTracks,
   toBrowseCategory,
   toLyricLines,
+  toPlaylist,
   type ArtistWire,
   type TrackWire,
   type AlbumWire,
   type BrowseCategoryWire,
   type LyricsWire,
+  type PlaylistWire,
 } from '../mappers'
 
 interface HomeFeedWire {
@@ -86,5 +88,34 @@ export function lyricsQuery(id: string) {
   return queryOptions({
     queryKey: ['track', id, 'lyrics'],
     queryFn: async () => toLyricLines(await apiFetch<LyricsWire>(`/tracks/${id}/lyrics`)),
+  })
+}
+
+interface ResolveRequest {
+  trackIds?: string[]
+  artistIds?: string[]
+  albumIds?: string[]
+  playlistIds?: string[]
+}
+
+interface ResolveWire {
+  tracks: TrackWire[]
+  artists: ArtistWire[]
+  albums: AlbumWire[]
+  playlists: PlaylistWire[]
+}
+
+export function resolveQuery(ids: ResolveRequest) {
+  return queryOptions({
+    queryKey: ['resolve', ids],
+    queryFn: async () => {
+      const wire = await apiFetch<ResolveWire>('/catalog/resolve', { method: 'POST', body: ids })
+      return {
+        tracks: wire.tracks.map(toTrack),
+        artists: wire.artists.map(toArtist),
+        albums: wire.albums.map(toAlbum),
+        playlists: wire.playlists.map(toPlaylist),
+      }
+    },
   })
 }

@@ -34,10 +34,10 @@ export function AddToPlaylistModal({ trackId, isOpen, onClose }: AddToPlaylistMo
     }
   }
 
-  const createAndAdd = () => {
+  const createAndAdd = async () => {
     const title = name.trim()
     if (!title || !trackId) return
-    createPlaylist(title, trackId)
+    await createPlaylist(title, trackId)
     toast(`Added to ${title}`, 'success')
     setName('')
     setCreating(false)
