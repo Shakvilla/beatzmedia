@@ -120,6 +120,19 @@ class CheckoutServiceTest {
   }
 
   @Test
+  void checkout_pricedLine_carriesDisplaySubtitleAndImage() {
+    // FakePricingService.seed() always sets subtitle="Subtitle", image="img.jpg" (see fakes/FakePricingService).
+    seedCartWithStoredPrice(CartItemKind.track, "t1", 500);
+    pricing.seed(CartItemKind.track, "t1", "Real Track", 500);
+
+    service.checkout(ACCOUNT, KEY, "mtn");
+
+    org.shakvilla.beatzmedia.commerce.domain.OrderLine line = orders.all().get(0).getLines().get(0);
+    assertEquals("Subtitle", line.getSubtitle(), "order line snapshots the priced item's subtitle");
+    assertEquals("img.jpg", line.getImage(), "order line snapshots the priced item's image");
+  }
+
+  @Test
   void checkout_inflatedCartPrice_stillChargesTrueServerPrice() {
     // Cart stores an inflated price; server must still charge only the authoritative price.
     seedCartWithStoredPrice(CartItemKind.track, "t1", 999_999);

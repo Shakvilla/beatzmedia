@@ -33,6 +33,12 @@ public class OrderLineEntity {
   @Column(name = "title", nullable = false)
   public String title;
 
+  @Column(name = "subtitle")
+  public String subtitle;
+
+  @Column(name = "image")
+  public String image;
+
   @Column(name = "unit_price_minor", nullable = false)
   public long unitPriceMinor;
 

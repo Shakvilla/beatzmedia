@@ -5,7 +5,9 @@ import org.shakvilla.beatzmedia.platform.domain.Money;
 /**
  * A single order line — an immutable price snapshot taken at checkout. Entity within the {@link Order}
  * aggregate. Once checkout snapshots it, the price is NEVER re-derived (Commerce ADD §3, §12.2).
- * Domain-layer; no framework imports.
+ * {@code subtitle}/{@code image} are display-only snapshots of the priced item (WU-COM-3) — nullable,
+ * no validation, mirroring {@code CartItem}'s own nullable subtitle/image. Domain-layer; no framework
+ * imports.
  */
 public final class OrderLine {
 
@@ -13,10 +15,20 @@ public final class OrderLine {
   private final CartItemKind kind;
   private final String refId;
   private final String title;
+  private final String subtitle;
+  private final String image;
   private final Money unitPrice;
   private final int qty;
 
-  public OrderLine(String id, CartItemKind kind, String refId, String title, Money unitPrice, int qty) {
+  public OrderLine(
+      String id,
+      CartItemKind kind,
+      String refId,
+      String title,
+      String subtitle,
+      String image,
+      Money unitPrice,
+      int qty) {
     if (id == null || id.isBlank()) {
       throw new IllegalArgumentException("OrderLine id must not be blank");
     }
@@ -36,6 +48,8 @@ public final class OrderLine {
     this.kind = kind;
     this.refId = refId;
     this.title = title;
+    this.subtitle = subtitle;
+    this.image = image;
     this.unitPrice = unitPrice;
     this.qty = qty;
   }
@@ -54,6 +68,14 @@ public final class OrderLine {
 
   public String getTitle() {
     return title;
+  }
+
+  public String getSubtitle() {
+    return subtitle;
+  }
+
+  public String getImage() {
+    return image;
   }
 
   public Money getUnitPrice() {

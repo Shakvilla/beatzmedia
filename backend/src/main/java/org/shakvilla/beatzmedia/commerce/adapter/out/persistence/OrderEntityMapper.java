@@ -34,6 +34,8 @@ public class OrderEntityMapper {
                         CartItemKind.fromWireValue(l.kind),
                         l.refId,
                         l.title,
+                        l.subtitle,
+                        l.image,
                         Money.ofMinor(l.unitPriceMinor, Currency.valueOf(l.currency)),
                         l.qty))
             .toList();
@@ -82,6 +84,8 @@ public class OrderEntityMapper {
       le.kind = line.getKind().wireValue();
       le.refId = line.getRefId();
       le.title = line.getTitle();
+      le.subtitle = line.getSubtitle();
+      le.image = line.getImage();
       le.unitPriceMinor = line.getUnitPrice().minor();
       le.currency = line.getUnitPrice().currency().name();
       le.qty = line.getQty();

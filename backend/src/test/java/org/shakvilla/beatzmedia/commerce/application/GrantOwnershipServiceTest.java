@@ -87,11 +87,15 @@ class GrantOwnershipServiceTest {
   }
 
   private OrderLine trackLine(String trackId, long priceMinor) {
-    return new OrderLine("l-" + trackId, CartItemKind.track, trackId, "Track", Money.ofMinor(priceMinor, Currency.GHS), 1);
+    return new OrderLine(
+        "l-" + trackId, CartItemKind.track, trackId, "Track", "Artist", "img.jpg",
+        Money.ofMinor(priceMinor, Currency.GHS), 1);
   }
 
   private OrderLine albumLine(String albumId, long priceMinor) {
-    return new OrderLine("l-" + albumId, CartItemKind.album, albumId, "Album", Money.ofMinor(priceMinor, Currency.GHS), 1);
+    return new OrderLine(
+        "l-" + albumId, CartItemKind.album, albumId, "Album", "Artist", "img.jpg",
+        Money.ofMinor(priceMinor, Currency.GHS), 1);
   }
 
   @Test
