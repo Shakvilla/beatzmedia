@@ -250,6 +250,37 @@ work_units:
     # kinds until the owning module exists, OR explicitly accept the residual spoofing risk with a
     # documented ceiling (cap trusted priceMinor / ops allowlist). Do not ship real-money checkout for
     # those kinds without an explicit decision.
+  - id: WU-COM-3
+    title: Single-order lookup + order-line display fidelity (subtitle/image)
+    phase: 2
+    module: commerce
+    add: commerce.md
+    owner: backend-engineer
+    depends_on: [WU-COM-2]
+    llfrs: [LLFR-COMMERCE-02.4]
+    status: todo
+    # Frontend slice 3 (docs/superpowers/specs/2026-07-15-commerce-checkout-wiring-design.md) needs to
+    # poll a single order by id after POST /v1/checkout's 202 to detect settlement (pending -> paid /
+    # fulfilled / failed) — GET /v1/me/orders only lists, it does not fetch by id. Also closes a real
+    # gap: order_line has no subtitle/image columns (cart_item does, V943), so a settled order's
+    # receipt cannot render the same artwork the cart showed. Both are additive; no invariant changes.
+  - id: WU-COM-4
+    title: Authoritative pricing for episode/season-pass/ticket/store + card hosted-checkout redirect
+    phase: 3
+    module: commerce
+    add: commerce.md
+    owner: payments-specialist
+    depends_on: [WU-COM-3, WU-STO-1, WU-EVT-1, WU-POD-1]
+    llfrs: []
+    status: todo
+    # NOT built by slice 3 — registered so the gap is tracked. CheckoutService.gateKind() already
+    # hard-rejects episode/season-pass/ticket/store with 409 CHECKOUT_KIND_UNSUPPORTED (ADR-23 safe
+    # default) because their only pricing source today is client-supplied cart metadata
+    # (CatalogPricingServiceAdapter.priceFromMetadata) — not a live exploit (checkout blocks it), but a
+    # feature gap now that the owning modules (store/events/podcasts) have shipped real catalogs. Also
+    # covers the card hosted-checkout redirect (checkoutUrl, added to PaymentIntentView by WU-PAY-6 but
+    # unreachable through CheckoutResult) — both are gated behind the Redde credential human gate
+    # (PSP_REDDE stays off until real credentials are supplied) and should land together before go-live.
   - id: WU-PLY-1
     title: Stream URL (ownership-aware) + record play
     phase: 2
