@@ -234,7 +234,10 @@ describe('searchQuery', () => {
 })
 
 describe('resolveTopResult (pure)', () => {
-  const tracks: Track[] = [{ ...wireTrack, price: wireTrack.price, ownership: 'for-sale' } as Track]
+  const tracks: Track[] = [{
+    id: 't1', title: 'Second Sermon', artistId: 'a1', artistName: 'Black Sherif', duration: 200,
+    image: 'track.jpg', ownership: 'for-sale', price: { amount: 5, currency: 'GHS' },
+  }]
   const artists: Artist[] = [{ id: 'a1', name: 'Black Sherif', image: 'artist.jpg' }]
   const albums: Album[] = [{ id: 'al1', title: 'The Villain I Never Was', artistId: 'a1', artistName: 'Black Sherif', year: 2022, coverImage: 'album.jpg', trackIds: ['t1'] }]
   const playlists: Playlist[] = [{ id: 'p1', title: 'Afrobeats Mix', creator: 'BeatzClik', image: 'playlist.jpg', isPublic: true, trackIds: ['t1'] }]
@@ -434,7 +437,7 @@ import { Card, CardContent, CardImage, CardSubtitle, CardTitle } from '../compon
 import { Skeleton } from '../components/ui/skeleton'
 import { ArtistCircle } from '../features/discover/components/artist-circle'
 import { browseCategoriesQuery } from '../lib/api/queries/catalog'
-import { searchQuery } from '../lib/api/queries/search'
+import { searchQuery, type SearchTopResult } from '../lib/api/queries/search'
 import { useDebouncedValue } from '../hooks/use-debounced-value'
 import { formatDuration, formatPrice } from '../lib/format'
 import type { Track } from '../types'
@@ -546,39 +549,7 @@ function SearchComponent() {
               {filter === 'All' && topResult && (
                 <div className="lg:col-span-2 flex flex-col gap-4">
                   <h3 className="text-title text-beatz-dark-bg dark:text-white">Top result</h3>
-                  {topResult.kind === 'artist' ? (
-                    <Link to="/artist/$artistId" params={{ artistId: topResult.entity.id }} className="p-8 rounded-2xl bg-white dark:bg-white/5 hover:bg-gray-50 dark:hover:bg-white/10 border border-gray-100 dark:border-transparent transition-colors group cursor-pointer flex flex-col gap-4">
-                      <div className="w-28 h-28 rounded-full overflow-hidden shadow-xl">
-                        <img src={topResult.entity.image} alt={topResult.entity.name} className="w-full h-full object-cover" />
-                      </div>
-                      <h4 className="text-3xl font-bold text-beatz-dark-bg dark:text-white">{topResult.entity.name}</h4>
-                      <span className="text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-gray-300">Artist</span>
-                    </Link>
-                  ) : topResult.kind === 'track' ? (
-                    <Card to={`/track/${topResult.entity.id}`} className="p-8 rounded-2xl bg-white dark:bg-white/5 hover:bg-gray-50 dark:hover:bg-white/10 border border-gray-100 dark:border-transparent">
-                      <CardImage src={topResult.entity.image} alt={topResult.entity.title} />
-                      <CardContent className="mt-2">
-                        <CardTitle>{topResult.entity.title}</CardTitle>
-                        <CardSubtitle>{topResult.entity.artistName}</CardSubtitle>
-                      </CardContent>
-                    </Card>
-                  ) : topResult.kind === 'album' ? (
-                    <Card to={`/album/${topResult.entity.id}`} className="p-8 rounded-2xl bg-white dark:bg-white/5 hover:bg-gray-50 dark:hover:bg-white/10 border border-gray-100 dark:border-transparent">
-                      <CardImage src={topResult.entity.coverImage} alt={topResult.entity.title} />
-                      <CardContent className="mt-2">
-                        <CardTitle>{topResult.entity.title}</CardTitle>
-                        <CardSubtitle>{topResult.entity.artistName} • {topResult.entity.year}</CardSubtitle>
-                      </CardContent>
-                    </Card>
-                  ) : (
-                    <Card to={`/playlist/${topResult.entity.id}`} className="p-8 rounded-2xl bg-white dark:bg-white/5 hover:bg-gray-50 dark:hover:bg-white/10 border border-gray-100 dark:border-transparent">
-                      <CardImage src={topResult.entity.image} alt={topResult.entity.title} />
-                      <CardContent className="mt-2">
-                        <CardTitle>{topResult.entity.title}</CardTitle>
-                        <CardSubtitle>By {topResult.entity.creator}</CardSubtitle>
-                      </CardContent>
-                    </Card>
-                  )}
+                  <TopResultCard top={topResult} />
                 </div>
               )}
 
@@ -665,6 +636,40 @@ function SearchComponent() {
         </div>
       )}
     </div>
+  )
+}
+
+const TOP_CARD_CLASS = 'p-8 rounded-2xl bg-white dark:bg-white/5 hover:bg-gray-50 dark:hover:bg-white/10 border border-gray-100 dark:border-transparent'
+
+/** Artists keep their distinct circular-avatar treatment; track/album/playlist share one card shape. */
+function TopResultCard({ top }: { top: NonNullable<SearchTopResult> }) {
+  if (top.kind === 'artist') {
+    return (
+      <Link to="/artist/$artistId" params={{ artistId: top.entity.id }} className={cn(TOP_CARD_CLASS, 'transition-colors group cursor-pointer flex flex-col gap-4')}>
+        <div className="w-28 h-28 rounded-full overflow-hidden shadow-xl">
+          <img src={top.entity.image} alt={top.entity.name} className="w-full h-full object-cover" />
+        </div>
+        <h4 className="text-3xl font-bold text-beatz-dark-bg dark:text-white">{top.entity.name}</h4>
+        <span className="text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-gray-300">Artist</span>
+      </Link>
+    )
+  }
+
+  const card =
+    top.kind === 'track'
+      ? { to: `/track/${top.entity.id}`, image: top.entity.image, title: top.entity.title, subtitle: top.entity.artistName }
+      : top.kind === 'album'
+        ? { to: `/album/${top.entity.id}`, image: top.entity.coverImage, title: top.entity.title, subtitle: `${top.entity.artistName} • ${top.entity.year}` }
+        : { to: `/playlist/${top.entity.id}`, image: top.entity.image, title: top.entity.title, subtitle: `By ${top.entity.creator}` }
+
+  return (
+    <Card to={card.to} className={TOP_CARD_CLASS}>
+      <CardImage src={card.image} alt={card.title} />
+      <CardContent className="mt-2">
+        <CardTitle>{card.title}</CardTitle>
+        <CardSubtitle>{card.subtitle}</CardSubtitle>
+      </CardContent>
+    </Card>
   )
 }
 
