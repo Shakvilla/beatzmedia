@@ -18,7 +18,7 @@ export const Route = createFileRoute('/checkout/complete')({
 function CheckoutCompleteComponent() {
   const { orderId } = Route.useSearch()
 
-  const { data: order, isLoading } = useQuery({
+  const { data: order, isLoading, isError } = useQuery({
     ...orderQuery(orderId ?? ''),
     enabled: !!orderId,
     refetchInterval: (query) => {
@@ -32,6 +32,21 @@ function CheckoutCompleteComponent() {
       <div className="flex flex-col items-center justify-center text-center gap-4 py-32">
         <h1 className="text-title text-beatz-dark-bg dark:text-white">No recent order</h1>
         <Link to="/" className="h-11 px-6 rounded-full bg-beatz-green text-black font-bold flex items-center">Back to home</Link>
+      </div>
+    )
+  }
+
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center justify-center text-center gap-4 py-32">
+        <div className="w-16 h-16 rounded-full bg-red-500/10 flex items-center justify-center">
+          <XCircle className="text-red-500" size={32} />
+        </div>
+        <h1 className="text-title text-beatz-dark-bg dark:text-white">We couldn't load this order</h1>
+        <p className="text-gray-500 dark:text-gray-300 max-w-sm">
+          Something went wrong retrieving your order. Your cart has not been charged again — check your library or try again.
+        </p>
+        <Link to="/cart" className="h-11 px-6 rounded-full bg-beatz-green text-black font-bold flex items-center">Back to cart</Link>
       </div>
     )
   }
