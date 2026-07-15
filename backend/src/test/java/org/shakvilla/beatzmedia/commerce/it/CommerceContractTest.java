@@ -78,6 +78,60 @@ class CommerceContractTest {
   }
 
   @Test
+  void order_response_has_required_fields_matching_frontend_OrderSnapshot() {
+    String token = fan();
+    seedTrack();
+
+    given()
+        .header("Authorization", "Bearer " + token)
+        .contentType(ContentType.JSON)
+        .body("""
+            { "kind": "track", "refId": "%s" }
+            """.formatted(TRACK_ID))
+        .when()
+        .post("/v1/me/cart/items")
+        .then()
+        .statusCode(200);
+
+    String orderId =
+        given()
+            .header("Authorization", "Bearer " + token)
+            .header("Idempotency-Key", "contract-order-key-" + System.nanoTime())
+            .contentType(ContentType.JSON)
+            .body("""
+                { "paymentMethodId": "mtn" }
+                """)
+            .when()
+            .post("/v1/checkout")
+            .then()
+            .statusCode(202)
+            .extract()
+            .jsonPath()
+            .getString("orderId");
+
+    given()
+        .header("Authorization", "Bearer " + token)
+        .when()
+        .get("/v1/me/orders/" + orderId)
+        .then()
+        .statusCode(200)
+        .body("orderId", isA(String.class))
+        .body("reference", isA(String.class))
+        .body("status", isA(String.class))
+        .body("subtotal.amount", isA(Number.class))
+        .body("subtotal.currency", equalTo("GHS"))
+        .body("fee.amount", isA(Number.class))
+        .body("total.amount", isA(Number.class))
+        .body("items[0].id", isA(String.class))
+        .body("items[0].kind", equalTo("track"))
+        .body("items[0].refId", equalTo(TRACK_ID))
+        .body("items[0].title", isA(String.class))
+        .body("items[0].unitPrice.amount", isA(Number.class))
+        .body("items[0].unitPrice.currency", equalTo("GHS"))
+        .body("items[0].quantity", isA(Integer.class));
+  }
+
+  @Test
   void error_envelope_has_correct_structure_on_validation_failure() {
     String token = fan();
 

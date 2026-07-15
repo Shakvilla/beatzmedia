@@ -26,9 +26,13 @@ class OrderTest {
 
   private Order pendingOrder() {
     OrderLine line1 =
-        new OrderLine("l1", CartItemKind.track, "t1", "Track 1", Money.ofMinor(500, Currency.GHS), 1);
+        new OrderLine(
+            "l1", CartItemKind.track, "t1", "Track 1", "Artist 1", "img1.jpg",
+            Money.ofMinor(500, Currency.GHS), 1);
     OrderLine line2 =
-        new OrderLine("l2", CartItemKind.track, "t2", "Track 2", Money.ofMinor(750, Currency.GHS), 1);
+        new OrderLine(
+            "l2", CartItemKind.track, "t2", "Track 2", "Artist 2", "img2.jpg",
+            Money.ofMinor(750, Currency.GHS), 1);
     return Order.create(
         new OrderId("o1"),
         ACCOUNT,

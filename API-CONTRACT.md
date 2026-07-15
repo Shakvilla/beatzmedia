@@ -127,6 +127,7 @@ Cart kinds: `track | album | album-rest | store | episode | season-pass | ticket
 | PATCH/DELETE | `/me/cart/items/:lineId` | set qty / remove | cart |
 | POST | `/checkout` | `{ paymentMethodId }` → charges MoMo/card, **grants ownership**, returns receipt | `OrderSnapshot` |
 | GET | `/me/orders` | purchase history | `OrderSnapshot[]` |
+| GET | `/me/orders/:id` | single order by id (checkout settlement poll target) — 404 if missing or not the caller's | `OrderSnapshot` |
 
 > `/checkout` is what unlocks tracks: on success the server adds the purchased track ids (and all
 > tracks of a purchased album) to the user's owned set, so playback stops being preview-gated.
@@ -141,6 +142,10 @@ Cart kinds: `track | album | album-rest | store | episode | season-pass | ticket
 >   confirmed server-side (ADR-28). `null` for MoMo/sandbox charges.
 > - Provider settlement callbacks: `POST /v1/payments/webhooks/redde/receive` (unauthenticated; trusted by
 >   an authenticated pull-back, not a signature). Not a client-facing endpoint.
+>
+> **Order-line display fields (WU-COM-3).** `OrderSnapshot`'s line items gain `subtitle?: string | null`
+> and `image?: string | null` — additive, nullable, snapshotting the same display data the cart already
+> carried at checkout time. Orders placed before this WU shipped have `null` for both (never backfilled).
 
 ---
 

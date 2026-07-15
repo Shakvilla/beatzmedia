@@ -769,3 +769,27 @@ never by a cross-module table read.
   `(intent, refId)` is a benign no-op the CALLER never sees (matching the real adapter's swallow), so the
   F1 same-ref regression now surfaces as a missing posting (distinct-ref count assertion fails) rather
   than a thrown exception.
+
+## 15. WU-COM-3 implementation notes (order detail + line fidelity, shipped)
+
+**Single-order lookup.** `GET /v1/me/orders/{orderId}` was added (`GetOrder` port + `GetOrderService`,
+`OrderResource.get`) so the frontend checkout flow can poll a specific order's status after `POST
+/v1/checkout`'s `202` — `GET /v1/me/orders` only ever listed, never fetched by id. Ownership is checked
+in the service (`order.getAccountId().equals(account)`); a missing id and someone else's order both throw
+the SAME `OrderNotFoundException` → 404, so the endpoint never confirms another account's order exists
+(§2.2).
+
+**Order-line display fidelity.** `order_line` gained nullable `subtitle`/`image` columns
+(`V968__commerce_order_line_display_fields.sql`), copied from the cart's priced item at checkout
+(`PricedItem.subtitle()`/`.image()`, already resolved by `PricingService` for every kind) alongside the
+existing `title` copy. Before this, a settled order's receipt had nowhere to source line artwork —
+`cart_item` had carried `subtitle`/`image` since `V943`, but `order_line` never did. `OrderLine`'s
+constructor gained the two fields (nullable, no validation, matching `CartItem`'s own nullable
+subtitle/image); the three existing call sites (`OrderEntityMapper.toDomain`, `CheckoutService`'s two
+`OrderLine` construction sites) and two test fixture files (`OrderTest`, `GrantOwnershipServiceTest`)
+were updated. Proven by `CheckoutServiceTest.checkout_pricedLine_carriesDisplaySubtitleAndImage` (unit)
+and `CheckoutFlowIT.getOrder_ownOrder_returns200WithDisplayFields` (integration).
+
+Enables slice 3 of the frontend→backend wiring program
+(`docs/superpowers/specs/2026-07-15-commerce-checkout-wiring-design.md`) — the checkout receipt page
+polls `GET /v1/me/orders/{orderId}` until settlement instead of asserting success client-side.
