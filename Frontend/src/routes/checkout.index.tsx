@@ -1,8 +1,10 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { CreditCard } from 'lucide-react'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { cn } from '../utils/cn'
 import { useCart } from '../features/cart/cart-context'
+import { useToast } from '../components/ui/toast-provider'
+import { ApiError } from '../lib/api/errors'
 import { formatPrice } from '../lib/format'
 
 export const Route = createFileRoute('/checkout/')({
@@ -16,10 +18,18 @@ const PAYMENT_METHODS = [
   { id: 'card', name: 'Card', subtitle: 'Visa / Mastercard', color: 'bg-beatz-dark-surface-3', textColor: 'text-white', isCard: true },
 ]
 
+/** UI picker id -> backend Provider wire value (airtel -> airteltigo; others pass through). */
+function toProviderWireValue(pickerId: string): string {
+  return pickerId === 'airtel' ? 'airteltigo' : pickerId
+}
+
 function CheckoutComponent() {
   const [selectedMethod, setSelectedMethod] = useState('mtn')
+  const [submitting, setSubmitting] = useState(false)
   const navigate = useNavigate()
+  const { toast } = useToast()
   const { items, subtotal, fee, total, checkout } = useCart()
+  const idempotencyKeyRef = useRef<string | null>(null)
 
   if (items.length === 0) {
     return (
@@ -31,9 +41,28 @@ function CheckoutComponent() {
     )
   }
 
-  const handlePay = () => {
-    checkout()
-    navigate({ to: '/checkout/complete' })
+  const handlePay = async () => {
+    if (submitting) return
+    setSubmitting(true)
+    if (!idempotencyKeyRef.current) {
+      idempotencyKeyRef.current = crypto.randomUUID()
+    }
+    try {
+      const result = await checkout(toProviderWireValue(selectedMethod), idempotencyKeyRef.current)
+      navigate({ to: '/checkout/complete', search: { orderId: result.orderId } })
+    } catch (e) {
+      if (e instanceof ApiError && e.status === 401) {
+        toast('Please log in to check out', 'error')
+      } else if (e instanceof ApiError && e.status === 429) {
+        toast('Too many checkout attempts — please wait a moment and try again', 'error')
+      } else if (e instanceof ApiError && e.code === 'CHECKOUT_KIND_UNSUPPORTED') {
+        toast("Some items in your cart can't be checked out yet — remove them to continue", 'error')
+      } else {
+        toast('Payment could not be started — please try again', 'error')
+      }
+    } finally {
+      setSubmitting(false)
+    }
   }
 
   return (
@@ -116,9 +145,10 @@ function CheckoutComponent() {
 
           <button
             onClick={handlePay}
-            className="w-full h-14 rounded-full bg-beatz-green text-black font-bold text-lg flex items-center justify-center hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg shadow-beatz-green/20"
+            disabled={submitting}
+            className="w-full h-14 rounded-full bg-beatz-green text-black font-bold text-lg flex items-center justify-center hover:scale-[1.02] active:scale-[0.98] transition-all shadow-lg shadow-beatz-green/20 disabled:opacity-60"
           >
-            Pay {formatPrice({ amount: total, currency: 'GHS' })} with {selectedMethod === 'card' ? 'card' : 'MoMo'}
+            {submitting ? 'Processing…' : `Pay ${formatPrice({ amount: total, currency: 'GHS' })} with ${selectedMethod === 'card' ? 'card' : 'MoMo'}`}
           </button>
 
           <p className="text-center text-[10px] text-gray-500 dark:text-gray-300">By paying, you agree to the Beatzclik Terms.</p>
