@@ -790,6 +790,6 @@ subtitle/image); the three existing call sites (`OrderEntityMapper.toDomain`, `C
 were updated. Proven by `CheckoutServiceTest.checkout_pricedLine_carriesDisplaySubtitleAndImage` (unit)
 and `CheckoutFlowIT.getOrder_ownOrder_returns200WithDisplayFields` (integration).
 
-Enables slice 3 of the frontend->backend wiring program
+Enables slice 3 of the frontend→backend wiring program
 (`docs/superpowers/specs/2026-07-15-commerce-checkout-wiring-design.md`) — the checkout receipt page
 polls `GET /v1/me/orders/{orderId}` until settlement instead of asserting success client-side.
