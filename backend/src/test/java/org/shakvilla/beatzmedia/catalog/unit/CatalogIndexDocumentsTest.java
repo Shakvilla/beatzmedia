@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Set;
 
@@ -43,6 +44,36 @@ class CatalogIndexDocumentsTest {
     var doc = CatalogIndexDocuments.fromTrack(track);
 
     assertEquals(0L, doc.popularity().score());
+  }
+
+  @Test
+  void track_with_price_maps_price_minor_amount_and_currency() {
+    // 550 pesewas -> 5.50 GHS: chosen so a wrong divisor or rounding mode would actually show up
+    // (unlike e.g. 100 -> 1.00, where several broken implementations coincide with the correct one).
+    var track = CatalogTestFixtures.track("t4", "For Sale Track", "a1", "Artist", 1L, 550L);
+
+    var payload = CatalogIndexDocuments.fromTrack(track).payload();
+
+    assertEquals(550L, payload.get("price_minor"));
+    assertEquals(
+        0,
+        BigDecimal.valueOf(5.50).compareTo((BigDecimal) payload.get("price_amount")),
+        "price_amount should be 5.50, was " + payload.get("price_amount"));
+    assertEquals("GHS", payload.get("price_currency"));
+    assertTrue(
+        TRACK_ALLOWED.containsAll(payload.keySet()),
+        "payload had keys SearchDocumentMapper would silently strip: " + payload.keySet());
+  }
+
+  @Test
+  void track_without_price_omits_all_price_keys() {
+    var track = CatalogTestFixtures.track("t5", "Free Track", "a1", "Artist", 1L, null);
+
+    var payload = CatalogIndexDocuments.fromTrack(track).payload();
+
+    assertFalse(payload.containsKey("price_minor"), "price_minor should be absent when track has no price");
+    assertFalse(payload.containsKey("price_amount"), "price_amount should be absent when track has no price");
+    assertFalse(payload.containsKey("price_currency"), "price_currency should be absent when track has no price");
   }
 
   @Test

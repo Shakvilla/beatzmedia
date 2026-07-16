@@ -22,6 +22,12 @@ final class CatalogTestFixtures {
   private CatalogTestFixtures() {}
 
   static Track track(String id, String title, String artistId, String artistName, Long plays) {
+    return track(id, title, artistId, artistName, plays, null);
+  }
+
+  /** Overload for tests that need to pin a price (pesewas), e.g. exercising the putPrice branch. */
+  static Track track(
+      String id, String title, String artistId, String artistName, Long plays, Long priceMinor) {
     return new Track(
         new TrackId(id),
         title,
@@ -31,8 +37,8 @@ final class CatalogTestFixtures {
         null,
         200,
         "https://img.test/track.jpg",
-        OwnershipStatus.free,
-        null,
+        priceMinor == null ? OwnershipStatus.free : OwnershipStatus.for_sale,
+        priceMinor,
         plays,
         null,
         null,
