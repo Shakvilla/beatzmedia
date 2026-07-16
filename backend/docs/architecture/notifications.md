@@ -390,8 +390,13 @@ sketches above (recorded per DoD; email/SMS dispatch + `delivery_attempt` remain
   reference with **no cross-module FK** (hexagonal rule — notifications references accounts by id only).
 - **Only `onTipReceived` is wired, synchronously.** `adapter.in.events.NotificationEventObservers`
   observes exactly one event today — payments' `TipReceived` via `@Observes(during = AFTER_SUCCESS)`
-  (synchronous, keeping transactional context; not `@ObservesAsync`) → creates the creator's in-app
-  "you received a tip" notification (`type=tip`, dedupe `tip:<intentId>:<creatorId>`). This closes the
+  (synchronous, not `@ObservesAsync`) → creates the creator's in-app "you received a tip" notification
+  (`type=tip`, dedupe `tip:<intentId>:<creatorId>`). Because it is `AFTER_SUCCESS`, the producing
+  transaction has already committed and **no transaction is active on the thread**, so the observer
+  carries its own `@Transactional(REQUIRES_NEW)` boundary — a plain `REQUIRED` delegate (`NotifyService`)
+  would join the stale completing context and fail with `TransactionRequiredException`. This mirrors
+  every other AFTER_SUCCESS persisting observer (analytics `TipReceivedObserver`, store
+  `PurchaseConfirmedSubscriber`). This closes the
   in-app half of the WU-POD-2 deferred tip-notification AC. The other producers sketched in §4.1
   (`sale`/`follower`/`payout`/`release`/`episode`/`system`) are **deferred**: their source domain
   events do not exist in the codebase yet, so no observer is wired — added as those events land.
