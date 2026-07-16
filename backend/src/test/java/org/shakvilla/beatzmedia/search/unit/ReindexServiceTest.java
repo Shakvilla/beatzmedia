@@ -90,6 +90,50 @@ class ReindexServiceTest {
   }
 
   @Test
+  void reindex_isolates_a_source_whose_load_throws_so_a_healthy_source_still_indexes() {
+    // WU-SRCH-2 Finding 2 regression: a single bad row can throw while a source builds its
+    // document list (e.g. IndexDocument's own validation rejecting a blank title) before the
+    // source ever returns — that must not stop a second, healthy source from being indexed, and
+    // the report must count only what was actually indexed.
+    FakeSearchIndex index = new FakeSearchIndex();
+    IndexSource broken = new IndexSource() {
+      @Override
+      public EntityType entityType() {
+        return EntityType.TRACK;
+      }
+
+      @Override
+      public List<IndexDocument> load() {
+        throw new IllegalArgumentException("title must not be blank");
+      }
+    };
+    var healthy = source(EntityType.ARTIST, List.of(doc(EntityType.ARTIST, "a1", true)));
+    var service = ReindexServiceTestHelper.create(index, FakeClock.fixed(), List.of(broken, healthy));
+
+    ReindexReport report = service.reindex(null);
+
+    assertEquals(1L, report.documentsIndexed(), "the healthy source's document must still be indexed");
+    assertEquals(1, index.upsertCallCount);
+  }
+
+  @Test
+  void reindex_isolates_a_document_that_fails_to_upsert_so_the_rest_of_the_source_still_indexes() {
+    // A failure at upsert time (rather than at load()) must isolate to just that document — the
+    // rest of the same source's documents still get indexed and counted.
+    FakeSearchIndex index = new FakeSearchIndex();
+    index.failUpsertFor.add("TRACK|bad-1");
+    var tracks = source(
+        EntityType.TRACK,
+        List.of(doc(EntityType.TRACK, "bad-1", true), doc(EntityType.TRACK, "good-1", true)));
+    var service = ReindexServiceTestHelper.create(index, FakeClock.fixed(), List.of(tracks));
+
+    ReindexReport report = service.reindex(EntityType.TRACK);
+
+    assertEquals(1L, report.documentsIndexed(), "only the document that upserted successfully must be counted");
+    assertEquals(1, index.upsertCallCount);
+  }
+
+  @Test
   void reindex_stamps_started_and_completed_from_the_clock() {
     FakeSearchIndex index = new FakeSearchIndex();
     var clock = FakeClock.fixed();

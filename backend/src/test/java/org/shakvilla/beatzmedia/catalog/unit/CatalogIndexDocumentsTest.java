@@ -25,7 +25,7 @@ class CatalogIndexDocumentsTest {
   void track_maps_title_subtitle_and_searchable_text() {
     var track = CatalogTestFixtures.track("t1", "Second Sermon", "black-sherif", "Black Sherif", 1500L);
 
-    var doc = CatalogIndexDocuments.fromTrack(track);
+    var doc = CatalogIndexDocuments.fromTrack(track, true);
 
     assertEquals(EntityType.TRACK, doc.entityType());
     assertEquals("t1", doc.entityId());
@@ -38,10 +38,23 @@ class CatalogIndexDocumentsTest {
   }
 
   @Test
+  void track_gated_by_a_non_live_release_is_indexed_with_visible_false() {
+    // WU-SRCH-2 Finding 1 regression: a taken-down (or otherwise non-live-gated) track must still
+    // produce a document — upsert-only reindex means skipping it would strand a stale
+    // visible=true document forever — but that document must carry visible=false.
+    var track = CatalogTestFixtures.track("t6", "Taken Down Track", "a1", "Artist", 1L);
+
+    var doc = CatalogIndexDocuments.fromTrack(track, false);
+
+    assertEquals("t6", doc.entityId());
+    assertFalse(doc.visible(), "a track gated by a non-live release must be indexed as hidden, not skipped");
+  }
+
+  @Test
   void track_with_null_plays_gets_zero_popularity_not_an_NPE() {
     var track = CatalogTestFixtures.track("t2", "Kwaku the Traveller", "black-sherif", "Black Sherif", null);
 
-    var doc = CatalogIndexDocuments.fromTrack(track);
+    var doc = CatalogIndexDocuments.fromTrack(track, true);
 
     assertEquals(0L, doc.popularity().score());
   }
@@ -52,7 +65,7 @@ class CatalogIndexDocumentsTest {
     // (unlike e.g. 100 -> 1.00, where several broken implementations coincide with the correct one).
     var track = CatalogTestFixtures.track("t4", "For Sale Track", "a1", "Artist", 1L, 550L);
 
-    var payload = CatalogIndexDocuments.fromTrack(track).payload();
+    var payload = CatalogIndexDocuments.fromTrack(track, true).payload();
 
     assertEquals(550L, payload.get("price_minor"));
     assertEquals(
@@ -69,7 +82,7 @@ class CatalogIndexDocumentsTest {
   void track_without_price_omits_all_price_keys() {
     var track = CatalogTestFixtures.track("t5", "Free Track", "a1", "Artist", 1L, null);
 
-    var payload = CatalogIndexDocuments.fromTrack(track).payload();
+    var payload = CatalogIndexDocuments.fromTrack(track, true).payload();
 
     assertFalse(payload.containsKey("price_minor"), "price_minor should be absent when track has no price");
     assertFalse(payload.containsKey("price_amount"), "price_amount should be absent when track has no price");
@@ -80,7 +93,7 @@ class CatalogIndexDocumentsTest {
   void track_payload_only_carries_allow_listed_keys() {
     var track = CatalogTestFixtures.track("t3", "Title", "a1", "Artist", 1L);
 
-    var doc = CatalogIndexDocuments.fromTrack(track);
+    var doc = CatalogIndexDocuments.fromTrack(track, true);
 
     assertTrue(
         TRACK_ALLOWED.containsAll(doc.payload().keySet()),
@@ -144,7 +157,7 @@ class CatalogIndexDocumentsTest {
     // IndexDocument's compact constructor rejects blank title/entityId — pin that we never build one.
     List<String> titles =
         List.of(
-            CatalogIndexDocuments.fromTrack(CatalogTestFixtures.track("t1", "T", "a1", "A", 1L)).title(),
+            CatalogIndexDocuments.fromTrack(CatalogTestFixtures.track("t1", "T", "a1", "A", 1L), true).title(),
             CatalogIndexDocuments.fromArtist(CatalogTestFixtures.artist("a1", "A", 1L)).title(),
             CatalogIndexDocuments.fromAlbum(CatalogTestFixtures.album("al1", "Al", "a1", "A")).title(),
             CatalogIndexDocuments.fromPlaylist(CatalogTestFixtures.playlist("p1", "P", "C", true, 1L)).title());

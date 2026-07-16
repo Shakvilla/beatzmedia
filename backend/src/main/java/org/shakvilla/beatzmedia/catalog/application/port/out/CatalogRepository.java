@@ -104,11 +104,23 @@ public interface CatalogRepository {
   // ---- WU-SRCH-2: search index backfill ----
 
   /**
-   * All tracks eligible for the search index, i.e. those whose audio has finished processing and
-   * which are not gated behind a non-live release. Ordering is unspecified. Used only by the
-   * catalog-side search indexer (WU-SRCH-2); not a public listing.
+   * A catalog track plus whether it should currently surface in search. {@code visible} is {@code
+   * false} when the track's owning release — found via the {@code release_track} join, the
+   * authoritative track ↔ release link ({@code track.release_id} is never populated) — exists and
+   * is not {@code live} (e.g. {@code draft}, {@code in_review}, {@code scheduled}, {@code
+   * takedown}). A track with no owning release at all is always visible. WU-SRCH-2.
    */
-  List<Track> allTracksForIndex();
+  record IndexableTrack(Track track, boolean visible) {}
+
+  /**
+   * All tracks eligible for the search index, i.e. those whose audio has finished processing
+   * ({@code status = 'ready'}), paired with whether each should currently be visible in search.
+   * Reindex is upsert-only, so a track that must be hidden (e.g. after a takedown) is still
+   * returned here — with {@code visible=false} — rather than omitted, since omitting it would
+   * strand its previous {@code visible=true} document in the index forever. Ordering is
+   * unspecified. Used only by the catalog-side search indexer (WU-SRCH-2); not a public listing.
+   */
+  List<IndexableTrack> allTracksForIndex();
 
   /** All artist profiles, for the search indexer (WU-SRCH-2). Ordering is unspecified. */
   List<ArtistProfile> allArtistsForIndex();

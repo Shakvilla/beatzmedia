@@ -32,6 +32,8 @@ public class TrackIndexSource implements IndexSource {
 
   @Override
   public List<IndexDocument> load() {
-    return repository.allTracksForIndex().stream().map(CatalogIndexDocuments::fromTrack).toList();
+    return repository.allTracksForIndex().stream()
+        .map(it -> CatalogIndexDocuments.fromTrack(it.track(), it.visible()))
+        .toList();
   }
 }

@@ -29,7 +29,13 @@ public final class CatalogIndexDocuments {
 
   private CatalogIndexDocuments() {}
 
-  public static IndexDocument fromTrack(Track track) {
+  /**
+   * @param visible whether this track should currently surface in search — {@code false} when its
+   *     owning release is not live (WU-SRCH-2 Finding 1). The catalog repository computes this via
+   *     the {@code release_track} join; {@code CatalogIndexDocuments} stays a pure mapper and takes
+   *     it as an input rather than re-deriving it.
+   */
+  public static IndexDocument fromTrack(Track track, boolean visible) {
     Map<String, Object> payload = new LinkedHashMap<>();
     payload.put("image", track.getImage());
     payload.put("duration_sec", track.getDurationSec());
@@ -43,7 +49,7 @@ public final class CatalogIndexDocuments {
         track.getArtistName(),
         track.getTitle() + " " + track.getArtistName(),
         new Popularity(track.getPlays().orElse(0L)),
-        true,
+        visible,
         payload);
   }
 
