@@ -25,7 +25,6 @@ import org.shakvilla.beatzmedia.commerce.domain.CartEmptyException;
 import org.shakvilla.beatzmedia.commerce.domain.CartItem;
 import org.shakvilla.beatzmedia.commerce.domain.CartItemKind;
 import org.shakvilla.beatzmedia.commerce.domain.ChargeAmountExceededException;
-import org.shakvilla.beatzmedia.commerce.domain.CheckoutKindUnsupportedException;
 import org.shakvilla.beatzmedia.commerce.domain.IdempotencyConflictException;
 import org.shakvilla.beatzmedia.commerce.domain.Order;
 import org.shakvilla.beatzmedia.commerce.domain.OrderId;
@@ -72,6 +71,7 @@ public class CheckoutService implements Checkout {
   private final OrderRepository orderRepository;
   private final PricingService pricingService;
   private final CatalogExpansionReader expansionReader;
+  private final SettlementSourceRegistry settlementSources;
   private final OrderRefGenerator orderRefGenerator;
   private final ChargeGateway chargeGateway;
   private final PlatformSettingsProvider settingsProvider;
@@ -85,6 +85,7 @@ public class CheckoutService implements Checkout {
       OrderRepository orderRepository,
       PricingService pricingService,
       CatalogExpansionReader expansionReader,
+      SettlementSourceRegistry settlementSources,
       OrderRefGenerator orderRefGenerator,
       ChargeGateway chargeGateway,
       PlatformSettingsProvider settingsProvider,
@@ -95,6 +96,7 @@ public class CheckoutService implements Checkout {
     this.orderRepository = orderRepository;
     this.pricingService = pricingService;
     this.expansionReader = expansionReader;
+    this.settlementSources = settlementSources;
     this.orderRefGenerator = orderRefGenerator;
     this.chargeGateway = chargeGateway;
     this.settingsProvider = settingsProvider;
@@ -139,11 +141,15 @@ public class CheckoutService implements Checkout {
     PlatformSettings settings = settingsProvider.current();
     Currency currency = settings.defaultCurrency();
 
-    // 3 + 4. Gate unsupported kinds (G3) and re-price authoritatively server-side (G1).
+    // 3 + 4. WU-COM-4 payee guard + authoritative server-side re-pricing (G1). All seven kinds are
+    // now sellable (the old G3 kind-gate is gone): episode/season-pass/ticket/store price and settle
+    // authoritatively via their owning-module SPIs. The guard is the replacement invariant — a kind
+    // with a SettlementSource MUST resolve a payee before we charge, so a settled sale can never leave
+    // its gross unattributed (INV-4). This is the security-critical check the un-gate depends on.
     List<OrderLine> lines = new ArrayList<>(cart.getItems().size());
     for (CartItem item : cart.getItems()) {
       CartItemKind kind = item.getKind();
-      gateKind(kind);
+      requireResolvablePayee(kind, item.getRefId());
       if (kind == CartItemKind.album_rest) {
         // F2: album-rest ("buy the rest") is priced ownership-aware — the SUM of the caller's
         // not-yet-owned, for-sale album tracks at each track's individual price, with NO bundle
@@ -203,19 +209,23 @@ public class CheckoutService implements Checkout {
   }
 
   /**
-   * G3 gate: only {@code track}/{@code album}/{@code album-rest} have authoritative catalog pricing at
-   * this WU's scope. {@code episode}/{@code season-pass}/{@code ticket}/{@code store} are priced from
-   * client-supplied metadata by the interim adapter (// G2), so charging real money on them would be a
-   * spoofing vector — reject until the owning module (WU-POD-1/EVT-1/STO-1) ships a real price port.
+   * WU-COM-4 payee guard (replaces the former G3 kind-gate). For a kind that settles via an owning-
+   * module {@link org.shakvilla.beatzmedia.commerce.application.port.out.SettlementSource}
+   * (episode/season-pass/ticket/store), require a resolvable payee before the charge — otherwise the
+   * settled gross could not be attributed to any creator/artist/seller (INV-4), and we must never take
+   * money we cannot account for. An un-payable item is treated as not-for-sale (404). {@code
+   * track}/{@code album}/{@code album-rest} have no SettlementSource — their payee is resolved from
+   * catalog at settlement — so the guard is a no-op for them.
    */
-  private void gateKind(CartItemKind kind) {
-    switch (kind) {
-      case track, album, album_rest -> {
-        // authoritative catalog pricing — allowed
-      }
-      case episode, season_pass, ticket, store ->
-          throw new CheckoutKindUnsupportedException(kind.wireValue());
-    }
+  private void requireResolvablePayee(CartItemKind kind, String refId) {
+    settlementSources
+        .forKind(kind)
+        .ifPresent(
+            source -> {
+              if (source.payee(refId).isEmpty()) {
+                throw new PriceUnavailableException(kind.wireValue(), refId);
+              }
+            });
   }
 
   /**
