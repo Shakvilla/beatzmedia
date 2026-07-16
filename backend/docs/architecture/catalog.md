@@ -327,6 +327,10 @@ public interface CatalogRepository {   // Postgres + Panache adapter (adapter.ou
     List<Release> dueScheduled(Instant now);   // INV-7 go-live sweep; row-locked (PESSIMISTIC_WRITE)
     boolean hasPendingSplits(ReleaseId releaseId);      // WU-CAT-4 — INV-12 live-transition guard
     void markReleaseTracksReady(ReleaseId releaseId);   // WU-CAT-4 — flips constituent tracks 'ready'
+    List<Track> allTracksForIndex();          // WU-SRCH-2 — search reindex enumeration, §13
+    List<ArtistProfile> allArtistsForIndex();  // WU-SRCH-2 — search reindex enumeration, §13
+    List<Album> allAlbumsForIndex();           // WU-SRCH-2 — search reindex enumeration, §13
+    List<Playlist> allPlaylistsForIndex();     // WU-SRCH-2 — search reindex enumeration, §13 (includes private)
 }
 
 public interface SearchIndex {         // pg_trgm / full-text adapter (WU-SRCH-1)
@@ -409,8 +413,13 @@ resources (conventions §5).
 
 `CatalogRepositoryAdapter` (Hibernate-ORM-Panache) maps domain aggregates ↔ JPA entities (domain
 carries no ORM annotations); transaction boundary = the application service (`@Transactional` on the
-use-case impl). `SearchIndexAdapter` keeps a `pg_trgm`/full-text projection in sync on release
-go-live / track change (WU-SRCH-1). `MediaServiceClient` calls the `media` module for
+use-case impl). **Correction (WU-SRCH-2, §13):** this ADD previously stated that a `SearchIndexAdapter`
+"keeps a `pg_trgm`/full-text projection in sync on release go-live / track change (WU-SRCH-1)" — no
+such adapter or event-driven sync exists in the codebase; `search`'s `IndexEventObserversStub` remains
+a comment-only placeholder with no `@Observes` beans, so nothing in catalog kept the index in sync on
+release go-live or track change, and `search_document` was empty in every environment. `catalog`
+instead **contributes** to search's periodic pull-based backfill — see §13 for the as-built design.
+`MediaServiceClient` calls the `media` module for
 upload/validate/transcode (rejects non-WAV/FLAC → `UnsupportedFormatException`, oversize → 413,
 returns probed `durationSec` and an async `uploading→ready|error` status). `OwnershipReaderClient`
 (from `commerce`/`library`) decorates each outbound `Track` with per-caller `ownership`/`price`.
@@ -759,3 +768,39 @@ Global DoD (conventions §11 / PRD §8) **plus**:
 5. Every illegal FSM edge returns 409 `ILLEGAL_TRANSITION`; all §9 error codes are assertable.
 6. Approve / takedown / reinstate emit the documented domain events; contract test green against the
    frontend types.
+
+## 13. Implementation notes (WU-SRCH-2, as-built)
+
+**`catalog` now owns the mapping of its entities into the search index.** WU-SRCH-1's ADD (§4.1
+observer stub, §9) had deferred index projection to observer wiring in WU-CAT-3/CAT-4; that wiring was
+never added, so `search_document` stayed empty in every environment (search ADD §4.1). WU-SRCH-2
+closes this from the search side with a pull-based backfill instead — see search ADD §9 and ADR-30.
+`catalog` contributes the four `IndexSource` beans search's `ReindexService` discovers via CDI:
+
+- `catalog.adapter.out.search.TrackIndexSource` / `ArtistIndexSource` / `AlbumIndexSource` /
+  `PlaylistIndexSource` — one `search.application.port.out.IndexSource` implementation per
+  `EntityType` catalog owns. Each `load()` delegates to a new `CatalogRepository` enumeration method
+  and maps the result through `CatalogIndexDocuments` (a pure, stateless mapper — no CDI, no
+  database — kept unit-testable without Testcontainers).
+- `CatalogRepository.allTracksForIndex()` / `allArtistsForIndex()` / `allAlbumsForIndex()` /
+  `allPlaylistsForIndex()` — new read methods, distinct from the existing paginated/filtered public
+  reads, that each enumerate **every** row of their entity so the indexer can decide visibility itself
+  (search ADD §9 visibility rules). None of these apply a visibility filter — `allTracksForIndex()` is
+  the one exception with a `WHERE` clause, and that clause is a **content-readiness** gate, not a
+  visibility gate: `status = 'ready'` AND (`release_id IS NULL` OR the release is `live`). The "no
+  release" arm is required, not defensive: `R__seed_dev_data.sql` inserts zero `release` rows, so
+  every seeded track has `release_id = NULL` and must still be indexed for a dev stack's `/search` to
+  return anything.
+- `allPlaylistsForIndex()` **deliberately returns private (`is_public = false`) playlists** rather than
+  filtering them out. This is load-bearing, not an oversight: `search`'s reindex is upsert-only (search
+  ADD §12, F8) — it never calls `SearchIndex.remove`. If a private playlist were simply omitted from
+  `load()`, a playlist that had previously been public (and so already had a `visible=true` document)
+  would keep that stale, publicly-visible document forever after being made private, since nothing
+  would ever revisit it to flip `visible=false`. Including it and letting `PlaylistIndexSource` map
+  `visible = playlist.isPublic()` (via `CatalogIndexDocuments.fromPlaylist`) means every reindex tick
+  re-asserts the correct visibility for every playlist, public or not.
+- Artists and albums have no analogous readiness/visibility gate today — `allArtistsForIndex()` and
+  `allAlbumsForIndex()` return every row, always indexed `visible = true` (search ADD §9).
+- **No new module edge.** `catalog` already implements outbound ports for `search` in spirit — this
+  follows the same `module → search` direction as `store.adapter.out.persistence.SearchIndexPg`
+  (ADR-30). `search` still never imports `catalog`.
