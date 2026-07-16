@@ -37,6 +37,7 @@ public final class Order {
   private String failureReason;
   private String idempotencyKey;
   private String requestHash;
+  private String checkoutUrl;
   private final List<OrderLine> lines;
   private final Instant createdAt;
 
@@ -99,6 +100,15 @@ public final class Order {
   /** Record the payment intent id returned by {@code InitiateCharge} on the pending order. */
   public void attachPaymentIntent(String paymentIntentId) {
     this.paymentIntentId = paymentIntentId;
+  }
+
+  /**
+   * Record the hosted-checkout redirect URL (WU-COM-4/WU-PAY-6) on the pending order. Non-null only
+   * for a card charge that requires a Redde hosted-checkout redirect; null for every MoMo/sandbox
+   * charge. Persisted so an idempotent checkout replay returns the same URL.
+   */
+  public void attachCheckoutUrl(String checkoutUrl) {
+    this.checkoutUrl = checkoutUrl;
   }
 
   /**
@@ -212,6 +222,10 @@ public final class Order {
 
   public String getPaymentIntentId() {
     return paymentIntentId;
+  }
+
+  public String getCheckoutUrl() {
+    return checkoutUrl;
   }
 
   public String getFailureReason() {

@@ -3,6 +3,7 @@ package org.shakvilla.beatzmedia.commerce.it;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.nullValue;
 import static org.hamcrest.Matchers.startsWith;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -195,7 +196,10 @@ class CheckoutFlowIT {
         .body("status", equalTo("pending"))
         .body("orderId", notNullValue())
         .body("reference", startsWith("BZ-"))
-        .body("paymentIntentId", notNullValue());
+        .body("paymentIntentId", notNullValue())
+        // WU-COM-4: checkoutUrl is present-but-null on the default sandbox/MoMo path (non-null only
+        // for a card charge via Redde, gated off by PSP_REDDE until go-live).
+        .body("checkoutUrl", nullValue());
     String intentId = co.jsonPath().getString("paymentIntentId");
     String reference = co.jsonPath().getString("reference");
 

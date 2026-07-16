@@ -39,20 +39,23 @@ public class OrderEntityMapper {
                         Money.ofMinor(l.unitPriceMinor, Currency.valueOf(l.currency)),
                         l.qty))
             .toList();
-    return new Order(
-        new OrderId(e.id),
-        new AccountId(e.accountId),
-        e.reference,
-        OrderStatus.valueOf(e.status),
-        Money.ofMinor(e.subtotalMinor, currency),
-        Money.ofMinor(e.feeMinor, currency),
-        Money.ofMinor(e.totalMinor, currency),
-        e.paymentIntentId,
-        e.failureReason,
-        e.idempotencyKey,
-        e.requestHash,
-        lines,
-        e.createdAt);
+    Order order =
+        new Order(
+            new OrderId(e.id),
+            new AccountId(e.accountId),
+            e.reference,
+            OrderStatus.valueOf(e.status),
+            Money.ofMinor(e.subtotalMinor, currency),
+            Money.ofMinor(e.feeMinor, currency),
+            Money.ofMinor(e.totalMinor, currency),
+            e.paymentIntentId,
+            e.failureReason,
+            e.idempotencyKey,
+            e.requestHash,
+            lines,
+            e.createdAt);
+    order.attachCheckoutUrl(e.checkoutUrl);
+    return order;
   }
 
   OrderEntity toEntity(Order order, OrderEntity target) {
@@ -66,6 +69,7 @@ public class OrderEntityMapper {
     entity.totalMinor = order.getTotal().minor();
     entity.currency = order.getTotal().currency().name();
     entity.paymentIntentId = order.getPaymentIntentId();
+    entity.checkoutUrl = order.getCheckoutUrl();
     entity.failureReason = order.getFailureReason();
     entity.idempotencyKey = order.getIdempotencyKey();
     entity.requestHash = order.getRequestHash();

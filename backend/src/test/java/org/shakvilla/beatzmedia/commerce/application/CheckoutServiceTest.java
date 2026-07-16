@@ -1,6 +1,7 @@
 package org.shakvilla.beatzmedia.commerce.application;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
@@ -180,6 +181,20 @@ class CheckoutServiceTest {
     CheckoutResult result = service.checkout(ACCOUNT, KEY, "mtn");
     assertEquals(2050, gateway.last().amountMinor(), "album (2000) + fee (50)");
     assertTrue(result.reference().startsWith("BZ-"));
+    assertNull(result.checkoutUrl(), "MoMo/sandbox charge carries no checkoutUrl (WU-COM-4)");
+  }
+
+  @Test
+  void checkout_cardHostedCheckout_surfacesCheckoutUrl() {
+    // WU-COM-4: a card charge that needs a Redde hosted-checkout redirect returns the URL, which the
+    // service threads PaymentIntentView -> ChargeResult -> CheckoutResult (and persists on the order).
+    seedCartWithStoredPrice(CartItemKind.album, "al1", 2000);
+    pricing.seed(CartItemKind.album, "al1", "Album", 2000);
+    gateway.withCheckoutUrl("https://redde.example/checkout/xyz");
+
+    CheckoutResult result = service.checkout(ACCOUNT, KEY, "card");
+
+    assertEquals("https://redde.example/checkout/xyz", result.checkoutUrl());
   }
 
   @Test

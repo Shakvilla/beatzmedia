@@ -186,13 +186,20 @@ public class CheckoutService implements Checkout {
         chargeGateway.initiateCharge(
             account, reference, order.getTotal(), paymentMethodId, idempotencyKey);
     order.attachPaymentIntent(charge.paymentIntentId());
+    // WU-COM-4: persist the hosted-checkout redirect URL (null for MoMo/sandbox) so an idempotent
+    // replay through toResult() returns the same URL.
+    order.attachCheckoutUrl(charge.checkoutUrl());
     orderRepository.save(order);
 
     // 7. Audit exactly once (INV-10, actor = the fan).
     audit(account, order, "CHECKOUT");
 
     return new CheckoutResult(
-        order.getId().value(), reference, charge.paymentIntentId(), order.getStatus().wireValue());
+        order.getId().value(),
+        reference,
+        charge.paymentIntentId(),
+        order.getStatus().wireValue(),
+        charge.checkoutUrl());
   }
 
   /**
@@ -247,7 +254,8 @@ public class CheckoutService implements Checkout {
         order.getId().value(),
         order.getReference(),
         order.getPaymentIntentId(),
-        order.getStatus().wireValue());
+        order.getStatus().wireValue(),
+        order.getCheckoutUrl());
   }
 
   private void audit(AccountId actor, Order order, String action) {

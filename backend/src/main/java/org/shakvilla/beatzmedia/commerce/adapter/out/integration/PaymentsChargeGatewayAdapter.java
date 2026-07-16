@@ -58,7 +58,7 @@ public class PaymentsChargeGatewayAdapter implements ChargeGateway {
             method,
             new IdempotencyKey(idempotencyKey));
 
-    return new ChargeResult(view.id(), view.status());
+    return new ChargeResult(view.id(), view.status(), view.checkoutUrl());
   }
 
   private PaymentMethodRef parseMethod(String paymentMethodId) {
