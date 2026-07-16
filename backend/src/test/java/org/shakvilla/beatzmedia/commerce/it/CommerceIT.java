@@ -74,7 +74,7 @@ class CommerceIT {
     em.createNativeQuery(
             "INSERT INTO event (id, title, artist_name, artist_id, image, event_at, venue, city,"
                 + " category) VALUES ('some-event', 'Some Event', 'Commerce IT Artist', :aid,"
-                + " 'img.jpg', now() + interval '30 days', 'Venue', 'Accra', 'CONCERT')"
+                + " 'img.jpg', now() + interval '30 days', 'Venue', 'Accra', 'Concert')"
                 + " ON CONFLICT (id) DO NOTHING")
         .setParameter("aid", ARTIST_ID)
         .executeUpdate();

@@ -118,7 +118,7 @@ class CheckoutFlowIT {
             "INSERT INTO event (id, title, artist_name, artist_id, image, event_at, venue, city,"
                 + " category) VALUES ('co2-tk-event', 'CO2 Live', 'CO2 Ticket Artist',"
                 + " 'co2-ticket-artist', 'img.jpg', now() + interval '30 days', 'Venue', 'Accra',"
-                + " 'CONCERT') ON CONFLICT (id) DO NOTHING")
+                + " 'Concert') ON CONFLICT (id) DO NOTHING")
         .executeUpdate();
     em.createNativeQuery(
             "INSERT INTO ticket_tier (id, event_id, name, price_minor, capacity, sold)"
