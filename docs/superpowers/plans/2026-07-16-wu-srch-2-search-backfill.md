@@ -49,6 +49,15 @@ This is a structural decision, so Task 6 records it as an ADR.
   `SearchDocumentEntity`, and `SearchDocumentMapper` are package-private and must stay unreferenced
   outside `search`.
 - Java 25 / Quarkus. Build with `./backend/mvnw`. Spotless must be clean.
+- **Assertions: JUnit 5 `org.junit.jupiter.api.Assertions` only. AssertJ is NOT a dependency of this
+  project** — there is no `assertj` in `backend/pom.xml` and zero existing tests import `org.assertj`.
+  Do not add it. Match the style of the existing `search/integration/SearchIndexIT.java`.
+- **Running tests: `-Dgroups=...` does not work locally** — this pom has no surefire groups wiring, so
+  `-Dgroups=arch` silently runs **zero** tests and reports success. Use:
+  - unit tests / ArchUnit (surefire, `*Test`): `cd backend && ./mvnw -q test -Dtest=<ClassName>`
+  - all unit tests: `cd backend && ./mvnw -q test -DskipITs=true`
+  - integration tests (failsafe, `*IT`): `cd backend && ./mvnw -q verify -Dit.test=<ClassName>`
+  ArchUnit has no separate step — `ArchitectureRulesTest` runs inside the normal test suite.
 - **Do NOT run `backend/scripts/verify.sh` or `smoke.sh` yourself** — the repo owner runs those and
   reports results (IntelliJ JPS races the build). Task 7 is that gate.
 - Branch: `feat/WU-SRCH-2-search-index-backfill`, one WU per branch. Conventional Commits with the WU id
@@ -187,6 +196,12 @@ public interface IndexSource {
 ```
 
 - [ ] **Step 2: Write the failing test**
+
+> **As-built correction (Task 2 is complete):** the test code below uses AssertJ, which is **not** a
+> dependency of this project — see the Global Constraints. The implemented version at commit `b62a552`
+> uses JUnit 5 `Assertions` instead, with the same coverage. Read the committed
+> `search/unit/ReindexServiceTest.java` for the real tests; the block below is kept only to show the
+> intended cases.
 
 Note the package: `org.shakvilla.beatzmedia.search.unit`, so the package-private `FakeSearchIndex` can be
 reused. `ReindexService` is package-private in `...search.application.service`, so the test constructs it
@@ -429,7 +444,7 @@ Expected: PASS (5 tests).
 
 - [ ] **Step 6: Run ArchUnit — this is the rule most likely to bite**
 
-Run: `cd backend && ./mvnw -q test -Dgroups=arch`
+Run: `cd backend && ./mvnw -q test -Dtest=ArchitectureRulesTest`
 Expected: PASS. `ReindexService` lives in `..application..` and must not call `Instant.now()` — it uses
 the injected `Clock`, which is why this passes.
 
@@ -478,7 +493,8 @@ repeatable seed migration having been applied, which Dev Services does automatic
 ```java
 package org.shakvilla.beatzmedia.catalog.it;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import jakarta.inject.Inject;
 
@@ -498,42 +514,59 @@ class CatalogEnumerationIT {
   void allTracksForIndex_returns_the_seeded_tracks() {
     var tracks = repository.allTracksForIndex();
 
-    assertThat(tracks).isNotEmpty();
-    assertThat(tracks).extracting(t -> t.getId().value()).contains("last-last");
+    assertFalse(tracks.isEmpty(), "expected the seeded tracks to be enumerated");
+    assertTrue(
+        tracks.stream().anyMatch(t -> t.getId().value().equals("last-last")),
+        "expected seeded track 'last-last'");
   }
 
   @Test
   void allArtistsForIndex_returns_the_seeded_artists() {
     var artists = repository.allArtistsForIndex();
 
-    assertThat(artists).isNotEmpty();
-    assertThat(artists).extracting(a -> a.getId().value()).contains("black-sherif");
+    assertFalse(artists.isEmpty(), "expected the seeded artists to be enumerated");
+    assertTrue(
+        artists.stream().anyMatch(a -> a.getId().value().equals("black-sherif")),
+        "expected seeded artist 'black-sherif'");
   }
 
   @Test
   void allAlbumsForIndex_returns_the_seeded_albums() {
     var albums = repository.allAlbumsForIndex();
 
-    assertThat(albums).isNotEmpty();
-    assertThat(albums).extracting(a -> a.getId().value()).contains("iron-boy");
+    assertFalse(albums.isEmpty(), "expected the seeded albums to be enumerated");
+    assertTrue(
+        albums.stream().anyMatch(a -> a.getId().value().equals("iron-boy")),
+        "expected seeded album 'iron-boy'");
   }
 
   @Test
   void allPlaylistsForIndex_returns_private_playlists_too_so_the_indexer_can_hide_them() {
     var playlists = repository.allPlaylistsForIndex();
 
-    assertThat(playlists).extracting(Playlist::getId).extracting(id -> id.value()).contains("private-test-playlist");
-    assertThat(playlists)
-        .filteredOn(p -> p.getId().value().equals("private-test-playlist"))
-        .allMatch(p -> !p.isPublic());
+    Playlist priv =
+        playlists.stream()
+            .filter(p -> p.getId().value().equals("private-test-playlist"))
+            .findFirst()
+            .orElse(null);
+
+    // Enumerated, NOT filtered out: the indexer needs it so it can write visible=false.
+    assertTrue(priv != null, "private playlist must be enumerated so the indexer can hide it");
+    assertFalse(priv.isPublic(), "the seeded private playlist should not be public");
+    assertTrue(
+        playlists.stream().anyMatch(p -> p.getId().value().equals("vibes-from-the-233")),
+        "public playlists must be enumerated too");
   }
 }
 ```
 
 - [ ] **Step 3: Run it to verify it fails**
 
-Run: `cd backend && ./mvnw -q test -Dtest=CatalogEnumerationIT -Dgroups=integration`
+Run: `cd backend && ./mvnw -q verify -Dit.test=CatalogEnumerationIT`
 Expected: FAIL — compilation error, `allTracksForIndex()` undefined on `CatalogRepository`.
+
+Note this is `verify` + `-Dit.test` (failsafe), not `test` + `-Dtest` (surefire) — `*IT` classes are
+failsafe's, and surefire's default includes do not match them.
 
 - [ ] **Step 4: Add the port methods**
 
@@ -629,7 +662,7 @@ what matters: **`status = 'ready'` AND (no release OR the release is live)**.
 
 - [ ] **Step 6: Run the IT to verify it passes**
 
-Run: `cd backend && ./mvnw -q test -Dtest=CatalogEnumerationIT -Dgroups=integration`
+Run: `cd backend && ./mvnw -q verify -Dit.test=CatalogEnumerationIT`
 Expected: PASS (4 tests).
 
 - [ ] **Step 7: Commit**
@@ -667,9 +700,12 @@ CDI or a database; the four `IndexSource` beans are thin wiring.
 ```java
 package org.shakvilla.beatzmedia.catalog.unit;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.Set;
 
 import org.junit.jupiter.api.Test;
 import org.shakvilla.beatzmedia.catalog.adapter.out.search.CatalogIndexDocuments;
@@ -677,19 +713,27 @@ import org.shakvilla.beatzmedia.search.domain.EntityType;
 
 class CatalogIndexDocumentsTest {
 
+  /** Mirrors SearchDocumentMapper.ALLOWED_PAYLOAD_KEYS — anything else is silently stripped on write. */
+  private static final Set<String> TRACK_ALLOWED =
+      Set.of("image", "duration_sec", "price_minor", "price_amount", "price_currency", "quality", "type", "genre");
+  private static final Set<String> ARTIST_ALLOWED = Set.of("image", "genre");
+  private static final Set<String> ALBUM_ALLOWED = Set.of("image", "price_minor", "price_amount", "price_currency", "genre");
+  private static final Set<String> PLAYLIST_ALLOWED = Set.of("image");
+
   @Test
   void track_maps_title_subtitle_and_searchable_text() {
     var track = CatalogTestFixtures.track("t1", "Second Sermon", "black-sherif", "Black Sherif", 1500L);
 
     var doc = CatalogIndexDocuments.fromTrack(track);
 
-    assertThat(doc.entityType()).isEqualTo(EntityType.TRACK);
-    assertThat(doc.entityId()).isEqualTo("t1");
-    assertThat(doc.title()).isEqualTo("Second Sermon");
-    assertThat(doc.subtitle()).isEqualTo("Black Sherif");
-    assertThat(doc.searchText()).contains("Second Sermon").contains("Black Sherif");
-    assertThat(doc.popularity().score()).isEqualTo(1500L);
-    assertThat(doc.visible()).isTrue();
+    assertEquals(EntityType.TRACK, doc.entityType());
+    assertEquals("t1", doc.entityId());
+    assertEquals("Second Sermon", doc.title());
+    assertEquals("Black Sherif", doc.subtitle());
+    assertTrue(doc.searchText().contains("Second Sermon"), "searchText should carry the title");
+    assertTrue(doc.searchText().contains("Black Sherif"), "searchText should carry the artist name");
+    assertEquals(1500L, doc.popularity().score());
+    assertTrue(doc.visible());
   }
 
   @Test
@@ -698,7 +742,7 @@ class CatalogIndexDocumentsTest {
 
     var doc = CatalogIndexDocuments.fromTrack(track);
 
-    assertThat(doc.popularity().score()).isZero();
+    assertEquals(0L, doc.popularity().score());
   }
 
   @Test
@@ -707,9 +751,9 @@ class CatalogIndexDocumentsTest {
 
     var doc = CatalogIndexDocuments.fromTrack(track);
 
-    // SearchDocumentMapper silently strips anything else; keep the map honest at the source.
-    assertThat(doc.payload().keySet())
-        .isSubsetOf(List.of("image", "duration_sec", "price_minor", "price_amount", "price_currency", "quality", "type", "genre"));
+    assertTrue(
+        TRACK_ALLOWED.containsAll(doc.payload().keySet()),
+        "payload had keys SearchDocumentMapper would silently strip: " + doc.payload().keySet());
   }
 
   @Test
@@ -717,16 +761,18 @@ class CatalogIndexDocumentsTest {
     var publicPlaylist = CatalogTestFixtures.playlist("p1", "Vibes", "BeatzClik", true, 10L);
     var privatePlaylist = CatalogTestFixtures.playlist("p2", "My Private Playlist", "Me", false, 0L);
 
-    assertThat(CatalogIndexDocuments.fromPlaylist(publicPlaylist).visible()).isTrue();
+    assertTrue(CatalogIndexDocuments.fromPlaylist(publicPlaylist).visible());
     // Indexed, not omitted: reindex is upsert-only, so hiding must be expressed as visible=false.
-    assertThat(CatalogIndexDocuments.fromPlaylist(privatePlaylist).visible()).isFalse();
+    assertFalse(CatalogIndexDocuments.fromPlaylist(privatePlaylist).visible());
   }
 
   @Test
   void playlist_payload_only_carries_image() {
     var playlist = CatalogTestFixtures.playlist("p1", "Vibes", "BeatzClik", true, 10L);
 
-    assertThat(CatalogIndexDocuments.fromPlaylist(playlist).payload().keySet()).isSubsetOf(List.of("image"));
+    var keys = CatalogIndexDocuments.fromPlaylist(playlist).payload().keySet();
+
+    assertTrue(PLAYLIST_ALLOWED.containsAll(keys), "unexpected playlist payload keys: " + keys);
   }
 
   @Test
@@ -735,11 +781,18 @@ class CatalogIndexDocumentsTest {
 
     var doc = CatalogIndexDocuments.fromArtist(artist);
 
-    assertThat(doc.entityType()).isEqualTo(EntityType.ARTIST);
-    assertThat(doc.title()).isEqualTo("Black Sherif");
-    assertThat(doc.popularity().score()).isEqualTo(9000L);
-    assertThat(doc.visible()).isTrue();
-    assertThat(doc.payload().keySet()).isSubsetOf(List.of("image", "genre"));
+    assertEquals(EntityType.ARTIST, doc.entityType());
+    assertEquals("Black Sherif", doc.title());
+    assertEquals(9000L, doc.popularity().score());
+    assertTrue(doc.visible());
+    assertTrue(ARTIST_ALLOWED.containsAll(doc.payload().keySet()), "unexpected artist payload keys");
+  }
+
+  @Test
+  void artist_with_null_monthly_listeners_gets_zero_popularity_not_an_NPE() {
+    var artist = CatalogTestFixtures.artist("a2", "Nobody", null);
+
+    assertEquals(0L, CatalogIndexDocuments.fromArtist(artist).popularity().score());
   }
 
   @Test
@@ -748,12 +801,24 @@ class CatalogIndexDocumentsTest {
 
     var doc = CatalogIndexDocuments.fromAlbum(album);
 
-    assertThat(doc.entityType()).isEqualTo(EntityType.ALBUM);
-    assertThat(doc.subtitle()).isEqualTo("Black Sherif");
-    assertThat(doc.popularity().score()).isZero();
-    assertThat(doc.visible()).isTrue();
-    assertThat(doc.payload().keySet())
-        .isSubsetOf(List.of("image", "price_minor", "price_amount", "price_currency", "genre"));
+    assertEquals(EntityType.ALBUM, doc.entityType());
+    assertEquals("Black Sherif", doc.subtitle());
+    assertEquals(0L, doc.popularity().score());
+    assertTrue(doc.visible());
+    assertTrue(ALBUM_ALLOWED.containsAll(doc.payload().keySet()), "unexpected album payload keys");
+  }
+
+  @Test
+  void every_document_has_a_non_blank_title_and_id() {
+    // IndexDocument's compact constructor rejects blank title/entityId — pin that we never build one.
+    List<String> titles =
+        List.of(
+            CatalogIndexDocuments.fromTrack(CatalogTestFixtures.track("t1", "T", "a1", "A", 1L)).title(),
+            CatalogIndexDocuments.fromArtist(CatalogTestFixtures.artist("a1", "A", 1L)).title(),
+            CatalogIndexDocuments.fromAlbum(CatalogTestFixtures.album("al1", "Al", "a1", "A")).title(),
+            CatalogIndexDocuments.fromPlaylist(CatalogTestFixtures.playlist("p1", "P", "C", true, 1L)).title());
+
+    titles.forEach(t -> assertFalse(t == null || t.isBlank(), "title must be non-blank"));
   }
 }
 ```
@@ -938,11 +1003,11 @@ same javadoc intent, swapping `EntityType.ARTIST` / `allArtistsForIndex()` / `fr
 - [ ] **Step 5: Run the mapping tests**
 
 Run: `cd backend && ./mvnw -q test -Dtest=CatalogIndexDocumentsTest`
-Expected: PASS (7 tests).
+Expected: PASS (9 tests).
 
 - [ ] **Step 6: Run ArchUnit**
 
-Run: `cd backend && ./mvnw -q test -Dgroups=arch`
+Run: `cd backend && ./mvnw -q test -Dtest=ArchitectureRulesTest`
 Expected: PASS. These classes live in `catalog.adapter.out.search` (adapter layer) and depend on
 `catalog.application.port.out` and `search.application.port.out` (application layer) — adapter→application
 is allowed, and no inbound adapter is touched.
@@ -980,14 +1045,15 @@ private playlist stays hidden.
 ```java
 package org.shakvilla.beatzmedia.search.integration;
 
-import static org.assertj.core.api.Assertions.assertThat;
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import jakarta.inject.Inject;
 
 import io.quarkus.test.junit.QuarkusTest;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.shakvilla.beatzmedia.platform.domain.PageRequest;
 import org.shakvilla.beatzmedia.search.application.port.in.QueryService;
 import org.shakvilla.beatzmedia.search.application.port.in.ReindexUseCase;
 import org.shakvilla.beatzmedia.search.domain.SearchQuery;
@@ -1004,23 +1070,25 @@ class SearchBackfillIT {
   void reindex_populates_the_index_from_seeded_catalog_so_search_returns_hits() {
     var report = reindex.reindex(null);
 
-    assertThat(report.documentsIndexed()).isPositive();
+    assertTrue(report.documentsIndexed() > 0, "reindex should have indexed the seeded catalog");
 
     SearchResults results = queryService.search(SearchQuery.of("sherif"));
 
-    assertThat(results.artists()).isNotEmpty();
-    assertThat(results.artists()).extracting(hit -> hit.entityId()).contains("black-sherif");
+    assertFalse(results.artists().isEmpty(), "search should return artist hits after a reindex");
+    assertTrue(
+        results.artists().stream().anyMatch(h -> h.entityId().equals("black-sherif")),
+        "expected the seeded artist 'black-sherif' to be searchable");
   }
 
   @Test
   void reindex_is_idempotent_and_can_run_twice_without_duplicating() {
     reindex.reindex(null);
-    var first = queryService.search(SearchQuery.of("sherif")).artists().size();
+    int first = queryService.search(SearchQuery.of("sherif")).artists().size();
 
     reindex.reindex(null);
-    var second = queryService.search(SearchQuery.of("sherif")).artists().size();
+    int second = queryService.search(SearchQuery.of("sherif")).artists().size();
 
-    assertThat(second).isEqualTo(first);
+    assertEquals(first, second, "a second reindex must upsert, not duplicate");
   }
 
   @Test
@@ -1029,7 +1097,9 @@ class SearchBackfillIT {
 
     SearchResults results = queryService.search(SearchQuery.of("private"));
 
-    assertThat(results.playlists()).extracting(hit -> hit.entityId()).doesNotContain("private-test-playlist");
+    assertFalse(
+        results.playlists().stream().anyMatch(h -> h.entityId().equals("private-test-playlist")),
+        "the private seeded playlist must never surface in search");
   }
 
   @Test
@@ -1038,19 +1108,20 @@ class SearchBackfillIT {
 
     SearchResults results = queryService.search(SearchQuery.of("vibes"));
 
-    assertThat(results.playlists()).extracting(hit -> hit.entityId()).contains("vibes-from-the-233");
+    assertTrue(
+        results.playlists().stream().anyMatch(h -> h.entityId().equals("vibes-from-the-233")),
+        "expected the seeded public playlist to be searchable");
   }
 }
 ```
 
-`SearchQuery.of(String)` is used by `SearchService` already — confirm its exact signature and whether a
-`SearchScope`/`SearchFilters`/`PageRequest` argument is required; if `of(String)` does not exist, build
-the `SearchQuery` the same way `catalog/application/service/SearchService.java` does. Import
-`PageRequest` only if you actually need it.
+`SearchQuery.of(String)` is used by the existing `SearchIndexIT` and by
+`catalog/application/service/SearchService.java` — confirm its exact signature before relying on it, and
+if `of(String)` does not exist, build the `SearchQuery` the way `SearchService` does.
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `cd backend && ./mvnw -q test -Dtest=SearchBackfillIT -Dgroups=integration`
+Run: `cd backend && ./mvnw -q verify -Dit.test=SearchBackfillIT`
 Expected: FAIL — assertions fail because nothing indexes yet (or a compile error if a signature differs).
 
 Note: if this test passes at this point, something is wrong — stop and investigate rather than moving on.
@@ -1098,27 +1169,73 @@ public class ReindexJob implements ScheduledJob {
 
 - [ ] **Step 4: Run the IT to verify it passes**
 
-Run: `cd backend && ./mvnw -q test -Dtest=SearchBackfillIT -Dgroups=integration`
+Run: `cd backend && ./mvnw -q verify -Dit.test=SearchBackfillIT`
 Expected: PASS (4 tests).
 
 - [ ] **Step 5: Run ArchUnit**
 
-Run: `cd backend && ./mvnw -q test -Dgroups=arch`
+Run: `cd backend && ./mvnw -q test -Dtest=ArchitectureRulesTest`
 Expected: PASS. `ReindexJob` is an inbound adapter (`adapter.in.job`) depending only on
 `application.port.in` — it must not import anything from `adapter.out`.
 
-- [ ] **Step 6: Run the full unit + integration suites for regressions**
+- [ ] **Step 6: Rewrite the two stale `SearchIndexIT` tests that encode the OLD reindex contract**
 
-Run: `cd backend && ./mvnw -q test`
-Expected: PASS. Pay attention to any existing search or catalog test that assumed an empty index or
-assumed `reindex()` returned a count of already-indexed rows — `ReindexService`'s contract changed in
-Task 2, so a stale test may need updating. If one fails, report exactly which and why before changing it.
+**Files:** Modify `backend/src/test/java/org/shakvilla/beatzmedia/search/integration/SearchIndexIT.java`
 
-- [ ] **Step 7: Commit**
+Task 2 deliberately changed `reindex()`'s contract: it used to report a count of rows *already* in
+`search_document`; it now loads documents from `IndexSource` beans and upserts them. Two pre-existing
+tests still assert the old behavior and are now wrong — they were left failing on purpose until sources
+existed, which is now:
+
+- `reindex_report_counts_existing_documents` — indexes two docs directly via `indexEntityUseCase`, then
+  asserts `reindex(TRACK).documentsIndexed() == 2`. Under the new contract, `reindex(TRACK)` ignores what
+  is already in the table and reports what the catalog `TrackIndexSource` supplied, so this premise no
+  longer holds.
+- `reindex_all_types_converges_from_empty` — same false premise for `reindex(null)`.
+
+Rewrite both to assert the **new** contract. They run under `@QuarkusTest`, so the real catalog
+`IndexSource` beans are present and the seeded catalog is in the DB. Suggested replacements (adapt to the
+file's existing helpers and imports — it already has a `doc(...)` helper and uses JUnit 5 `assertEquals`):
+
+```java
+  @Test
+  void reindex_reports_what_the_sources_supplied_not_what_was_already_indexed() {
+    // Pre-existing rows are irrelevant to the report: reindex reads from IndexSource, not the table.
+    indexEntityUseCase.index(doc("stale-1", "Stale", "", EntityType.TRACK, 0L, true));
+
+    ReindexReport report = reindexUseCase.reindex(EntityType.TRACK);
+
+    assertEquals(EntityType.TRACK, report.type());
+    assertTrue(report.documentsIndexed() > 0, "the catalog TrackIndexSource should have supplied tracks");
+    assertEquals(0L, report.documentsRemoved(), "reindex is upsert-only");
+  }
+
+  @Test
+  void reindex_all_covers_every_type_and_makes_seeded_catalog_searchable() {
+    ReindexReport report = reindexUseCase.reindex(null);
+
+    assertEquals(null, report.type());
+    assertTrue(report.documentsIndexed() > 0, "reindex(null) should index every type's sources");
+  }
+```
+
+If either rewritten test needs an import the file lacks (`assertTrue`, `ReindexReport`), add it. Do not
+weaken an assertion just to make it pass — if one fails for a reason you did not expect, stop and report
+that rather than adjusting the expectation.
+
+- [ ] **Step 7: Run the full suite for regressions**
+
+Run: `cd backend && ./mvnw -q test -DskipITs=true` then `cd backend && ./mvnw -q verify`
+Expected: both PASS. `verify` runs the whole gate including every IT, so it is slow — that is fine and
+expected here; this is the step that proves nothing else regressed. If any test outside this WU's files
+fails, report exactly which and why **before** changing it.
+
+- [ ] **Step 8: Commit**
 
 ```bash
 git add backend/src/main/java/org/shakvilla/beatzmedia/search/adapter/in/job/ReindexJob.java \
-        backend/src/test/java/org/shakvilla/beatzmedia/search/integration/SearchBackfillIT.java
+        backend/src/test/java/org/shakvilla/beatzmedia/search/integration/SearchBackfillIT.java \
+        backend/src/test/java/org/shakvilla/beatzmedia/search/integration/SearchIndexIT.java
 git commit -m "feat(search): WU-SRCH-2 scheduled reindex job wiring the dormant search.reindex tick"
 ```
 
