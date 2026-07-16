@@ -5,6 +5,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
@@ -21,6 +22,8 @@ import org.shakvilla.beatzmedia.commerce.application.port.out.CatalogExpansionRe
 import org.shakvilla.beatzmedia.commerce.application.port.out.OrderRepository;
 import org.shakvilla.beatzmedia.commerce.application.port.out.OwnershipRepository;
 import org.shakvilla.beatzmedia.commerce.application.port.out.SaleLedgerPoster;
+import org.shakvilla.beatzmedia.commerce.application.port.out.SettlementContext;
+import org.shakvilla.beatzmedia.commerce.application.port.out.SettlementSource;
 import org.shakvilla.beatzmedia.commerce.domain.IllegalOrderTransitionException;
 import org.shakvilla.beatzmedia.commerce.domain.Order;
 import org.shakvilla.beatzmedia.commerce.domain.OrderLine;
@@ -65,6 +68,7 @@ public class GrantOwnershipService implements GrantOwnership {
   private final OrderRepository orderRepository;
   private final OwnershipRepository ownershipRepository;
   private final CatalogExpansionReader expansionReader;
+  private final SettlementSourceRegistry settlementSources;
   private final SaleLedgerPoster saleLedgerPoster;
   private final CartRepository cartRepository;
   private final AuditWriter auditWriter;
@@ -78,6 +82,7 @@ public class GrantOwnershipService implements GrantOwnership {
       OrderRepository orderRepository,
       OwnershipRepository ownershipRepository,
       CatalogExpansionReader expansionReader,
+      SettlementSourceRegistry settlementSources,
       SaleLedgerPoster saleLedgerPoster,
       CartRepository cartRepository,
       AuditWriter auditWriter,
@@ -88,6 +93,7 @@ public class GrantOwnershipService implements GrantOwnership {
     this.orderRepository = orderRepository;
     this.ownershipRepository = ownershipRepository;
     this.expansionReader = expansionReader;
+    this.settlementSources = settlementSources;
     this.saleLedgerPoster = saleLedgerPoster;
     this.cartRepository = cartRepository;
     this.auditWriter = auditWriter;
@@ -150,23 +156,55 @@ public class GrantOwnershipService implements GrantOwnership {
     Map<String, Long> grossByCreator = new LinkedHashMap<>();
 
     for (OrderLine line : order.getLines()) {
-      // INV-2: album/season-pass lines expand to every constituent track/episode id.
-      List<String> trackIds = expansionReader.tracksToGrant(line.getKind(), line.getRefId());
-      for (String trackId : trackIds) {
-        if (ownershipRepository.existsActiveForTrack(buyer, trackId)) {
-          continue; // already owns (e.g. bought a track then the whole album) — no duplicate
-        }
-        ownershipRepository.save(
-            OwnershipGrant.forTrack(ids.newId(), buyer, trackId, order.getId(), clock.now()));
-        grantedTrackIds.add(trackId);
-      }
+      Optional<SettlementSource> settlementSource = settlementSources.forKind(line.getKind());
+      if (settlementSource.isPresent()) {
+        // WU-COM-4: episode/season-pass/ticket/store settle via the owning module's SettlementSource.
+        SettlementSource source = settlementSource.get();
 
-      // INV-4: attribute this line's gross (unitPrice × qty) to its recipient creator for the split.
-      expansionReader
-          .creatorOf(line.getKind(), line.getRefId())
-          .ifPresent(
-              creator ->
-                  grossByCreator.merge(creator, line.lineTotal().minor(), Long::sum));
+        // episode/season-pass: grant ownership of each expanded episode id (empty for ticket/store).
+        for (String episodeId : source.ownedEpisodeIds(line.getRefId())) {
+          if (ownershipRepository.existsActiveForEpisode(buyer, episodeId)) {
+            continue; // already owns (e.g. bought the episode then the season pass) — no duplicate
+          }
+          ownershipRepository.save(
+              OwnershipGrant.forEpisode(ids.newId(), buyer, episodeId, order.getId(), clock.now()));
+          grantedEpisodeIds.add(episodeId);
+        }
+
+        // ticket → mint via IssueTicket; store → decrement stock. No-op for episode/season-pass.
+        // Runs inside this grant transaction and is idempotent (the module carries its own guard).
+        source.fulfill(new SettlementContext(line.getRefId(), order.getId(), buyer, line.getQty()));
+
+        // INV-4: attribute this line's gross to its payee (creator/artist/seller). An absent payee
+        // must never silently drop the gross — the checkout un-gate guard (WU-COM-4) prevents an
+        // un-payable item from being charged, so this is an integrity anomaly we surface.
+        source
+            .payee(line.getRefId())
+            .ifPresentOrElse(
+                payee -> grossByCreator.merge(payee.value(), line.lineTotal().minor(), Long::sum),
+                () ->
+                    LOG.warnf(
+                        "settled %s line %s has no payee; gross NOT attributed (checkout guard"
+                            + " should have prevented this)",
+                        line.getKind().wireValue(), line.getRefId()));
+      } else {
+        // track/album/album-rest: authoritative catalog path (unchanged).
+        // INV-2: album lines expand to every constituent track id.
+        List<String> trackIds = expansionReader.tracksToGrant(line.getKind(), line.getRefId());
+        for (String trackId : trackIds) {
+          if (ownershipRepository.existsActiveForTrack(buyer, trackId)) {
+            continue; // already owns (e.g. bought a track then the whole album) — no duplicate
+          }
+          ownershipRepository.save(
+              OwnershipGrant.forTrack(ids.newId(), buyer, trackId, order.getId(), clock.now()));
+          grantedTrackIds.add(trackId);
+        }
+
+        // INV-4: attribute this line's gross (unitPrice × qty) to its recipient creator for the split.
+        expansionReader
+            .creatorOf(line.getKind(), line.getRefId())
+            .ifPresent(creator -> grossByCreator.merge(creator, line.lineTotal().minor(), Long::sum));
+      }
     }
 
     // Post ONE 70/30 sale split per creator (percentage from PlatformSettings inside payments), with a

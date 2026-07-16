@@ -16,9 +16,16 @@ public class FakeChargeGateway implements ChargeGateway {
 
   private final List<Charge> charges = new ArrayList<>();
   private int seq = 0;
+  private String checkoutUrl = null;
 
   public record Charge(
       String actor, String orderReference, long amountMinor, String paymentMethodId, String key) {}
+
+  /** Simulate a card charge that returns a hosted-checkout redirect URL (WU-COM-4). */
+  public FakeChargeGateway withCheckoutUrl(String checkoutUrl) {
+    this.checkoutUrl = checkoutUrl;
+    return this;
+  }
 
   @Override
   public ChargeResult initiateCharge(
@@ -30,7 +37,7 @@ public class FakeChargeGateway implements ChargeGateway {
     charges.add(
         new Charge(
             actor.value(), orderReference, amount.minor(), paymentMethodId, idempotencyKey));
-    return new ChargeResult("intent-" + (++seq), "pending");
+    return new ChargeResult("intent-" + (++seq), "pending", checkoutUrl);
   }
 
   /** All recorded charges. */

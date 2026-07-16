@@ -47,6 +47,9 @@ public class OrderEntity {
   @Column(name = "payment_intent_id")
   public String paymentIntentId;
 
+  @Column(name = "checkout_url")
+  public String checkoutUrl;
+
   @Column(name = "failure_reason")
   public String failureReason;
 

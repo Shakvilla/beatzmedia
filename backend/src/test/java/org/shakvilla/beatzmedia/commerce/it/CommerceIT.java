@@ -69,6 +69,21 @@ class CommerceIT {
         .setParameter("aid", ARTIST_ID)
         .executeUpdate();
 
+    // WU-COM-4: a real event + VIP tier so a `ticket:some-event:VIP` line prices authoritatively
+    // (the client metadata price is no longer trusted). Tier name is unique per event.
+    em.createNativeQuery(
+            "INSERT INTO event (id, title, artist_name, artist_id, image, event_at, venue, city,"
+                + " category) VALUES ('some-event', 'Some Event', 'Commerce IT Artist', :aid,"
+                + " 'img.jpg', now() + interval '30 days', 'Venue', 'Accra', 'Concert')"
+                + " ON CONFLICT (id) DO NOTHING")
+        .setParameter("aid", ARTIST_ID)
+        .executeUpdate();
+    em.createNativeQuery(
+            "INSERT INTO ticket_tier (id, event_id, name, price_minor, capacity, sold)"
+                + " VALUES ('some-event-vip', 'some-event', 'VIP', 10000, 100, 0)"
+                + " ON CONFLICT (id) DO NOTHING")
+        .executeUpdate();
+
     if (fanToken == null) {
       fanToken = signUp("Commerce Fan 1", FAN_EMAIL, PASSWORD);
     }

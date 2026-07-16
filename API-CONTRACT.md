@@ -146,6 +146,15 @@ Cart kinds: `track | album | album-rest | store | episode | season-pass | ticket
 > **Order-line display fields (WU-COM-3).** `OrderSnapshot`'s line items gain `subtitle?: string | null`
 > and `image?: string | null` — additive, nullable, snapshotting the same display data the cart already
 > carried at checkout time. Orders placed before this WU shipped have `null` for both (never backfilled).
+>
+> **Authoritative pricing + card redirect + full purchasability (WU-COM-4).** `episode`, `season-pass`,
+> `ticket`, and `store` cart kinds are now priced authoritatively from their owning module (never the
+> client-supplied `metadata.priceMinor`) and are fully purchasable: on settlement the server grants
+> episode/season ownership, mints tickets, decrements store stock, and posts the 70/30 split to the
+> resolved creator/artist/seller. The `/checkout` **response** now also carries `checkoutUrl?: string |
+> null` (additive) — the same card hosted-checkout redirect described above, surfaced so the SPA can act
+> on it; `null` for MoMo/sandbox. `ticket` refIds are `eventId:tierName` (the tier is resolved by name);
+> an item with no resolvable payee is not purchasable (404).
 
 ---
 

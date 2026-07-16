@@ -25,10 +25,10 @@ import org.shakvilla.beatzmedia.identity.domain.AccountId;
  * <p>Only {@code for-sale} tracks with a positive price are ownable via a purchase — {@code free} and
  * authoring-{@code owned} tracks are excluded from both {@code album-rest} pricing and granting.
  *
- * <p>// G2 — {@code episode}/{@code season-pass} expansion (podcasts) and their creator resolution are
- * intentionally NOT implemented here: those kinds are GATED at checkout (G3, see
- * {@code CheckoutService.gateKind}) until WU-POD-1 ships an authoritative podcasts read port, so they
- * can never reach settlement in this WU. When they land, add their expansion branch here.
+ * <p>This reader serves ONLY {@code track}/{@code album}/{@code album-rest} (catalog-owned). As of
+ * WU-COM-4, {@code episode}/{@code season-pass}/{@code ticket}/{@code store} settle via their owning
+ * module's {@code SettlementSource} SPI (dispatched in {@code GrantOwnershipService} before this reader
+ * is consulted), so this adapter's empty returns for those kinds are never reached for them.
  */
 @ApplicationScoped
 public class CatalogExpansionReaderAdapter implements CatalogExpansionReader {

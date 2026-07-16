@@ -1,10 +1,12 @@
 package org.shakvilla.beatzmedia.commerce.application;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -13,14 +15,16 @@ import org.shakvilla.beatzmedia.audit.domain.AuditType;
 import org.shakvilla.beatzmedia.audit.fakes.FakeAuditWriter;
 import org.shakvilla.beatzmedia.commerce.application.port.in.CheckoutResult;
 import org.shakvilla.beatzmedia.commerce.application.port.out.CatalogExpansionReader;
+import org.shakvilla.beatzmedia.commerce.application.port.out.SettlementContext;
+import org.shakvilla.beatzmedia.commerce.application.port.out.SettlementSource;
 import org.shakvilla.beatzmedia.commerce.application.service.CheckoutService;
+import org.shakvilla.beatzmedia.commerce.application.service.SettlementSourceRegistry;
 import org.shakvilla.beatzmedia.commerce.domain.Cart;
 import org.shakvilla.beatzmedia.commerce.domain.CartEmptyException;
 import org.shakvilla.beatzmedia.commerce.domain.CartId;
 import org.shakvilla.beatzmedia.commerce.domain.CartItem;
 import org.shakvilla.beatzmedia.commerce.domain.CartItemKind;
 import org.shakvilla.beatzmedia.commerce.domain.ChargeAmountExceededException;
-import org.shakvilla.beatzmedia.commerce.domain.CheckoutKindUnsupportedException;
 import org.shakvilla.beatzmedia.commerce.domain.IdempotencyConflictException;
 import org.shakvilla.beatzmedia.commerce.domain.PriceUnavailableException;
 import org.shakvilla.beatzmedia.commerce.fakes.FakeCartRepository;
@@ -40,8 +44,8 @@ import org.shakvilla.beatzmedia.platform.fakes.FakePlatformSettingsProvider;
 /**
  * Unit tests for {@link CheckoutService} (LLFR-COMMERCE-02.1). Proves the load-bearing money-safety
  * behaviours: server-side authoritative re-pricing (G1 — the client/cart-stored price is ignored),
- * the G3 kind gate, idempotency (one charge per key), the PlatformSettings charge ceiling, empty-cart
- * rejection, and INV-10 audit.
+ * the WU-COM-4 payee guard (an un-payable kind is not sellable), idempotency (one charge per key), the
+ * PlatformSettings charge ceiling, empty-cart rejection, and INV-10 audit.
  */
 @Tag("unit")
 class CheckoutServiceTest {
@@ -69,10 +73,34 @@ class CheckoutServiceTest {
     gateway = new FakeChargeGateway();
     settings = new FakePlatformSettingsProvider();
     audit = new FakeAuditWriter();
-    service =
-        new CheckoutService(
-            carts, orders, pricing, expansion, refs, gateway, settings, audit,
-            FakeIds.sequential("com"), FakeClock.fixed());
+    service = serviceWith(); // no SettlementSources → payee guard is a no-op (WU-COM-4)
+  }
+
+  /** Build the service with the given owning-module {@link SettlementSource}s registered (WU-COM-4). */
+  private CheckoutService serviceWith(SettlementSource... sources) {
+    return new CheckoutService(
+        carts, orders, pricing, expansion, new SettlementSourceRegistry(List.of(sources)), refs,
+        gateway, settings, audit, FakeIds.sequential("com"), FakeClock.fixed());
+  }
+
+  /** A {@link SettlementSource} whose {@link SettlementSource#payee} presence is configurable. */
+  private static SettlementSource settlementSource(String entityType, String payeeId) {
+    return new SettlementSource() {
+      @Override
+      public String entityType() {
+        return entityType;
+      }
+
+      @Override
+      public Optional<AccountId> payee(String refId) {
+        return payeeId == null ? Optional.empty() : Optional.of(new AccountId(payeeId));
+      }
+
+      @Override
+      public void fulfill(SettlementContext ctx) {
+        // no-op test double
+      }
+    };
   }
 
   /** Seed a cart with a line whose STORED price differs from the authoritative catalog price. */
@@ -149,27 +177,29 @@ class CheckoutServiceTest {
   }
 
   @Test
-  void checkout_ticketKind_isGated_G3() {
-    // A ticket is priced from client metadata (spoofable) and its module does not exist — reject.
-    seedCartWithStoredPrice(CartItemKind.ticket, "tk1", 100);
-    pricing.seed(CartItemKind.ticket, "tk1", "Concert", 100);
+  void checkout_ticketKind_isNowUnGated_chargesAuthoritativePrice() {
+    // WU-COM-4: ticket is now sellable. With a SettlementSource that resolves a payee, checkout
+    // proceeds and charges the authoritative (server-priced) amount — never the spoofable cart price.
+    seedCartWithStoredPrice(CartItemKind.ticket, "evt-1:VIP", 1); // cart claims ₵0.01...
+    pricing.seed(CartItemKind.ticket, "evt-1:VIP", "Concert — VIP", 40000); // ...true price ₵400
+    CheckoutService svc = serviceWith(settlementSource("ticket", "event-artist"));
 
-    assertThrows(
-        CheckoutKindUnsupportedException.class, () -> service.checkout(ACCOUNT, KEY, "mtn"));
-    assertEquals(0, gateway.count(), "no charge is initiated for a gated kind (G3)");
+    CheckoutResult result = svc.checkout(ACCOUNT, KEY, "mtn");
+
+    assertEquals(40050, gateway.last().amountMinor(), "authoritative 40000 + fee 50, not the cart 1");
+    assertTrue(result.reference().startsWith("BZ-"));
   }
 
   @Test
-  void checkout_episodeAndSeasonPassAndStore_areGated_G3() {
-    for (CartItemKind kind : List.of(CartItemKind.episode, CartItemKind.season_pass, CartItemKind.store)) {
-      carts.deleteByAccount(ACCOUNT);
-      seedCartWithStoredPrice(kind, "ref", 100);
-      pricing.seed(kind, "ref", "Item", 100);
-      assertThrows(
-          CheckoutKindUnsupportedException.class,
-          () -> service.checkout(ACCOUNT, "k-" + kind, "mtn"),
-          kind + " must be gated (G3)");
-    }
+  void checkout_unpayableItem_isRejected_noCharge() {
+    // The payee guard (WU-COM-4): a kind whose SettlementSource resolves NO payee cannot be charged —
+    // otherwise the settled gross could not be attributed (INV-4). Treated as not-for-sale (404).
+    seedCartWithStoredPrice(CartItemKind.ticket, "evt-1:VIP", 40000);
+    pricing.seed(CartItemKind.ticket, "evt-1:VIP", "Concert — VIP", 40000);
+    CheckoutService svc = serviceWith(settlementSource("ticket", null)); // no payee
+
+    assertThrows(PriceUnavailableException.class, () -> svc.checkout(ACCOUNT, KEY, "mtn"));
+    assertEquals(0, gateway.count(), "no charge for an un-payable item");
   }
 
   @Test
@@ -180,6 +210,20 @@ class CheckoutServiceTest {
     CheckoutResult result = service.checkout(ACCOUNT, KEY, "mtn");
     assertEquals(2050, gateway.last().amountMinor(), "album (2000) + fee (50)");
     assertTrue(result.reference().startsWith("BZ-"));
+    assertNull(result.checkoutUrl(), "MoMo/sandbox charge carries no checkoutUrl (WU-COM-4)");
+  }
+
+  @Test
+  void checkout_cardHostedCheckout_surfacesCheckoutUrl() {
+    // WU-COM-4: a card charge that needs a Redde hosted-checkout redirect returns the URL, which the
+    // service threads PaymentIntentView -> ChargeResult -> CheckoutResult (and persists on the order).
+    seedCartWithStoredPrice(CartItemKind.album, "al1", 2000);
+    pricing.seed(CartItemKind.album, "al1", "Album", 2000);
+    gateway.withCheckoutUrl("https://redde.example/checkout/xyz");
+
+    CheckoutResult result = service.checkout(ACCOUNT, KEY, "card");
+
+    assertEquals("https://redde.example/checkout/xyz", result.checkoutUrl());
   }
 
   @Test

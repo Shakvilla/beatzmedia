@@ -30,6 +30,10 @@ public interface ChargeGateway {
       String paymentMethodId,
       String idempotencyKey);
 
-  /** Minimal projection of the payments {@code PaymentIntentView} needed by commerce. */
-  record ChargeResult(String paymentIntentId, String status) {}
+  /**
+   * Minimal projection of the payments {@code PaymentIntentView} needed by commerce. {@code
+   * checkoutUrl} is the hosted-checkout redirect URL (WU-PAY-6): non-null only for a card charge that
+   * requires a Redde redirect, null for every MoMo/sandbox charge.
+   */
+  record ChargeResult(String paymentIntentId, String status, String checkoutUrl) {}
 }

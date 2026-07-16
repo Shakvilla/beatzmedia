@@ -1,20 +1,23 @@
 package org.shakvilla.beatzmedia.commerce.adapter.out.persistence;
 
+import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.enterprise.inject.Instance;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 
 import org.shakvilla.beatzmedia.catalog.adapter.out.persistence.AlbumEntity;
 import org.shakvilla.beatzmedia.catalog.adapter.out.persistence.TrackEntity;
+import org.shakvilla.beatzmedia.commerce.application.port.out.ModulePriceSource;
 import org.shakvilla.beatzmedia.commerce.application.port.out.PricedItem;
 import org.shakvilla.beatzmedia.commerce.application.port.out.PricingService;
 import org.shakvilla.beatzmedia.commerce.domain.CartItemKind;
 import org.shakvilla.beatzmedia.commerce.domain.PriceUnavailableException;
 import org.shakvilla.beatzmedia.platform.domain.Currency;
 import org.shakvilla.beatzmedia.platform.domain.Money;
-import org.shakvilla.beatzmedia.platform.domain.ValidationException;
 
 /**
  * Implements {@link PricingService}. {@code track}/{@code album}/{@code album-rest} resolve
@@ -22,20 +25,36 @@ import org.shakvilla.beatzmedia.platform.domain.ValidationException;
  * {@code library.adapter.out.persistence.CatalogReaderAdapter}) — no cross-module FK, read-only,
  * same schema, never trusts client-supplied prices (INV-2, INV-11).
  *
- * <p>{@code episode}/{@code season-pass}/{@code ticket}/{@code store} have no backing module yet
- * (podcasts/events/store ship in Phase 4: WU-POD-1, WU-EVT-1, WU-STO-1). For those kinds this
- * adapter validates and echoes caller-supplied {@code metadata} fields ({@code title},
- * {@code image}, {@code priceMinor}) as a documented interim measure until the owning module
- * exists and exposes a proper price-lookup input port. Commerce ADD §4.2 / §9.
+ * <p>{@code episode}/{@code season-pass}/{@code ticket}/{@code store} resolve authoritatively too,
+ * but from the OWNING module (podcasts/events/store) via a {@link ModulePriceSource} SPI bean the
+ * module contributes — commerce never reads another module's tables. The bean whose {@link
+ * ModulePriceSource#entityType()} matches the kind's {@code wireValue()} is dispatched to; an
+ * unregistered kind is a 404 (WU-COM-4, replacing the former client-metadata price echo). Commerce
+ * ADD §4.2 / §9.
  */
 @ApplicationScoped
 public class CatalogPricingServiceAdapter implements PricingService {
 
   private final EntityManager em;
+  private final Map<String, ModulePriceSource> priceSourcesByType;
 
   @Inject
-  public CatalogPricingServiceAdapter(EntityManager em) {
+  public CatalogPricingServiceAdapter(EntityManager em, Instance<ModulePriceSource> priceSources) {
+    this(em, priceSources.stream().toList());
+  }
+
+  // Package-private test seam (mirrors ReindexService's List constructor) — no CDI Instance needed.
+  CatalogPricingServiceAdapter(EntityManager em, List<ModulePriceSource> priceSources) {
     this.em = em;
+    Map<String, ModulePriceSource> byType = new HashMap<>();
+    for (ModulePriceSource source : priceSources) {
+      ModulePriceSource previous = byType.put(source.entityType(), source);
+      if (previous != null) {
+        throw new IllegalStateException(
+            "Duplicate ModulePriceSource for entityType=" + source.entityType());
+      }
+    }
+    this.priceSourcesByType = Map.copyOf(byType);
   }
 
   @Override
@@ -44,8 +63,16 @@ public class CatalogPricingServiceAdapter implements PricingService {
       case track -> priceTrack(refId);
       case album -> priceAlbum(refId);
       case album_rest -> priceAlbum(refId);
-      case episode, season_pass, ticket, store -> priceFromMetadata(kind, refId, metadata);
+      case episode, season_pass, ticket, store -> priceFromModule(kind, refId, metadata);
     };
+  }
+
+  private PricedItem priceFromModule(CartItemKind kind, String refId, Map<String, Object> metadata) {
+    ModulePriceSource source = priceSourcesByType.get(kind.wireValue());
+    if (source == null) {
+      throw new PriceUnavailableException(kind.wireValue(), refId);
+    }
+    return source.price(refId, metadata);
   }
 
   private PricedItem priceTrack(String refId) {
@@ -72,52 +99,5 @@ public class CatalogPricingServiceAdapter implements PricingService {
     return new PricedItem(
         album.title, album.artistName, album.coverImage,
         Money.ofMinor(album.listPriceMinor, Currency.GHS));
-  }
-
-  /**
-   * Interim resolution for kinds without a live backing module (episode/season-pass/ticket/store).
-   * Requires {@code metadata.title} and a positive {@code metadata.priceMinor} integer; otherwise
-   * rejects with 404/422 rather than silently defaulting a price.
-   *
-   * <p>// G2 — this echo of client-supplied {@code metadata.priceMinor} is used ONLY on the
-   * add-to-cart path (no money moves there). WU-COM-2 checkout GATES these four kinds
-   * (409 {@code CHECKOUT_KIND_UNSUPPORTED}, ADR-23) so a spoofed price can never reach a real charge.
-   * REPLACE this branch with authoritative price-lookup input ports
-   * ({@code podcasts}/{@code events}/{@code store} {@code application.port.in}) when WU-POD-1 /
-   * WU-EVT-1 / WU-STO-1 ship, then relax the checkout gate per-kind. Do NOT start trusting these
-   * prices for checkout before the owning module exists.
-   */
-  private PricedItem priceFromMetadata(CartItemKind kind, String refId, Map<String, Object> metadata) {
-    if (metadata == null) {
-      throw new PriceUnavailableException(kind.wireValue(), refId);
-    }
-    Object titleObj = metadata.get("title");
-    Object priceObj = metadata.get("priceMinor");
-    if (!(titleObj instanceof String title) || title.isBlank()) {
-      throw new PriceUnavailableException(kind.wireValue(), refId);
-    }
-    long priceMinor = toPositiveLong(priceObj);
-    String subtitle = metadata.get("subtitle") instanceof String s ? s : null;
-    String image = metadata.get("image") instanceof String i ? i : null;
-    return new PricedItem(title, subtitle, image, Money.ofMinor(priceMinor, Currency.GHS));
-  }
-
-  private long toPositiveLong(Object value) {
-    long minor;
-    if (value instanceof Number n) {
-      minor = n.longValue();
-    } else if (value instanceof String s) {
-      try {
-        minor = Long.parseLong(s);
-      } catch (NumberFormatException e) {
-        throw new ValidationException("metadata.priceMinor must be a positive integer", "metadata.priceMinor");
-      }
-    } else {
-      throw new ValidationException("metadata.priceMinor must be a positive integer", "metadata.priceMinor");
-    }
-    if (minor <= 0) {
-      throw new ValidationException("metadata.priceMinor must be a positive integer", "metadata.priceMinor");
-    }
-    return minor;
   }
 }
