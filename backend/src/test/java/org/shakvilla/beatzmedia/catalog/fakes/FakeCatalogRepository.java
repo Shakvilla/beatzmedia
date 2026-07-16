@@ -264,6 +264,32 @@ public class FakeCatalogRepository implements CatalogRepository {
     }
   }
 
+  // ---- WU-SRCH-2 ----
+
+  @Override
+  public List<Track> allTracksForIndex() {
+    // Domain Track carries no release-id field, so this fake cannot model the release-live gate;
+    // it mirrors the "no release" arm of the real query (status = 'ready' only).
+    return tracks.values().stream()
+        .filter(t -> "ready".equals(t.getStatus()))
+        .collect(Collectors.toList());
+  }
+
+  @Override
+  public List<ArtistProfile> allArtistsForIndex() {
+    return new ArrayList<>(artists.values());
+  }
+
+  @Override
+  public List<Album> allAlbumsForIndex() {
+    return new ArrayList<>(albums.values());
+  }
+
+  @Override
+  public List<Playlist> allPlaylistsForIndex() {
+    return new ArrayList<>(playlists.values());
+  }
+
   private static Track withStatus(Track t, String newStatus) {
     return new Track(
         t.getId(),

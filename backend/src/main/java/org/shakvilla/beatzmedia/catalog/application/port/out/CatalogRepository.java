@@ -100,4 +100,26 @@ public interface CatalogRepository {
    * transition. A no-op for tracks already {@code ready}.
    */
   void markReleaseTracksReady(ReleaseId releaseId);
+
+  // ---- WU-SRCH-2: search index backfill ----
+
+  /**
+   * All tracks eligible for the search index, i.e. those whose audio has finished processing and
+   * which are not gated behind a non-live release. Ordering is unspecified. Used only by the
+   * catalog-side search indexer (WU-SRCH-2); not a public listing.
+   */
+  List<Track> allTracksForIndex();
+
+  /** All artist profiles, for the search indexer (WU-SRCH-2). Ordering is unspecified. */
+  List<ArtistProfile> allArtistsForIndex();
+
+  /** All albums, for the search indexer (WU-SRCH-2). Ordering is unspecified. */
+  List<Album> allAlbumsForIndex();
+
+  /**
+   * All playlists — including private ones, so the indexer can write them with {@code
+   * visible=false} rather than omitting them (reindex is upsert-only). For the search indexer
+   * (WU-SRCH-2).
+   */
+  List<Playlist> allPlaylistsForIndex();
 }

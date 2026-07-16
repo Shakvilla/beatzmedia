@@ -534,6 +534,94 @@ public class JpaCatalogRepository implements CatalogRepository {
         .executeUpdate();
   }
 
+  // ---- WU-SRCH-2: search index backfill ----
+
+  @Override
+  public List<Track> allTracksForIndex() {
+    // "no release" is not an edge case: the dev seed inserts zero release rows, so every seeded
+    // track has release_id = NULL and must still be indexed. Only a *non-live* release gates it.
+    List<TrackEntity> entities =
+        em.createQuery(
+                """
+                SELECT t FROM TrackEntity t
+                WHERE t.status = 'ready'
+                  AND (t.releaseId IS NULL
+                       OR EXISTS (
+                            SELECT 1 FROM ReleaseEntity r
+                            WHERE r.id = t.releaseId AND r.status = 'live'))
+                """,
+                TrackEntity.class)
+            .getResultList();
+    return mapTracksWithBatchedCredits(entities);
+  }
+
+  @Override
+  public List<ArtistProfile> allArtistsForIndex() {
+    List<ArtistProfileEntity> entities =
+        em.createQuery("SELECT a FROM ArtistProfileEntity a", ArtistProfileEntity.class)
+            .getResultList();
+    if (entities.isEmpty()) {
+      return Collections.emptyList();
+    }
+    List<String> ids = entities.stream().map(e -> e.id).toList();
+    // Batch-load shows for these artists.
+    List<ArtistShowEntity> allShows =
+        em.createQuery(
+                "SELECT s FROM ArtistShowEntity s WHERE s.artistId IN :ids ORDER BY s.position",
+                ArtistShowEntity.class)
+            .setParameter("ids", ids)
+            .getResultList();
+    Map<String, List<ArtistShowEntity>> showsByArtist =
+        allShows.stream().collect(Collectors.groupingBy(s -> s.artistId));
+    return entities.stream()
+        .map(e -> toDomain(e, showsByArtist.getOrDefault(e.id, Collections.emptyList())))
+        .toList();
+  }
+
+  @Override
+  public List<Album> allAlbumsForIndex() {
+    List<AlbumEntity> entities =
+        em.createQuery("SELECT a FROM AlbumEntity a", AlbumEntity.class).getResultList();
+    return mapAlbumsWithBatchedTrackIds(entities);
+  }
+
+  @Override
+  public List<Playlist> allPlaylistsForIndex() {
+    // Deliberately includes private (is_public = false) playlists: reindex is upsert-only, so the
+    // indexer needs them to write visible=false rather than omitting them (Task 4).
+    List<PlaylistEntity> entities =
+        em.createQuery("SELECT p FROM PlaylistEntity p", PlaylistEntity.class).getResultList();
+    if (entities.isEmpty()) {
+      return Collections.emptyList();
+    }
+    List<String> ids = entities.stream().map(e -> e.id).toList();
+    List<PlaylistTrackEntity> allTracks =
+        em.createQuery(
+                "SELECT pt FROM PlaylistTrackEntity pt WHERE pt.playlistId IN :ids ORDER BY pt.position",
+                PlaylistTrackEntity.class)
+            .setParameter("ids", ids)
+            .getResultList();
+    Map<String, List<String>> trackIdsByPlaylist =
+        allTracks.stream()
+            .collect(
+                Collectors.groupingBy(
+                    pt -> pt.playlistId,
+                    Collectors.mapping(pt -> pt.trackId, Collectors.toList())));
+    return entities.stream()
+        .map(
+            e -> new Playlist(
+                new PlaylistId(e.id),
+                e.title,
+                e.description,
+                e.creator,
+                e.creatorAvatar,
+                e.image,
+                e.isPublic,
+                e.followers,
+                trackIdsByPlaylist.getOrDefault(e.id, Collections.emptyList())))
+        .toList();
+  }
+
   private Release toReleaseDomain(ReleaseEntity e, List<ReleaseTrackEntity> trackEntities) {
     List<ReleaseTrack> tracks = trackEntities.stream()
         .map(rt -> new ReleaseTrack(rt.trackId, rt.pk.position, rt.priceMinor))
