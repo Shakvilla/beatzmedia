@@ -11,6 +11,7 @@ import java.util.Set;
 import java.util.stream.Collectors;
 
 import org.shakvilla.beatzmedia.catalog.application.port.out.CatalogRepository;
+import org.shakvilla.beatzmedia.catalog.application.port.out.CatalogRepository.IndexableTrack;
 import org.shakvilla.beatzmedia.catalog.domain.Album;
 import org.shakvilla.beatzmedia.catalog.domain.AlbumId;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
@@ -262,6 +263,33 @@ public class FakeCatalogRepository implements CatalogRepository {
         tracks.put(t.getId().value(), withStatus(t, "ready"));
       }
     }
+  }
+
+  // ---- WU-SRCH-2 ----
+
+  @Override
+  public List<IndexableTrack> allTracksForIndex() {
+    // Domain Track carries no release-id field, so this fake cannot model the release-live gate;
+    // it mirrors the "no release" arm of the real query (status = 'ready', always visible).
+    return tracks.values().stream()
+        .filter(t -> "ready".equals(t.getStatus()))
+        .map(t -> new IndexableTrack(t, true))
+        .collect(Collectors.toList());
+  }
+
+  @Override
+  public List<ArtistProfile> allArtistsForIndex() {
+    return new ArrayList<>(artists.values());
+  }
+
+  @Override
+  public List<Album> allAlbumsForIndex() {
+    return new ArrayList<>(albums.values());
+  }
+
+  @Override
+  public List<Playlist> allPlaylistsForIndex() {
+    return new ArrayList<>(playlists.values());
   }
 
   private static Track withStatus(Track t, String newStatus) {

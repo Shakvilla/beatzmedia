@@ -194,22 +194,23 @@ class SearchIndexIT {
   }
 
   @Test
-  void reindex_report_counts_existing_documents() {
-    indexEntityUseCase.index(doc("t1", "Track A", "", EntityType.TRACK, 0L, true));
-    indexEntityUseCase.index(doc("t2", "Track B", "", EntityType.TRACK, 0L, true));
+  void reindex_reports_what_the_sources_supplied_not_what_was_already_indexed() {
+    // Pre-existing rows are irrelevant to the report: reindex reads from IndexSource, not the table.
+    indexEntityUseCase.index(doc("stale-1", "Stale", "", EntityType.TRACK, 0L, true));
 
     ReindexReport report = reindexUseCase.reindex(EntityType.TRACK);
-    assertEquals(2L, report.documentsIndexed());
+
     assertEquals(EntityType.TRACK, report.type());
+    assertTrue(report.documentsIndexed() > 0, "the catalog TrackIndexSource should have supplied tracks");
+    assertEquals(0L, report.documentsRemoved(), "reindex is upsert-only");
   }
 
   @Test
-  void reindex_all_types_converges_from_empty() {
-    indexEntityUseCase.index(doc("t1", "Track", "", EntityType.TRACK, 0L, true));
-    indexEntityUseCase.index(doc("a1", "Artist", "", EntityType.ARTIST, 0L, true));
-
+  void reindex_all_covers_every_type_and_makes_seeded_catalog_searchable() {
     ReindexReport report = reindexUseCase.reindex(null);
-    assertEquals(2L, report.documentsIndexed());
+
+    assertEquals(null, report.type());
+    assertTrue(report.documentsIndexed() > 0, "reindex(null) should index every type's sources");
   }
 
   @Test

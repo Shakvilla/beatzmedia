@@ -133,16 +133,28 @@ public interface ReindexUseCase {
 - `IndexEntityUseCase.index/deindex` — *Trigger:* internal event observers (§4.1 observers below).
   *Authorization:* internal only (not REST-reachable). *Idempotency:* upsert on `(type,id)` (INV-SRCH-1);
   `deindex` is a no-op if absent. *Events:* none. *Satisfies:* LLFR-SEARCH-01.1.
-- `ReindexUseCase.reindex` — *Trigger:* ops/admin job or migration backfill. *Authorization:* admin
-  scope when invoked via tooling. *Idempotency:* converges to current source state. *Satisfies:*
+- `ReindexUseCase.reindex` — *Trigger:* the scheduled `search.reindex` job (`ReindexJob`, every 10 min,
+  as built WU-SRCH-2, §9) calling `reindex(ALL)`; an admin-triggered REST call is a documented future
+  extension, not yet built. *Authorization:* the scheduled trigger runs as a system job, not a
+  privileged user action, so INV-10 does not apply (F6, §12); a future admin REST trigger would need
+  admin scope. *Idempotency:* converges to current source state (upsert-only, §9). *Satisfies:*
   LLFR-SEARCH-01.1 (recovery).
 
 **Internal event observers** (CDI `@Observes`, `AFTER_SUCCESS`; framework-free domain stays clean) —
-**WU-SRCH-1 deferral note:** observer wiring is omitted in WU-SRCH-1 because the source event types
-(`ReleaseWentLive`, `ContentTakenDown`, `StoreItemPublished`, etc.) do not yet exist in the codebase.
-They will be defined in WU-CAT-3/CAT-4, WU-STO-1, WU-POD-1, WU-EVT-1. Wire observers in those WUs
-by injecting `IndexEntityUseCase` and calling `index`/`deindex`; the `IndexingService` is already
-deployed. A stub comment (`IndexEventObserversStub.java`) marks the wiring point:
+**WU-SRCH-1 deferral note (status: never delivered, closed a different way by WU-SRCH-2).** Observer
+wiring was omitted in WU-SRCH-1 because the source event types (`ReleaseWentLive`,
+`ContentTakenDown`, `StoreItemPublished`, etc.) did not yet exist in the codebase. The plan was for
+WU-CAT-3/CAT-4, WU-STO-1, WU-POD-1, WU-EVT-1 to wire observers by injecting `IndexEntityUseCase` and
+calling `index`/`deindex`. **This never happened:** WU-CAT-3 and WU-CAT-4 shipped `done` without
+adding a single `@Observes` bean; `IndexEventObserversStub.java` remains a comment-only placeholder
+today. Combined with the dev seed never writing to `search_document` and the `search.reindex`
+scheduler tick having no bean behind it (§9), the practical consequence was that **`GET
+/v1/search?q=` returned empty for every query in every environment** — nothing in the codebase could
+ever populate the index. **WU-SRCH-2 closed this**, but not by wiring the deferred observers: it
+added the `IndexSource`/`ReindexService`/`ReindexJob` pull-based backfill described in §9 (ADR-30),
+so the index is now populated on a 10-minute cadence regardless of whether event observers exist.
+Event-driven incremental indexing is still open — tracked as a new deferral in §12. A stub comment
+(`IndexEventObserversStub.java`) still marks the (unimplemented) wiring point:
 
 ```java
 public interface IndexEventObservers {
@@ -170,11 +182,25 @@ public interface Clock { Instant now(); }            // kernel
 public interface IndexDocumentRepository {            // persistence for reindex/backfill bookkeeping
     long count(EntityType type);
 }
+
+/**
+ * As built (WU-SRCH-2, ADR-30). Contributed by owning modules, discovered via CDI
+ * Instance<IndexSource>. Search never reads another module's tables or ports for reindex.
+ */
+public interface IndexSource {
+    EntityType entityType();
+    List<IndexDocument> load(); // every owned entity, including non-visible ones (§9 visibility rules)
+}
 ```
 
 - `SearchIndex` → implemented by `PostgresFtsSearchAdapter` (adapter.out.persistence); the **single
   seam** OQ-12 swaps to an `OpenSearchSearchAdapter` with no contract change.
 - `Clock` → kernel adapter. `IndexDocumentRepository` → JPA/Panache adapter over `search_document`.
+- `IndexSource` → implemented by `catalog` (`TrackIndexSource`, `ArtistIndexSource`, `AlbumIndexSource`,
+  `PlaylistIndexSource` under `catalog.adapter.out.search`, catalog ADD §13); `store`/`podcasts`/
+  `events` are expected to contribute their own `IndexSource` beans as those modules gain a reindex
+  need. `ReindexService` (the `ReindexUseCase` impl) injects `Instance<IndexSource>` and no longer uses
+  `IndexDocumentRepository` for the reindex path itself.
 
 ## 5. Adapters
 
@@ -305,7 +331,10 @@ last. Aligns with INV-SRCH money-as-integer-minor-units convention.
 > V801/V802 (V8xx band = search + store) to avoid collisions with existing migrations (V1xx platform,
 > V2xx identity, V3xx catalog, V9xx audit). V801 and V802 were confirmed free at time of implementation.
 - Repeatable: no `search` rows in `R__seed_dev_data.sql`; the index is **derived** — seed catalog/store,
-  then run `ReindexUseCase.reindex(ALL)` (dev bootstrap) to populate.
+  then run `ReindexUseCase.reindex(ALL)` (dev bootstrap) to populate. **As built (WU-SRCH-2):** this is
+  now accurate and automatic — the `search.reindex` scheduled job (`ReindexJob`, every 10 min, §9)
+  calls `reindex(ALL)` on its own, so a dev stack self-populates the index within one tick of boot with
+  no manual step required.
 
 **Payload allow-list (V803-era addition — security fix F4):** `SearchDocumentMapper` enforces a closed
 allow-list of permitted payload keys per `EntityType`. Any key not on the list is silently stripped
@@ -364,9 +393,47 @@ stateDiagram-v2
   `deindex` (soft-hide for catalog, delete for store, INV-SRCH-2). Observers run `AFTER_SUCCESS` of the
   source transaction and are **idempotent**, keyed by `(entity_type, entity_id)`; a redelivered event
   re-converges the same row.
-- **Reindex job.** `ReindexUseCase.reindex(type|ALL)` streams source entities (via the owning modules'
-  read ports at the catalog/store boundary, or a snapshot feed) and re-upserts in batches — used for
-  cold start, schema/analyzer changes, and OQ-12 backend migration. Safe to run live (upsert-only).
+- **Reindex job (as built, WU-SRCH-2, ADR-30).** `ReindexUseCase.reindex(type|ALL)` does **not** read
+  the owning modules' read ports (that sketch is superseded — see ADR-30). Instead, search declares an
+  outbound `IndexSource` SPI (`entityType()`, `load(): List<IndexDocument>`); the owning module
+  (`catalog` today; `store`/`podcasts`/`events` later) contributes one `IndexSource` bean per
+  `EntityType` it owns, discovered via CDI `Instance<IndexSource>`. `ReindexService` iterates the
+  requested type(s), calls `load()` on every matching source, and upserts each document via
+  `SearchIndex` — used for cold start, schema/analyzer changes, and OQ-12 backend migration. It is
+  **upsert-only** (`documentsRemoved` is always 0 in the report) and safe to run live. A scheduled
+  `ReindexJob` (`search.reindex`, every 10 min, §7 dev-bootstrap note) runs `reindex(ALL)`
+  automatically.
+- **Reindex source visibility rules (as built, WU-SRCH-2).** `visible` is the **only** gate
+  `QueryService`/`SearchIndex` applies (`PostgresFtsSearchAdapter` queries `WHERE visible = true`,
+  INV-SRCH-2) — the catalog repository's `allXForIndex()` reads apply no visibility filter of their
+  own. Every `IndexSource` must therefore enumerate **every** entity it owns, including the ones that
+  must not be publicly visible, and set `visible` correctly rather than omitting them: because reindex
+  is upsert-only (F8, §12), a skipped entity that later flips from public to private would leave its
+  stale `visible=true` document in the index forever. Rules as implemented in
+  `catalog.adapter.out.search.CatalogIndexDocuments` / `*IndexSource`:
+  - **Tracks** — every track with `status = 'ready'` is enumerated, and
+    `visible = the track has no owning release OR that release's status is 'live'`. The owning release
+    is resolved through the **`release_track` join table**, which is the authoritative link (the same
+    rationale `markReleaseTracksReady` already documents). `track.release_id` is **not** consulted and
+    must not be: nothing in the codebase ever writes that column — `saveTrack` omits it, no migration
+    backfills it, and the seed's `INSERT INTO track` leaves it out — so a gate built on it is always-true
+    dead code. An earlier cut of WU-SRCH-2 made exactly that mistake, which would have left a taken-down
+    release's tracks searchable and re-published them on every 10-minute tick;
+    `CatalogEnumerationIT.allTracksForIndex_track_whose_release_is_takedown_is_returned_but_hidden`
+    is the regression test.
+    Two things about this rule are load-bearing:
+    - *A taken-down track is enumerated with `visible = false`, never skipped.* Skipping would strand its
+      previous `visible = true` document forever (reindex is upsert-only, F8) — takedown would silently
+      fail to remove the track from search.
+    - *A track with no release at all is visible.* `R__seed_dev_data.sql` inserts zero `release` rows, so
+      every seeded track has no `release_track` row; requiring a live release would index nothing and
+      leave dev/test search returning empty — the very bug this WU fixed.
+    Tracks that are `uploading`/`error` are not enumerated. That is safe rather than inconsistent: a track
+    only reaches `ready` via `markReleaseTracksReady` at go-live/reinstate, so a non-`ready` track has
+    never been indexed and has no stale document to strand.
+  - **Playlists** — always indexed; `visible = is_public` (private playlists ARE indexed, with
+    `visible = false`).
+  - **Artists, albums** — always indexed; always `visible = true`.
 - **Anti-manipulation in ranking (LLFR-SEARCH-01.2 / SEARCH-01.2).** `popularity` is supplied by
   `PopularityUpdated` events sourced from de-duped, **non-bot** play counts; `playback` rate-limits and
   flags plays and `risk` excludes flagged actors *before* the count reaches `search` (§6.3.2/§9). The
@@ -389,10 +456,14 @@ stateDiagram-v2
 | WU | Scope | LLFR | Ports/artifacts | Deps |
 |---|---|---|---|---|
 | **WU-SRCH-1** | Search index lifecycle (SEARCH-01.*) | LLFR-SEARCH-01.1, 01.2 | `SearchIndex` output port (pg_trgm), `QueryService` input port, `IndexEntityUseCase`/`ReindexUseCase`, event observers, `PostgresFtsSearchAdapter`, `search_document` + migrations | WU-CAT-1 |
+| **WU-SRCH-2** ✅ | Search index backfill — closes the empty-index bug (SEARCH-01.1 recovery) | LLFR-SEARCH-01.1 | `IndexSource` output port (ADR-30), `ReindexService` rewritten to discover `IndexSource` beans via CDI, `ReindexJob` (backs the previously-dormant `search.reindex` tick), catalog `IndexSource` beans + `CatalogRepository.allXForIndex()` (catalog ADD §13) | WU-SRCH-1, WU-CAT-3, WU-CAT-4 |
 
 Build order (PRD §8.1, **Phase 1**): `WU-CAT-1 → WU-SRCH-1 → WU-CAT-2` (catalog `/search` read) and
 `WU-SRCH-1 → WU-STO-1` (store browse). `WU-SRCH-1` must land **before** `WU-CAT-2` and `WU-STO-1`,
-which both list `search index` as a required artifact (PRD §8 rows WU-CAT-2 / WU-STO-1).
+which both list `search index` as a required artifact (PRD §8 rows WU-CAT-2 / WU-STO-1). WU-SRCH-2 is
+a later, out-of-band recovery WU: it landed after WU-CAT-3/WU-CAT-4 to fix a bug those WUs left open
+(the WU-SRCH-1 deferral note, §4.1, was never delivered — the index was empty in every environment
+until WU-SRCH-2).
 
 ## 11. Testing plan
 
@@ -417,7 +488,9 @@ which both list `search index` as a required artifact (PRD §8 rows WU-CAT-2 / W
 
 | ID | Finding | Deferred until | Note |
 |---|---|---|---|
-| F6 | `ReindexUseCase.reindex` appends no `AuditEntry` (INV-10) | WU-CAT-3 / WU-STO-1 — when an admin-privileged REST trigger lands | A `// INV-10` comment is in place at the trigger point in `ReindexService`. When the admin endpoint is implemented, wrap `reindex(...)` with an `AuditEntry` write. |
+| F6 | `ReindexUseCase.reindex` appends no `AuditEntry` (INV-10) | A future admin-triggered reindex REST endpoint | **Still open after WU-SRCH-2.** WU-SRCH-2's `ReindexJob` calls `reindex(ALL)` from the `search.reindex` scheduler tick, not from an admin-privileged REST request — it is a system-initiated job, not a privileged user mutation, so INV-10 does not apply to it and no audit entry is added for it. The deferral stands unchanged for when an admin-triggered reindex endpoint is built. A `// INV-10` comment remains at the trigger point in `ReindexService`. |
+| F7 | Event-driven incremental indexing is still not wired | A follow-up WU that adds `@Observes` beans | `IndexEventObserversStub` remains a comment-only placeholder (§4.1) — no `@Observes` beans exist. Index freshness is bounded by the `search.reindex` tick (10 minutes), not by near-real-time events. Catalog now publishes `ReleaseWentLive`/`ContentTakenDown` (catalog ADD §9), so an observer implementation is no longer blocked on missing event types the way the original WU-SRCH-1 deferral was — this is now implementable and just needs to be built. |
+| F8 | Reindex is upsert-only and never removes documents | Not scheduled; accepted as-built behaviour, revisit if hard deletes become common | `ReindexService`/`SearchIndex.upsert` only ever insert-or-update; nothing calls `SearchIndex.remove` from the reindex path (`ReindexReport.documentsRemoved` is always `0`). An entity **hard-deleted** from its owning module's table keeps its stale search document forever — hiding it works (an `IndexSource` still enumerates it and sets `visible=false` on upsert, §9 visibility rules), but a row removed outright from `catalog`/`store` is never pruned from `search_document`. This is why every `IndexSource` implementation is required to enumerate hidden/private entities rather than omit them (§4.2, ADR-30). |
 
 ## 13. Definition of done (module-specific)
 
