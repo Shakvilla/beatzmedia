@@ -7,12 +7,16 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.shakvilla.beatzmedia.audit.fakes.FakeAuditWriter;
+import org.shakvilla.beatzmedia.commerce.application.port.out.SettlementContext;
+import org.shakvilla.beatzmedia.commerce.application.port.out.SettlementSource;
 import org.shakvilla.beatzmedia.commerce.application.service.GrantOwnershipService;
+import org.shakvilla.beatzmedia.commerce.application.service.SettlementSourceRegistry;
 import org.shakvilla.beatzmedia.commerce.domain.CartItemKind;
 import org.shakvilla.beatzmedia.commerce.domain.Order;
 import org.shakvilla.beatzmedia.commerce.domain.OrderId;
@@ -65,10 +69,101 @@ class GrantOwnershipServiceTest {
     audit = new FakeAuditWriter();
     grantedEvent = new RecordingEvent<>();
     saleRecordedEvent = new RecordingEvent<>();
-    service =
-        new GrantOwnershipService(
-            orders, ownership, expansion, ledger, carts, audit, grantedEvent, saleRecordedEvent,
-            FakeIds.sequential("grant"), FakeClock.fixed());
+    service = serviceWith(); // no SettlementSources → track/album catalog path (existing tests)
+  }
+
+  /** Build the service with the given owning-module {@link SettlementSource}s registered (WU-COM-4). */
+  private GrantOwnershipService serviceWith(SettlementSource... sources) {
+    return new GrantOwnershipService(
+        orders, ownership, expansion, new SettlementSourceRegistry(List.of(sources)), ledger, carts,
+        audit, grantedEvent, saleRecordedEvent, FakeIds.sequential("grant"), FakeClock.fixed());
+  }
+
+  /** Capturing fake {@link SettlementSource} for the WU-COM-4 settlement dispatch tests. */
+  private static final class FakeSettlementSource implements SettlementSource {
+    private final String entityType;
+    private final String payeeId; // null → no payee
+    private final List<String> episodes;
+    int fulfillCount = 0;
+
+    FakeSettlementSource(String entityType, String payeeId, List<String> episodes) {
+      this.entityType = entityType;
+      this.payeeId = payeeId;
+      this.episodes = episodes;
+    }
+
+    @Override
+    public String entityType() {
+      return entityType;
+    }
+
+    @Override
+    public Optional<AccountId> payee(String refId) {
+      return payeeId == null ? Optional.empty() : Optional.of(new AccountId(payeeId));
+    }
+
+    @Override
+    public List<String> ownedEpisodeIds(String refId) {
+      return episodes;
+    }
+
+    @Override
+    public void fulfill(SettlementContext ctx) {
+      fulfillCount++;
+    }
+  }
+
+  private OrderLine episodeLine(String episodeId, long priceMinor) {
+    return new OrderLine(
+        "l-" + episodeId, CartItemKind.episode, episodeId, "Ep", "Show", "img.jpg",
+        Money.ofMinor(priceMinor, Currency.GHS), 1);
+  }
+
+  private OrderLine ticketLine(String refId, long priceMinor, int qty) {
+    return new OrderLine(
+        "l-" + refId, CartItemKind.ticket, refId, "Event", "VIP", "img.jpg",
+        Money.ofMinor(priceMinor, Currency.GHS), qty);
+  }
+
+  // ---- WU-COM-4 settlement dispatch (episode/ticket via SettlementSource) ----
+
+  @Test
+  void settlement_episode_grantsEpisodeOwnership_andCreditsCreator() {
+    var source = new FakeSettlementSource("episode", "podcast-creator", List.of("ep-1"));
+    GrantOwnershipService svc = serviceWith(source);
+    pendingOrder("EP1", episodeLine("ep-1", 500));
+
+    svc.grantForSettledOrder("EP1", "intent-EP1", "mtn");
+
+    assertTrue(ownership.existsActiveForEpisode(BUYER, "ep-1"), "episode ownership granted (INV-1)");
+    assertEquals(1, ledger.countForCreator("podcast-creator"), "one 70/30 split to the show creator");
+  }
+
+  @Test
+  void settlement_ticket_invokesFulfill_andCreditsArtist_withQtyGross() {
+    var source = new FakeSettlementSource("ticket", "event-artist", List.of());
+    GrantOwnershipService svc = serviceWith(source);
+    pendingOrder("TK1", ticketLine("evt-1:VIP", 40000, 2));
+
+    svc.grantForSettledOrder("TK1", "intent-TK1", "mtn");
+
+    assertEquals(1, source.fulfillCount, "ticket minted exactly once via fulfill");
+    assertEquals(1, ledger.countForCreator("event-artist"));
+    assertEquals(80000, ledger.postings().get(0).grossMinor(), "gross = unitPrice(40000) × qty(2)");
+    assertFalse(ownership.existsActiveForEpisode(BUYER, "evt-1:VIP"), "a ticket is not an ownership row");
+  }
+
+  @Test
+  void settlement_ticket_redelivered_fulfillsAndSplitsExactlyOnce() {
+    var source = new FakeSettlementSource("ticket", "event-artist", List.of());
+    GrantOwnershipService svc = serviceWith(source);
+    pendingOrder("TK2", ticketLine("evt-1:VIP", 40000, 1));
+
+    svc.grantForSettledOrder("TK2", "intent-TK2", "mtn");
+    svc.grantForSettledOrder("TK2", "intent-TK2", "mtn"); // webhook + poll re-delivery
+
+    assertEquals(1, source.fulfillCount, "fulfill once despite redelivery (exactly-once claim)");
+    assertEquals(1, ledger.countForCreator("event-artist"), "one split despite redelivery");
   }
 
   private Order pendingOrder(String ref, OrderLine... lines) {
