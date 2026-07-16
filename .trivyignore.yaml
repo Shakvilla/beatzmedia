@@ -1,0 +1,28 @@
+# Trivy vulnerability ignore list (YAML format — supports mechanical expiry).
+#
+# Every entry MUST carry a justification (`statement`) and an `expired_at` date so
+# suppressions cannot rot silently: once the date passes, Trivy stops honouring the
+# entry and the gate fails again, forcing a re-review.
+#
+# Wired into the image-scan gate via the `trivyignores:` input in
+# .github/workflows/security.yml. Keep this list as small as possible.
+
+vulnerabilities:
+  - id: CVE-2026-15308
+    # HIGH — CPU denial-of-service in CPython's html.parser via crafted markup.
+    # Ships in the Red Hat UBI9 base image (packages python3 / python3-libs,
+    # version 3.9.25-7.el9_8); fixed upstream in 3.9.25-7.el9_8.2, pending a
+    # Red Hat rebuild of registry.access.redhat.com/ubi9/openjdk-25-runtime.
+    #
+    # Not reachable from beatzmedia: the service ships no Python of its own and
+    # never invokes html.parser; python3 is present only as a base-image OS
+    # package. Newly disclosed after master last scanned clean (2026-07-15), so it
+    # affects every branch equally — not introduced by any application change.
+    #
+    # Remove this entry once the base image ships python3 >= 3.9.25-7.el9_8.2
+    # (bump the tag in src/main/docker/Dockerfile.jvm and delete this block).
+    statement: >-
+      Base-image-only OS package (python3/python3-libs); not invoked by the
+      application. Temporary suppression pending a Red Hat UBI9 rebuild carrying
+      python3 >= 3.9.25-7.el9_8.2.
+    expired_at: 2026-08-16
