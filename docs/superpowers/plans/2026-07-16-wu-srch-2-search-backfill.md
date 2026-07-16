@@ -52,12 +52,22 @@ This is a structural decision, so Task 6 records it as an ADR.
 - **Assertions: JUnit 5 `org.junit.jupiter.api.Assertions` only. AssertJ is NOT a dependency of this
   project** — there is no `assertj` in `backend/pom.xml` and zero existing tests import `org.assertj`.
   Do not add it. Match the style of the existing `search/integration/SearchIndexIT.java`.
-- **Running tests: `-Dgroups=...` does not work locally** — this pom has no surefire groups wiring, so
-  `-Dgroups=arch` silently runs **zero** tests and reports success. Use:
+- **Running tests — this project has two separate silent-false-green traps. Both report BUILD SUCCESS
+  while running nothing.** Use exactly these invocations:
   - unit tests / ArchUnit (surefire, `*Test`): `cd backend && ./mvnw -q test -Dtest=<ClassName>`
   - all unit tests: `cd backend && ./mvnw -q test -DskipITs=true`
-  - integration tests (failsafe, `*IT`): `cd backend && ./mvnw -q verify -Dit.test=<ClassName>`
-  ArchUnit has no separate step — `ArchitectureRulesTest` runs inside the normal test suite.
+  - integration tests (failsafe, `*IT`):
+    `cd backend && ./mvnw -q verify -DskipITs=false -DskipUnitTests=true -Dit.test=<ClassName>`
+
+  Trap 1: `-Dgroups=...` runs **zero** tests — this pom has no surefire groups wiring. Never use it.
+  ArchUnit has no separate step; `ArchitectureRulesTest` runs inside the normal test suite.
+
+  Trap 2: **`<skipITs>true</skipITs>` is the pom default** (`pom.xml:17`). Plain `./mvnw verify` — with
+  or without `-Dit.test=` — prints "Tests are skipped." and exits green **without running any IT**. The
+  `-DskipITs=false` is mandatory; `verify.sh:127` uses exactly `-DskipITs=false -DskipUnitTests=true`.
+
+  **After any IT run, confirm it actually ran**: `ls backend/target/failsafe-reports/*.xml` and read the
+  report for your class. A green build is not evidence that a test executed.
 - **Do NOT run `backend/scripts/verify.sh` or `smoke.sh` yourself** — the repo owner runs those and
   reports results (IntelliJ JPS races the build). Task 7 is that gate.
 - Branch: `feat/WU-SRCH-2-search-index-backfill`, one WU per branch. Conventional Commits with the WU id
@@ -562,7 +572,7 @@ class CatalogEnumerationIT {
 
 - [ ] **Step 3: Run it to verify it fails**
 
-Run: `cd backend && ./mvnw -q verify -Dit.test=CatalogEnumerationIT`
+Run: `cd backend && ./mvnw -q verify -DskipITs=false -DskipUnitTests=true -Dit.test=CatalogEnumerationIT`
 Expected: FAIL — compilation error, `allTracksForIndex()` undefined on `CatalogRepository`.
 
 Note this is `verify` + `-Dit.test` (failsafe), not `test` + `-Dtest` (surefire) — `*IT` classes are
@@ -662,7 +672,7 @@ what matters: **`status = 'ready'` AND (no release OR the release is live)**.
 
 - [ ] **Step 6: Run the IT to verify it passes**
 
-Run: `cd backend && ./mvnw -q verify -Dit.test=CatalogEnumerationIT`
+Run: `cd backend && ./mvnw -q verify -DskipITs=false -DskipUnitTests=true -Dit.test=CatalogEnumerationIT`
 Expected: PASS (4 tests).
 
 - [ ] **Step 7: Commit**
@@ -1121,7 +1131,7 @@ if `of(String)` does not exist, build the `SearchQuery` the way `SearchService` 
 
 - [ ] **Step 2: Run to verify it fails**
 
-Run: `cd backend && ./mvnw -q verify -Dit.test=SearchBackfillIT`
+Run: `cd backend && ./mvnw -q verify -DskipITs=false -DskipUnitTests=true -Dit.test=SearchBackfillIT`
 Expected: FAIL — assertions fail because nothing indexes yet (or a compile error if a signature differs).
 
 Note: if this test passes at this point, something is wrong — stop and investigate rather than moving on.
@@ -1169,7 +1179,7 @@ public class ReindexJob implements ScheduledJob {
 
 - [ ] **Step 4: Run the IT to verify it passes**
 
-Run: `cd backend && ./mvnw -q verify -Dit.test=SearchBackfillIT`
+Run: `cd backend && ./mvnw -q verify -DskipITs=false -DskipUnitTests=true -Dit.test=SearchBackfillIT`
 Expected: PASS (4 tests).
 
 - [ ] **Step 5: Run ArchUnit**
@@ -1225,7 +1235,7 @@ that rather than adjusting the expectation.
 
 - [ ] **Step 7: Run the full suite for regressions**
 
-Run: `cd backend && ./mvnw -q test -DskipITs=true` then `cd backend && ./mvnw -q verify`
+Run: `cd backend && ./mvnw -q test -DskipITs=true` then `cd backend && ./mvnw -q verify -DskipITs=false -DskipUnitTests=true`
 Expected: both PASS. `verify` runs the whole gate including every IT, so it is slow — that is fine and
 expected here; this is the step that proves nothing else regressed. If any test outside this WU's files
 fails, report exactly which and why **before** changing it.
