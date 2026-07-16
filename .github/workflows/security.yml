@@ -132,6 +132,9 @@ jobs:
           format: table
           severity: HIGH,CRITICAL
           ignore-unfixed: true
+          # Dated, justified base-image suppressions (each entry carries expired_at
+          # so it re-fails the gate once stale). See .trivyignore.yaml at repo root.
+          trivyignores: .trivyignore.yaml
           exit-code: "1"
       # REPORT: full-severity SARIF for code scanning. Non-gating (exit-code 0)
       # so MEDIUM/LOW surface in the Security tab without blocking the merge.
