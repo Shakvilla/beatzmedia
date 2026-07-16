@@ -7,6 +7,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import jakarta.enterprise.event.TransactionPhase;
 import jakarta.inject.Inject;
+import jakarta.transaction.Transactional;
 
 import org.shakvilla.beatzmedia.identity.domain.AccountId;
 import org.shakvilla.beatzmedia.notifications.application.port.in.NotifyCommand;
@@ -52,7 +53,17 @@ public class NotificationEventObservers {
   /**
    * On a settled tip: notify the creator in-app ("you received a tip"). {@code type=tip},
    * recipient = {@code creatorAccountId}. Dedupe key = {@code tip:<intentId>:<creatorAccountId>}.
+   *
+   * <p><strong>{@code REQUIRES_NEW} (not merely the delegate's {@code REQUIRED}).</strong> As an
+   * {@code AFTER_SUCCESS} observer this runs while the source transaction is already completing, so
+   * no transaction is active on the thread. A plain {@code REQUIRED} boundary (as on
+   * {@link NotifyUseCase#notify}) would <em>join</em> that completing context rather than start a
+   * live one, and the first persistence op fails with {@code TransactionRequiredException}. Owning a
+   * fresh {@code REQUIRES_NEW} transaction here suspends the stale context and gives {@code notify}
+   * an active transaction — matching every other AFTER_SUCCESS persisting observer in the codebase
+   * (e.g. analytics {@code TipReceivedObserver}, store {@code PurchaseConfirmedSubscriber}).
    */
+  @Transactional(Transactional.TxType.REQUIRES_NEW)
   public void onTipReceived(@Observes(during = TransactionPhase.AFTER_SUCCESS) TipReceived event) {
     String dedupeKey = "tip:" + event.intentId() + ":" + event.creatorAccountId();
     String body = "You received a tip of " + displayAmount(event.creatorShareMinor()) + " — nice!";
