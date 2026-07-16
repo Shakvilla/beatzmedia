@@ -281,7 +281,7 @@ work_units:
     owner: payments-specialist
     depends_on: [WU-COM-3, WU-STO-1, WU-EVT-1, WU-POD-1]
     llfrs: []
-    status: in_progress
+    status: in_review
     # NOT built by slice 3 — registered so the gap is tracked. CheckoutService.gateKind() already
     # hard-rejects episode/season-pass/ticket/store with 409 CHECKOUT_KIND_UNSUPPORTED (ADR-23 safe
     # default) because their only pricing source today is client-supplied cart metadata

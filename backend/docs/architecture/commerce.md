@@ -793,3 +793,34 @@ and `CheckoutFlowIT.getOrder_ownOrder_returns200WithDisplayFields` (integration)
 Enables slice 3 of the frontend→backend wiring program
 (`docs/superpowers/specs/2026-07-15-commerce-checkout-wiring-design.md`) — the checkout receipt page
 polls `GET /v1/me/orders/{orderId}` until settlement instead of asserting success client-side.
+
+## 16. WU-COM-4 implementation notes (authoritative pricing + full purchasability, shipped)
+
+WU-COM-4 made `episode`/`season-pass`/`ticket`/`store` fully purchasable and surfaced the card
+hosted-checkout redirect. As-built decisions on top of this ADD (see ADR-31):
+
+- **Two commerce-declared SPIs, implemented by the owning modules** (edge stays `module → commerce`,
+  no cycle — ArchUnit-guarded): `ModulePriceSource` (authoritative add-to-cart/checkout pricing) and
+  `SettlementSource` (`payee`, `ownedEpisodeIds`, `fulfill`). Discovered via CDI `Instance<>` (WU-SRCH-2
+  `IndexSource` pattern). `CatalogPricingServiceAdapter` no longer echoes `metadata.priceMinor` — it
+  dispatches the four kinds to their `ModulePriceSource`; the interim `priceFromMetadata` is deleted.
+- **Settlement dispatch in `GrantOwnershipService`.** Each settled line goes to its `SettlementSource`:
+  episode/season-pass write `OwnershipGrant.forEpisode` (season-pass expands to the show's current
+  episodes; `grantedEpisodeIds` is now populated on `OwnershipGranted`), ticket mints via `IssueTicket`
+  (idempotent on `(orderId,tierId)`, joins the grant tx), store decrements stock by the real qty. The
+  70/30 split posts to the SPI-resolved payee. All inside the existing `order_grant_posting`
+  exactly-once claim. Track/album/album-rest keep the `CatalogExpansionReader` path unchanged.
+- **The G3 kind-gate is replaced by a payee guard** (`CheckoutService.requireResolvablePayee`): a kind
+  with a `SettlementSource` must resolve a payee before the charge, else the item is not-for-sale (404)
+  — money is never taken that cannot be attributed (INV-4). `CheckoutKindUnsupportedException` is no
+  longer thrown by checkout (the class + `CHECKOUT_KIND_UNSUPPORTED` remain, unused).
+- **`checkoutUrl`** (WU-PAY-6) is threaded `PaymentIntentView → ChargeGateway.ChargeResult →
+  CheckoutResult` and persisted on the order (`V969`, nullable `checkout_url`) so an idempotent replay
+  returns it. Null on every MoMo/sandbox charge; non-null only for a Redde card redirect (PSP_REDDE off
+  until go-live).
+- **Ticket refId is `eventId:tierName`** — the SPA's `TicketTierView` never exposes the tier id, so the
+  client cannot send it. The shared `events.domain.TicketRef` parses it for both pricing and issuance,
+  so they can never resolve different tiers.
+- **Residual (documented in ADR-31):** an item with no `creator_account_id`/`artist_id` is intentionally
+  not sellable; ticket `holderName` defaults to the buyer account id; a tier renamed/removed between
+  checkout and settlement fails the settlement loudly (retried) rather than minting the wrong tier.
