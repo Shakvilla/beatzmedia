@@ -4,9 +4,11 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.stream.Collectors;
 
 import jakarta.enterprise.context.ApplicationScoped;
@@ -15,6 +17,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
 
 import org.shakvilla.beatzmedia.catalog.application.port.out.CatalogRepository;
+import org.shakvilla.beatzmedia.catalog.application.port.out.CatalogRepository.IndexableTrack;
 import org.shakvilla.beatzmedia.catalog.domain.Album;
 import org.shakvilla.beatzmedia.catalog.domain.AlbumId;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
@@ -532,6 +535,103 @@ public class JpaCatalogRepository implements CatalogRepository {
                 + "WHERE t.id IN :ids AND t.status <> 'ready'")
         .setParameter("ids", trackIds)
         .executeUpdate();
+  }
+
+  // ---- WU-SRCH-2: search index backfill ----
+
+  @Override
+  public List<IndexableTrack> allTracksForIndex() {
+    // track.release_id is never written by anything (saveTrack omits it; no migration backfills
+    // it), so it cannot be used to gate visibility. The authoritative track -> release link is the
+    // release_track join table (same rationale as markReleaseTracksReady above). A track is hidden
+    // only when it has a release_track row whose release exists and is not 'live'; a track with no
+    // release_track row at all (e.g. every dev-seed track) is always visible.
+    Set<String> hiddenTrackIds =
+        new HashSet<>(
+            em.createQuery(
+                    "SELECT rt.trackId FROM ReleaseTrackEntity rt, ReleaseEntity r "
+                        + "WHERE r.id = rt.pk.releaseId AND r.status <> 'live'",
+                    String.class)
+                .getResultList());
+
+    // "ready" is enumerated (not "not yet indexed"): a track only reaches 'ready' via
+    // markReleaseTracksReady at go-live/reinstate, so it may already have a stale visible document
+    // that a takedown needs to overwrite with visible=false. 'uploading'/'error' tracks were never
+    // indexed, so there is nothing stale to strand by skipping them.
+    List<TrackEntity> entities =
+        em.createQuery("SELECT t FROM TrackEntity t WHERE t.status = 'ready'", TrackEntity.class)
+            .getResultList();
+
+    return mapTracksWithBatchedCredits(entities).stream()
+        .map(t -> new IndexableTrack(t, !hiddenTrackIds.contains(t.getId().value())))
+        .toList();
+  }
+
+  @Override
+  public List<ArtistProfile> allArtistsForIndex() {
+    List<ArtistProfileEntity> entities =
+        em.createQuery("SELECT a FROM ArtistProfileEntity a", ArtistProfileEntity.class)
+            .getResultList();
+    if (entities.isEmpty()) {
+      return Collections.emptyList();
+    }
+    List<String> ids = entities.stream().map(e -> e.id).toList();
+    // Batch-load shows for these artists.
+    List<ArtistShowEntity> allShows =
+        em.createQuery(
+                "SELECT s FROM ArtistShowEntity s WHERE s.artistId IN :ids ORDER BY s.position",
+                ArtistShowEntity.class)
+            .setParameter("ids", ids)
+            .getResultList();
+    Map<String, List<ArtistShowEntity>> showsByArtist =
+        allShows.stream().collect(Collectors.groupingBy(s -> s.artistId));
+    return entities.stream()
+        .map(e -> toDomain(e, showsByArtist.getOrDefault(e.id, Collections.emptyList())))
+        .toList();
+  }
+
+  @Override
+  public List<Album> allAlbumsForIndex() {
+    List<AlbumEntity> entities =
+        em.createQuery("SELECT a FROM AlbumEntity a", AlbumEntity.class).getResultList();
+    return mapAlbumsWithBatchedTrackIds(entities);
+  }
+
+  @Override
+  public List<Playlist> allPlaylistsForIndex() {
+    // Deliberately includes private (is_public = false) playlists: reindex is upsert-only, so the
+    // indexer needs them to write visible=false rather than omitting them (Task 4).
+    List<PlaylistEntity> entities =
+        em.createQuery("SELECT p FROM PlaylistEntity p", PlaylistEntity.class).getResultList();
+    if (entities.isEmpty()) {
+      return Collections.emptyList();
+    }
+    List<String> ids = entities.stream().map(e -> e.id).toList();
+    List<PlaylistTrackEntity> allTracks =
+        em.createQuery(
+                "SELECT pt FROM PlaylistTrackEntity pt WHERE pt.playlistId IN :ids ORDER BY pt.position",
+                PlaylistTrackEntity.class)
+            .setParameter("ids", ids)
+            .getResultList();
+    Map<String, List<String>> trackIdsByPlaylist =
+        allTracks.stream()
+            .collect(
+                Collectors.groupingBy(
+                    pt -> pt.playlistId,
+                    Collectors.mapping(pt -> pt.trackId, Collectors.toList())));
+    return entities.stream()
+        .map(
+            e -> new Playlist(
+                new PlaylistId(e.id),
+                e.title,
+                e.description,
+                e.creator,
+                e.creatorAvatar,
+                e.image,
+                e.isPublic,
+                e.followers,
+                trackIdsByPlaylist.getOrDefault(e.id, Collections.emptyList())))
+        .toList();
   }
 
   private Release toReleaseDomain(ReleaseEntity e, List<ReleaseTrackEntity> trackEntities) {

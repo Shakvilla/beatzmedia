@@ -2,9 +2,11 @@ package org.shakvilla.beatzmedia.search.unit;
 
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 
 import org.shakvilla.beatzmedia.platform.domain.PageRequest;
 import org.shakvilla.beatzmedia.search.application.port.out.SearchIndex;
@@ -23,10 +25,21 @@ class FakeSearchIndex implements SearchIndex {
   int upsertCallCount = 0;
   int removeCallCount = 0;
 
+  /**
+   * Test hook (WU-SRCH-2 Finding 2): {@code entityType + "|" + entityId} keys that {@link
+   * #upsert} should throw for, simulating a single bad document without touching {@link
+   * IndexDocument}'s own validation. Empty by default so existing callers are unaffected.
+   */
+  final Set<String> failUpsertFor = new HashSet<>();
+
   @Override
   public void upsert(IndexDocument document) {
+    String key = key(document.entityType(), document.entityId());
+    if (failUpsertFor.contains(key)) {
+      throw new RuntimeException("simulated upsert failure for " + key);
+    }
     upsertCallCount++;
-    store.put(key(document.entityType(), document.entityId()), document);
+    store.put(key, document);
   }
 
   @Override

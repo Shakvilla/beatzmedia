@@ -100,4 +100,38 @@ public interface CatalogRepository {
    * transition. A no-op for tracks already {@code ready}.
    */
   void markReleaseTracksReady(ReleaseId releaseId);
+
+  // ---- WU-SRCH-2: search index backfill ----
+
+  /**
+   * A catalog track plus whether it should currently surface in search. {@code visible} is {@code
+   * false} when the track's owning release — found via the {@code release_track} join, the
+   * authoritative track ↔ release link ({@code track.release_id} is never populated) — exists and
+   * is not {@code live} (e.g. {@code draft}, {@code in_review}, {@code scheduled}, {@code
+   * takedown}). A track with no owning release at all is always visible. WU-SRCH-2.
+   */
+  record IndexableTrack(Track track, boolean visible) {}
+
+  /**
+   * All tracks eligible for the search index, i.e. those whose audio has finished processing
+   * ({@code status = 'ready'}), paired with whether each should currently be visible in search.
+   * Reindex is upsert-only, so a track that must be hidden (e.g. after a takedown) is still
+   * returned here — with {@code visible=false} — rather than omitted, since omitting it would
+   * strand its previous {@code visible=true} document in the index forever. Ordering is
+   * unspecified. Used only by the catalog-side search indexer (WU-SRCH-2); not a public listing.
+   */
+  List<IndexableTrack> allTracksForIndex();
+
+  /** All artist profiles, for the search indexer (WU-SRCH-2). Ordering is unspecified. */
+  List<ArtistProfile> allArtistsForIndex();
+
+  /** All albums, for the search indexer (WU-SRCH-2). Ordering is unspecified. */
+  List<Album> allAlbumsForIndex();
+
+  /**
+   * All playlists — including private ones, so the indexer can write them with {@code
+   * visible=false} rather than omitting them (reindex is upsert-only). For the search indexer
+   * (WU-SRCH-2).
+   */
+  List<Playlist> allPlaylistsForIndex();
 }

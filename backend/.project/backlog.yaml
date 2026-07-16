@@ -126,6 +126,15 @@ work_units:
     depends_on: [WU-CAT-1]
     llfrs: [LLFR-SEARCH-01.1, LLFR-SEARCH-01.2]
     status: done
+  - id: WU-SRCH-2
+    title: Search index backfill (IndexSource SPI + real reindex + scheduled job)
+    phase: 1
+    module: search
+    add: search.md
+    owner: backend-engineer
+    depends_on: [WU-SRCH-1, WU-CAT-2]
+    llfrs: [LLFR-SEARCH-01.1]
+    status: in_review
   - id: WU-CAT-2
     title: Home feed + browse + search read
     phase: 1
@@ -258,7 +267,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-COM-2]
     llfrs: [LLFR-COMMERCE-02.4]
-    status: todo
+    status: done
     # Frontend slice 3 (docs/superpowers/specs/2026-07-15-commerce-checkout-wiring-design.md) needs to
     # poll a single order by id after POST /v1/checkout's 202 to detect settlement (pending -> paid /
     # fulfilled / failed) — GET /v1/me/orders only lists, it does not fetch by id. Also closes a real
