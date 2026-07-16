@@ -327,7 +327,8 @@ public interface CatalogRepository {   // Postgres + Panache adapter (adapter.ou
     List<Release> dueScheduled(Instant now);   // INV-7 go-live sweep; row-locked (PESSIMISTIC_WRITE)
     boolean hasPendingSplits(ReleaseId releaseId);      // WU-CAT-4 — INV-12 live-transition guard
     void markReleaseTracksReady(ReleaseId releaseId);   // WU-CAT-4 — flips constituent tracks 'ready'
-    List<Track> allTracksForIndex();          // WU-SRCH-2 — search reindex enumeration, §13
+    List<IndexableTrack> allTracksForIndex(); // WU-SRCH-2 — search reindex enumeration, §13
+                                              //   IndexableTrack = (Track track, boolean visible)
     List<ArtistProfile> allArtistsForIndex();  // WU-SRCH-2 — search reindex enumeration, §13
     List<Album> allAlbumsForIndex();           // WU-SRCH-2 — search reindex enumeration, §13
     List<Playlist> allPlaylistsForIndex();     // WU-SRCH-2 — search reindex enumeration, §13 (includes private)
@@ -785,12 +786,24 @@ closes this from the search side with a pull-based backfill instead — see sear
 - `CatalogRepository.allTracksForIndex()` / `allArtistsForIndex()` / `allAlbumsForIndex()` /
   `allPlaylistsForIndex()` — new read methods, distinct from the existing paginated/filtered public
   reads, that each enumerate **every** row of their entity so the indexer can decide visibility itself
-  (search ADD §9 visibility rules). None of these apply a visibility filter — `allTracksForIndex()` is
-  the one exception with a `WHERE` clause, and that clause is a **content-readiness** gate, not a
-  visibility gate: `status = 'ready'` AND (`release_id IS NULL` OR the release is `live`). The "no
-  release" arm is required, not defensive: `R__seed_dev_data.sql` inserts zero `release` rows, so
-  every seeded track has `release_id = NULL` and must still be indexed for a dev stack's `/search` to
-  return anything.
+  (search ADD §9 visibility rules). None of them filters by visibility.
+  `allTracksForIndex()` returns `List<IndexableTrack>` — `(Track track, boolean visible)` — because the
+  `Track` domain object carries no release reference and so cannot express its own visibility. It
+  enumerates every `status = 'ready'` track and computes
+  `visible = the track has no owning release OR that release is 'live'`, resolving the owning release
+  through the **`release_track` join table**.
+  **Do not reintroduce a `track.release_id` check here.** Nothing ever writes that column — `saveTrack`
+  omits it, no migration backfills it, and the seed's `INSERT INTO track` leaves it out — so any gate
+  built on it is always-true dead code. `release_track` is the authoritative link, exactly as
+  `markReleaseTracksReady` already documents. The first cut of WU-SRCH-2 used `release_id` and thereby
+  left taken-down tracks searchable, re-published on every 10-minute tick;
+  `CatalogEnumerationIT.allTracksForIndex_track_whose_release_is_takedown_is_returned_but_hidden` guards
+  against the regression.
+  The `status = 'ready'` gate is a **content-readiness** filter, not a visibility one: a track only
+  reaches `ready` via `markReleaseTracksReady`, so a non-`ready` track has never been indexed and has no
+  stale document to strand by omitting it. A track with **no** release is visible — required, not
+  defensive: `R__seed_dev_data.sql` inserts zero `release` rows, so every seeded track has no
+  `release_track` row and must still be indexed for a dev stack's `/search` to return anything.
 - `allPlaylistsForIndex()` **deliberately returns private (`is_public = false`) playlists** rather than
   filtering them out. This is load-bearing, not an oversight: `search`'s reindex is upsert-only (search
   ADD §12, F8) — it never calls `SearchIndex.remove`. If a private playlist were simply omitted from

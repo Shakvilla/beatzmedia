@@ -411,10 +411,26 @@ stateDiagram-v2
   is upsert-only (F8, §12), a skipped entity that later flips from public to private would leave its
   stale `visible=true` document in the index forever. Rules as implemented in
   `catalog.adapter.out.search.CatalogIndexDocuments` / `*IndexSource`:
-  - **Tracks** — indexed when `status = 'ready'` AND (the track has no `release_id` OR its release's
-    status is `live`); always `visible = true` when returned. The "no release" arm is load-bearing,
-    not an edge case: `R__seed_dev_data.sql` inserts zero `release` rows, so every seeded track has
-    `release_id = NULL` and must still be indexed for dev/test search to return anything.
+  - **Tracks** — every track with `status = 'ready'` is enumerated, and
+    `visible = the track has no owning release OR that release's status is 'live'`. The owning release
+    is resolved through the **`release_track` join table**, which is the authoritative link (the same
+    rationale `markReleaseTracksReady` already documents). `track.release_id` is **not** consulted and
+    must not be: nothing in the codebase ever writes that column — `saveTrack` omits it, no migration
+    backfills it, and the seed's `INSERT INTO track` leaves it out — so a gate built on it is always-true
+    dead code. An earlier cut of WU-SRCH-2 made exactly that mistake, which would have left a taken-down
+    release's tracks searchable and re-published them on every 10-minute tick;
+    `CatalogEnumerationIT.allTracksForIndex_track_whose_release_is_takedown_is_returned_but_hidden`
+    is the regression test.
+    Two things about this rule are load-bearing:
+    - *A taken-down track is enumerated with `visible = false`, never skipped.* Skipping would strand its
+      previous `visible = true` document forever (reindex is upsert-only, F8) — takedown would silently
+      fail to remove the track from search.
+    - *A track with no release at all is visible.* `R__seed_dev_data.sql` inserts zero `release` rows, so
+      every seeded track has no `release_track` row; requiring a live release would index nothing and
+      leave dev/test search returning empty — the very bug this WU fixed.
+    Tracks that are `uploading`/`error` are not enumerated. That is safe rather than inconsistent: a track
+    only reaches `ready` via `markReleaseTracksReady` at go-live/reinstate, so a non-`ready` track has
+    never been indexed and has no stale document to strand.
   - **Playlists** — always indexed; `visible = is_public` (private playlists ARE indexed, with
     `visible = false`).
   - **Artists, albums** — always indexed; always `visible = true`.
