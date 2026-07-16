@@ -267,7 +267,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-COM-2]
     llfrs: [LLFR-COMMERCE-02.4]
-    status: todo
+    status: done
     # Frontend slice 3 (docs/superpowers/specs/2026-07-15-commerce-checkout-wiring-design.md) needs to
     # poll a single order by id after POST /v1/checkout's 202 to detect settlement (pending -> paid /
     # fulfilled / failed) — GET /v1/me/orders only lists, it does not fetch by id. Also closes a real
