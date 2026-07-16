@@ -10,8 +10,8 @@ import org.shakvilla.beatzmedia.commerce.application.port.out.SettlementSource;
 import org.shakvilla.beatzmedia.identity.domain.AccountId;
 import org.shakvilla.beatzmedia.podcasts.application.port.out.PodcastRepository;
 import org.shakvilla.beatzmedia.podcasts.domain.Podcast;
-import org.shakvilla.beatzmedia.podcasts.domain.PodcastId;
 import org.shakvilla.beatzmedia.podcasts.domain.PodcastEpisode;
+import org.shakvilla.beatzmedia.podcasts.domain.PodcastId;
 
 /**
  * Settlement for a purchased {@code season-pass} (WU-COM-4): the payee is the show's creator; the pass
