@@ -111,6 +111,29 @@ class CheckoutFlowIT {
         .executeUpdate();
     seedTrack(restTrack1, "Rest Track 1", 700, restAlbumId);
     seedTrack(restTrack2, "Rest Track 2", 300, restAlbumId);
+
+    // WU-COM-4: a real event + VIP tier (₵400) whose organizer is a distinct artist, so a ticket is
+    // now purchasable end-to-end (price authoritative, payee resolvable, settlement mints + splits).
+    em.createNativeQuery(
+            "INSERT INTO event (id, title, artist_name, artist_id, image, event_at, venue, city,"
+                + " category) VALUES ('co2-tk-event', 'CO2 Live', 'CO2 Ticket Artist',"
+                + " 'co2-ticket-artist', 'img.jpg', now() + interval '30 days', 'Venue', 'Accra',"
+                + " 'CONCERT') ON CONFLICT (id) DO NOTHING")
+        .executeUpdate();
+    em.createNativeQuery(
+            "INSERT INTO ticket_tier (id, event_id, name, price_minor, capacity, sold)"
+                + " VALUES ('co2-tk-event-vip', 'co2-tk-event', 'VIP', 40000, 100, 0)"
+                + " ON CONFLICT (id) DO NOTHING")
+        .executeUpdate();
+  }
+
+  @Transactional
+  int tierSold(String tierId) {
+    return ((Number)
+            em.createNativeQuery("SELECT sold FROM ticket_tier WHERE id = :id")
+                .setParameter("id", tierId)
+                .getSingleResult())
+        .intValue();
   }
 
   private void seedTrack(String id, String title, long priceMinor, String album) {
@@ -380,23 +403,25 @@ class CheckoutFlowIT {
   // ---- G3 : gated kinds rejected -----------------------------------------------
 
   @Test
-  void checkout_ticketKind_isGated_409() {
+  void checkout_ticketKind_unGated_settles_mintsTicket_creditsArtist() {
+    // WU-COM-4: ticket is now un-gated. Add the seeded VIP tier (by name), check out (202), settle,
+    // and prove the settlement minted the ticket (tier.sold++) and posted the 70/30 split to the
+    // event artist — the exact end-to-end money path the un-gate depends on.
     String token = signUp("co2-ticket-" + System.nanoTime() + "@example.com");
-    // A ticket is priced from client metadata (spoofable) — add-to-cart allows it...
-    given()
-        .header("Authorization", "Bearer " + token)
-        .contentType(ContentType.JSON)
-        .body(
-            "{ \"kind\": \"ticket\", \"refId\": \"co2-tk1\","
-                + " \"metadata\": { \"title\": \"Concert\", \"priceMinor\": 100 } }")
-        .when().post("/v1/me/cart/items")
-        .then().statusCode(200);
+    addToCart(token, "ticket", "co2-tk-event:VIP");
 
-    // ...but checkout GATES it (G3 / ADR-23) — 409 CHECKOUT_KIND_UNSUPPORTED, no charge.
-    checkout(token, "co2-ticketkey-" + System.nanoTime())
-        .then()
-        .statusCode(409)
-        .body("error.code", equalTo("CHECKOUT_KIND_UNSUPPORTED"));
+    Response co = checkout(token, "co2-ticketkey-" + System.nanoTime());
+    co.then().statusCode(202).body("status", equalTo("pending"));
+    String intentId = co.jsonPath().getString("paymentIntentId");
+    String reference = co.jsonPath().getString("reference");
+
+    assertEquals(0, tierSold("co2-tk-event-vip"), "no ticket minted before settlement (INV-1)");
+
+    settle(intentId, "co2-tk-ev-" + System.nanoTime());
+
+    assertEquals("paid", orderStatus(reference));
+    assertEquals(1, tierSold("co2-tk-event-vip"), "IssueTicket minted on settlement → tier sold++");
+    assertEquals(28000, availableFor("co2-ticket-artist"), "artist nets 70% of ₵400 ticket (INV-4)");
   }
 
   @Test
