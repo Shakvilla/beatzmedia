@@ -4,6 +4,7 @@ import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.isA;
 import static org.hamcrest.Matchers.notNullValue;
+import static org.hamcrest.Matchers.nullValue;
 
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
@@ -105,6 +106,9 @@ class CommerceContractTest {
             .post("/v1/checkout")
             .then()
             .statusCode(202)
+            // WU-COM-4: the checkout response carries checkoutUrl (nullable) — present-but-null on the
+            // MoMo/sandbox path, non-null only for a Redde card redirect.
+            .body("checkoutUrl", nullValue())
             .extract()
             .jsonPath()
             .getString("orderId");

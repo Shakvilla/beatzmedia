@@ -104,4 +104,24 @@ class ArchitectureRulesTest {
           .callMethod(java.time.Instant.class, "now")
           .orShould()
           .callMethod(java.util.UUID.class, "randomUUID");
+
+  /**
+   * WU-COM-4 cycle guard: commerce must never depend on the podcasts/events/store modules. Those
+   * modules already depend on commerce (podcasts reads ownership; store subscribes to
+   * {@code OwnershipGranted}), so the authoritative-pricing / settlement integration is done by having
+   * those modules IMPLEMENT commerce-declared SPIs ({@code ModulePriceSource}, {@code
+   * SettlementSource}) — the edge stays {@code module → commerce}. A commerce → module import would
+   * close a dependency cycle; this rule fails fast if one is ever introduced.
+   */
+  @ArchTest
+  static final ArchRule commerce_does_not_depend_on_owning_modules =
+      noClasses()
+          .that()
+          .resideInAPackage("org.shakvilla.beatzmedia.commerce..")
+          .should()
+          .dependOnClassesThat()
+          .resideInAnyPackage(
+              "org.shakvilla.beatzmedia.podcasts..",
+              "org.shakvilla.beatzmedia.events..",
+              "org.shakvilla.beatzmedia.store..");
 }
