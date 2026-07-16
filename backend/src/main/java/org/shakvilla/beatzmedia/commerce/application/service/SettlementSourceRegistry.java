@@ -28,8 +28,8 @@ public class SettlementSourceRegistry {
     this(sources.stream().toList());
   }
 
-  // Package-private test seam — no CDI Instance needed.
-  SettlementSourceRegistry(List<SettlementSource> sources) {
+  // Test/direct-construction seam (public: callers live outside this package) — no CDI Instance needed.
+  public SettlementSourceRegistry(List<SettlementSource> sources) {
     Map<String, SettlementSource> map = new HashMap<>();
     for (SettlementSource source : sources) {
       SettlementSource previous = map.put(source.entityType(), source);
