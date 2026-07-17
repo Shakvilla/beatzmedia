@@ -9,12 +9,13 @@ import { getAnalytics, getAudience, formatCompact } from '../lib/studio-analytic
 import { getPayouts, type PayoutTxn } from '../lib/studio-payouts'
 import { studioArtist } from '../lib/studio-data'
 import { useStudio } from '../features/studio/studio-context'
-import { studioProfileQuery, studioSettingsQuery } from '../lib/api/queries/studio'
+import { studioProfileQuery, studioSettingsQuery, studioReleasesQuery } from '../lib/api/queries/studio'
 
 export const Route = createFileRoute('/studio/')({
   loader: ({ context: { queryClient } }) => Promise.all([
     queryClient.ensureQueryData(studioProfileQuery()),
     queryClient.ensureQueryData(studioSettingsQuery()),
+    queryClient.ensureQueryData(studioReleasesQuery()),
   ]),
   component: OverviewComponent,
 })
@@ -34,9 +35,10 @@ function OverviewComponent() {
   const analytics = getAnalytics('28d')
   const audience = getAudience('28d')
   const payoutStats = getPayouts()
-  const { balance, transactions, releases } = useStudio()
+  const { balance, transactions } = useStudio()
   const { data: profile } = useSuspenseQuery(studioProfileQuery())
   const { data: settings } = useSuspenseQuery(studioSettingsQuery())
+  const { data: releases } = useSuspenseQuery(studioReleasesQuery())
   const firstName = (profile.displayName.trim() || studioArtist.name).split(' ')[0]
 
   const inReview = releases.find((r) => r.status === 'in_review')
