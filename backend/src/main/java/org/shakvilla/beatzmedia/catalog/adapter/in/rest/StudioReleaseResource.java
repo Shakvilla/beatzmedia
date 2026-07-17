@@ -27,37 +27,45 @@ import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.jboss.resteasy.reactive.MultipartForm;
 import org.jboss.resteasy.reactive.multipart.FileUpload;
+import org.shakvilla.beatzmedia.catalog.application.port.in.CreateReleaseDraft;
+import org.shakvilla.beatzmedia.catalog.application.port.in.CreateReleaseDraft.CreateDraftCommand;
 import org.shakvilla.beatzmedia.catalog.application.port.in.DeleteRelease;
+import org.shakvilla.beatzmedia.catalog.application.port.in.FinalizeRelease;
 import org.shakvilla.beatzmedia.catalog.application.port.in.GetRelease;
 import org.shakvilla.beatzmedia.catalog.application.port.in.ListStudioReleases;
 import org.shakvilla.beatzmedia.catalog.application.port.in.PageView;
+import org.shakvilla.beatzmedia.catalog.application.port.in.RemoveReleaseTrack;
+import org.shakvilla.beatzmedia.catalog.application.port.in.StudioReleaseDetailView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.StudioReleaseView;
-import org.shakvilla.beatzmedia.catalog.application.port.in.SubmitRelease;
-import org.shakvilla.beatzmedia.catalog.application.port.in.SubmitRelease.SplitEntryCommand;
-import org.shakvilla.beatzmedia.catalog.application.port.in.SubmitRelease.SubmitReleaseCommand;
-import org.shakvilla.beatzmedia.catalog.application.port.in.SubmitRelease.UploadedTrackRef;
 import org.shakvilla.beatzmedia.catalog.application.port.in.UpdateRelease;
+import org.shakvilla.beatzmedia.catalog.application.port.in.UpdateRelease.TrackRef;
 import org.shakvilla.beatzmedia.catalog.application.port.in.UpdateRelease.UpdateReleaseCommand;
 import org.shakvilla.beatzmedia.catalog.application.port.in.UploadReleaseTrack;
 import org.shakvilla.beatzmedia.catalog.application.port.in.UploadReleaseTrack.AudioUpload;
 import org.shakvilla.beatzmedia.catalog.application.port.in.UploadedTrackView;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
+import org.shakvilla.beatzmedia.catalog.domain.MissingIdempotencyKeyException;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseType;
+import org.shakvilla.beatzmedia.catalog.domain.TrackId;
 import org.shakvilla.beatzmedia.catalog.domain.Visibility;
 
 /**
- * REST resource for the artist Studio release lifecycle endpoints (LLFR-CATALOG-02.1 – 02.4).
- * Thin: DTO in → command → port → DTO out. No business logic here.
+ * REST resource for the artist Studio release create flow (LLFR-CATALOG-02.1 – 02.5): draft
+ * create → upload-attached → edit → finalize. Thin: DTO in → command → port → DTO out. No
+ * business logic here.
  *
  * <ul>
  *   <li>GET /v1/studio/releases — list own releases
- *   <li>POST /v1/studio/releases — submit new release (Idempotency-Key header required)
- *   <li>GET /v1/studio/releases/:id — get one release
- *   <li>PATCH /v1/studio/releases/:id — update metadata
+ *   <li>POST /v1/studio/releases — create a metadata-only draft
+ *   <li>GET /v1/studio/releases/:id — get one release (detail view)
+ *   <li>PATCH /v1/studio/releases/:id — update draft metadata + track list
  *   <li>DELETE /v1/studio/releases/:id — delete draft/in_review
- *   <li>POST /v1/studio/releases/:id/tracks — multipart WAV/FLAC upload
+ *   <li>POST /v1/studio/releases/:id/tracks — multipart WAV/FLAC upload, attaches to the draft
+ *   <li>DELETE /v1/studio/releases/:id/tracks/:trackId — remove a draft track
+ *   <li>POST /v1/studio/releases/:id/submit — finalize draft -> in_review (Idempotency-Key
+ *       required)
  * </ul>
  */
 @Path("/v1/studio/releases")
@@ -66,28 +74,34 @@ import org.shakvilla.beatzmedia.catalog.domain.Visibility;
 public class StudioReleaseResource {
 
   private final ListStudioReleases listStudioReleases;
-  private final SubmitRelease submitRelease;
+  private final CreateReleaseDraft createReleaseDraft;
   private final GetRelease getRelease;
   private final UpdateRelease updateRelease;
   private final DeleteRelease deleteRelease;
   private final UploadReleaseTrack uploadReleaseTrack;
+  private final RemoveReleaseTrack removeReleaseTrack;
+  private final FinalizeRelease finalizeRelease;
   private final JsonWebToken jwt;
 
   @Inject
   public StudioReleaseResource(
       ListStudioReleases listStudioReleases,
-      SubmitRelease submitRelease,
+      CreateReleaseDraft createReleaseDraft,
       GetRelease getRelease,
       UpdateRelease updateRelease,
       DeleteRelease deleteRelease,
       UploadReleaseTrack uploadReleaseTrack,
+      RemoveReleaseTrack removeReleaseTrack,
+      FinalizeRelease finalizeRelease,
       JsonWebToken jwt) {
     this.listStudioReleases = listStudioReleases;
-    this.submitRelease = submitRelease;
+    this.createReleaseDraft = createReleaseDraft;
     this.getRelease = getRelease;
     this.updateRelease = updateRelease;
     this.deleteRelease = deleteRelease;
     this.uploadReleaseTrack = uploadReleaseTrack;
+    this.removeReleaseTrack = removeReleaseTrack;
+    this.finalizeRelease = finalizeRelease;
     this.jwt = jwt;
   }
 
@@ -103,58 +117,54 @@ public class StudioReleaseResource {
     return listStudioReleases.list(artistId(), statusFilter, page, size);
   }
 
-  /** POST /v1/studio/releases — LLFR-CATALOG-02.2. Requires Idempotency-Key header. */
+  /**
+   * POST /v1/studio/releases — LLFR-CATALOG-02.2. Creates a metadata-only draft (status
+   * "draft", empty tracks). No Idempotency-Key required — drafts are cheap and deletable.
+   */
   @POST
   @Consumes(MediaType.APPLICATION_JSON)
-  public Response submit(
-      @HeaderParam("Idempotency-Key") String idempotencyKey,
-      SubmitReleaseBody body) {
-    if (idempotencyKey == null || idempotencyKey.isBlank()) {
-      return Response.status(400)
-          .entity("{\"error\":{\"code\":\"MISSING_IDEMPOTENCY_KEY\","
-              + "\"message\":\"Idempotency-Key header is required\"}}")
-          .build();
-    }
-    SubmitReleaseCommand cmd = new SubmitReleaseCommand(
-        idempotencyKey,
+  public Response createDraft(CreateDraftBody body) {
+    CreateDraftCommand cmd = new CreateDraftCommand(
         artistId(),
         body.title(),
         ReleaseType.valueOf(body.type()),
-        body.visibility() != null ? Visibility.fromDbValue(body.visibility()) : Visibility.PUBLIC,
-        body.scheduledAt(),
-        body.tracks() != null
-            ? body.tracks().stream()
-                .map(t -> new UploadedTrackRef(
-                    t.trackId(),
-                    t.position(),
-                    t.priceMinor(),
-                    t.splits() != null
-                        ? t.splits().stream()
-                            .map(s -> new SplitEntryCommand(
-                                s.name(), s.email(), s.role(), s.percent(), s.confirmation()))
-                            .toList()
-                        : List.of()))
-                .toList()
-            : List.of());
-    StudioReleaseView view = submitRelease.submit(cmd);
+        body.visibility() != null ? Visibility.fromDbValue(body.visibility()) : Visibility.SCHEDULED,
+        body.scheduledAt() != null ? java.time.Instant.parse(body.scheduledAt()) : null,
+        body.genre(),
+        body.description());
+    StudioReleaseDetailView view = createReleaseDraft.create(cmd);
     return Response.status(Response.Status.CREATED).entity(view).build();
   }
 
-  /** GET /v1/studio/releases/:id — LLFR-CATALOG-02.3. */
+  /** GET /v1/studio/releases/:id — LLFR-CATALOG-02.3. Returns the additive detail view. */
   @GET
   @Path("/{id}")
-  public StudioReleaseView get(@PathParam("id") String id) {
+  public StudioReleaseDetailView get(@PathParam("id") String id) {
     return getRelease.get(new ReleaseId(id), artistId());
   }
 
-  /** PATCH /v1/studio/releases/:id — LLFR-CATALOG-02.3. */
+  /**
+   * PATCH /v1/studio/releases/:id — LLFR-CATALOG-02.3. {@code title} is editable on any status;
+   * {@code genre}/{@code description}/{@code visibility}/{@code scheduledAt}/{@code tracks} are
+   * draft-only (409 ILLEGAL_TRANSITION otherwise).
+   */
   @PATCH
   @Path("/{id}")
   @Consumes(MediaType.APPLICATION_JSON)
-  public StudioReleaseView update(
+  public StudioReleaseDetailView update(
       @PathParam("id") String id, UpdateReleaseBody body) {
-    return updateRelease.update(
-        new ReleaseId(id), artistId(), new UpdateReleaseCommand(body.title()));
+    UpdateReleaseCommand cmd = new UpdateReleaseCommand(
+        body.title(),
+        body.genre(),
+        body.description(),
+        body.visibility(),
+        body.scheduledAt() != null ? java.time.Instant.parse(body.scheduledAt()) : null,
+        body.tracks() != null
+            ? body.tracks().stream()
+                .map(t -> new TrackRef(t.trackId(), t.position(), t.priceMinor()))
+                .toList()
+            : null);
+    return updateRelease.update(new ReleaseId(id), artistId(), cmd);
   }
 
   /** DELETE /v1/studio/releases/:id — LLFR-CATALOG-02.3. */
@@ -203,6 +213,34 @@ public class StudioReleaseResource {
     }
   }
 
+  /**
+   * DELETE /v1/studio/releases/:id/tracks/:trackId — WU-CAT-5. Draft-only (409
+   * ILLEGAL_TRANSITION otherwise); unknown track → 404 TRACK_NOT_FOUND.
+   */
+  @DELETE
+  @Path("/{id}/tracks/{trackId}")
+  public Response removeTrack(
+      @PathParam("id") String releaseId, @PathParam("trackId") String trackId) {
+    removeReleaseTrack.remove(new ReleaseId(releaseId), artistId(), new TrackId(trackId));
+    return Response.noContent().build();
+  }
+
+  /**
+   * POST /v1/studio/releases/:id/submit — WU-CAT-5. Finalizes a draft: {@code draft ->
+   * in_review}. Requires the {@code Idempotency-Key} header (400 MISSING_IDEMPOTENCY_KEY if
+   * absent/blank). Not-draft → 409 ILLEGAL_TRANSITION; INV-12 track-count mismatch → 422
+   * TRACK_COUNT_INVALID.
+   */
+  @POST
+  @Path("/{id}/submit")
+  public StudioReleaseDetailView submit(
+      @PathParam("id") String id, @HeaderParam("Idempotency-Key") String idempotencyKey) {
+    if (idempotencyKey == null || idempotencyKey.isBlank()) {
+      throw new MissingIdempotencyKeyException();
+    }
+    return finalizeRelease.finalize(new ReleaseId(id), artistId(), idempotencyKey);
+  }
+
   private ArtistId artistId() {
     return new ArtistId(jwt.getSubject());
   }
@@ -217,25 +255,21 @@ public class StudioReleaseResource {
 
   // ---- DTO types (inner records for JSON binding) ----
 
-  public record SubmitReleaseBody(
+  public record CreateDraftBody(
       String title,
       String type,
       String visibility,
       String scheduledAt,
-      List<TrackRef> tracks) {}
+      String genre,
+      String description) {}
 
-  public record TrackRef(
-      String trackId,
-      int position,
-      long priceMinor,
-      List<SplitRef> splits) {}
+  public record UpdateReleaseBody(
+      String title,
+      String genre,
+      String description,
+      String visibility,
+      String scheduledAt,
+      List<TrackRefBody> tracks) {}
 
-  public record SplitRef(
-      String name,
-      String email,
-      String role,
-      int percent,
-      String confirmation) {}
-
-  public record UpdateReleaseBody(String title) {}
+  public record TrackRefBody(String trackId, int position, long priceMinor) {}
 }

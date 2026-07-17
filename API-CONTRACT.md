@@ -217,15 +217,31 @@ UI: studio overview, releases, 4-step release wizard, analytics, audience, payou
 | GET/PUT | `/studio/profile` | read / save |
 
 ### Releases (catalog the artist owns)
-`StudioRelease { id, title, type: single|ep|album|mixtape, status: live|scheduled|in_review|draft, date, trackCount, streams, revenue, price }`
+
+`StudioRelease { id, title, type: single|ep|album|mixtape, status: live|scheduled|in_review|draft|takedown, date, trackCount, streams, revenue, price }`
+— the **list** shape (`GET /studio/releases`), unchanged.
+
+`StudioReleaseDetail` = `StudioRelease` **+** `{ genre, description, visibility: public|scheduled, scheduledAt, tracks: TrackDraft[] }`
+— additive superset returned by `GET /:id` and every draft-flow mutation (create/PATCH/submit).
+
+`TrackDraft { trackId, title, duration, status: uploading|ready|error, position, price }` (no `splits` yet — deferred to WU-CAT-6).
+
+> **WU-CAT-5 (release create flow).** The creation flow is **draft → upload-attached → finalize**,
+> replacing the old one-shot "wizard submit" (which posted the full draft — details + tracks +
+> splits + pricing — in a single call and returned an immediate `in_review` release). Nothing
+> production-facing depended on the old shape (the wizard was a client-side mock); frontend wiring
+> to the flow below is a follow-up slice.
 
 | Method | Path | Notes |
 |---|---|---|
-| GET | `/studio/releases` | list (status filter) |
-| POST | `/studio/releases` | **wizard submit** — full draft (details + tracks + splits + pricing) → creates `in_review` release |
-| GET/PATCH/DELETE | `/studio/releases/:id` | manage (edit metadata, publish/unpublish, delete) |
-| POST | `/studio/releases/:id/tracks` | multipart audio upload (WAV/FLAC) → returns track w/ duration, status |
-| Draft sub-shapes | — | `UploadedTrack`, `SplitEntry[]` per track (collaborator, role, percent, confirmation) |
+| GET | `/studio/releases` | list (status filter) → `StudioRelease[]` |
+| POST | `/studio/releases` | create a **metadata-only draft**: `{ title?, type, visibility?, scheduledAt?, genre?, description? }` → **201** `StudioReleaseDetail` with `status:"draft"`, empty `tracks`. `type` required; `title` defaults to `"Untitled release"`. No Idempotency-Key (drafts are cheap/deletable). |
+| GET | `/studio/releases/:id` | → `StudioReleaseDetail` |
+| PATCH | `/studio/releases/:id` | `{ title?, genre?, description?, visibility?, scheduledAt?, tracks?: [{trackId, position, priceMinor}] }` → `StudioReleaseDetail`. `title` alone is editable on any status; `genre`/`description`/`visibility`/`scheduledAt`/`tracks` are **draft-only** (409 `ILLEGAL_TRANSITION` otherwise). `tracks`, when present, **replaces** the whole ordered list (every `trackId` must already belong to the release, else 422 `TRACK_NOT_IN_RELEASE`; a repeated `trackId` or `position` → 422 `DUPLICATE_TRACK_REF`; a `priceMinor` outside `[0, 100_000_000]` → 422 `INVALID_PRICE`). |
+| DELETE | `/studio/releases/:id` | delete a `draft`/`in_review` release (409 `RELEASE_LIVE` for `live`) |
+| POST | `/studio/releases/:id/tracks` | multipart audio upload (WAV/FLAC, ≤500MB) → **201** `UploadedTrack` (`{ id, title, duration, status, progress, src, price, explicit, position }`) — the track is **attached** to the release as a `TrackDraft` (draft-only; 409 `ILLEGAL_TRANSITION` on a non-draft release) |
+| DELETE | `/studio/releases/:id/tracks/:trackId` | remove a draft track → **204**. Draft-only (409); unknown `trackId` → 404 `TRACK_NOT_FOUND` |
+| POST | `/studio/releases/:id/submit` | **finalize**: `draft → in_review`. Requires `Idempotency-Key` header (400 `MISSING_IDEMPOTENCY_KEY` if absent). Validates the track-count matrix per `type` (`single`=1, `ep`=3–6, `album`=7+, `mixtape`≥1 — else 422 `TRACK_COUNT_INVALID`), recomputes `price` (bundle discount), transitions the release → **200** `StudioReleaseDetail` with `status:"in_review"`. Not-draft → 409 `ILLEGAL_TRANSITION`. A reused `Idempotency-Key` whose stored release/artist doesn't match the caller → 409 `IDEMPOTENCY_KEY_CONFLICT` (no data leak). |
 
 ### Podcasts (creator)
 `StudioPodcastShow { id, title, category }`

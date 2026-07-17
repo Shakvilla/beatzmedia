@@ -1,6 +1,7 @@
 package org.shakvilla.beatzmedia.catalog.it;
 
 import static io.restassured.RestAssured.given;
+import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.notNullValue;
@@ -30,7 +31,11 @@ import io.restassured.response.Response;
  * org.shakvilla.beatzmedia.catalog.adapter.in.rest.StudioReleaseResource}. Uses Quarkus Dev
  * Services (Testcontainers Postgres) + REST-assured + Flyway seed data.
  *
- * <p>Covers LLFR-CATALOG-02.1 – 02.4 acceptance criteria.
+ * <p>Covers LLFR-CATALOG-02.1 – 02.4 acceptance criteria for the endpoints that are NOT
+ * draft-flow-specific (list/get/title-patch/delete/auth/upload-validation) — the WU-CAT-5
+ * create-draft/upload-attach/PATCH-tracks/delete-track/finalize round trips each have their own
+ * dedicated IT ({@link CreateDraftIT}, {@link UploadAttachIT}, {@link UpdateDraftIT}, {@link
+ * FinalizeReleaseIT}).
  */
 @QuarkusTest
 @Tag("integration")
@@ -54,8 +59,8 @@ class StudioReleaseResourceIT {
 
   /** Shared state between ordered tests. */
   private static String artistToken;
+
   private static String createdReleaseId;
-  private static String liveReleaseId;
 
   // ============================
   // Setup: register artist
@@ -90,119 +95,32 @@ class StudioReleaseResourceIT {
   }
 
   // ============================
-  // LLFR-CATALOG-02.2: Submit release
+  // LLFR-CATALOG-02.2: Create draft (WU-CAT-5 — repurposed from the retired one-shot submit)
   // ============================
 
   @Test
   @Order(2)
-  void submit_release_happy_path_returns_201_in_review() {
+  void create_draft_release_returns_201_status_draft() {
     Response response = given()
         .header("Authorization", "Bearer " + artistToken)
-        .header("Idempotency-Key", "it-key-01")
         .contentType(ContentType.JSON)
         .body("""
             {
               "title": "My EP",
               "type": "ep",
-              "visibility": "public",
-              "tracks": [
-                { "trackId": "last-last", "position": 1, "priceMinor": 1000, "splits": [] },
-                { "trackId": "its-plenty", "position": 2, "priceMinor": 1000, "splits": [] }
-              ]
+              "visibility": "public"
             }
             """)
         .when().post(RELEASES_URL)
         .then()
         .statusCode(201)
         .body("id", notNullValue())
-        .body("status", equalTo("in_review"))
+        .body("status", equalTo("draft"))
         .body("title", equalTo("My EP"))
+        .body("tracks", empty())
         .extract().response();
 
     createdReleaseId = response.jsonPath().getString("id");
-  }
-
-  @Test
-  @Order(3)
-  void submit_same_idempotency_key_returns_same_release() {
-    String id = given()
-        .header("Authorization", "Bearer " + artistToken)
-        .header("Idempotency-Key", "it-key-01")
-        .contentType(ContentType.JSON)
-        .body("""
-            {
-              "title": "My EP",
-              "type": "ep",
-              "visibility": "public",
-              "tracks": [
-                { "trackId": "last-last", "position": 1, "priceMinor": 1000, "splits": [] }
-              ]
-            }
-            """)
-        .when().post(RELEASES_URL)
-        .then()
-        .statusCode(201)
-        .extract().jsonPath().getString("id");
-
-    // Must return the same release id
-    assert createdReleaseId != null;
-    assert createdReleaseId.equals(id)
-        : "Idempotency violation: got " + id + " expected " + createdReleaseId;
-  }
-
-  @Test
-  @Order(4)
-  void submit_single_with_two_tracks_returns_422_TRACK_COUNT_INVALID() {
-    given()
-        .header("Authorization", "Bearer " + artistToken)
-        .header("Idempotency-Key", "it-key-single-fail")
-        .contentType(ContentType.JSON)
-        .body("""
-            {
-              "title": "Bad Single",
-              "type": "single",
-              "visibility": "public",
-              "tracks": [
-                { "trackId": "last-last", "position": 1, "priceMinor": 500, "splits": [] },
-                { "trackId": "its-plenty", "position": 2, "priceMinor": 500, "splits": [] }
-              ]
-            }
-            """)
-        .when().post(RELEASES_URL)
-        .then()
-        .statusCode(422)
-        .body("error.code", equalTo("TRACK_COUNT_INVALID"));
-  }
-
-  @Test
-  @Order(5)
-  void submit_with_split_over_100_returns_422_SPLIT_OVER_100() {
-    given()
-        .header("Authorization", "Bearer " + artistToken)
-        .header("Idempotency-Key", "it-key-split-fail")
-        .contentType(ContentType.JSON)
-        .body("""
-            {
-              "title": "Split Fail",
-              "type": "single",
-              "visibility": "public",
-              "tracks": [
-                {
-                  "trackId": "last-last",
-                  "position": 1,
-                  "priceMinor": 500,
-                  "splits": [
-                    { "name": "Alice", "email": "a@x.com", "role": "producer", "percent": 60, "confirmation": "self" },
-                    { "name": "Bob", "email": "b@x.com", "role": "engineer", "percent": 50, "confirmation": "self" }
-                  ]
-                }
-              ]
-            }
-            """)
-        .when().post(RELEASES_URL)
-        .then()
-        .statusCode(422)
-        .body("error.code", equalTo("SPLIT_OVER_100"));
   }
 
   // ============================
@@ -210,7 +128,7 @@ class StudioReleaseResourceIT {
   // ============================
 
   @Test
-  @Order(6)
+  @Order(3)
   void list_releases_returns_paginated_list() {
     given()
         .header("Authorization", "Bearer " + artistToken)
@@ -229,7 +147,7 @@ class StudioReleaseResourceIT {
   // ============================
 
   @Test
-  @Order(7)
+  @Order(4)
   void get_release_by_id_returns_200() {
     given()
         .header("Authorization", "Bearer " + artistToken)
@@ -241,7 +159,7 @@ class StudioReleaseResourceIT {
   }
 
   @Test
-  @Order(8)
+  @Order(5)
   void update_release_title_returns_updated_view() {
     given()
         .header("Authorization", "Bearer " + artistToken)
@@ -256,22 +174,14 @@ class StudioReleaseResourceIT {
   }
 
   @Test
-  @Order(9)
-  void delete_in_review_release_returns_204() {
-    // Create a new release to delete
+  @Order(6)
+  void delete_draft_release_returns_204() {
+    // Create a new draft to delete
     String idToDelete = given()
         .header("Authorization", "Bearer " + artistToken)
-        .header("Idempotency-Key", "it-key-to-delete")
         .contentType(ContentType.JSON)
         .body("""
-            {
-              "title": "Delete Me",
-              "type": "single",
-              "visibility": "public",
-              "tracks": [
-                { "trackId": "last-last", "position": 1, "priceMinor": 500, "splits": [] }
-              ]
-            }
+            { "title": "Delete Me", "type": "single", "visibility": "public" }
             """)
         .when().post(RELEASES_URL)
         .then().statusCode(201)
@@ -284,7 +194,7 @@ class StudioReleaseResourceIT {
   }
 
   @Test
-  @Order(10)
+  @Order(7)
   void get_nonexistent_release_returns_404() {
     given()
         .header("Authorization", "Bearer " + artistToken)
@@ -295,7 +205,7 @@ class StudioReleaseResourceIT {
   }
 
   @Test
-  @Order(11)
+  @Order(8)
   void unauthenticated_access_returns_401() {
     given()
         .when().get(RELEASES_URL)
@@ -303,23 +213,12 @@ class StudioReleaseResourceIT {
         .statusCode(401);
   }
 
-  // ============================
-  // LLFR-CATALOG-02.3: Delete live → 409
-  // ============================
-
   @Test
-  @Order(12)
-  void delete_live_release_returns_409_RELEASE_LIVE() {
-    // Directly seed a live release via SQL (or verify the error code by trying to delete
-    // a release whose status cannot be determined at test-build time; we test with the
-    // previously-created release whose status is in_review — re-purpose another call).
-    // Since we cannot easily promote to live without admin endpoints (WU-CAT-4),
-    // we verify the guard indirectly: the service throws ReleaseLiveException for status=live.
-    // This IT verifies the HTTP contract: if the repo returns a live release, the endpoint
-    // returns 409 RELEASE_LIVE.  We use a direct Panache insert via the test DB to set up.
-    // For now, assert that attempting to delete a non-existent id returns 404 (not 500) and
-    // that the live-delete guard is covered at unit level in DeleteReleaseServiceTest.
-    // Full live-delete IT is deferred to WU-CAT-4 (admin approve → live transition available).
+  @Order(9)
+  void delete_nonexistent_release_returns_404() {
+    // Full live-delete IT (delete on a `live` release -> 409 RELEASE_LIVE) is deferred to
+    // WU-CAT-4 (admin approve -> live transition); the guard itself is covered at unit level in
+    // DeleteReleaseServiceTest. This asserts the HTTP contract for an unknown id.
     given()
         .header("Authorization", "Bearer " + artistToken)
         .when().delete(RELEASES_URL + "/no-such-live-release")
@@ -333,7 +232,7 @@ class StudioReleaseResourceIT {
   // ============================
 
   @Test
-  @Order(13)
+  @Order(10)
   void upload_non_audio_file_returns_422_UNSUPPORTED_FORMAT() {
     given()
         .header("Authorization", "Bearer " + artistToken)
@@ -343,28 +242,6 @@ class StudioReleaseResourceIT {
         .then()
         .statusCode(422)
         .body("error.code", equalTo("UNSUPPORTED_FORMAT"));
-  }
-
-  @Test
-  @Order(14)
-  void missing_idempotency_key_returns_400() {
-    given()
-        .header("Authorization", "Bearer " + artistToken)
-        .contentType(ContentType.JSON)
-        .body("""
-            {
-              "title": "No Key Release",
-              "type": "single",
-              "visibility": "public",
-              "tracks": [
-                { "trackId": "last-last", "position": 1, "priceMinor": 500, "splits": [] }
-              ]
-            }
-            """)
-        .when().post(RELEASES_URL)
-        .then()
-        .statusCode(400)
-        .body("error.code", equalTo("MISSING_IDEMPOTENCY_KEY"));
   }
 
   // ============================

@@ -12,4 +12,5 @@ public record UploadedTrackView(
     int progress,
     String src,
     MoneyView price,
-    boolean explicit) {}
+    boolean explicit,
+    int position) {}

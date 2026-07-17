@@ -162,6 +162,17 @@ work_units:
     depends_on: [WU-CAT-3, WU-PLT-2]
     llfrs: [LLFR-CATALOG-02.5, LLFR-PLATFORM-01.2]
     status: done
+  # Spec:  docs/superpowers/specs/2026-07-17-catalog-release-draft-flow-design.md
+  # Plan:  docs/superpowers/plans/2026-07-17-wu-cat-5-release-draft-flow.md
+  - id: WU-CAT-5
+    title: Release create flow (draft -> upload-attached -> finalize)
+    phase: 1
+    module: catalog
+    add: catalog.md
+    owner: backend-engineer
+    depends_on: [WU-CAT-4]
+    llfrs: [LLFR-CATALOG-02.2, LLFR-CATALOG-02.4]
+    status: in_progress
   - id: WU-LIB-1
     title: Collection — likes/follows/saved/user playlists/owned
     phase: 1

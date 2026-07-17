@@ -19,13 +19,15 @@ public final class Release {
   private String title;
   private final ReleaseType type;
   private ReleaseStatus status;
-  private final Visibility visibility;
+  private Visibility visibility;
   private Instant scheduledAt;
   private Instant wentLiveAt;
-  private final long listPriceMinor;
+  private long listPriceMinor;
   private final Instant createdAt;
   private Instant updatedAt;
-  private final List<ReleaseTrack> tracks;
+  private List<ReleaseTrack> tracks;
+  private String genre;
+  private String description;
 
   private Release(
       String id,
@@ -39,7 +41,9 @@ public final class Release {
       long listPriceMinor,
       Instant createdAt,
       Instant updatedAt,
-      List<ReleaseTrack> tracks) {
+      List<ReleaseTrack> tracks,
+      String genre,
+      String description) {
     this.id = id;
     this.artistId = artistId;
     this.title = title;
@@ -52,6 +56,8 @@ public final class Release {
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
     this.tracks = List.copyOf(tracks);
+    this.genre = genre;
+    this.description = description;
   }
 
   /**
@@ -74,7 +80,28 @@ public final class Release {
     long listPrice = computeListPrice(type, tracks, bundleDiscountPct);
     return new Release(
         id, artistId, title, type, ReleaseStatus.in_review, visibility,
-        scheduledAt, null, listPrice, now, now, tracks);
+        scheduledAt, null, listPrice, now, now, tracks, null, null);
+  }
+
+  /**
+   * Factory for creating a new draft release. Status is {@code draft}; tracks start empty and
+   * {@code listPriceMinor} is 0 until {@link #submit}. LLFR-CATALOG-02.2 / WU-CAT-5.
+   *
+   * @param now current instant (supplied by caller via Clock port — never call Instant.now() here)
+   */
+  public static Release createDraft(
+      String id,
+      String artistId,
+      String title,
+      ReleaseType type,
+      Visibility visibility,
+      Instant scheduledAt,
+      String genre,
+      String description,
+      Instant now) {
+    return new Release(
+        id, artistId, title, type, ReleaseStatus.draft, visibility,
+        scheduledAt, null, 0L, now, now, List.of(), genre, description);
   }
 
   /** Factory for reconstituting a release from DB storage. */
@@ -90,10 +117,12 @@ public final class Release {
       long listPriceMinor,
       Instant createdAt,
       Instant updatedAt,
-      List<ReleaseTrack> tracks) {
+      List<ReleaseTrack> tracks,
+      String genre,
+      String description) {
     return new Release(
         id, artistId, title, type, status, visibility,
-        scheduledAt, wentLiveAt, listPriceMinor, createdAt, updatedAt, tracks);
+        scheduledAt, wentLiveAt, listPriceMinor, createdAt, updatedAt, tracks, genre, description);
   }
 
   private static long computeListPrice(
@@ -115,6 +144,82 @@ public final class Release {
   }
 
   public void markUpdated(Instant now) {
+    this.updatedAt = now;
+  }
+
+  // -------------------------------------------------------------------------
+  // Draft create/upload/finalize lifecycle — WU-CAT-5 / LLFR-CATALOG-02.2, 02.4.
+  //
+  // draft --addTrack/removeTrack/replaceTracks/updateMetadata--> draft (mutation, draft-only)
+  // draft --submit--> in_review (INV-5 recompute, INV-12 count checked by the caller)
+  //
+  // Any track/metadata mutation attempted outside draft throws IllegalTransitionException.
+  // -------------------------------------------------------------------------
+
+  private void requireDraft(String op) {
+    if (this.status != ReleaseStatus.draft) {
+      throw new IllegalTransitionException(this.status, op);
+    }
+  }
+
+  /** Appends a track to the release. Draft-only. */
+  public void addTrack(ReleaseTrack t, Instant now) {
+    requireDraft("ADD_TRACK");
+    var next = new java.util.ArrayList<>(this.tracks);
+    next.add(t);
+    this.tracks = List.copyOf(next);
+    this.updatedAt = now;
+  }
+
+  /** Removes the track with the given id. Draft-only; a no-op if not present. */
+  public void removeTrack(String trackId, Instant now) {
+    requireDraft("REMOVE_TRACK");
+    this.tracks = this.tracks.stream().filter(rt -> !rt.trackId().equals(trackId)).toList();
+    this.updatedAt = now;
+  }
+
+  /** Replaces the entire ordered track list (positions, per-track prices). Draft-only. */
+  public void replaceTracks(List<ReleaseTrack> tracks, Instant now) {
+    requireDraft("REPLACE_TRACKS");
+    this.tracks = List.copyOf(tracks);
+    this.updatedAt = now;
+  }
+
+  /**
+   * Updates draft metadata (genre/description/visibility/scheduledAt, optionally title).
+   * Draft-only — use {@link #updateTitle} for a title-only edit on any status.
+   */
+  public void updateMetadata(
+      String title, String genre, String description, Visibility visibility,
+      Instant scheduledAt, Instant now) {
+    requireDraft("UPDATE_METADATA");
+    if (title != null) {
+      this.title = title;
+    }
+    if (genre != null) {
+      this.genre = genre;
+    }
+    if (description != null) {
+      this.description = description;
+    }
+    if (visibility != null) {
+      this.visibility = visibility;
+    }
+    if (scheduledAt != null) {
+      this.scheduledAt = scheduledAt;
+    }
+    this.updatedAt = now;
+  }
+
+  /**
+   * Finalizes a draft for review: {@code draft -> in_review}, recomputing {@code listPriceMinor}
+   * via INV-5. The caller (application service) validates INV-12 track-count bounds before
+   * calling this. Draft-only.
+   */
+  public void submit(int bundleDiscountPct, Instant now) {
+    requireDraft("SUBMIT");
+    this.listPriceMinor = computeListPrice(this.type, this.tracks, bundleDiscountPct);
+    this.status = ReleaseStatus.in_review;
     this.updatedAt = now;
   }
 
@@ -223,4 +328,6 @@ public final class Release {
   public Instant getCreatedAt() { return createdAt; }
   public Instant getUpdatedAt() { return updatedAt; }
   public List<ReleaseTrack> getTracks() { return tracks; }
+  public String getGenre() { return genre; }
+  public String getDescription() { return description; }
 }

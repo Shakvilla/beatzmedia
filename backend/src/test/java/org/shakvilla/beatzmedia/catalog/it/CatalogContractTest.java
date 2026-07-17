@@ -3,7 +3,9 @@ package org.shakvilla.beatzmedia.catalog.it;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.anyOf;
 import static org.hamcrest.Matchers.equalTo;
+import static org.hamcrest.Matchers.hasKey;
 import static org.hamcrest.Matchers.isA;
+import static org.hamcrest.Matchers.not;
 import static org.hamcrest.Matchers.notNullValue;
 
 import java.util.Base64;
@@ -218,21 +220,15 @@ class CatalogContractTest {
 
   @Test
   void studio_release_status_enum_conforms_to_contract() {
-    // API-CONTRACT.md §"Releases": status: live|scheduled|in_review|draft|takedown
+    // API-CONTRACT.md §"Releases": status: live|scheduled|in_review|draft|takedown.
+    // WU-CAT-5: POST /v1/studio/releases now creates a metadata-only draft (draft ->
+    // upload-attached -> finalize supersedes the old one-shot direct-to-in_review submit).
     String artistToken = provisionArtist();
     Response created = given()
         .header("Authorization", "Bearer " + artistToken)
-        .header("Idempotency-Key", "contract-status-key")
         .contentType(ContentType.JSON)
         .body("""
-            {
-              "title": "Contract Status Release",
-              "type": "single",
-              "visibility": "public",
-              "tracks": [
-                { "trackId": "contract-status-track", "position": 1, "priceMinor": 500, "splits": [] }
-              ]
-            }
+            { "title": "Contract Status Release", "type": "single", "visibility": "public" }
             """)
         .when().post("/v1/studio/releases")
         .then().statusCode(201).extract().response();
@@ -240,7 +236,7 @@ class CatalogContractTest {
     created.then().body("status",
         anyOf(equalTo("draft"), equalTo("in_review"), equalTo("scheduled"),
             equalTo("live"), equalTo("takedown")));
-    created.then().body("status", equalTo("in_review"));
+    created.then().body("status", equalTo("draft"));
   }
 
   @Test
@@ -248,22 +244,14 @@ class CatalogContractTest {
     String artistToken = provisionArtist();
     String moderatorToken = provisionModerator();
 
-    String releaseId = given()
-        .header("Authorization", "Bearer " + artistToken)
-        .header("Idempotency-Key", "contract-illegal-key")
-        .contentType(ContentType.JSON)
-        .body("""
-            {
-              "title": "Contract Illegal Transition Release",
-              "type": "single",
-              "visibility": "public",
-              "tracks": [
-                { "trackId": "contract-illegal-track", "position": 1, "priceMinor": 500, "splits": [] }
-              ]
-            }
-            """)
-        .when().post("/v1/studio/releases")
-        .then().statusCode(201).extract().jsonPath().getString("id");
+    // WU-CAT-5: the release-creation flow is draft -> upload-attached -> finalize. This
+    // contract test only needs an in_review release to exercise the admin approve endpoint's
+    // error envelope, not the draft-authoring flow itself, so it seeds the release +
+    // release_track rows directly rather than driving the full draft flow.
+    String releaseId = "contract-illegal-release-" + System.nanoTime();
+    seedInReviewReleaseWithTrack(
+        releaseId, subjectOf(artistToken), "Contract Illegal Transition Release",
+        "contract-illegal-track");
 
     // Approve once: in_review -> live
     given()
@@ -284,6 +272,81 @@ class CatalogContractTest {
         .body("error", notNullValue())
         .body("error.code", equalTo("ILLEGAL_TRANSITION"))
         .body("error.message", isA(String.class));
+  }
+
+  // --- WU-CAT-5: list StudioReleaseView unchanged; GET /:id StudioReleaseDetailView additive ---
+
+  @Test
+  void studio_release_list_view_shape_is_byte_for_byte_unchanged() {
+    // StudioReleaseView (list): { id, title, type, status, date, trackCount, streams,
+    // revenue: {amount,currency}, price: {amount,currency} } — no genre/description/visibility/
+    // scheduledAt/tracks (those are additive on the detail view only).
+    String artistToken = provisionArtist();
+    given()
+        .header("Authorization", "Bearer " + artistToken)
+        .contentType(ContentType.JSON)
+        .body("""
+            { "title": "List Shape Release", "type": "single", "visibility": "public" }
+            """)
+        .when().post("/v1/studio/releases")
+        .then().statusCode(201);
+
+    given()
+        .header("Authorization", "Bearer " + artistToken)
+        .queryParam("size", 50)
+        .when().get("/v1/studio/releases")
+        .then()
+        .statusCode(200)
+        .body("items[0].id", isA(String.class))
+        .body("items[0].title", isA(String.class))
+        .body("items[0].type", isA(String.class))
+        .body("items[0].status", isA(String.class))
+        .body("items[0].date", isA(String.class))
+        .body("items[0].trackCount", isA(Integer.class))
+        .body("items[0].streams", notNullValue())
+        .body("items[0].revenue.amount", isA(Number.class))
+        .body("items[0].revenue.currency", equalTo("GHS"))
+        .body("items[0].price.amount", isA(Number.class))
+        .body("items[0].price.currency", equalTo("GHS"))
+        .body("items[0]", not(hasKey("genre")))
+        .body("items[0]", not(hasKey("description")))
+        .body("items[0]", not(hasKey("visibility")))
+        .body("items[0]", not(hasKey("scheduledAt")))
+        .body("items[0]", not(hasKey("tracks")));
+  }
+
+  @Test
+  void studio_release_detail_view_is_additive_with_lowercase_enums_and_track_money_shape() {
+    // StudioReleaseDetailView (GET /:id): StudioReleaseView + { genre, description, visibility,
+    // scheduledAt, tracks: TrackDraftView[] }. tracks[].price is {amount,currency}; status/type/
+    // visibility are lowercase enum wire tokens (API-CONTRACT.md).
+    String artistToken = provisionArtist();
+    String releaseId = given()
+        .header("Authorization", "Bearer " + artistToken)
+        .contentType(ContentType.JSON)
+        .body("""
+            {
+              "title": "Detail Shape Release", "type": "single", "visibility": "public",
+              "genre": "Afrobeats", "description": "Test bio"
+            }
+            """)
+        .when().post("/v1/studio/releases")
+        .then().statusCode(201).extract().jsonPath().getString("id");
+
+    given()
+        .header("Authorization", "Bearer " + artistToken)
+        .when().get("/v1/studio/releases/" + releaseId)
+        .then()
+        .statusCode(200)
+        .body("id", equalTo(releaseId))
+        .body("status", equalTo("draft"))
+        .body("type", equalTo("single"))
+        .body("visibility", equalTo("public"))
+        .body("genre", equalTo("Afrobeats"))
+        .body("description", equalTo("Test bio"))
+        .body("price.amount", isA(Number.class))
+        .body("price.currency", equalTo("GHS"))
+        .body("tracks", org.hamcrest.Matchers.empty());
   }
 
   // ---- helpers ----
@@ -379,6 +442,33 @@ class CatalogContractTest {
   @Transactional
   void inTransaction(Runnable r) {
     r.run();
+  }
+
+  @Transactional
+  void seedInReviewReleaseWithTrack(String releaseId, String artistId, String title, String trackId) {
+    em.createNativeQuery(
+            "INSERT INTO track (id, title, artist_id, artist_name, duration_sec, image, "
+                + "ownership, price_minor, plays, status) "
+                + "VALUES (:id, :id, :artistId, 'Artist', 180, '/images/placeholder.jpg', "
+                + "'for-sale', 500, 0, 'uploading') ON CONFLICT (id) DO NOTHING")
+        .setParameter("id", trackId)
+        .setParameter("artistId", artistId)
+        .executeUpdate();
+    em.createNativeQuery(
+            "INSERT INTO release (id, artist_id, title, type, status, visibility,"
+                + " list_price_minor, created_at, updated_at)"
+                + " VALUES (:id, :artistId, :title, 'single', 'in_review', 'public',"
+                + " 500, now(), now())")
+        .setParameter("id", releaseId)
+        .setParameter("artistId", artistId)
+        .setParameter("title", title)
+        .executeUpdate();
+    em.createNativeQuery(
+            "INSERT INTO release_track (release_id, track_id, position, price_minor)"
+                + " VALUES (:releaseId, :trackId, 0, 500)")
+        .setParameter("releaseId", releaseId)
+        .setParameter("trackId", trackId)
+        .executeUpdate();
   }
 
   private String subjectOf(String token) {

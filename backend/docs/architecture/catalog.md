@@ -286,6 +286,13 @@ public interface PublishRelease {                    // LLFR-CATALOG-02.5 (the F
     enum ReleaseTransition { APPROVE_IMMEDIATE, APPROVE_SCHEDULED, GO_LIVE, TAKEDOWN, REINSTATE }
 }
 
+// **Correction (WU-CAT-5, §14).** The `SubmitRelease`/`UpdateRelease` sketch above predates the
+// implemented release create flow and is illustrative only (as already noted for `PublishRelease`
+// below and the WU-SRCH-2 correction in §5.2). `SubmitRelease` is retired; the as-built input ports
+// are `CreateReleaseDraft`, `UploadReleaseTrack` (now attaches its result), `UpdateRelease`
+// (extended: `UpdateReleaseCommand(title, genre, description, visibility, scheduledAt, tracks)`),
+// `RemoveReleaseTrack`, and `FinalizeRelease` — see §4.1/§14 for their real signatures.
+
 public interface RunGoLiveSweep {                    // LLFR-PLATFORM-01.2 (WU-CAT-4) — sweep entry point
     int run();  // returns count of releases transitioned to live this sweep
 }
@@ -297,11 +304,12 @@ reinstate) requires an admin scope enforced by `admin.adapter.in.rest.AdminCatal
 (`POST /v1/admin/catalog/:id/{approve,takedown,reinstate}` — relocated there by WU-ADM-3, see §5.1
 note and admin ADD §15; `super-admin`/`moderator` write, `support` read),
 `GO_LIVE` is system-only (scheduler, never exposed on an HTTP path). **Idempotency** reads are nat.
-idempotent; `SubmitRelease` is keyed by `Idempotency-Key`; FSM transitions are guard-idempotent
+idempotent; `FinalizeRelease` (`POST .../submit`, WU-CAT-5 — supersedes the retired `SubmitRelease`)
+is keyed by `Idempotency-Key`; FSM transitions are guard-idempotent
 (re-issuing a settled transition throws `IllegalTransitionException` → 409 `ILLEGAL_TRANSITION`
 rather than repeating a side effect). **Emitted events** (CDI `Event<T>.fire()`, mirroring the
 `AccountRegistered` pattern — no separate `EventPublisher` port yet exists in the codebase):
-`SubmitRelease` → none public; `APPROVE_*` → `ReleaseApproved`; `GO_LIVE`/immediate approve →
+`FinalizeRelease` → none public; `APPROVE_*` → `ReleaseApproved`; `GO_LIVE`/immediate approve →
 `ReleaseWentLive`; `TAKEDOWN` → `ContentTakenDown`. **Audit (INV-10):** `PublishReleaseService`
 appends exactly one `AuditEntry` (type `MODERATION`) per admin-triggered transition
 (`APPROVE_SCHEDULED`, `APPROVE_IMMEDIATE`, `TAKEDOWN`, `REINSTATE`); `GO_LIVE` is system-initiated
@@ -386,11 +394,13 @@ role; public reads accept anonymous (token, if present, decorates `ownership`/`p
 > non-public playlists omitted (same rule as `/playlists/:id`); 200-ids-per-kind cap → 422 `VALIDATION`
 > with `field` = the offending list. Track ownership decorated per-caller via the optional JWT.
 | GET | `/studio/releases?status=&page=&size=` | artist (owner) | — | `{ items: StudioRelease[], page, size, total }` | 200 | 401/403 | 02.1 |
-| POST | `/studio/releases` | artist | `SubmitReleaseRequest` (full draft) | `StudioRelease` (`in_review`) | 201 | 422 `TRACK_COUNT_INVALID`, 422 `SPLIT_OVER_100` | 02.2 |
-| GET | `/studio/releases/:id` | artist (owner) | — | `StudioRelease` | 200 | 403/404 | 02.3 |
-| PATCH | `/studio/releases/:id` | artist (owner) | `UpdateReleaseRequest` | `StudioRelease` | 200 | 409 `ILLEGAL_TRANSITION`, 409 `RELEASE_LIVE` | 02.3 |
+| POST | `/studio/releases` | artist | `CreateDraftRequest` (metadata only) | `StudioReleaseDetail` (`draft`) | 201 | — | 02.2 |
+| GET | `/studio/releases/:id` | artist (owner) | — | `StudioReleaseDetail` | 200 | 403/404 | 02.3 |
+| PATCH | `/studio/releases/:id` | artist (owner) | `UpdateReleaseRequest` | `StudioReleaseDetail` | 200 | 409 `ILLEGAL_TRANSITION`, 422 `TRACK_NOT_IN_RELEASE`, 422 `DUPLICATE_TRACK_REF`, 422 `INVALID_PRICE` | 02.3 |
 | DELETE | `/studio/releases/:id` | artist (owner) | — | — | 204 | 409 `RELEASE_LIVE` | 02.3 |
-| POST | `/studio/releases/:id/tracks` | artist (owner) | multipart audio (WAV/FLAC) | `UploadedTrack` | 201 | 422 `UNSUPPORTED_FORMAT`, 413 | 02.4 |
+| POST | `/studio/releases/:id/tracks` | artist (owner) | multipart audio (WAV/FLAC) | `UploadedTrack` (attached) | 201 | 422 `UNSUPPORTED_FORMAT`, 413, 409 `ILLEGAL_TRANSITION` (non-draft) | 02.4 |
+| DELETE | `/studio/releases/:id/tracks/:trackId` | artist (owner) | — | — | 204 | 409 `ILLEGAL_TRANSITION` (non-draft), 404 `TRACK_NOT_FOUND` | 02.4 (WU-CAT-5) |
+| POST | `/studio/releases/:id/submit` | artist (owner) | `Idempotency-Key` header | `StudioReleaseDetail` (`in_review`) | 200 | 400 `MISSING_IDEMPOTENCY_KEY`, 409 `ILLEGAL_TRANSITION`, 409 `IDEMPOTENCY_KEY_CONFLICT`, 422 `TRACK_COUNT_INVALID` | 02.2 (WU-CAT-5 finalize) |
 
 **~~POST `/admin/catalog/:id/{approve,takedown,reinstate}`~~ — relocated to the `admin` module
 (WU-ADM-3).** WU-CAT-4 originally hosted these three endpoints directly in
@@ -450,11 +460,18 @@ Field-level, traceable to `Frontend/src/types/index.ts`, `studio-data.ts`, and
   Request `ResolveCatalogRequest` — `trackIds?`, `artistIds?`, `albumIds?`, `playlistIds?` (`ID[]`).
 - **StudioRelease** — `id`, `title`, `type` (`single|ep|album|mixtape`), `status`
   (`live|scheduled|in_review|draft|takedown`), `date` (display string; `—` for drafts), `trackCount`,
-  `streams`, `revenue` (cedis), `price` (cedis, per-track list price).
+  `streams`, `revenue` (cedis), `price` (cedis, per-track list price). List-view shape (`GET
+  /studio/releases`); **unchanged** by WU-CAT-5.
+- **StudioReleaseDetail** (WU-CAT-5) — `StudioRelease` **+** `genre?`, `description?`, `visibility`
+  (`public|scheduled`), `scheduledAt?`, `tracks: TrackDraft[]`. Additive superset returned by `GET
+  /studio/releases/:id` and every draft-flow mutation (`POST`/`PATCH`/`POST .../submit`).
+- **TrackDraft** (WU-CAT-5) — `trackId`, `title`, `duration` (sec), `status`
+  (`uploading|ready|error`), `position`, `price` (cedis). No `splits` yet (deferred to WU-CAT-6).
 - **UploadedTrack** — `id`, `title`, `duration` (sec), `status` (`uploading|ready|error`),
-  `progress` (0–100), `src` (delivery URL), `price` (cedis; 0 = free), `explicit` (bool).
+  `progress` (0–100), `src` (delivery URL), `price` (cedis; 0 = free), `explicit` (bool), `position`
+  (WU-CAT-5 — index of the attached `ReleaseTrack` within its release).
 - **SplitEntry** — `id`, `name`, `email`, `role`, `percent` (0–100 of creator pool),
-  `confirmation` (`self|confirmed|pending|auto`).
+  `confirmation` (`self|confirmed|pending|auto`). Deferred write path — see §14.
 
 ## 7. Persistence schema & migrations
 
@@ -617,8 +634,9 @@ CREATE INDEX idx_release_draft_artist ON release_draft(artist_id);
 
 ## 8. Key flows
 
-**Album price / bundle discount note (INV-5).** On `SubmitRelease` and any track-price change, the
-domain recomputes `list_price_minor`. For a **multi-track** release/album:
+**Album price / bundle discount note (INV-5).** On `FinalizeRelease` (`POST .../submit`, WU-CAT-5 —
+supersedes the retired `SubmitRelease`) and any track-price change, the domain recomputes
+`list_price_minor`. For a **multi-track** release/album:
 `listPriceMinor = roundHalfUp(Σ releaseTrack.priceMinor × (100 − bundleDiscountPct) / 100)`, with
 `bundleDiscountPct = 24` from `PlatformSettings` (never hard-coded). All arithmetic is on minor units;
 the discount is applied to the **sum** then rounded once (half-up) — not per track — so the bundle
@@ -629,19 +647,38 @@ the single track's price.
 sequenceDiagram
   actor Artist
   participant REST as StudioReleaseResource
-  participant SUB as SubmitRelease
+  participant CRD as CreateReleaseDraft
+  participant UPL as UploadReleaseTrack
+  participant FIN as FinalizeRelease
   participant DOM as Release (domain)
   participant ADM as Admin (moderator)
   participant PUB as PublishRelease
   participant JOB as Go-live scheduler
   participant BUS as EventPublisher
 
-  Artist->>REST: POST /studio/releases (full draft)
-  REST->>SUB: submit(owner, cmd)
-  SUB->>DOM: validate type/track-count (INV-12 splits≤100)
+  Artist->>REST: POST /studio/releases (metadata only)
+  REST->>CRD: create(owner, cmd)
+  CRD->>DOM: createDraft(...)
+  DOM-->>CRD: Release(status=draft, tracks=[])
+  CRD-->>REST: 201 StudioReleaseDetail (draft)
+
+  loop per uploaded track
+    Artist->>REST: POST .../tracks (multipart WAV/FLAC)
+    REST->>UPL: upload(releaseId, owner, audio)
+    UPL->>DOM: addTrack(ReleaseTrack, now) [draft-only]
+    UPL-->>REST: 201 UploadedTrack (attached)
+  end
+
+  Artist->>REST: PATCH .../:id (price/order/genre/description)
+  REST->>DOM: replaceTracks/updateMetadata(...) [draft-only]
+
+  Artist->>REST: POST .../submit (Idempotency-Key)
+  REST->>FIN: finalize(owner, key)
+  FIN->>FIN: validate track-count matrix (INV-12)
+  FIN->>DOM: submit(bundleDiscountPct, now)
   DOM->>DOM: compute list_price_minor (INV-5)
-  DOM-->>SUB: Release(status=in_review)
-  SUB-->>REST: 201 StudioRelease (in_review, not public)
+  DOM-->>FIN: Release(status=in_review)
+  FIN-->>REST: 200 StudioReleaseDetail (in_review, not public)
 
   ADM->>PUB: transition(APPROVE_SCHEDULED, actor)
   PUB->>DOM: guard in_review→scheduled (future date)
@@ -659,7 +696,7 @@ sequenceDiagram
 ```mermaid
 stateDiagram-v2
   [*] --> draft
-  draft --> in_review: submit / edit (SubmitRelease)
+  draft --> in_review: finalize (FinalizeRelease, WU-CAT-5) — INV-12 count + INV-5 price
   in_review --> draft: send back (artist edit)
   in_review --> scheduled: admin approve + future date (INV-7)
   in_review --> live: admin approve + immediate\n[guard: no pending splits, INV-12]
@@ -681,7 +718,7 @@ stateDiagram-v2
   approve/takedown/reinstate are invoked by `admin.adapter.in.rest.AdminCatalogResource` (relocated
   there by WU-ADM-3 — see §5.1 note and admin ADD §15; `super-admin`/`moderator` write, `support`
   read); `GO_LIVE` is system-only (scheduler, `GoLiveJob`), never exposed on an HTTP path.
-- **Idempotency.** `SubmitRelease` honors `Idempotency-Key`; FSM transitions are guard-idempotent
+- **Idempotency.** `FinalizeRelease` (`POST .../submit`, WU-CAT-5) honors `Idempotency-Key`; FSM transitions are guard-idempotent
   (`went_live_at` makes go-live fire exactly once; a repeat call throws `IllegalTransitionException`
   rather than re-firing side effects — verified by `RunGoLiveSweepServiceTest` and (post-relocation)
   `admin.it.AdminCatalogResourceIT`).
@@ -695,22 +732,30 @@ stateDiagram-v2
   `ARTIST_NOT_FOUND` (404), `ALBUM_NOT_FOUND` (404), `TRACK_NOT_FOUND` (404), `LYRICS_NOT_FOUND`
   (404), `PLAYLIST_NOT_FOUND` (404), `MISSING_QUERY` (422), `TRACK_COUNT_INVALID` (422),
   `SPLIT_OVER_100` (422, INV-12), `RELEASE_LIVE` (409, delete of live), `ILLEGAL_TRANSITION`
-  (409, FSM), `UNSUPPORTED_FORMAT` (422, non-WAV/FLAC). Private/`in_review` resources are hidden as 404.
+  (409, FSM), `UNSUPPORTED_FORMAT` (422, non-WAV/FLAC), `TRACK_NOT_IN_RELEASE` (422, WU-CAT-5 —
+  `PATCH .../tracks` references a trackId not on the release), `MISSING_IDEMPOTENCY_KEY` (400,
+  WU-CAT-5 — `POST .../submit`; catalog owns its own copy of the exception per the hexagonal
+  module-boundary convention, same wire `ErrorCode` as payments/podcasts). Private/`in_review`
+  resources are hidden as 404.
 - **Domain events.** `ReleaseApproved`, `ReleaseWentLive`, `ContentTakenDown` (ids + snapshot,
   after-commit; fired via CDI `Event<T>.fire()` from `PublishReleaseService`, mirroring the
   `AccountRegistered` pattern already used by `identity` — no separate `EventPublisher` port exists in
   the codebase yet, so this ADD's illustrative `EventPublisher` output port is aspirational, not
   implemented; update if/when a cross-cutting event-bus port is introduced).
-- **Known gap — split persistence (tracked, not blocking WU-CAT-4).** `SubmitRelease` (WU-CAT-3)
-  validates that per-track split percentages sum to ≤100 (INV-12, `SPLIT_OVER_100`) but does not
-  persist `SplitEntry` rows to `split_entry` — they are validated in memory and discarded. WU-CAT-4's
-  `CatalogRepository.hasPendingSplits` guard is implemented and unit/integration-tested against the
-  `split_entry` table, but with no rows ever written the guard is currently always "no pending
+- **Known gap — split persistence (tracked, deferred to WU-CAT-6).** The original `SubmitRelease`
+  (WU-CAT-3, **retired by WU-CAT-5** — see §14) validated that per-track split percentages sum to
+  ≤100 (INV-12, `SPLIT_OVER_100`) but never persisted `SplitEntry` rows to `split_entry` — they were
+  validated in memory and discarded. WU-CAT-5's replacement draft-flow (`CreateReleaseDraft` /
+  `UpdateRelease` / `FinalizeRelease`) carries no splits input at all — `TrackDraftView` has no
+  `splits` field and `ReleaseTrack` is unchanged (`trackId, position, priceMinor`) — so the gap is
+  now simply "not yet built" rather than "validated then discarded". WU-CAT-4's
+  `CatalogRepository.hasPendingSplits` guard remains implemented and unit/integration-tested against
+  the `split_entry` table, but with no rows ever written the guard is currently always "no pending
   splits" (a real block against real pending data, not a silent gap for INV-12's *current* enforced
   scope: no split can be pending if none are persisted). This is safe (never falsely blocks or
   falsely allows a real pending split) but does not yet let an admin observe/confirm splits before
-  go-live. A future WU should extend `SubmitRelease`/`UpdateRelease` to persist `SplitEntry` rows so
-  the guard has real data to act on.
+  go-live. **WU-CAT-6** owns the `split_entry` write path (persist on `PATCH`, keyed by `track_id`),
+  `TrackDraftView.splits`, split-sum validation at finalize, and the collaborator-confirmation flow.
 - **Observability.** Micrometer counters: releases by status, go-live job runs/failures, search QPS;
   spans on submit and the go-live sweep. Structured logs, no PII.
 
@@ -724,9 +769,11 @@ stateDiagram-v2
 | **WU-MED-1** | Media upload→validate→transcode→signed URL (MEDIA-01.*) — used by track upload | WU-PLT-1 | parallel |
 | **WU-CAT-3** ✅ | Release wizard submit + manage + track upload (CATALOG-02.1–02.4) | WU-CAT-1, WU-MED-1, WU-IDN-3 | 4 |
 | **WU-CAT-4** ✅ | Release state machine + scheduled go-live (CATALOG-02.5, PLATFORM-01.2) | WU-CAT-3, WU-PLT-2 | 5 |
+| **WU-CAT-5** ✅ | Release create flow — draft → upload-attached → finalize; repurposes the one-shot submit (CATALOG-02.2, 02.4) | WU-CAT-4 | 6 |
+| WU-CAT-6 | Per-track royalty splits + collaborator confirmation | WU-CAT-5 | 7 |
 
 Cross-reference PRD §8 / §8.1. Phase-1 order within catalog: WU-CAT-1 → WU-SRCH-1 → WU-CAT-2 ;
-WU-CAT-3 → WU-CAT-4 (WU-MED-1 lands in Phase 0 foundations).
+WU-CAT-3 → WU-CAT-4 → WU-CAT-5 → WU-CAT-6 (WU-MED-1 lands in Phase 0 foundations).
 
 ## 11. Testing plan
 
@@ -744,13 +791,22 @@ Key Given/When/Then cases (PRD §6.2):
 - **01.4** Given unknown id, When `GET /artists/:id`, Then 404 `ARTIST_NOT_FOUND`.
 - **01.6** Given a track without lyrics, When `GET /tracks/:id/lyrics`, Then 404 `LYRICS_NOT_FOUND`.
 - **01.7** Given a private playlist accessed by a non-owner, Then 404 (existence hidden).
-- **02.2** Given a valid multi-track draft, When submit, Then a release is created `in_review`, album
-  list price = `round(Σ price × 0.76, 2)`, and it is **not** returned by public catalog reads.
-- **02.2** Given a single with 2 tracks (or splits summing > 100), Then 422 `TRACK_COUNT_INVALID` /
-  `SPLIT_OVER_100`.
+- **02.2** (WU-CAT-5) Given a draft with the right track count for its type, When `POST .../submit`
+  with an `Idempotency-Key`, Then the release transitions `draft → in_review`, album list price =
+  `round(Σ price × 0.76, 2)`, and it is **not** returned by public catalog reads.
+- **02.2** (WU-CAT-5) Given a `single` draft with 0 or 2 tracks (INV-12 count matrix violated), When
+  `POST .../submit`, Then 422 `TRACK_COUNT_INVALID`; given no `Idempotency-Key` header, Then 400
+  `MISSING_IDEMPOTENCY_KEY`; given a non-draft release, Then 409 `ILLEGAL_TRANSITION`.
 - **02.3** Given a `live` release, When `DELETE`, Then 409 `RELEASE_LIVE`.
+- **02.3** (WU-CAT-5) Given a draft with an attached track, When `PATCH .../:id` replaces `tracks[]`
+  referencing an unknown `trackId`, Then 422 `TRACK_NOT_IN_RELEASE`; given the same PATCH on a
+  non-draft release, Then 409 `ILLEGAL_TRANSITION` (checked before track-membership).
 - **02.4** Given a WAV upload, Then the track returns a probed `duration` and transitions to `ready`;
   given a non-WAV/FLAC, Then 422 `UNSUPPORTED_FORMAT`.
+- **02.4** (WU-CAT-5) Given a WAV upload to a draft release, Then the resulting track is **attached**
+  as a `ReleaseTrack` (visible in the release's `tracks[]`), not orphaned; given upload to a non-draft
+  release, Then 409 `ILLEGAL_TRANSITION`; given `DELETE .../tracks/:trackId` on a draft, Then the
+  track is removed from `tracks[]` and its stub `Track` row is deleted.
 - **02.5** Given a `scheduled` release whose `date` has passed, When the go-live job runs, Then status
   becomes `live` exactly once and its tracks become publicly streamable.
 
@@ -819,3 +875,78 @@ closes this from the search side with a pull-based backfill instead — see sear
 - **No new module edge.** `catalog` already implements outbound ports for `search` in spirit — this
   follows the same `module → search` direction as `store.adapter.out.persistence.SearchIndexPg`
   (ADR-30). `search` still never imports `catalog`.
+
+## 14. Implementation notes (WU-CAT-5, as-built)
+
+**The release-creation flow is now composable.** ADR-32 has the full rationale; this section is the
+as-built map for future readers. `SubmitRelease`/`SubmitReleaseService` (the WU-CAT-3 one-shot
+direct-to-`in_review` submit) are **retired**. The flow is:
+
+```
+POST /studio/releases (draft)  →  POST .../tracks × N (attach)  →  PATCH .../ (edit)  →  POST .../submit (finalize)
+```
+
+- **`Release` aggregate (domain, framework-free).** Gains a draft lifecycle alongside the existing
+  `create`/`approveScheduled`/`approveImmediate`/`goLive`/`takedown`/`reinstate`:
+  `createDraft(id, artistId, title, type, visibility, scheduledAt, genre, description, now)` →
+  `status=draft`, empty `tracks`, `listPriceMinor=0`; `addTrack`/`removeTrack`/`replaceTracks`/
+  `updateMetadata` — all **draft-only**, throwing `IllegalTransitionException` otherwise;
+  `submit(bundleDiscountPct, now)` — `draft → in_review`, recomputing `listPriceMinor` via the
+  existing (now non-private-static-only-in-spirit) `computeListPrice`. `title` remains editable on
+  any status via the pre-existing `updateTitle` (preserves the WU-CAT-3/Slice-3a rename-on-`in_review`
+  behaviour). `tracks`/`listPriceMinor`/`visibility` became mutable fields (previously `final`) to
+  support in-place mutation across `saveRelease` re-saves; `genre`/`description` are new nullable
+  fields threaded through the constructor and `reconstitute(...)`.
+- **Schema.** `V970__catalog_release_genre_description.sql` adds `release.genre`/`release.description`
+  (both nullable `TEXT`; the `status` CHECK already permitted `'draft'`). No `release_track` schema
+  change — attach/remove reuse the existing table via the pre-existing `saveRelease` upsert (deletes
+  + re-persists the full `release_track` list from `release.getTracks()` every call).
+- **`CreateReleaseDraft`/`CreateReleaseDraftService`** — repurposed `POST /studio/releases`. No
+  Idempotency-Key (drafts are cheap/deletable, unlike the old submit).
+- **`UploadReleaseTrackService` (the core fix).** After persisting the stub `Track` row (status
+  `"uploading"`), it now **appends a `ReleaseTrack`** (new trackId, `position = tracks.size()`, a
+  per-track default price) to the target release and re-saves it — previously the uploaded track was
+  never linked to any release at all. Draft-only (409 `ILLEGAL_TRANSITION` on a non-draft release).
+  There is no `PlatformSettings` default-track-price accessor as of this WU, so the default is `0L`;
+  the artist sets the real price via `PATCH .../tracks` (drafts start "free" until priced).
+- **`UpdateReleaseService`.** Extends the WU-CAT-3 title-only `PATCH` to accept
+  `genre`/`description`/`visibility`/`scheduledAt` and a wholesale `tracks[]` replacement
+  (`{trackId, position, priceMinor}`). Order of checks matters: when `tracks` is present, the
+  **draft-status check runs before the track-membership check**, so a `PATCH .../tracks` on a
+  non-draft release always fails 409 `ILLEGAL_TRANSITION` regardless of whether the referenced
+  `trackId` happens to exist on the release, rather than leaking a 422 `TRACK_NOT_IN_RELEASE` for an
+  operation that was never going to be allowed. A `trackId` not currently on the release (draft-status
+  releases only) throws the new `TrackNotInReleaseException` (422 `TRACK_NOT_IN_RELEASE`).
+- **`RemoveReleaseTrack`/`RemoveReleaseTrackService`** (new) — `DELETE .../tracks/:trackId`. Same
+  status-before-existence check ordering as the PATCH path. Removes the `ReleaseTrack` from the
+  aggregate (`saveRelease` re-persists the shorter list) **and** deletes the now-orphaned stub `Track`
+  row via the new `CatalogRepository.deleteTrack(TrackId)`.
+- **`FinalizeRelease`/`FinalizeReleaseService`** (new) — `POST .../submit`, the terminal side-effect.
+  Idempotency-Key required (`catalog.domain.MissingIdempotencyKeyException` — catalog's own copy of
+  the signal per the hexagonal module-boundary convention, mirroring `podcasts`/`payments`; same wire
+  `MISSING_IDEMPOTENCY_KEY` `ErrorCode`). Validates the full INV-12 track-count matrix (`single`=1,
+  `ep`=3–6, `album`≥7, `mixtape`≥1 — the WU-CAT-3 original only ever checked `single`) before calling
+  `Release.submit`, then appends a `SUBMIT_RELEASE` `AuditEntry` in the same transaction (INV-10). A
+  replay with a previously-seen idempotency key returns the saved view without re-transitioning or
+  re-auditing (`CatalogRepository.findReleaseByIdempotencyKey`/`saveReleaseWithIdempotencyKey`, reused
+  unchanged from WU-CAT-3).
+- **Views.** `StudioReleaseView` (list) is byte-for-byte unchanged. `GET /:id` and every mutating
+  draft-flow endpoint now return the additive `StudioReleaseDetailView` (`+ genre, description,
+  visibility, scheduledAt, tracks: TrackDraftView[]`); `ReleaseViewMapper` (new, stateless) is the
+  single place both view shapes are built, joining each `ReleaseTrack` with its `Track` row (falling
+  back to an empty-title/`0`-duration/`"uploading"`-status placeholder if the `Track` is missing)
+  ordered by `position`.
+- **Test-suite ripple.** Because the WU-CAT-3 one-shot submit was the only way several pre-existing
+  integration tests could cheaply produce an `in_review` fixture release (`AdminCatalogResourceIT`,
+  `AdminModerationResourceIT`, `CatalogContractTest`'s `admin_approve_on_illegal_status_...` test),
+  those now seed the `release`/`release_track` rows directly via SQL (mirroring the
+  `seedInReviewRelease` helper pattern already used by `UploadAttachIT`) rather than driving them
+  through the new draft flow — they exercise admin approve/flag/moderation, not the draft-authoring
+  flow itself. `StudioReleaseResourceIT` was rewritten to cover only the endpoints that are *not*
+  draft-flow-specific (list/get/title-patch/delete/auth/upload-validation); the draft-flow round trips
+  each got a dedicated IT (`CreateDraftIT`, `UploadAttachIT`, `UpdateDraftIT`, `FinalizeReleaseIT`).
+- **Out of scope (unchanged from the design doc).** Per-track splits (WU-CAT-6, see §9); cover-image
+  upload; `featuredArtists`/`label`; transcode-ready gating at finalize (a release may finalize with
+  tracks still `"uploading"` — the media module transcodes asynchronously and admin approval is the
+  real content gate); dropping the orphan `release_draft` JSONB table (separate cleanup — still
+  referenced by zero code).

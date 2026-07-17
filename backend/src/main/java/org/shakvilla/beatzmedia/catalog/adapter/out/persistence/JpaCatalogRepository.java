@@ -387,6 +387,8 @@ public class JpaCatalogRepository implements CatalogRepository {
     e.wentLiveAt = release.getWentLiveAt();
     e.listPriceMinor = release.getListPriceMinor();
     e.updatedAt = release.getUpdatedAt();
+    e.genre = release.getGenre();
+    e.description = release.getDescription();
     em.merge(e);
 
     // Upsert release_track rows. Remove existing managed entities (rather than a bulk JPQL
@@ -437,6 +439,14 @@ public class JpaCatalogRepository implements CatalogRepository {
     e.year = track.getYear().orElse(null);
     e.status = track.getStatus();
     em.persist(e);
+  }
+
+  @Override
+  public void deleteTrack(TrackId id) {
+    TrackEntity e = em.find(TrackEntity.class, id.value());
+    if (e != null) {
+      em.remove(e);
+    }
   }
 
   @Override
@@ -650,7 +660,9 @@ public class JpaCatalogRepository implements CatalogRepository {
         e.listPriceMinor,
         e.createdAt,
         e.updatedAt,
-        tracks);
+        tracks,
+        e.genre,
+        e.description);
   }
 
   // ---- Batch-mapping helpers ----

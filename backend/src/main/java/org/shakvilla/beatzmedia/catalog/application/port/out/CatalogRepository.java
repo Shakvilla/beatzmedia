@@ -73,6 +73,12 @@ public interface CatalogRepository {
   /** Save a new Track row (used when creating a stub track during upload). */
   void saveTrack(Track track);
 
+  /**
+   * Delete a Track row by id. Used when a draft track is removed from its release ({@code DELETE
+   * .../tracks/:trackId}) — a no-op if the track no longer exists. WU-CAT-5.
+   */
+  void deleteTrack(TrackId id);
+
   /** Check whether an idempotency key was already used; returns the saved view if so. */
   Optional<Release> findReleaseByIdempotencyKey(String idempotencyKey);
 
