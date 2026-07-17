@@ -14,6 +14,7 @@ import jakarta.ws.rs.Consumes;
 import jakarta.ws.rs.DELETE;
 import jakarta.ws.rs.DefaultValue;
 import jakarta.ws.rs.GET;
+import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.PATCH;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
@@ -29,6 +30,7 @@ import org.jboss.resteasy.reactive.multipart.FileUpload;
 import org.shakvilla.beatzmedia.catalog.application.port.in.CreateReleaseDraft;
 import org.shakvilla.beatzmedia.catalog.application.port.in.CreateReleaseDraft.CreateDraftCommand;
 import org.shakvilla.beatzmedia.catalog.application.port.in.DeleteRelease;
+import org.shakvilla.beatzmedia.catalog.application.port.in.FinalizeRelease;
 import org.shakvilla.beatzmedia.catalog.application.port.in.GetRelease;
 import org.shakvilla.beatzmedia.catalog.application.port.in.ListStudioReleases;
 import org.shakvilla.beatzmedia.catalog.application.port.in.PageView;
@@ -42,6 +44,7 @@ import org.shakvilla.beatzmedia.catalog.application.port.in.UploadReleaseTrack;
 import org.shakvilla.beatzmedia.catalog.application.port.in.UploadReleaseTrack.AudioUpload;
 import org.shakvilla.beatzmedia.catalog.application.port.in.UploadedTrackView;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
+import org.shakvilla.beatzmedia.catalog.domain.MissingIdempotencyKeyException;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseType;
@@ -77,6 +80,7 @@ public class StudioReleaseResource {
   private final DeleteRelease deleteRelease;
   private final UploadReleaseTrack uploadReleaseTrack;
   private final RemoveReleaseTrack removeReleaseTrack;
+  private final FinalizeRelease finalizeRelease;
   private final JsonWebToken jwt;
 
   @Inject
@@ -88,6 +92,7 @@ public class StudioReleaseResource {
       DeleteRelease deleteRelease,
       UploadReleaseTrack uploadReleaseTrack,
       RemoveReleaseTrack removeReleaseTrack,
+      FinalizeRelease finalizeRelease,
       JsonWebToken jwt) {
     this.listStudioReleases = listStudioReleases;
     this.createReleaseDraft = createReleaseDraft;
@@ -96,6 +101,7 @@ public class StudioReleaseResource {
     this.deleteRelease = deleteRelease;
     this.uploadReleaseTrack = uploadReleaseTrack;
     this.removeReleaseTrack = removeReleaseTrack;
+    this.finalizeRelease = finalizeRelease;
     this.jwt = jwt;
   }
 
@@ -217,6 +223,22 @@ public class StudioReleaseResource {
       @PathParam("id") String releaseId, @PathParam("trackId") String trackId) {
     removeReleaseTrack.remove(new ReleaseId(releaseId), artistId(), new TrackId(trackId));
     return Response.noContent().build();
+  }
+
+  /**
+   * POST /v1/studio/releases/:id/submit — WU-CAT-5. Finalizes a draft: {@code draft ->
+   * in_review}. Requires the {@code Idempotency-Key} header (400 MISSING_IDEMPOTENCY_KEY if
+   * absent/blank). Not-draft → 409 ILLEGAL_TRANSITION; INV-12 track-count mismatch → 422
+   * TRACK_COUNT_INVALID.
+   */
+  @POST
+  @Path("/{id}/submit")
+  public StudioReleaseDetailView submit(
+      @PathParam("id") String id, @HeaderParam("Idempotency-Key") String idempotencyKey) {
+    if (idempotencyKey == null || idempotencyKey.isBlank()) {
+      throw new MissingIdempotencyKeyException();
+    }
+    return finalizeRelease.finalize(new ReleaseId(id), artistId(), idempotencyKey);
   }
 
   private ArtistId artistId() {
