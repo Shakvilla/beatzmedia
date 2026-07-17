@@ -54,4 +54,12 @@ public class ReleaseEntity {
 
   @Column(name = "updated_at", nullable = false)
   public Instant updatedAt;
+
+  /** Nullable; settable while {@code status = 'draft'}. WU-CAT-5 / V970. */
+  @Column(name = "genre")
+  public String genre;
+
+  /** Nullable; settable while {@code status = 'draft'}. WU-CAT-5 / V970. */
+  @Column(name = "description")
+  public String description;
 }

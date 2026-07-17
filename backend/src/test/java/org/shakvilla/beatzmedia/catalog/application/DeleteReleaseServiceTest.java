@@ -47,7 +47,7 @@ class DeleteReleaseServiceTest {
         RELEASE_ID, ARTIST.value(), "Live Album",
         ReleaseType.album, ReleaseStatus.live, Visibility.PUBLIC,
         null, null, 5000L,
-        java.time.Instant.now(), java.time.Instant.now(), List.of());
+        java.time.Instant.now(), java.time.Instant.now(), List.of(), null, null);
     repo.addRelease(live);
 
     assertThrows(ReleaseLiveException.class,
@@ -61,7 +61,7 @@ class DeleteReleaseServiceTest {
         "release-del-sched", ARTIST.value(), "Sched Album",
         ReleaseType.album, ReleaseStatus.scheduled, Visibility.PUBLIC,
         null, null, 5000L,
-        java.time.Instant.now(), java.time.Instant.now(), List.of());
+        java.time.Instant.now(), java.time.Instant.now(), List.of(), null, null);
     repo.addRelease(scheduled);
 
     assertThrows(ReleaseLiveException.class,
@@ -75,7 +75,7 @@ class DeleteReleaseServiceTest {
         RELEASE_ID, ARTIST.value(), "My EP",
         ReleaseType.ep, ReleaseStatus.in_review, Visibility.PUBLIC,
         null, null, 2000L,
-        java.time.Instant.now(), java.time.Instant.now(), List.of());
+        java.time.Instant.now(), java.time.Instant.now(), List.of(), null, null);
     repo.addRelease(inReview);
 
     service.delete(new ReleaseId(RELEASE_ID), ARTIST); // should not throw

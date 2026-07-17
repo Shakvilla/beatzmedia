@@ -2,6 +2,7 @@ package org.shakvilla.beatzmedia.catalog.domain;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Instant;
 import java.util.List;
@@ -230,6 +231,65 @@ class ReleaseTest {
         500,
         T0,
         T0,
-        List.of(new ReleaseTrack("t1", 1, 500)));
+        List.of(new ReleaseTrack("t1", 1, 500)),
+        null,
+        null);
+  }
+
+  // ---- WU-CAT-5: draft create/upload/finalize lifecycle ----
+
+  private static final Instant NOW = Instant.parse("2026-07-17T10:00:00Z");
+
+  private static Release draft() {
+    return Release.createDraft(
+        "r1", "art1", "Untitled release", ReleaseType.single,
+        Visibility.PUBLIC, null, "Afrobeats", "My bio", NOW);
+  }
+
+  @Test
+  void createDraft_startsInDraftWithNoTracksAndZeroPrice() {
+    Release r = draft();
+    assertEquals(ReleaseStatus.draft, r.getStatus());
+    assertTrue(r.getTracks().isEmpty());
+    assertEquals(0L, r.getListPriceMinor());
+    assertEquals("Afrobeats", r.getGenre());
+  }
+
+  @Test
+  void addAndRemoveTrack_onDraft() {
+    Release r = draft();
+    r.addTrack(new ReleaseTrack("t1", 0, 250L), NOW);
+    assertEquals(1, r.getTracks().size());
+    r.removeTrack("t1", NOW);
+    assertTrue(r.getTracks().isEmpty());
+  }
+
+  @Test
+  void trackMutation_rejectedWhenNotDraft() {
+    Release r = draft();
+    r.addTrack(new ReleaseTrack("t1", 0, 250L), NOW);
+    r.submit(24, NOW); // -> in_review
+    assertThrows(
+        IllegalTransitionException.class,
+        () -> r.addTrack(new ReleaseTrack("t2", 1, 250L), NOW));
+    assertThrows(IllegalTransitionException.class, () -> r.removeTrack("t1", NOW));
+    assertThrows(IllegalTransitionException.class, () -> r.replaceTracks(List.of(), NOW));
+  }
+
+  @Test
+  void submit_transitionsToInReviewAndRecomputesPrice() {
+    Release r = draft();
+    r.replaceTracks(List.of(new ReleaseTrack("t1", 0, 250L)), NOW);
+    r.submit(24, NOW);
+    assertEquals(ReleaseStatus.in_review, r.getStatus());
+    assertEquals(250L, r.getListPriceMinor()); // single: no bundle discount
+  }
+
+  @Test
+  void submit_rejectedWhenNotDraft() {
+    Release r = draft();
+    r.addTrack(new ReleaseTrack("t1", 0, 250L), NOW);
+    r.submit(24, NOW);
+    assertThrows(IllegalTransitionException.class, () -> r.submit(24, NOW));
   }
 }

@@ -387,6 +387,8 @@ public class JpaCatalogRepository implements CatalogRepository {
     e.wentLiveAt = release.getWentLiveAt();
     e.listPriceMinor = release.getListPriceMinor();
     e.updatedAt = release.getUpdatedAt();
+    e.genre = release.getGenre();
+    e.description = release.getDescription();
     em.merge(e);
 
     // Upsert release_track rows. Remove existing managed entities (rather than a bulk JPQL
@@ -650,7 +652,9 @@ public class JpaCatalogRepository implements CatalogRepository {
         e.listPriceMinor,
         e.createdAt,
         e.updatedAt,
-        tracks);
+        tracks,
+        e.genre,
+        e.description);
   }
 
   // ---- Batch-mapping helpers ----
