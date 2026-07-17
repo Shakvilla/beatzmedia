@@ -46,6 +46,8 @@ public enum ErrorCode {
   SPLIT_OVER_100,
   RELEASE_LIVE,
   RELEASE_NOT_FOUND,
+  // ---- Catalog codes (WU-CAT-5) ----
+  TRACK_NOT_IN_RELEASE,
   // ---- Payments codes (WU-PAY-1) ----
   MISSING_IDEMPOTENCY_KEY,
   IDEMPOTENCY_KEY_CONFLICT,

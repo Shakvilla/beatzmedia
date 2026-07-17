@@ -5,6 +5,7 @@ import java.io.InputStream;
 import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.List;
 import java.util.Optional;
 
 import jakarta.annotation.security.RolesAllowed;
@@ -34,6 +35,7 @@ import org.shakvilla.beatzmedia.catalog.application.port.in.PageView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.StudioReleaseDetailView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.StudioReleaseView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.UpdateRelease;
+import org.shakvilla.beatzmedia.catalog.application.port.in.UpdateRelease.TrackRef;
 import org.shakvilla.beatzmedia.catalog.application.port.in.UpdateRelease.UpdateReleaseCommand;
 import org.shakvilla.beatzmedia.catalog.application.port.in.UploadReleaseTrack;
 import org.shakvilla.beatzmedia.catalog.application.port.in.UploadReleaseTrack.AudioUpload;
@@ -56,7 +58,6 @@ import org.shakvilla.beatzmedia.catalog.domain.Visibility;
  *   <li>PATCH /v1/studio/releases/:id — update draft metadata + track list
  *   <li>DELETE /v1/studio/releases/:id — delete draft/in_review
  *   <li>POST /v1/studio/releases/:id/tracks — multipart WAV/FLAC upload, attaches to the draft
- *   <li>DELETE /v1/studio/releases/:id/tracks/:trackId — remove a draft track
  *   <li>POST /v1/studio/releases/:id/submit — finalize draft -> in_review (Idempotency-Key
  *       required)
  * </ul>
@@ -130,14 +131,28 @@ public class StudioReleaseResource {
     return getRelease.get(new ReleaseId(id), artistId());
   }
 
-  /** PATCH /v1/studio/releases/:id — LLFR-CATALOG-02.3. */
+  /**
+   * PATCH /v1/studio/releases/:id — LLFR-CATALOG-02.3. {@code title} is editable on any status;
+   * {@code genre}/{@code description}/{@code visibility}/{@code scheduledAt}/{@code tracks} are
+   * draft-only (409 ILLEGAL_TRANSITION otherwise).
+   */
   @PATCH
   @Path("/{id}")
   @Consumes(MediaType.APPLICATION_JSON)
-  public StudioReleaseView update(
+  public StudioReleaseDetailView update(
       @PathParam("id") String id, UpdateReleaseBody body) {
-    return updateRelease.update(
-        new ReleaseId(id), artistId(), new UpdateReleaseCommand(body.title()));
+    UpdateReleaseCommand cmd = new UpdateReleaseCommand(
+        body.title(),
+        body.genre(),
+        body.description(),
+        body.visibility(),
+        body.scheduledAt() != null ? java.time.Instant.parse(body.scheduledAt()) : null,
+        body.tracks() != null
+            ? body.tracks().stream()
+                .map(t -> new TrackRef(t.trackId(), t.position(), t.priceMinor()))
+                .toList()
+            : null);
+    return updateRelease.update(new ReleaseId(id), artistId(), cmd);
   }
 
   /** DELETE /v1/studio/releases/:id — LLFR-CATALOG-02.3. */
@@ -208,5 +223,13 @@ public class StudioReleaseResource {
       String genre,
       String description) {}
 
-  public record UpdateReleaseBody(String title) {}
+  public record UpdateReleaseBody(
+      String title,
+      String genre,
+      String description,
+      String visibility,
+      String scheduledAt,
+      List<TrackRefBody> tracks) {}
+
+  public record TrackRefBody(String trackId, int position, long priceMinor) {}
 }
