@@ -1,9 +1,11 @@
 import { Link, Outlet, useLocation } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { Home, Upload, LineChart, Users, Wallet, Disc3, BadgeCheck, ArrowLeft, Settings, Menu, X, Mic, type LucideIcon } from 'lucide-react'
 import { cn } from '../../utils/cn'
 import { studioArtist } from '../../lib/studio-data'
-import { useStudio, initialsOf } from '../../features/studio/studio-context'
+import { initialsOf } from '../../features/studio/studio-context'
+import { studioProfileQuery } from '../../lib/api/queries/studio'
 
 const NAV: { to: string; icon: LucideIcon; label: string }[] = [
   { to: '/studio', icon: Home, label: 'Overview' },
@@ -77,8 +79,8 @@ function CreatorFooter({ name, avatar, onNavigate }: { name: string; avatar: str
  * top bar + slide-in drawer below that. Mounted by the `/studio` layout route.
  */
 export function StudioShell() {
-  const { profile } = useStudio()
-  const name = profile.displayName.trim() || studioArtist.name
+  const { data: profile } = useQuery(studioProfileQuery())
+  const name = profile?.displayName.trim() || studioArtist.name
   const [drawerOpen, setDrawerOpen] = useState(false)
   const location = useLocation()
 
@@ -91,7 +93,7 @@ export function StudioShell() {
       <aside className="hidden md:flex w-64 shrink-0 flex-col gap-8 border-r border-gray-200 dark:border-white/5 bg-beatz-light-surface dark:bg-black p-6">
         <Brand />
         <NavLinks />
-        <CreatorFooter name={name} avatar={profile.avatar} />
+        <CreatorFooter name={name} avatar={profile?.avatar ?? null} />
       </aside>
 
       {/* Mobile drawer + backdrop */}
@@ -113,7 +115,7 @@ export function StudioShell() {
             </button>
           </div>
           <NavLinks onNavigate={() => setDrawerOpen(false)} />
-          <CreatorFooter name={name} avatar={profile.avatar} onNavigate={() => setDrawerOpen(false)} />
+          <CreatorFooter name={name} avatar={profile?.avatar ?? null} onNavigate={() => setDrawerOpen(false)} />
         </aside>
       </div>
 
