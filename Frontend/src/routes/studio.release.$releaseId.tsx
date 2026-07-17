@@ -71,7 +71,14 @@ function ReleaseManage() {
       toast('Could not update the release. Please try again.', 'error')
     }
   }
-  const setStatus = (s: ReleaseStatus, msg: string) => { setDraft((d) => ({ ...d, status: s })); toast(msg, 'success') } // local only
+  const setStatus = (s: ReleaseStatus, msg: string) => {
+    // Status has no artist endpoint (publish is admin-gated) — flip it locally in
+    // both the draft and the query cache so the badge/button/availability text
+    // update immediately. Session-local only; not persisted to the backend.
+    setDraft((d) => ({ ...d, status: s }))
+    queryClient.setQueryData(studioReleaseQuery(release.id).queryKey, (r: StudioRelease | undefined) => (r ? { ...r, status: s } : r))
+    toast(msg, 'success')
+  }
   const del = async () => {
     try {
       await apiDeleteRelease(release.id)
