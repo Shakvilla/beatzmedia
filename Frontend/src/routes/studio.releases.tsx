@@ -154,7 +154,7 @@ function ReleaseRow({ release: r, onOpen, onView, onDuplicate, onUnpublish, onDe
   onOpen: () => void; onView: () => void; onDuplicate: () => void; onUnpublish: () => void; onDelete: () => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
-  const status = STATUS_META[r.status]
+  const status = STATUS_META[r.status] ?? { label: r.status, cls: 'bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-300' }
   const live = r.status === 'live'
   const stop = (e: React.MouseEvent) => e.stopPropagation()
 

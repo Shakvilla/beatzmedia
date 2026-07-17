@@ -92,7 +92,7 @@ function WizardChrome() {
     if (isLast) {
       // TODO(slice-3b): wire real POST /v1/studio/releases submit + multipart track upload here.
       queryClient.invalidateQueries({ queryKey: studioReleasesQuery().queryKey })
-      toast('Release submitted for review 🎉', 'success')
+      toast('Release publishing is coming soon.', 'info')
       reset()
       navigate({ to: '/studio/releases' })
       return
