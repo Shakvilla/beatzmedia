@@ -127,6 +127,84 @@ class UpdateDraftIT {
         .body("error.code", equalTo("TRACK_NOT_IN_RELEASE"));
   }
 
+  @Test
+  void delete_track_from_draft_removes_it_and_leaves_the_other() {
+    String token = provisionArtist();
+
+    String releaseId = given()
+        .header("Authorization", "Bearer " + token)
+        .contentType(ContentType.JSON)
+        .body("""
+            { "title": "Delete Track Test", "type": "single" }
+            """)
+        .when().post(RELEASES_URL)
+        .then().statusCode(201).extract().jsonPath().getString("id");
+
+    String track1 = given()
+        .header("Authorization", "Bearer " + token)
+        .contentType("multipart/form-data")
+        .multiPart("file", "song1.wav", wavBytes(), "audio/wav")
+        .when().post(RELEASES_URL + "/" + releaseId + "/tracks")
+        .then().statusCode(201).extract().jsonPath().getString("id");
+
+    String track2 = given()
+        .header("Authorization", "Bearer " + token)
+        .contentType("multipart/form-data")
+        .multiPart("file", "song2.wav", wavBytes(), "audio/wav")
+        .when().post(RELEASES_URL + "/" + releaseId + "/tracks")
+        .then().statusCode(201).extract().jsonPath().getString("id");
+
+    given()
+        .header("Authorization", "Bearer " + token)
+        .when().delete(RELEASES_URL + "/" + releaseId + "/tracks/" + track1)
+        .then().statusCode(204);
+
+    given()
+        .header("Authorization", "Bearer " + token)
+        .when().get(RELEASES_URL + "/" + releaseId)
+        .then()
+        .statusCode(200)
+        .body("tracks.size()", equalTo(1))
+        .body("tracks[0].trackId", equalTo(track2));
+  }
+
+  @Test
+  void delete_track_on_non_draft_release_returns_409_illegal_transition() {
+    String token = provisionArtist();
+    String artistId = accountIdFromToken(token);
+
+    String releaseId = "delete-track-non-draft-" + System.nanoTime();
+    seedInReviewRelease(releaseId, artistId);
+
+    given()
+        .header("Authorization", "Bearer " + token)
+        .when().delete(RELEASES_URL + "/" + releaseId + "/tracks/whatever")
+        .then()
+        .statusCode(409)
+        .body("error.code", equalTo("ILLEGAL_TRANSITION"));
+  }
+
+  @Test
+  void delete_unknown_track_returns_404_track_not_found() {
+    String token = provisionArtist();
+
+    String releaseId = given()
+        .header("Authorization", "Bearer " + token)
+        .contentType(ContentType.JSON)
+        .body("""
+            { "title": "Delete Ghost Track Test", "type": "single" }
+            """)
+        .when().post(RELEASES_URL)
+        .then().statusCode(201).extract().jsonPath().getString("id");
+
+    given()
+        .header("Authorization", "Bearer " + token)
+        .when().delete(RELEASES_URL + "/" + releaseId + "/tracks/ghost")
+        .then()
+        .statusCode(404)
+        .body("error.code", equalTo("TRACK_NOT_FOUND"));
+  }
+
   // ---- helpers ----
 
   private String provisionArtist() {

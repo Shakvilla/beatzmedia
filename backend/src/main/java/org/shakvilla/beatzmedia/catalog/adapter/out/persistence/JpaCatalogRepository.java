@@ -442,6 +442,14 @@ public class JpaCatalogRepository implements CatalogRepository {
   }
 
   @Override
+  public void deleteTrack(TrackId id) {
+    TrackEntity e = em.find(TrackEntity.class, id.value());
+    if (e != null) {
+      em.remove(e);
+    }
+  }
+
+  @Override
   public void saveReleaseWithIdempotencyKey(Release release, String idempotencyKey) {
     saveRelease(release);
     if (idempotencyKey != null) {

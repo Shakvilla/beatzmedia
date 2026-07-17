@@ -32,6 +32,7 @@ import org.shakvilla.beatzmedia.catalog.application.port.in.DeleteRelease;
 import org.shakvilla.beatzmedia.catalog.application.port.in.GetRelease;
 import org.shakvilla.beatzmedia.catalog.application.port.in.ListStudioReleases;
 import org.shakvilla.beatzmedia.catalog.application.port.in.PageView;
+import org.shakvilla.beatzmedia.catalog.application.port.in.RemoveReleaseTrack;
 import org.shakvilla.beatzmedia.catalog.application.port.in.StudioReleaseDetailView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.StudioReleaseView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.UpdateRelease;
@@ -44,6 +45,7 @@ import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseType;
+import org.shakvilla.beatzmedia.catalog.domain.TrackId;
 import org.shakvilla.beatzmedia.catalog.domain.Visibility;
 
 /**
@@ -58,6 +60,7 @@ import org.shakvilla.beatzmedia.catalog.domain.Visibility;
  *   <li>PATCH /v1/studio/releases/:id — update draft metadata + track list
  *   <li>DELETE /v1/studio/releases/:id — delete draft/in_review
  *   <li>POST /v1/studio/releases/:id/tracks — multipart WAV/FLAC upload, attaches to the draft
+ *   <li>DELETE /v1/studio/releases/:id/tracks/:trackId — remove a draft track
  *   <li>POST /v1/studio/releases/:id/submit — finalize draft -> in_review (Idempotency-Key
  *       required)
  * </ul>
@@ -73,6 +76,7 @@ public class StudioReleaseResource {
   private final UpdateRelease updateRelease;
   private final DeleteRelease deleteRelease;
   private final UploadReleaseTrack uploadReleaseTrack;
+  private final RemoveReleaseTrack removeReleaseTrack;
   private final JsonWebToken jwt;
 
   @Inject
@@ -83,6 +87,7 @@ public class StudioReleaseResource {
       UpdateRelease updateRelease,
       DeleteRelease deleteRelease,
       UploadReleaseTrack uploadReleaseTrack,
+      RemoveReleaseTrack removeReleaseTrack,
       JsonWebToken jwt) {
     this.listStudioReleases = listStudioReleases;
     this.createReleaseDraft = createReleaseDraft;
@@ -90,6 +95,7 @@ public class StudioReleaseResource {
     this.updateRelease = updateRelease;
     this.deleteRelease = deleteRelease;
     this.uploadReleaseTrack = uploadReleaseTrack;
+    this.removeReleaseTrack = removeReleaseTrack;
     this.jwt = jwt;
   }
 
@@ -199,6 +205,18 @@ public class StudioReleaseResource {
     } catch (IOException | NoSuchAlgorithmException e) {
       throw new RuntimeException("Failed to read uploaded file", e);
     }
+  }
+
+  /**
+   * DELETE /v1/studio/releases/:id/tracks/:trackId — WU-CAT-5. Draft-only (409
+   * ILLEGAL_TRANSITION otherwise); unknown track → 404 TRACK_NOT_FOUND.
+   */
+  @DELETE
+  @Path("/{id}/tracks/{trackId}")
+  public Response removeTrack(
+      @PathParam("id") String releaseId, @PathParam("trackId") String trackId) {
+    removeReleaseTrack.remove(new ReleaseId(releaseId), artistId(), new TrackId(trackId));
+    return Response.noContent().build();
   }
 
   private ArtistId artistId() {

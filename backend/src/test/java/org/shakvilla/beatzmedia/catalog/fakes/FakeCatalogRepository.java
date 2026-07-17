@@ -221,6 +221,11 @@ public class FakeCatalogRepository implements CatalogRepository {
   }
 
   @Override
+  public void deleteTrack(TrackId id) {
+    tracks.remove(id.value());
+  }
+
+  @Override
   public Optional<Release> findReleaseByIdempotencyKey(String idempotencyKey) {
     String releaseId = idempotencyKeys.get(idempotencyKey);
     if (releaseId == null) return Optional.empty();
