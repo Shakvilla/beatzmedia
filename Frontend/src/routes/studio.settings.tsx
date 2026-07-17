@@ -151,9 +151,17 @@ function SettingsComponent() {
     queryClient.setQueryData(key, s)
     try {
       const saved = await apiSaveStudioSettings(s)
-      // Server echoes the full shape; merge so Category-B local edits in `s`
-      // are not clobbered mid-session while Category-A becomes canonical.
-      queryClient.setQueryData(key, { ...s, ...saved })
+      // Server echoes the full shape but resets Category-B fields to fixed
+      // defaults, so only adopt the five Category-A slices from `saved`;
+      // Category-B local edits in `s` are kept as-is (not clobbered).
+      queryClient.setQueryData(key, {
+        ...s,
+        notifications: saved.notifications,
+        defaults: saved.defaults,
+        payouts: saved.payouts,
+        privacy: saved.privacy,
+        team: saved.team,
+      })
       toast('Settings saved', 'success')
     } catch {
       queryClient.setQueryData(key, previous)
