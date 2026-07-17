@@ -11,10 +11,13 @@ import org.shakvilla.beatzmedia.catalog.application.port.in.UploadReleaseTrack;
 import org.shakvilla.beatzmedia.catalog.application.port.in.UploadedTrackView;
 import org.shakvilla.beatzmedia.catalog.application.port.out.CatalogRepository;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
+import org.shakvilla.beatzmedia.catalog.domain.IllegalTransitionException;
 import org.shakvilla.beatzmedia.catalog.domain.OwnershipStatus;
 import org.shakvilla.beatzmedia.catalog.domain.Release;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseNotFoundException;
+import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
+import org.shakvilla.beatzmedia.catalog.domain.ReleaseTrack;
 import org.shakvilla.beatzmedia.catalog.domain.Track;
 import org.shakvilla.beatzmedia.catalog.domain.TrackId;
 import org.shakvilla.beatzmedia.media.application.port.in.UploadCommand;
@@ -24,6 +27,7 @@ import org.shakvilla.beatzmedia.media.domain.MediaHandle;
 import org.shakvilla.beatzmedia.media.domain.MediaKind;
 import org.shakvilla.beatzmedia.media.domain.OwnerRef;
 import org.shakvilla.beatzmedia.media.domain.UnsupportedFormatException;
+import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
 import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
 import org.shakvilla.beatzmedia.platform.domain.UnauthorizedException;
 
@@ -40,16 +44,30 @@ public class UploadReleaseTrackService implements UploadReleaseTrack {
   /** 500 MB */
   private static final long MAX_BYTES = 500L * 1024 * 1024;
 
+  /**
+   * Default per-track price (pesewas) applied to a newly-attached track. {@link
+   * org.shakvilla.beatzmedia.platform.domain.PlatformSettings} carries no default-track-price
+   * accessor as of WU-CAT-5 — the artist sets the real price via {@code PATCH .../tracks}
+   * (Task 6). Promote to a PlatformSettings-backed constant if/when one is added (never hard-code
+   * elsewhere; this is the single call site).
+   */
+  private static final long DEFAULT_TRACK_PRICE_MINOR = 0L;
+
   private final CatalogRepository repo;
   private final UploadOriginalUseCase uploadOriginalUseCase;
   private final IdGenerator ids;
+  private final Clock clock;
 
   @Inject
   public UploadReleaseTrackService(
-      CatalogRepository repo, UploadOriginalUseCase uploadOriginalUseCase, IdGenerator ids) {
+      CatalogRepository repo,
+      UploadOriginalUseCase uploadOriginalUseCase,
+      IdGenerator ids,
+      Clock clock) {
     this.repo = repo;
     this.uploadOriginalUseCase = uploadOriginalUseCase;
     this.ids = ids;
+    this.clock = clock;
   }
 
   @Override
@@ -68,6 +86,9 @@ public class UploadReleaseTrackService implements UploadReleaseTrack {
         .orElseThrow(() -> new ReleaseNotFoundException(releaseId.value()));
     if (!release.getArtistId().equals(artistId.value())) {
       throw new UnauthorizedException("Not your release");
+    }
+    if (release.getStatus() != ReleaseStatus.draft) {
+      throw new IllegalTransitionException(release.getStatus(), "UPLOAD_TRACK");
     }
 
     String trackId = ids.newId();
@@ -106,6 +127,11 @@ public class UploadReleaseTrackService implements UploadReleaseTrack {
 
     repo.saveTrack(stubTrack);
 
+    // WU-CAT-5 fix: attach the newly-uploaded track to its draft release (previously orphaned).
+    int position = release.getTracks().size();
+    release.addTrack(new ReleaseTrack(trackId, position, DEFAULT_TRACK_PRICE_MINOR), clock.now());
+    repo.saveRelease(release);
+
     return new UploadedTrackView(
         trackId,
         title,
@@ -113,8 +139,9 @@ public class UploadReleaseTrackService implements UploadReleaseTrack {
         "uploading",
         0,
         null,
-        MoneyView.ofMinor(0L),
-        false);
+        MoneyView.ofMinor(DEFAULT_TRACK_PRICE_MINOR),
+        false,
+        position);
   }
 
   private String filenameWithoutExtension(String filename) {

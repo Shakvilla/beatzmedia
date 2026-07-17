@@ -5,13 +5,13 @@ import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 
 import org.shakvilla.beatzmedia.catalog.application.port.in.GetRelease;
-import org.shakvilla.beatzmedia.catalog.application.port.in.MoneyView;
-import org.shakvilla.beatzmedia.catalog.application.port.in.StudioReleaseView;
+import org.shakvilla.beatzmedia.catalog.application.port.in.StudioReleaseDetailView;
 import org.shakvilla.beatzmedia.catalog.application.port.out.CatalogRepository;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
 import org.shakvilla.beatzmedia.catalog.domain.Release;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseNotFoundException;
+import org.shakvilla.beatzmedia.catalog.domain.ReleaseTrack;
 import org.shakvilla.beatzmedia.platform.domain.UnauthorizedException;
 
 /**
@@ -30,26 +30,14 @@ public class GetReleaseService implements GetRelease {
 
   @Override
   @Transactional
-  public StudioReleaseView get(ReleaseId id, ArtistId requestingArtist) {
+  public StudioReleaseDetailView get(ReleaseId id, ArtistId requestingArtist) {
     Release release = repo.findRelease(id)
         .orElseThrow(() -> new ReleaseNotFoundException(id.value()));
     if (!release.getArtistId().equals(requestingArtist.value())) {
       throw new UnauthorizedException("Not your release");
     }
-    return toView(release);
-  }
-
-  private StudioReleaseView toView(Release r) {
-    String date = r.getCreatedAt() != null ? r.getCreatedAt().toString() : "—";
-    return new StudioReleaseView(
-        r.getId(),
-        r.getTitle(),
-        r.getType(),
-        r.getStatus(),
-        date,
-        r.getTracks().size(),
-        0L,
-        MoneyView.ofMinor(0L),
-        MoneyView.ofMinor(r.getListPriceMinor()));
+    var tracks = repo.tracksByIds(
+        release.getTracks().stream().map(ReleaseTrack::trackId).toList());
+    return ReleaseViewMapper.toDetailView(release, tracks);
   }
 }

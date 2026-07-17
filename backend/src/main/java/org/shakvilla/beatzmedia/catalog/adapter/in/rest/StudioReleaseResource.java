@@ -123,10 +123,10 @@ public class StudioReleaseResource {
     return Response.status(Response.Status.CREATED).entity(view).build();
   }
 
-  /** GET /v1/studio/releases/:id — LLFR-CATALOG-02.3. */
+  /** GET /v1/studio/releases/:id — LLFR-CATALOG-02.3. Returns the additive detail view. */
   @GET
   @Path("/{id}")
-  public StudioReleaseView get(@PathParam("id") String id) {
+  public StudioReleaseDetailView get(@PathParam("id") String id) {
     return getRelease.get(new ReleaseId(id), artistId());
   }
 
