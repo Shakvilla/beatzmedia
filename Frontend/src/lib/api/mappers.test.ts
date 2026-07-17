@@ -9,9 +9,13 @@ import {
   toStoreItem,
   toEvent,
   toTicketTier,
+  toPodcast,
+  toPodcastEpisode,
   type StoreItemWire,
   type EventWire,
   type TicketTierWire,
+  type PodcastWire,
+  type PodcastEpisodeWire,
 } from './mappers'
 
 describe('toArtist', () => {
@@ -342,5 +346,129 @@ describe('toEvent', () => {
     expect(ev.popularity).toBeUndefined()
     expect(ev.ageRestriction).toBeUndefined()
     expect(ev.ticketTiers).toEqual([])
+  })
+})
+
+describe('toPodcast', () => {
+  it('maps a show, preserving Money on seasonPassPrice', () => {
+    const wire: PodcastWire = {
+      id: 'the-233-pod',
+      title: 'The 233 Podcast',
+      publisher: 'Ama Serwaa',
+      image: 'x',
+      category: 'Culture',
+      description: 'Culture talk from Accra.',
+      episodeCount: 12,
+      popularity: 88,
+      seasonPassPrice: { amount: 2000, currency: 'GHS' },
+      supportsTips: true,
+    }
+
+    const p = toPodcast(wire)
+
+    expect(p).toEqual({
+      id: 'the-233-pod',
+      title: 'The 233 Podcast',
+      publisher: 'Ama Serwaa',
+      image: 'x',
+      category: 'Culture',
+      description: 'Culture talk from Accra.',
+      episodeCount: 12,
+      popularity: 88,
+      seasonPassPrice: { amount: 2000, currency: 'GHS' },
+      supportsTips: true,
+    })
+  })
+
+  it('defaults nullable fields to undefined', () => {
+    const wire: PodcastWire = {
+      id: 'p2',
+      title: 'Naked Truth',
+      publisher: 'KMJ',
+      image: 'y',
+      category: 'Comedy',
+      description: null,
+      episodeCount: null,
+      popularity: null,
+      seasonPassPrice: null,
+      supportsTips: null,
+    }
+
+    const p = toPodcast(wire)
+
+    expect(p.description).toBeUndefined()
+    expect(p.episodeCount).toBeUndefined()
+    expect(p.popularity).toBeUndefined()
+    expect(p.seasonPassPrice).toBeUndefined()
+    expect(p.supportsTips).toBeUndefined()
+  })
+})
+
+describe('toPodcastEpisode', () => {
+  it('maps an episode, preserving Money on price', () => {
+    const wire: PodcastEpisodeWire = {
+      id: 'ep-1',
+      podcastId: 'the-233-pod',
+      title: 'Kumasi Nights',
+      showTitle: 'The 233 Podcast',
+      image: 'x',
+      duration: 2400,
+      publishedAt: '2026-07-01T09:00:00Z',
+      description: 'A deep dive.',
+      episodeNumber: 12,
+      isPremium: true,
+      price: { amount: 500, currency: 'GHS' },
+      isOwned: false,
+      isEarlyAccess: false,
+      publicAt: '2026-07-08T09:00:00Z',
+    }
+
+    const ep = toPodcastEpisode(wire)
+
+    expect(ep).toEqual({
+      id: 'ep-1',
+      podcastId: 'the-233-pod',
+      title: 'Kumasi Nights',
+      showTitle: 'The 233 Podcast',
+      image: 'x',
+      duration: 2400,
+      publishedAt: '2026-07-01T09:00:00Z',
+      description: 'A deep dive.',
+      episodeNumber: 12,
+      isPremium: true,
+      price: { amount: 500, currency: 'GHS' },
+      isOwned: false,
+      isEarlyAccess: false,
+      publicAt: '2026-07-08T09:00:00Z',
+    })
+  })
+
+  it('defaults nullable fields to undefined', () => {
+    const wire: PodcastEpisodeWire = {
+      id: 'ep-2',
+      podcastId: 'p2',
+      title: 'Free Episode',
+      showTitle: 'Naked Truth',
+      image: 'z',
+      duration: 1800,
+      publishedAt: '2026-06-01T09:00:00Z',
+      description: null,
+      episodeNumber: null,
+      isPremium: null,
+      price: null,
+      isOwned: null,
+      isEarlyAccess: null,
+      publicAt: null,
+    }
+
+    const ep = toPodcastEpisode(wire)
+
+    expect(ep.description).toBeUndefined()
+    expect(ep.episodeNumber).toBeUndefined()
+    expect(ep.isPremium).toBeUndefined()
+    expect(ep.price).toBeUndefined()
+    expect(ep.isOwned).toBeUndefined()
+    expect(ep.isEarlyAccess).toBeUndefined()
+    expect(ep.publicAt).toBeUndefined()
   })
 })

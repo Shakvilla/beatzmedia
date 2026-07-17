@@ -16,6 +16,9 @@ import type {
   TicketTier,
   EventStatus,
   EventCategory,
+  Podcast,
+  PodcastEpisode,
+  PodcastCategory,
 } from '../../types'
 
 export interface ArtistWire {
@@ -293,5 +296,71 @@ export function toEvent(wire: EventWire): Event {
     ticketTiers: wire.ticketTiers.map(toTicketTier),
     popularity: wire.popularity ?? undefined,
     ageRestriction: wire.ageRestriction ?? undefined,
+  }
+}
+
+/** Mirrors `PodcastView` served by `GET /v1/podcasts` and `GET /v1/podcasts/:id`. */
+export interface PodcastWire {
+  id: string
+  title: string
+  publisher: string
+  image: string
+  category: PodcastCategory
+  description: string | null
+  episodeCount: number | null
+  popularity: number | null
+  seasonPassPrice: Money | null
+  supportsTips: boolean | null
+}
+
+export function toPodcast(wire: PodcastWire): Podcast {
+  return {
+    id: wire.id,
+    title: wire.title,
+    publisher: wire.publisher,
+    image: wire.image,
+    category: wire.category,
+    description: wire.description ?? undefined,
+    episodeCount: wire.episodeCount ?? undefined,
+    popularity: wire.popularity ?? undefined,
+    seasonPassPrice: wire.seasonPassPrice ?? undefined,
+    supportsTips: wire.supportsTips ?? undefined,
+  }
+}
+
+/** Mirrors `PodcastEpisodeView` served by `GET /v1/podcasts/:id/episodes`. */
+export interface PodcastEpisodeWire {
+  id: string
+  podcastId: string
+  title: string
+  showTitle: string
+  image: string
+  duration: number
+  publishedAt: string
+  description: string | null
+  episodeNumber: number | null
+  isPremium: boolean | null
+  price: Money | null
+  isOwned: boolean | null
+  isEarlyAccess: boolean | null
+  publicAt: string | null
+}
+
+export function toPodcastEpisode(wire: PodcastEpisodeWire): PodcastEpisode {
+  return {
+    id: wire.id,
+    podcastId: wire.podcastId,
+    title: wire.title,
+    showTitle: wire.showTitle,
+    image: wire.image,
+    duration: wire.duration,
+    publishedAt: wire.publishedAt,
+    description: wire.description ?? undefined,
+    episodeNumber: wire.episodeNumber ?? undefined,
+    isPremium: wire.isPremium ?? undefined,
+    price: wire.price ?? undefined,
+    isOwned: wire.isOwned ?? undefined,
+    isEarlyAccess: wire.isEarlyAccess ?? undefined,
+    publicAt: wire.publicAt ?? undefined,
   }
 }
