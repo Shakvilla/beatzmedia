@@ -9,7 +9,8 @@ import org.shakvilla.beatzmedia.catalog.domain.TrackId;
  * /v1/studio/releases/:id/tracks/:trackId}). Draft-only — throws {@link
  * org.shakvilla.beatzmedia.catalog.domain.IllegalTransitionException} (409) otherwise. Throws
  * {@link org.shakvilla.beatzmedia.catalog.domain.ReleaseNotFoundException} (404) if the release
- * doesn't exist or the trackId doesn't belong to it. Catalog ADD §4.1 / WU-CAT-5.
+ * doesn't exist, or {@link org.shakvilla.beatzmedia.catalog.domain.TrackNotFoundException} (404
+ * {@code TRACK_NOT_FOUND}) if the trackId doesn't belong to it. Catalog ADD §4.1 / WU-CAT-5.
  */
 public interface RemoveReleaseTrack {
 
