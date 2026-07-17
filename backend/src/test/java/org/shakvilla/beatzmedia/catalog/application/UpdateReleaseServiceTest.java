@@ -16,6 +16,7 @@ import org.shakvilla.beatzmedia.catalog.application.service.UpdateReleaseService
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
 import org.shakvilla.beatzmedia.catalog.domain.DuplicateTrackRefException;
 import org.shakvilla.beatzmedia.catalog.domain.IllegalTransitionException;
+import org.shakvilla.beatzmedia.catalog.domain.InvalidPriceException;
 import org.shakvilla.beatzmedia.catalog.domain.Release;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseTrack;
@@ -165,6 +166,21 @@ class UpdateReleaseServiceTest {
         List.of(new TrackRef("t1", 0, 250L), new TrackRef("t2", 0, 300L)));
 
     assertThrows(DuplicateTrackRefException.class,
+        () -> service.update(new ReleaseId("r1"), ARTIST, cmd));
+  }
+
+  /**
+   * Money-integrity regression (INV-5/INV-11): a negative per-track priceMinor in a tracks PATCH
+   * must 422, never flow into the aggregate / list-price computation.
+   */
+  @Test
+  void tracksPatch_negativePriceMinor_throwsInvalidPrice() {
+    draftWithTrack();
+
+    UpdateReleaseCommand cmd = new UpdateReleaseCommand(
+        null, null, null, null, null, List.of(new TrackRef("t1", 0, -500L)));
+
+    assertThrows(InvalidPriceException.class,
         () -> service.update(new ReleaseId("r1"), ARTIST, cmd));
   }
 }

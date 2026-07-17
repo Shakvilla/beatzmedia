@@ -205,6 +205,38 @@ class UpdateDraftIT {
   }
 
   @Test
+  void patch_negative_price_minor_returns_422_invalid_price() {
+    String token = provisionArtist();
+
+    String releaseId = given()
+        .header("Authorization", "Bearer " + token)
+        .contentType(ContentType.JSON)
+        .body("""
+            { "title": "Negative Price Test", "type": "single" }
+            """)
+        .when().post(RELEASES_URL)
+        .then().statusCode(201).extract().jsonPath().getString("id");
+
+    String trackId = given()
+        .header("Authorization", "Bearer " + token)
+        .contentType("multipart/form-data")
+        .multiPart("file", "song.wav", wavBytes(), "audio/wav")
+        .when().post(RELEASES_URL + "/" + releaseId + "/tracks")
+        .then().statusCode(201).extract().jsonPath().getString("id");
+
+    given()
+        .header("Authorization", "Bearer " + token)
+        .contentType(ContentType.JSON)
+        .body("""
+            { "tracks": [ { "trackId": "%s", "position": 0, "priceMinor": -500 } ] }
+            """.formatted(trackId))
+        .when().patch(RELEASES_URL + "/" + releaseId)
+        .then()
+        .statusCode(422)
+        .body("error.code", equalTo("INVALID_PRICE"));
+  }
+
+  @Test
   void delete_track_from_draft_removes_it_and_leaves_the_other() {
     String token = provisionArtist();
 
