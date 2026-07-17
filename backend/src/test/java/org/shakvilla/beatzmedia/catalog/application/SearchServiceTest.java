@@ -16,6 +16,8 @@ import org.shakvilla.beatzmedia.catalog.application.service.SearchService;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
 import org.shakvilla.beatzmedia.catalog.domain.MissingQueryException;
 import org.shakvilla.beatzmedia.catalog.domain.OwnershipStatus;
+import org.shakvilla.beatzmedia.catalog.domain.Playlist;
+import org.shakvilla.beatzmedia.catalog.domain.PlaylistId;
 import org.shakvilla.beatzmedia.catalog.domain.Track;
 import org.shakvilla.beatzmedia.catalog.domain.TrackId;
 import org.shakvilla.beatzmedia.catalog.fakes.FakeCatalogRepository;
@@ -68,6 +70,30 @@ class SearchServiceTest {
   @Test
   void search_null_query_throws_missing_query_exception() {
     assertThrows(MissingQueryException.class, () -> service.search(null, Optional.empty()));
+  }
+
+  @Test
+  void search_returns_playlist_track_ids_without_embedding_or_pricing_tracks() {
+    repo.addTrack(sampleTrack("t1"));
+    repo.addTrack(sampleTrack("t2"));
+    repo.addPlaylist(new Playlist(
+        new PlaylistId("vibes"), "Vibes", "Ghana heat", "BeatzClik", null,
+        "https://img.test/vibes.jpg", true, 42L, List.of("t1", "t2")));
+    queryService.setResults(new SearchResults(
+        List.of(), List.of(), List.of(),
+        List.of(new SearchHit(EntityType.PLAYLIST, "vibes", "Vibes", "BeatzClik",
+            Map.of(), 0.8, 42L)),
+        List.of(), List.of(), List.of(),
+        Optional.empty(), 1L));
+
+    SearchResultsView view = service.search("vibes", Optional.of("caller-1"));
+
+    assertEquals(1, view.playlists().size());
+    assertEquals(List.of("t1", "t2"), view.playlists().get(0).trackIds());
+    // Search carries ids only — the frontend reads trackIds and never the embedded tracks.
+    assertTrue(view.playlists().get(0).tracks().isEmpty());
+    // The point of the above: no per-track ownership/price lookups on this hot path.
+    assertEquals(0, ownershipReader.lookups());
   }
 
   @Test

@@ -10,7 +10,7 @@ import { SupportModal } from '../../features/podcasts/components/support-modal'
 import { EventListRow } from '../../features/events/components/event-list-row'
 import { Card, CardContent, CardImage, CardSubtitle, CardTitle } from '../../components/ui/card'
 import { artistQuery, artistTracksQuery, artistAlbumsQuery } from '../../lib/api/queries/catalog'
-import { events } from '../../lib/event-data'
+import { eventsListQuery } from '../../lib/api/queries/events'
 import { formatCount, formatDuration, formatPrice } from '../../lib/format'
 import { cn } from '../../utils/cn'
 import type { Track } from '../../types'
@@ -21,6 +21,7 @@ export const Route = createFileRoute('/artist/$artistId')({
       queryClient.ensureQueryData(artistQuery(artistId)),
       queryClient.ensureQueryData(artistTracksQuery(artistId)),
       queryClient.ensureQueryData(artistAlbumsQuery(artistId)),
+      queryClient.ensureQueryData(eventsListQuery()),
     ])
   },
   component: ArtistComponent,
@@ -41,6 +42,7 @@ function Artist({ artistId }: { artistId: string }) {
   const { data: artist } = useSuspenseQuery(artistQuery(artistId))
   const { data: topTracks } = useSuspenseQuery(artistTracksQuery(artistId))
   const { data: discography } = useSuspenseQuery(artistAlbumsQuery(artistId))
+  const { data: allEvents } = useSuspenseQuery(eventsListQuery())
   const { currentTrack, isPlaying, playQueue, togglePlay } = usePlayer()
   const { addItem } = useCart()
   const { isArtistFollowed, toggleFollowedArtist } = useCollection()
@@ -60,7 +62,7 @@ function Artist({ artistId }: { artistId: string }) {
     toast(`“${track.title}” added to cart`, 'success')
   }
 
-  const shows = events.filter((e) => e.artistId === artistId).sort((a, b) => a.date.localeCompare(b.date))
+  const shows = allEvents.filter((e) => e.artistId === artistId).sort((a, b) => a.date.localeCompare(b.date))
 
   const isArtistPlaying = isPlaying && topTracks.some((t) => t.id === currentTrack?.id)
   const handlePlay = () => {

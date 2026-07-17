@@ -1,11 +1,12 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
 import { Play, Pause, Share2, Clock, ShoppingCart, Globe, Lock, Check, Trash2, ListMusic } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { usePlayer } from '../features/player/player-context'
 import { useCart } from '../features/cart/cart-context'
 import { useCollection } from '../features/collection/collection-context'
 import { useToast } from '../components/ui/toast-provider'
-import { getPlaylist, getPlaylistTracks, getTracksByIds } from '../lib/mock-data'
+import { playlistQuery, resolveQuery } from '../lib/api/queries/catalog'
 import { formatDuration, formatPrice, formatCount } from '../lib/format'
 import { useAuth } from '../features/auth/auth-context'
 import type { Track } from '../types'
@@ -29,10 +30,25 @@ function PlaylistComponent() {
   const { toast } = useToast()
   const { account } = useAuth()
 
-  const mock = getPlaylist(playlistId)
+  // A user-created playlist lives on the collection context (already server-backed); anything
+  // else is an editorial playlist fetched from the catalog. We can't know which until the
+  // context has answered, so the catalog fetch is a plain useQuery gated on `!userPl` rather
+  // than a route loader + useSuspenseQuery (a user-playlist id would 404 the catalog endpoint).
   const userPl = getUserPlaylist(playlistId)
+  const catalogPl = useQuery({ ...playlistQuery(playlistId), enabled: !userPl })
 
-  if (!mock && !userPl) {
+  // Both playlist kinds carry ordered `trackIds`; resolve them to full tracks in one call.
+  const trackIds = userPl?.trackIds ?? catalogPl.data?.trackIds ?? []
+  const resolved = useQuery({ ...resolveQuery({ trackIds }), enabled: trackIds.length > 0 })
+  const byId = new Map((resolved.data?.tracks ?? []).map((t) => [t.id, t]))
+  // Preserve the playlist's own ordering — /catalog/resolve does not guarantee it.
+  const tracks = trackIds.map((id) => byId.get(id)).filter((t): t is Track => Boolean(t))
+
+  // Still fetching the catalog playlist — render nothing rather than a premature "not found".
+  if (!userPl && catalogPl.isPending) return null
+
+  const playlist = userPl ?? catalogPl.data
+  if (!playlist) {
     return (
       <div className="flex flex-col items-center justify-center text-center gap-4 py-32">
         <h1 className="text-title text-beatz-dark-bg dark:text-white">Playlist not found</h1>
@@ -42,7 +58,6 @@ function PlaylistComponent() {
   }
 
   const isOwn = Boolean(userPl)
-  const tracks = userPl ? getTracksByIds(userPl.trackIds) : getPlaylistTracks(mock!.id)
   const view = userPl
     ? {
         title: userPl.title,
@@ -54,13 +69,13 @@ function PlaylistComponent() {
         image: tracks[0]?.image,
       }
     : {
-        title: mock!.title,
-        description: mock!.description,
-        isPublic: mock!.isPublic,
-        creator: mock!.creator,
-        creatorAvatar: mock!.creatorAvatar,
-        followers: mock!.followers,
-        image: mock!.image,
+        title: catalogPl.data!.title,
+        description: catalogPl.data!.description,
+        isPublic: catalogPl.data!.isPublic,
+        creator: catalogPl.data!.creator,
+        creatorAvatar: catalogPl.data!.creatorAvatar,
+        followers: catalogPl.data!.followers,
+        image: catalogPl.data!.image,
       }
 
   const isFollowing = isPlaylistFollowed(playlistId)
