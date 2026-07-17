@@ -1,13 +1,15 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
+import { useSuspenseQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Disc3, Search, MoreHorizontal, Pencil, ExternalLink, Copy, Trash2, EyeOff } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
 import { releaseTypeLabel, studioArtist, type StudioRelease, type ReleaseStatus } from '../lib/studio-data'
 import { formatCompact } from '../lib/studio-analytics'
-import { useStudio } from '../features/studio/studio-context'
+import { studioReleasesQuery, apiDeleteRelease } from '../lib/api/queries/studio'
 
 export const Route = createFileRoute('/studio/releases')({
+  loader: ({ context: { queryClient } }) => queryClient.ensureQueryData(studioReleasesQuery()),
   component: ReleasesComponent,
 })
 
@@ -40,7 +42,8 @@ function coverGradient(title: string): string {
 function ReleasesComponent() {
   const { toast } = useToast()
   const navigate = useNavigate()
-  const { releases, removeRelease } = useStudio()
+  const queryClient = useQueryClient()
+  const { data: releases } = useSuspenseQuery(studioReleasesQuery())
   const [filter, setFilter] = useState<'all' | ReleaseStatus>('all')
   const [query, setQuery] = useState('')
 
@@ -57,7 +60,18 @@ function ReleasesComponent() {
   const q = query.trim().toLowerCase()
   const filtered = releases.filter((r) => (filter === 'all' || r.status === filter) && (!q || r.title.toLowerCase().includes(q)))
 
-  const remove = (id: string) => { removeRelease(id); toast('Release deleted', 'success') }
+  const remove = async (id: string) => {
+    const key = studioReleasesQuery().queryKey
+    const previous = queryClient.getQueryData(key)
+    queryClient.setQueryData(key, (rows: typeof releases | undefined) => rows?.filter((r) => r.id !== id))
+    try {
+      await apiDeleteRelease(id)
+      toast('Release deleted', 'success')
+    } catch {
+      queryClient.setQueryData(key, previous)
+      toast('Only drafts and in-review releases can be deleted.', 'error')
+    }
+  }
 
   if (releases.length === 0) return <EmptyState />
 
