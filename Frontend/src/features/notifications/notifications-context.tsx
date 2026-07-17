@@ -7,20 +7,9 @@
  */
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import type { AppNotification, NotificationType } from '../../types'
 
-export type NotificationType = 'sale' | 'tip' | 'follower' | 'payout' | 'release' | 'system'
-
-export interface AppNotification {
-  id: string
-  type: NotificationType
-  title: string
-  body: string
-  /** Relative time label, e.g. "2h ago". */
-  time: string
-  read: boolean
-  /** Optional in-app destination. */
-  to?: string
-}
+export type { AppNotification, NotificationType }
 
 const PERSIST_KEY = 'beatzclik-notifications'
 
