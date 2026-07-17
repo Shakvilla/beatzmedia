@@ -156,6 +156,67 @@ class FinalizeReleaseIT {
         .body("error.code", equalTo("TRACK_COUNT_INVALID"));
   }
 
+  /**
+   * IDOR regression (security review, WU-CAT-5 fix 2): reusing an Idempotency-Key already bound to
+   * ANOTHER artist's release must 409, not silently return that other artist's release detail
+   * view.
+   */
+  @Test
+  void submit_idempotency_key_reused_across_different_artists_releases_returns_409_no_data_leak() {
+    String tokenA = provisionArtist();
+    String tokenB = provisionArtist();
+
+    String releaseA = given()
+        .header("Authorization", "Bearer " + tokenA)
+        .contentType(ContentType.JSON)
+        .body("""
+            { "title": "Artist A Secret Release", "type": "single" }
+            """)
+        .when().post(RELEASES_URL)
+        .then().statusCode(201).extract().jsonPath().getString("id");
+
+    given()
+        .header("Authorization", "Bearer " + tokenA)
+        .contentType("multipart/form-data")
+        .multiPart("file", "song.wav", wavBytes(), "audio/wav")
+        .when().post(RELEASES_URL + "/" + releaseA + "/tracks")
+        .then().statusCode(201);
+
+    String sharedKey = "cross-tenant-key-" + System.nanoTime();
+
+    given()
+        .header("Authorization", "Bearer " + tokenA)
+        .header("Idempotency-Key", sharedKey)
+        .when().post(RELEASES_URL + "/" + releaseA + "/submit")
+        .then().statusCode(200).body("title", equalTo("Artist A Secret Release"));
+
+    String releaseB = given()
+        .header("Authorization", "Bearer " + tokenB)
+        .contentType(ContentType.JSON)
+        .body("""
+            { "title": "Artist B Release", "type": "single" }
+            """)
+        .when().post(RELEASES_URL)
+        .then().statusCode(201).extract().jsonPath().getString("id");
+
+    given()
+        .header("Authorization", "Bearer " + tokenB)
+        .contentType("multipart/form-data")
+        .multiPart("file", "song.wav", wavBytes(), "audio/wav")
+        .when().post(RELEASES_URL + "/" + releaseB + "/tracks")
+        .then().statusCode(201);
+
+    // Artist B replays Artist A's key against B's own release: must 409, never leak A's view.
+    given()
+        .header("Authorization", "Bearer " + tokenB)
+        .header("Idempotency-Key", sharedKey)
+        .when().post(RELEASES_URL + "/" + releaseB + "/submit")
+        .then()
+        .statusCode(409)
+        .body("error.code", equalTo("IDEMPOTENCY_KEY_CONFLICT"))
+        .body("title", equalTo(null)); // no release body leaked in the error envelope
+  }
+
   @Test
   void submit_missing_idempotency_key_returns_400() {
     String token = provisionArtist();

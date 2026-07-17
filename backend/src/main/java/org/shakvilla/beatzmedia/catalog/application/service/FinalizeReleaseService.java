@@ -14,6 +14,7 @@ import org.shakvilla.beatzmedia.catalog.application.port.in.FinalizeRelease;
 import org.shakvilla.beatzmedia.catalog.application.port.in.StudioReleaseDetailView;
 import org.shakvilla.beatzmedia.catalog.application.port.out.CatalogRepository;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
+import org.shakvilla.beatzmedia.catalog.domain.IdempotencyConflictException;
 import org.shakvilla.beatzmedia.catalog.domain.Release;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseNotFoundException;
@@ -59,10 +60,19 @@ public class FinalizeReleaseService implements FinalizeRelease {
   @Override
   @Transactional
   public StudioReleaseDetailView finalize(ReleaseId id, ArtistId artistId, String idempotencyKey) {
-    // Idempotent replay: same key -> same result, no re-transition, no re-audit.
+    // Idempotent replay: same key -> same result, no re-transition, no re-audit. Scoped to the
+    // SAME release + SAME owning artist as this call — findReleaseByIdempotencyKey is a global
+    // lookup, so an unscoped return here would let a reused key (accidentally or maliciously bound
+    // to a different release, possibly another artist's) leak that release's detail view (IDOR).
     Optional<Release> seen = repo.findReleaseByIdempotencyKey(idempotencyKey);
     if (seen.isPresent()) {
-      return toDetailView(seen.get());
+      Release seenRelease = seen.get();
+      if (seenRelease.getId().equals(id.value())
+          && seenRelease.getArtistId().equals(artistId.value())) {
+        return toDetailView(seenRelease);
+      }
+      throw new IdempotencyConflictException(
+          "Idempotency-Key already used for a different release");
     }
 
     Release release = repo.findRelease(id)

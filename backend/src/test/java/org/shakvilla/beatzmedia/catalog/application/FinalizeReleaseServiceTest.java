@@ -12,6 +12,7 @@ import org.shakvilla.beatzmedia.audit.fakes.FakeAuditWriter;
 import org.shakvilla.beatzmedia.catalog.application.port.in.StudioReleaseDetailView;
 import org.shakvilla.beatzmedia.catalog.application.service.FinalizeReleaseService;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
+import org.shakvilla.beatzmedia.catalog.domain.IdempotencyConflictException;
 import org.shakvilla.beatzmedia.catalog.domain.IllegalTransitionException;
 import org.shakvilla.beatzmedia.catalog.domain.Release;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
@@ -144,5 +145,46 @@ class FinalizeReleaseServiceTest {
     assertEquals(first, second);
     // Only one SUBMIT_RELEASE audit entry — the replay never re-executes the mutation.
     assertEquals(1, auditWriter.all().size());
+  }
+
+  /**
+   * IDOR regression: an Idempotency-Key already bound to a DIFFERENT release (here, another
+   * artist's) must never leak that release's detail view — it must 409, not silently replay.
+   */
+  @Test
+  void finalize_replayKeyBoundToDifferentArtistsRelease_throwsIdempotencyConflict() {
+    // artist-1 finalizes r1 under "shared-key".
+    draft(ReleaseType.single, 1);
+    service.finalize(new ReleaseId("r1"), ARTIST, "shared-key");
+
+    // A different artist's release, r2, reuses the same key value against its own id.
+    ArtistId otherArtist = new ArtistId("artist-2");
+    Release r2 = Release.createDraft(
+        "r2", otherArtist.value(), "Other Artist Draft", ReleaseType.single,
+        Visibility.PUBLIC, null, null, null, NOW);
+    r2.addTrack(new ReleaseTrack("t-other", 0, 250L), NOW);
+    repo.addRelease(r2);
+
+    assertThrows(IdempotencyConflictException.class,
+        () -> service.finalize(new ReleaseId("r2"), otherArtist, "shared-key"));
+  }
+
+  /**
+   * IDOR regression, same-owner variant: reusing a key already bound to one of the SAME artist's
+   * OTHER releases must also 409 rather than returning the wrong release's view.
+   */
+  @Test
+  void finalize_replayKeyBoundToDifferentReleaseSameArtist_throwsIdempotencyConflict() {
+    draft(ReleaseType.single, 1);
+    service.finalize(new ReleaseId("r1"), ARTIST, "shared-key");
+
+    Release r2 = Release.createDraft(
+        "r2", ARTIST.value(), "Second Draft", ReleaseType.single,
+        Visibility.PUBLIC, null, null, null, NOW);
+    r2.addTrack(new ReleaseTrack("t-second", 0, 250L), NOW);
+    repo.addRelease(r2);
+
+    assertThrows(IdempotencyConflictException.class,
+        () -> service.finalize(new ReleaseId("r2"), ARTIST, "shared-key"));
   }
 }
