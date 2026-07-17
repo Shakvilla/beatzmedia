@@ -30,7 +30,7 @@ import type {
   SourceStat,
   Superfan,
 } from '../studio-analytics'
-import type { StudioProfile, StudioSettings } from '../../studio-data'
+import type { StudioProfile, StudioSettings } from '../studio-data'
 
 export interface ArtistWire {
   id: string
