@@ -1,13 +1,24 @@
 import { createFileRoute, useNavigate, Link } from '@tanstack/react-router'
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
+import { useSuspenseQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Disc3, ExternalLink, Trash2, Eye, EyeOff } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
-import { useStudio } from '../features/studio/studio-context'
+import { studioReleaseQuery, studioReleasesQuery, apiRenameRelease, apiDeleteRelease } from '../lib/api/queries/studio'
 import { PRICE_OPTIONS, releaseTypeLabel, studioArtist, type ReleaseStatus, type StudioRelease } from '../lib/studio-data'
 
 export const Route = createFileRoute('/studio/release/$releaseId')({
+  loader: ({ context: { queryClient }, params: { releaseId } }) =>
+    queryClient.ensureQueryData(studioReleaseQuery(releaseId)),
   component: ReleaseManage,
+  // Inline (not a named component) so this file doesn't trip
+  // react-refresh/only-export-components — matches the sibling detail routes.
+  errorComponent: () => (
+    <div className="flex flex-col items-center justify-center text-center gap-4 py-24">
+      <p className="text-sm text-gray-500 dark:text-gray-300">This release no longer exists.</p>
+      <Link to="/studio/releases" className="h-10 px-5 rounded-full bg-beatz-green text-black font-bold text-sm flex items-center">Back to releases</Link>
+    </div>
+  ),
 })
 
 const LABEL = 'text-[11px] font-bold uppercase tracking-[0.15em] text-gray-500 dark:text-gray-400'
@@ -32,28 +43,50 @@ function ReleaseManage() {
   const { releaseId } = Route.useParams()
   const navigate = useNavigate()
   const { toast } = useToast()
-  const { releases, updateRelease, removeRelease } = useStudio()
-  const release = useMemo(() => releases.find((r) => r.id === releaseId), [releases, releaseId])
-
-  const [draft, setDraft] = useState<StudioRelease | null>(release ?? null)
-
-  if (!release || !draft) {
-    return (
-      <div className="flex flex-col items-center justify-center text-center gap-4 py-24">
-        <p className="text-sm text-gray-500 dark:text-gray-300">This release no longer exists.</p>
-        <Link to="/studio/releases" className="h-10 px-5 rounded-full bg-beatz-green text-black font-bold text-sm flex items-center">Back to releases</Link>
-      </div>
-    )
-  }
+  const queryClient = useQueryClient()
+  const { data: release } = useSuspenseQuery(studioReleaseQuery(releaseId))
+  const [draft, setDraft] = useState<StudioRelease>(release)
 
   const dirty = JSON.stringify(draft) !== JSON.stringify(release)
   const live = release.status === 'live'
-  const status = STATUS_META[release.status]
-  const set = <K extends keyof StudioRelease>(k: K, v: StudioRelease[K]) => setDraft((d) => (d ? { ...d, [k]: v } : d))
+  const status = STATUS_META[release.status] ?? { label: release.status, cls: 'bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-300' }
+  const set = <K extends keyof StudioRelease>(k: K, v: StudioRelease[K]) => setDraft((d) => ({ ...d, [k]: v }))
 
-  const save = () => { updateRelease(release.id, draft); toast('Release updated', 'success') }
-  const setStatus = (s: ReleaseStatus, msg: string) => { updateRelease(release.id, { status: s }); setDraft((d) => (d ? { ...d, status: s } : d)); toast(msg, 'success') }
-  const del = () => { removeRelease(release.id); toast('Release deleted', 'success'); navigate({ to: '/studio/releases' }) }
+  // NOTE: PATCH /v1/studio/releases/:id updates the TITLE only. Price, release
+  // date, and publish/unpublish (status) have no artist endpoint — publish is
+  // admin-gated (submit → in_review → admin approves → live), and per-track
+  // price lives in the create wizard (Slice 3b). Those controls edit the local
+  // draft so the UI behaves, but only the title is persisted.
+  const save = async () => {
+    const previous = release
+    try {
+      const saved = await apiRenameRelease(release.id, draft.title)
+      queryClient.setQueryData(studioReleaseQuery(release.id).queryKey, { ...saved, price: draft.price, date: draft.date, status: draft.status })
+      queryClient.invalidateQueries({ queryKey: studioReleasesQuery().queryKey })
+      toast('Release updated', 'success')
+    } catch {
+      setDraft(previous)
+      toast('Could not update the release. Please try again.', 'error')
+    }
+  }
+  const setStatus = (s: ReleaseStatus, msg: string) => {
+    // Status has no artist endpoint (publish is admin-gated) — flip it locally in
+    // both the draft and the query cache so the badge/button/availability text
+    // update immediately. Session-local only; not persisted to the backend.
+    setDraft((d) => ({ ...d, status: s }))
+    queryClient.setQueryData(studioReleaseQuery(release.id).queryKey, (r: StudioRelease | undefined) => (r ? { ...r, status: s } : r))
+    toast(msg, 'success')
+  }
+  const del = async () => {
+    try {
+      await apiDeleteRelease(release.id)
+      queryClient.invalidateQueries({ queryKey: studioReleasesQuery().queryKey })
+      toast('Release deleted', 'success')
+      navigate({ to: '/studio/releases' })
+    } catch {
+      toast('Only drafts and in-review releases can be deleted.', 'error')
+    }
+  }
 
   return (
     <div className="flex flex-col gap-8">

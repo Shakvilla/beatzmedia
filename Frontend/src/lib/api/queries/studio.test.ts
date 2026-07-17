@@ -3,6 +3,7 @@ import * as client from '../client'
 import {
   studioAnalyticsQuery, studioAudienceQuery,
   studioProfileQuery, studioSettingsQuery, apiSaveStudioProfile, apiSaveStudioSettings,
+  studioReleasesQuery, studioReleaseQuery, apiRenameRelease, apiDeleteRelease,
 } from './studio'
 
 vi.mock('../client')
@@ -175,5 +176,38 @@ describe('apiSaveStudioSettings', () => {
     const body = vi.mocked(client.apiFetch).mock.calls[0][1]!.body as Record<string, unknown>
     expect(Object.keys(body).sort()).toEqual(['defaults', 'notifications', 'payouts', 'privacy', 'team'])
     expect(body.notifications).toMatchObject({ sales: true })
+  })
+})
+
+const releaseWire = {
+  id: 'r1', title: 'Iron Boy', type: 'album', status: 'in_review', date: 'Jul 14, 2026',
+  trackCount: 14, streams: 0, revenue: { amount: 0, currency: 'GHS' }, price: { amount: 2.5, currency: 'GHS' },
+}
+
+describe('studioReleasesQuery', () => {
+  it('requests one large page and unwraps + maps money to numbers', async () => {
+    vi.mocked(client.apiFetch).mockResolvedValue({ items: [releaseWire], page: 0, size: 100, total: 1 })
+    const rows = await studioReleasesQuery().queryFn!({} as never)
+    expect(client.apiFetch).toHaveBeenCalledWith('/studio/releases?size=100')
+    expect(rows[0]).toEqual({ id: 'r1', title: 'Iron Boy', type: 'album', status: 'in_review', date: 'Jul 14, 2026', trackCount: 14, streams: 0, revenue: 0, price: 2.5 })
+  })
+})
+
+describe('studioReleaseQuery / mutations', () => {
+  it('gets one release by id', async () => {
+    vi.mocked(client.apiFetch).mockResolvedValue(releaseWire)
+    const r = await studioReleaseQuery('r1').queryFn!({} as never)
+    expect(client.apiFetch).toHaveBeenCalledWith('/studio/releases/r1')
+    expect(r.price).toBe(2.5)
+  })
+  it('renames via PATCH title-only', async () => {
+    vi.mocked(client.apiFetch).mockResolvedValue({ ...releaseWire, title: 'New' })
+    await apiRenameRelease('r1', 'New')
+    expect(client.apiFetch).toHaveBeenCalledWith('/studio/releases/r1', { method: 'PATCH', body: { title: 'New' } })
+  })
+  it('deletes via DELETE', async () => {
+    vi.mocked(client.apiFetch).mockResolvedValue(undefined)
+    await apiDeleteRelease('r1')
+    expect(client.apiFetch).toHaveBeenCalledWith('/studio/releases/r1', { method: 'DELETE' })
   })
 })
