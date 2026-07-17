@@ -1,12 +1,16 @@
 import { createFileRoute, getRouteApi } from '@tanstack/react-router'
+import { useSuspenseQuery } from '@tanstack/react-query'
 import { CatalogGrid } from '../features/store/components/catalog-grid'
 import { StoreTabHeading } from '../features/store/components/store-tab-heading'
 import { useStoreCart } from '../features/store/use-store-cart'
-import { beatItems, filterStoreItems } from '../lib/store-data'
+import { filterByQuery } from '../features/store/filter-by-query'
+import { storeListQuery } from '../lib/api/queries/store'
 import type { LicenseTier } from '../types'
 import { cn } from '../utils/cn'
 
 export const Route = createFileRoute('/store/beats')({
+  loader: ({ context: { queryClient } }) =>
+    queryClient.ensureQueryData(storeListQuery({ type: 'BEAT_LICENSE' })),
   component: BeatsTab,
 })
 
@@ -23,7 +27,12 @@ function BeatsTab() {
   const { q, tier, sort } = storeApi.useSearch()
   const navigate = storeApi.useNavigate()
   const { addToCart } = useStoreCart()
-  const items = filterStoreItems(beatItems, { q, tier, sort })
+  const { data: allItems } = useSuspenseQuery(storeListQuery({ type: 'BEAT_LICENSE', sort }))
+  // `tier` (license tier) and `q` (free text) have no backend query params —
+  // filtered client-side over the already-fetched page.
+  const items = filterByQuery(allItems, q).filter(
+    (item) => !tier || item.licenseOptions?.some((l) => l.tier === tier),
+  )
 
   return (
     <div className="flex flex-col gap-8">

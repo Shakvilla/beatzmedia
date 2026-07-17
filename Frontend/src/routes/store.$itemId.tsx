@@ -1,7 +1,8 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useState } from 'react'
+import { useSuspenseQuery } from '@tanstack/react-query'
 import { ArrowLeft, ShoppingCart, Check, Info, Clock, ShieldCheck } from 'lucide-react'
-import { getStoreItem } from '../lib/store-data'
+import { storeItemQuery } from '../lib/api/queries/store'
 import { formatPrice } from '../lib/format'
 import { useStoreCart } from '../features/store/use-store-cart'
 import { LicenseTierSelector } from '../features/store/components/license-tier-selector'
@@ -9,7 +10,10 @@ import { MerchVariantSelector } from '../features/store/components/merch-variant
 import type { LicenseTier, Money, StoreItem } from '../types'
 
 export const Route = createFileRoute('/store/$itemId')({
+  loader: ({ context: { queryClient }, params: { itemId } }) =>
+    queryClient.ensureQueryData(storeItemQuery(itemId)),
   component: ProductDetailPage,
+  errorComponent: () => <NotFound />,
 })
 
 function NotFound() {
@@ -26,8 +30,7 @@ function NotFound() {
 
 function ProductDetailPage() {
   const { itemId } = Route.useParams()
-  const item = getStoreItem(itemId)
-  if (!item) return <NotFound />
+  const { data: item } = useSuspenseQuery(storeItemQuery(itemId))
   return <ProductDetail item={item} />
 }
 
