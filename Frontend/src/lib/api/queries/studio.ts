@@ -1,11 +1,13 @@
 import { queryOptions } from '@tanstack/react-query'
 import type { AnalyticsRange, AudienceRange } from '../../studio-analytics'
-import type { StudioProfile, StudioSettings } from '../../studio-data'
+import type { StudioProfile, StudioSettings, StudioRelease } from '../../studio-data'
 import { apiFetch } from '../client'
+import { unwrapPage, type PageWire } from '../pagination'
 import {
   toAnalytics, toAudience, type AnalyticsWire, type AudienceWire,
   toStudioProfile, type StudioProfileWire, toSaveProfileBody, type SaveStudioProfileBody,
   toStudioSettings, type StudioSettingsWire, toSaveSettingsBody, type SaveStudioSettingsBody,
+  toStudioRelease, type StudioReleaseWire,
 } from '../mappers'
 
 /**
@@ -54,4 +56,32 @@ export function apiSaveStudioProfile(profile: StudioProfile): Promise<StudioProf
 export function apiSaveStudioSettings(settings: StudioSettings): Promise<StudioSettings> {
   const body: SaveStudioSettingsBody = toSaveSettingsBody(settings)
   return apiFetch<StudioSettingsWire>('/studio/settings', { method: 'PUT', body }).then(toStudioSettings)
+}
+
+/** `GET /v1/studio/releases` — the creator's releases (one large page; summary is client-side). */
+export function studioReleasesQuery() {
+  return queryOptions({
+    queryKey: ['studio', 'releases'],
+    queryFn: async () =>
+      unwrapPage(await apiFetch<PageWire<StudioReleaseWire>>('/studio/releases?size=100'), toStudioRelease),
+  })
+}
+
+/** `GET /v1/studio/releases/:id` — one release (404s if not the caller's). */
+export function studioReleaseQuery(id: string) {
+  return queryOptions({
+    queryKey: ['studio', 'release', id],
+    queryFn: async () => toStudioRelease(await apiFetch<StudioReleaseWire>(`/studio/releases/${id}`)),
+  })
+}
+
+/** `PATCH /v1/studio/releases/:id` — rename (title is the only updatable field). */
+export function apiRenameRelease(id: string, title: string): Promise<StudioRelease> {
+  return apiFetch<StudioReleaseWire>(`/studio/releases/${id}`, { method: 'PATCH', body: { title } })
+    .then(toStudioRelease)
+}
+
+/** `DELETE /v1/studio/releases/:id` — draft/in_review only; throws ApiError for live. */
+export function apiDeleteRelease(id: string): Promise<void> {
+  return apiFetch<void>(`/studio/releases/${id}`, { method: 'DELETE' })
 }

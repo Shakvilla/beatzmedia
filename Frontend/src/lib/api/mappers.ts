@@ -32,7 +32,7 @@ import type {
   SourceStat,
   Superfan,
 } from '../studio-analytics'
-import type { StudioProfile, StudioSettings } from '../studio-data'
+import type { StudioProfile, StudioSettings, StudioRelease } from '../studio-data'
 
 export interface ArtistWire {
   id: string
@@ -553,6 +553,35 @@ export function toSaveSettingsBody(s: StudioSettings): SaveStudioSettingsBody {
     payouts: s.payouts,
     privacy: s.privacy,
     team: s.team,
+  }
+}
+
+// ── Studio releases ───────────────────────────────────────────────
+// StudioReleaseView matches StudioRelease except revenue/price are
+// MoneyView { amount(cedis), currency }; the frontend type wants plain
+// cedis numbers (same precedent as settings' trackPrice), so unwrap .amount.
+export interface StudioReleaseWire {
+  id: string
+  title: string
+  type: StudioRelease['type']
+  status: StudioRelease['status']
+  date: string
+  trackCount: number
+  streams: number
+  revenue: { amount: number; currency: string }
+  price: { amount: number; currency: string }
+}
+export function toStudioRelease(w: StudioReleaseWire): StudioRelease {
+  return {
+    id: w.id,
+    title: w.title,
+    type: w.type,
+    status: w.status,
+    date: w.date,
+    trackCount: w.trackCount,
+    streams: w.streams,
+    revenue: w.revenue?.amount ?? 0,
+    price: w.price?.amount ?? 0,
   }
 }
 

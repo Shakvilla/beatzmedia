@@ -1,10 +1,11 @@
 /**
  * Shared Artist Studio store.
  *
- * Owns the persistent, mutable studio state — releases, episodes and the
- * payout balance/ledger/methods — so edits survive navigation and refresh.
+ * Owns the persistent, mutable studio state — episodes and the payout
+ * balance/ledger/methods — so edits survive navigation and refresh.
  * (Profile and settings are query-backed via `studioProfileQuery()` /
- * `studioSettingsQuery()` and no longer live here.)
+ * `studioSettingsQuery()`, and releases via `studioReleasesQuery()` /
+ * `studioReleaseQuery()`, and no longer live here.)
  *
  * State is seeded from the mock `getX()` helpers, hydrated from localStorage on
  * load, and persisted on every change. When the real API lands, swap the seed
@@ -13,15 +14,14 @@
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import {
-  getReleases, getStudioEpisodes,
-  type StudioRelease, type StudioEpisode,
+  getStudioEpisodes,
+  type StudioEpisode,
 } from '../../lib/studio-data'
 import { getPayouts, type PayoutTxn, type PayoutMethod } from '../../lib/studio-payouts'
 
 const PERSIST_KEY = 'beatzclik-studio'
 
 interface StudioState {
-  releases: StudioRelease[]
   episodes: StudioEpisode[]
   balance: number
   transactions: PayoutTxn[]
@@ -29,9 +29,6 @@ interface StudioState {
 }
 
 interface StudioContextValue extends StudioState {
-  addRelease: (r: StudioRelease) => void
-  updateRelease: (id: string, patch: Partial<StudioRelease>) => void
-  removeRelease: (id: string) => void
   addEpisode: (e: StudioEpisode) => void
   removeEpisode: (id: string) => void
   withdraw: (amount: number, method: PayoutMethod) => void
@@ -48,7 +45,6 @@ const todayLabel = () => new Date().toLocaleDateString('en-US', { month: 'short'
 function seed(): StudioState {
   const p = getPayouts()
   return {
-    releases: getReleases(),
     episodes: getStudioEpisodes(),
     balance: p.available,
     transactions: p.transactions,
@@ -63,7 +59,6 @@ function hydrate(): StudioState {
     if (!raw) return base
     const saved = JSON.parse(raw) as Partial<StudioState>
     return {
-      releases: saved.releases ?? base.releases,
       episodes: saved.episodes ?? base.episodes,
       balance: saved.balance ?? base.balance,
       transactions: saved.transactions ?? base.transactions,
@@ -85,9 +80,6 @@ export function StudioProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<StudioContextValue>(() => ({
     ...state,
-    addRelease: (r) => setState((s) => ({ ...s, releases: [r, ...s.releases] })),
-    updateRelease: (id, patch) => setState((s) => ({ ...s, releases: s.releases.map((r) => (r.id === id ? { ...r, ...patch } : r)) })),
-    removeRelease: (id) => setState((s) => ({ ...s, releases: s.releases.filter((r) => r.id !== id) })),
     addEpisode: (e) => setState((s) => ({ ...s, episodes: [e, ...s.episodes] })),
     removeEpisode: (id) => setState((s) => ({ ...s, episodes: s.episodes.filter((e) => e.id !== id) })),
     withdraw: (amount, method) => setState((s) => ({

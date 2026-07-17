@@ -1,20 +1,12 @@
 import { createFileRoute, Outlet, useLocation, useNavigate } from '@tanstack/react-router'
-import { useSuspenseQuery } from '@tanstack/react-query'
+import { useSuspenseQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { ArrowRight, ArrowLeft, Check } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
 import { ReleaseDraftProvider, useReleaseDraft, type ReleaseDraft } from '../features/studio/release-draft-context'
 import { RELEASE_WIZARD_STEPS, releaseTypeLabel, isMultiTrack, type ReleaseStepSlug } from '../lib/studio-data'
-import { useStudio } from '../features/studio/studio-context'
-import { studioSettingsQuery } from '../lib/api/queries/studio'
-
-/** Format an ISO date (yyyy-mm-dd) as 'Mon DD, YYYY', or a fallback label. */
-function releaseDateLabel(iso: string): string {
-  if (!iso) return 'TBD'
-  const d = new Date(iso)
-  return Number.isNaN(d.getTime()) ? 'TBD' : d.toLocaleDateString('en-US', { month: 'short', day: 'numeric', year: 'numeric' })
-}
+import { studioReleasesQuery, studioSettingsQuery } from '../lib/api/queries/studio'
 
 /** Step title shown in the wizard header — the Tracks step adapts to release type. */
 function wizardTitle(slug: ReleaseStepSlug, draft: ReleaseDraft): string {
@@ -53,7 +45,7 @@ function WizardChrome() {
   const navigate = useNavigate()
   const { toast } = useToast()
   const { draft, reset } = useReleaseDraft()
-  const { addRelease } = useStudio()
+  const queryClient = useQueryClient()
 
   const slug = (location.pathname.split('/').pop() ?? 'details') as ReleaseStepSlug
   const stepIndex = Math.max(0, RELEASE_WIZARD_STEPS.findIndex((s) => s.slug === slug))
@@ -98,18 +90,9 @@ function WizardChrome() {
       if (!draft.agreementAccepted) { toast('Accept the distribution agreement to submit', 'error'); return }
     }
     if (isLast) {
-      addRelease({
-        id: `rel-${Date.now()}`,
-        title: draft.title.trim() || 'Untitled release',
-        type: draft.releaseType,
-        status: 'in_review',
-        date: releaseDateLabel(draft.releaseDate),
-        trackCount: draft.tracks.length,
-        streams: 0,
-        revenue: 0,
-        price: draft.price,
-      })
-      toast('Release submitted for review 🎉', 'success')
+      // TODO(slice-3b): wire real POST /v1/studio/releases submit + multipart track upload here.
+      queryClient.invalidateQueries({ queryKey: studioReleasesQuery().queryKey })
+      toast('Release publishing is coming soon.', 'info')
       reset()
       navigate({ to: '/studio/releases' })
       return
