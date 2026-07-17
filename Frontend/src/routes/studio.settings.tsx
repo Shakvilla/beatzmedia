@@ -1,5 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useMemo, useRef, useState } from 'react'
+import { useSuspenseQuery, useQueryClient } from '@tanstack/react-query'
 import {
   User, Lock, Bell, Tag, Wallet, Eye, Link2, BadgeCheck, Users, CreditCard, AlertTriangle,
   Search, Trash2, Plus, Check, Monitor, LogOut, Palette, Sun, Moon, type LucideIcon,
@@ -13,9 +14,10 @@ import {
   STUDIO_LANGUAGES, PRICE_OPTIONS,
   type StudioSettings, type TeamMember,
 } from '../lib/studio-data'
-import { useStudio } from '../features/studio/studio-context'
+import { studioSettingsQuery, apiSaveStudioSettings } from '../lib/api/queries/studio'
 
 export const Route = createFileRoute('/studio/settings')({
+  loader: ({ context: { queryClient } }) => queryClient.ensureQueryData(studioSettingsQuery()),
   component: SettingsComponent,
 })
 
@@ -101,7 +103,8 @@ function useScrollSpy(ids: string[], rootRef: React.RefObject<HTMLElement | null
 function SettingsComponent() {
   const { toast } = useToast()
   const { theme, setTheme } = useTheme()
-  const { settings: storeSettings, setSettings } = useStudio()
+  const queryClient = useQueryClient()
+  const { data: storeSettings } = useSuspenseQuery(studioSettingsQuery())
   const [s, setS] = useState<StudioSettings>(storeSettings)
   const [query, setQuery] = useState('')
   const [inviteEmail, setInviteEmail] = useState('')
@@ -135,6 +138,29 @@ function SettingsComponent() {
   const signOutSession = (id: string) => { set('sessions', s.sessions.filter((x) => x.id !== id)); toast('Signed out of device', 'success') }
   const toggleApp = (id: string) => set('connectedApps', s.connectedApps.map((a) => a.id === id ? { ...a, connected: !a.connected } : a))
 
+  // NOTE: PUT /v1/studio/settings persists only Category-A settings
+  // (notifications, sales defaults, payouts, privacy, team). Category-B
+  // controls below — account email/phone/country/language, 2FA, active
+  // sessions, connected apps, verification, billing — have no persistence
+  // endpoint yet; their edits are session-local and revert on refetch.
+  // TODO(studio-slice-later): wire 2FA/sessions to identity, connected
+  // apps to integrations, billing to subscription when those land.
+  const save = async () => {
+    const key = studioSettingsQuery().queryKey
+    const previous = queryClient.getQueryData(key)
+    queryClient.setQueryData(key, s)
+    try {
+      const saved = await apiSaveStudioSettings(s)
+      // Server echoes the full shape; merge so Category-B local edits in `s`
+      // are not clobbered mid-session while Category-A becomes canonical.
+      queryClient.setQueryData(key, { ...s, ...saved })
+      toast('Settings saved', 'success')
+    } catch {
+      queryClient.setQueryData(key, previous)
+      toast('Could not save your settings. Please try again.', 'error')
+    }
+  }
+
   return (
     <div ref={rootRef} className="flex flex-col gap-6">
       {/* Sticky save bar */}
@@ -150,7 +176,7 @@ function SettingsComponent() {
               className="w-full h-10 pl-9 pr-3 rounded-full bg-gray-100 dark:bg-white/10 text-sm text-beatz-dark-bg dark:text-white placeholder:text-gray-400 focus:outline-none" />
           </div>
           {dirty && <button onClick={() => setS(storeSettings)} className="h-10 px-4 rounded-full text-gray-500 dark:text-gray-300 font-bold text-sm hover:text-beatz-dark-bg dark:hover:text-white transition-colors">Discard</button>}
-          <button onClick={() => { setSettings(s); toast('Settings saved', 'success') }} disabled={!dirty}
+          <button onClick={save} disabled={!dirty}
             className="h-10 px-5 rounded-full bg-beatz-green text-black font-bold text-sm hover:scale-105 transition-transform shadow-lg shadow-beatz-green/20 disabled:opacity-40 disabled:hover:scale-100">
             Save
           </button>
