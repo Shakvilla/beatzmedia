@@ -1,5 +1,18 @@
 import { describe, it, expect } from 'vitest'
-import { toArtist, toTrack, toAlbum, toAlbumTracks, toBrowseCategory, toLyricLines, toStoreItem, type StoreItemWire } from './mappers'
+import {
+  toArtist,
+  toTrack,
+  toAlbum,
+  toAlbumTracks,
+  toBrowseCategory,
+  toLyricLines,
+  toStoreItem,
+  toEvent,
+  toTicketTier,
+  type StoreItemWire,
+  type EventWire,
+  type TicketTierWire,
+} from './mappers'
 
 describe('toArtist', () => {
   it('maps a full wire artist, converting nulls to undefined', () => {
@@ -214,5 +227,120 @@ describe('toStoreItem', () => {
         terms: 'Unlimited streams',
       },
     ])
+  })
+})
+
+describe('toTicketTier', () => {
+  it('maps a tier, preserving Money and defaulting nullable fields', () => {
+    const wire: TicketTierWire = {
+      name: 'Regular',
+      price: { amount: 150, currency: 'GHS' },
+      perks: ['General standing'],
+      soldOut: false,
+    }
+
+    const tier = toTicketTier(wire)
+
+    expect(tier).toEqual({
+      name: 'Regular',
+      price: { amount: 150, currency: 'GHS' },
+      perks: ['General standing'],
+      soldOut: false,
+    })
+  })
+
+  it('defaults nullable perks/soldOut to undefined', () => {
+    const wire: TicketTierWire = {
+      name: 'VIP',
+      price: { amount: 500, currency: 'GHS' },
+      perks: null,
+      soldOut: null,
+    }
+
+    const tier = toTicketTier(wire)
+
+    expect(tier.perks).toBeUndefined()
+    expect(tier.soldOut).toBeUndefined()
+  })
+})
+
+describe('toEvent', () => {
+  it('maps an event and its tiers, preserving Money on tier price', () => {
+    const wire: EventWire = {
+      id: 'iron-boy-live',
+      title: 'Iron Boy Live',
+      artistName: 'Black Sherif',
+      artistId: 'black-sherif',
+      lineup: ['DJ Vyrusky'],
+      image: 'x',
+      date: '2026-07-09T19:00:00Z',
+      doorsTime: '7:00 PM',
+      venue: 'Independence Square, Accra',
+      city: 'Accra',
+      region: 'Greater Accra',
+      status: 'selling-fast',
+      category: 'Concert',
+      description: 'The comeback show.',
+      ticketTiers: [
+        { name: 'Regular', price: { amount: 150, currency: 'GHS' }, perks: ['General standing'], soldOut: false },
+      ],
+      popularity: 92,
+      ageRestriction: '18+',
+    }
+
+    const ev = toEvent(wire)
+
+    expect(ev.id).toBe('iron-boy-live')
+    expect(ev.title).toBe('Iron Boy Live')
+    expect(ev.artistName).toBe('Black Sherif')
+    expect(ev.artistId).toBe('black-sherif')
+    expect(ev.lineup).toEqual(['DJ Vyrusky'])
+    expect(ev.image).toBe('x')
+    expect(ev.date).toBe('2026-07-09T19:00:00Z')
+    expect(ev.doorsTime).toBe('7:00 PM')
+    expect(ev.venue).toBe('Independence Square, Accra')
+    expect(ev.city).toBe('Accra')
+    expect(ev.region).toBe('Greater Accra')
+    expect(ev.status).toBe('selling-fast')
+    expect(ev.category).toBe('Concert')
+    expect(ev.description).toBe('The comeback show.')
+    expect(ev.popularity).toBe(92)
+    expect(ev.ageRestriction).toBe('18+')
+    expect(ev.ticketTiers).toEqual([
+      { name: 'Regular', price: { amount: 150, currency: 'GHS' }, perks: ['General standing'], soldOut: false },
+    ])
+  })
+
+  it('defaults nullable fields to undefined', () => {
+    const wire: EventWire = {
+      id: 'e2',
+      title: 'Club Night',
+      artistName: 'DJ Someone',
+      artistId: null,
+      lineup: null,
+      image: 'y',
+      date: '2026-08-01T20:00:00Z',
+      doorsTime: null,
+      venue: 'The Venue',
+      city: 'Kumasi',
+      region: null,
+      status: 'on-sale',
+      category: 'Club Night',
+      description: null,
+      ticketTiers: [],
+      popularity: null,
+      ageRestriction: null,
+    }
+
+    const ev = toEvent(wire)
+
+    expect(ev.artistId).toBeUndefined()
+    expect(ev.lineup).toBeUndefined()
+    expect(ev.doorsTime).toBeUndefined()
+    expect(ev.region).toBeUndefined()
+    expect(ev.description).toBeUndefined()
+    expect(ev.popularity).toBeUndefined()
+    expect(ev.ageRestriction).toBeUndefined()
+    expect(ev.ticketTiers).toEqual([])
   })
 })

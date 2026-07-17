@@ -12,6 +12,10 @@ import type {
   StoreItemType,
   LicenseOption,
   LicenseTier,
+  Event,
+  TicketTier,
+  EventStatus,
+  EventCategory,
 } from '../../types'
 
 export interface ArtistWire {
@@ -229,5 +233,65 @@ export function toStoreItem(wire: StoreItemWire): StoreItem {
     quality: wire.quality ?? undefined,
     dropsAt: wire.dropsAt ?? undefined,
     stockRemaining: wire.stockRemaining ?? undefined,
+  }
+}
+
+/** Mirrors `TicketTierView` nested in `EventView` served by `GET /v1/events`. No `id` on the wire — the tier's internal id is not part of this shape. */
+export interface TicketTierWire {
+  name: string
+  price: Money
+  perks: string[] | null
+  soldOut: boolean | null
+}
+
+export function toTicketTier(wire: TicketTierWire): TicketTier {
+  return {
+    name: wire.name,
+    price: wire.price,
+    perks: wire.perks ?? undefined,
+    soldOut: wire.soldOut ?? undefined,
+  }
+}
+
+/** Mirrors `EventView` served by `GET /v1/events` and `GET /v1/events/:id`. */
+export interface EventWire {
+  id: string
+  title: string
+  artistName: string
+  artistId: string | null
+  lineup: string[] | null
+  image: string
+  date: string
+  doorsTime: string | null
+  venue: string
+  city: string
+  region: string | null
+  status: EventStatus
+  category: EventCategory
+  description: string | null
+  ticketTiers: TicketTierWire[]
+  popularity: number | null
+  ageRestriction: string | null
+}
+
+export function toEvent(wire: EventWire): Event {
+  return {
+    id: wire.id,
+    title: wire.title,
+    artistName: wire.artistName,
+    artistId: wire.artistId ?? undefined,
+    lineup: wire.lineup ?? undefined,
+    image: wire.image,
+    date: wire.date,
+    doorsTime: wire.doorsTime ?? undefined,
+    venue: wire.venue,
+    city: wire.city,
+    region: wire.region ?? undefined,
+    status: wire.status,
+    category: wire.category,
+    description: wire.description ?? undefined,
+    ticketTiers: wire.ticketTiers.map(toTicketTier),
+    popularity: wire.popularity ?? undefined,
+    ageRestriction: wire.ageRestriction ?? undefined,
   }
 }
