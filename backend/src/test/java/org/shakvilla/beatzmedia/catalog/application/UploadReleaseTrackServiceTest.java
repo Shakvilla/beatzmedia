@@ -18,7 +18,6 @@ import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseType;
 import org.shakvilla.beatzmedia.catalog.domain.Visibility;
 import org.shakvilla.beatzmedia.catalog.fakes.FakeCatalogRepository;
-import org.shakvilla.beatzmedia.media.application.port.in.UploadCommand;
 import org.shakvilla.beatzmedia.media.application.port.in.UploadOriginalUseCase;
 import org.shakvilla.beatzmedia.media.domain.MediaAssetId;
 import org.shakvilla.beatzmedia.media.domain.MediaHandle;
