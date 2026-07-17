@@ -117,6 +117,28 @@ describe('apiSaveStudioProfile', () => {
   })
 })
 
+const settingsWire = {
+  email: 'x@y.com', phone: '024', country: 'GH', language: 'English', timezone: 'GMT',
+  twoFactor: true, sessions: [{ id: 's' }], connectedApps: [{ id: 'a' }],
+  verification: { artist: true }, billing: { plan: 'Pro' },
+  notifications: { sales: true, tips: false, followers: false, payouts: false, weeklySummary: false, comments: false, marketing: false },
+  defaults: { trackPrice: 2, releaseVisibility: 'public', autoExplicit: false, allowOffers: true },
+  payouts: { autoWithdraw: false, autoWithdrawThreshold: 0, taxId: '' },
+  privacy: { discoverable: true, showRealName: false, acceptBookings: true, allowDms: false },
+  team: [{ id: 'u1', name: 'A', email: 'a@b.com', role: 'Manager' }],
+}
+
+describe('studioSettingsQuery', () => {
+  it('requests /studio/settings and maps the view through', async () => {
+    vi.mocked(client.apiFetch).mockResolvedValue(settingsWire)
+    const s = await studioSettingsQuery().queryFn!({} as never)
+    expect(client.apiFetch).toHaveBeenCalledWith('/studio/settings')
+    expect(s.email).toBe('x@y.com')
+    expect(s.notifications.sales).toBe(true)
+    expect(s.defaults.trackPrice).toBe(2)
+  })
+})
+
 describe('apiSaveStudioSettings', () => {
   it('PUTs ONLY the Category-A subset (drops email/twoFactor/sessions/etc.)', async () => {
     vi.mocked(client.apiFetch).mockResolvedValue({})
