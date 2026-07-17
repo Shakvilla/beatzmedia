@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { toArtist, toTrack, toAlbum, toAlbumTracks, toBrowseCategory, toLyricLines } from './mappers'
+import { toArtist, toTrack, toAlbum, toAlbumTracks, toBrowseCategory, toLyricLines, toStoreItem, type StoreItemWire } from './mappers'
 
 describe('toArtist', () => {
   it('maps a full wire artist, converting nulls to undefined', () => {
@@ -126,5 +126,93 @@ describe('toBrowseCategory', () => {
 describe('toLyricLines', () => {
   it('returns the lines array', () => {
     expect(toLyricLines({ lines: [{ time: 0, text: 'la la' }] })).toEqual([{ time: 0, text: 'la la' }])
+  })
+})
+
+describe('toStoreItem', () => {
+  it('maps a merch item, converting nulls to undefined and keeping price as Money', () => {
+    const wire: StoreItemWire = {
+      id: 'merch-bsherif-tee',
+      type: 'MERCH',
+      title: 'Iron Boy Tour Tee',
+      artistName: 'Black Sherif',
+      artistId: 'black-sherif',
+      image: 'https://img/tee.jpg',
+      price: { amount: 120, currency: 'GHS' },
+      genre: null,
+      badges: ['LIMITED'],
+      description: 'Official tour merch.',
+      popularity: null,
+      createdAt: null,
+      licenseOptions: null,
+      variants: [{ label: 'Size', options: ['S', 'M', 'L', 'XL'] }],
+      quality: null,
+      dropsAt: null,
+      stockRemaining: 42,
+    }
+
+    const item = toStoreItem(wire)
+
+    expect(item).toEqual({
+      id: 'merch-bsherif-tee',
+      type: 'MERCH',
+      title: 'Iron Boy Tour Tee',
+      artistName: 'Black Sherif',
+      artistId: 'black-sherif',
+      image: 'https://img/tee.jpg',
+      price: { amount: 120, currency: 'GHS' },
+      badges: ['LIMITED'],
+      description: 'Official tour merch.',
+      variants: [{ label: 'Size', options: ['S', 'M', 'L', 'XL'] }],
+      stockRemaining: 42,
+    })
+  })
+
+  it('maps a beat-license item, mapping nested licenseOptions with their own Money price', () => {
+    const wire: StoreItemWire = {
+      id: 'beat-drill-001',
+      type: 'BEAT_LICENSE',
+      title: 'Cold Nights',
+      artistName: 'Yaw Tog',
+      artistId: null,
+      image: 'https://img/beat.jpg',
+      price: { amount: 50, currency: 'GHS' },
+      genre: 'Drill',
+      badges: null,
+      description: null,
+      popularity: 87,
+      createdAt: '2026-01-05T00:00:00Z',
+      licenseOptions: [
+        { tier: 'LEASE', label: 'Lease', price: { amount: 50, currency: 'GHS' }, features: ['MP3'], terms: null },
+        {
+          tier: 'EXCLUSIVE',
+          label: 'Exclusive',
+          price: { amount: 900, currency: 'GHS' },
+          features: ['WAV', 'Stems', 'Full rights'],
+          terms: 'Unlimited streams',
+        },
+      ],
+      variants: null,
+      quality: null,
+      dropsAt: null,
+      stockRemaining: null,
+    }
+
+    const item = toStoreItem(wire)
+
+    expect(item.artistId).toBeUndefined()
+    expect(item.genre).toBe('Drill')
+    expect(item.popularity).toBe(87)
+    expect(item.createdAt).toBe('2026-01-05T00:00:00Z')
+    expect(item.licenseOptions).toEqual([
+      { tier: 'LEASE', label: 'Lease', price: { amount: 50, currency: 'GHS' }, features: ['MP3'], terms: undefined },
+      {
+        tier: 'EXCLUSIVE',
+        label: 'Exclusive',
+        price: { amount: 900, currency: 'GHS' },
+        features: ['WAV', 'Stems', 'Full rights'],
+        terms: 'Unlimited streams',
+      },
+    ])
   })
 })

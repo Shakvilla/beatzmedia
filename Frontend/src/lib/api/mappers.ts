@@ -1,4 +1,18 @@
-import type { Artist, Album, Track, TrackCredit, BrowseCategory, Playlist, Genre, OwnershipStatus, Money } from '../../types'
+import type {
+  Artist,
+  Album,
+  Track,
+  TrackCredit,
+  BrowseCategory,
+  Playlist,
+  Genre,
+  OwnershipStatus,
+  Money,
+  StoreItem,
+  StoreItemType,
+  LicenseOption,
+  LicenseTier,
+} from '../../types'
 
 export interface ArtistWire {
   id: string
@@ -149,5 +163,71 @@ export function toPlaylist(wire: PlaylistWire): Playlist {
     isPublic: wire.isPublic,
     followers: wire.followers ?? undefined,
     trackIds: wire.trackIds,
+  }
+}
+
+export interface LicenseOptionWire {
+  tier: LicenseTier
+  label: string
+  price: Money
+  features: string[]
+  terms: string | null
+}
+
+function toLicenseOption(wire: LicenseOptionWire): LicenseOption {
+  return {
+    tier: wire.tier,
+    label: wire.label,
+    price: wire.price,
+    features: wire.features,
+    terms: wire.terms ?? undefined,
+  }
+}
+
+export interface MerchVariantWire {
+  label: string
+  options: string[]
+}
+
+/** Mirrors `StoreItemView` served by `GET /v1/store` and `GET /v1/store/:id`. */
+export interface StoreItemWire {
+  id: string
+  type: StoreItemType
+  title: string
+  artistName: string
+  artistId: string | null
+  image: string
+  price: Money
+  genre: Genre | null
+  badges: string[] | null
+  description: string | null
+  popularity: number | null
+  createdAt: string | null
+  licenseOptions: LicenseOptionWire[] | null
+  variants: MerchVariantWire[] | null
+  quality: string | null
+  dropsAt: string | null
+  stockRemaining: number | null
+}
+
+export function toStoreItem(wire: StoreItemWire): StoreItem {
+  return {
+    id: wire.id,
+    type: wire.type,
+    title: wire.title,
+    artistName: wire.artistName,
+    artistId: wire.artistId ?? undefined,
+    image: wire.image,
+    price: wire.price,
+    genre: wire.genre ?? undefined,
+    badges: wire.badges ?? undefined,
+    description: wire.description ?? undefined,
+    popularity: wire.popularity ?? undefined,
+    createdAt: wire.createdAt ?? undefined,
+    licenseOptions: wire.licenseOptions?.map(toLicenseOption) ?? undefined,
+    variants: wire.variants ?? undefined,
+    quality: wire.quality ?? undefined,
+    dropsAt: wire.dropsAt ?? undefined,
+    stockRemaining: wire.stockRemaining ?? undefined,
   }
 }
