@@ -20,6 +20,16 @@ import type {
   PodcastEpisode,
   PodcastCategory,
 } from '../../types'
+import type {
+  Analytics,
+  Audience,
+  MetricSeries,
+  CountryStat,
+  TopTrackStat,
+  AgeBucket,
+  SourceStat,
+  Superfan,
+} from '../studio-analytics'
 
 export interface ArtistWire {
   id: string
@@ -362,5 +372,102 @@ export function toPodcastEpisode(wire: PodcastEpisodeWire): PodcastEpisode {
     isOwned: wire.isOwned ?? undefined,
     isEarlyAccess: wire.isEarlyAccess ?? undefined,
     publicAt: wire.publicAt ?? undefined,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Studio analytics + audience
+// ---------------------------------------------------------------------------
+
+interface MetricSeriesWire { total: number; delta: number; current: number[]; previous: number[] }
+
+/** Mirrors `AnalyticsView` served by `GET /v1/studio/analytics?range=`. */
+export interface AnalyticsWire {
+  rangeLabel: string
+  axisLabel: string
+  labels: string[]
+  metrics: {
+    streams: MetricSeriesWire
+    sales: MetricSeriesWire
+    followers: MetricSeriesWire
+    tips: MetricSeriesWire
+  }
+  fans: number
+  countries: { name: string; value: number }[]
+  topTracks: { title: string; streams: number; revenue: number }[]
+  ages: { label: string; value: number }[]
+  revenue: { sales: number; streaming: number; tips: number }
+  engagement: { completion: number; save: number; skip: number }
+  sources: { name: string; pct: number }[]
+}
+
+const toMetricSeries = (w: MetricSeriesWire): MetricSeries => ({
+  total: w.total,
+  delta: w.delta,
+  current: w.current,
+  previous: w.previous,
+})
+
+export function toAnalytics(wire: AnalyticsWire): Analytics {
+  return {
+    rangeLabel: wire.rangeLabel,
+    axisLabel: wire.axisLabel,
+    labels: wire.labels,
+    metrics: {
+      streams: toMetricSeries(wire.metrics.streams),
+      sales: toMetricSeries(wire.metrics.sales),
+      followers: toMetricSeries(wire.metrics.followers),
+      tips: toMetricSeries(wire.metrics.tips),
+    },
+    fans: wire.fans,
+    countries: wire.countries.map((c): CountryStat => ({ name: c.name, value: c.value })),
+    topTracks: wire.topTracks.map(
+      (t): TopTrackStat => ({ title: t.title, streams: t.streams, revenue: t.revenue }),
+    ),
+    ages: wire.ages.map((a): AgeBucket => ({ label: a.label, value: a.value })),
+    revenue: { sales: wire.revenue.sales, streaming: wire.revenue.streaming, tips: wire.revenue.tips },
+    engagement: {
+      completion: wire.engagement.completion,
+      save: wire.engagement.save,
+      skip: wire.engagement.skip,
+    },
+    sources: wire.sources.map((s): SourceStat => ({ name: s.name, pct: s.pct })),
+  }
+}
+
+/** Mirrors `AudienceView` served by `GET /v1/studio/audience?range=`. */
+export interface AudienceWire {
+  rangeLabel: string
+  monthlyListeners: number
+  listenersDelta: number
+  followers: number
+  followersGained: number
+  followersPeriod: string
+  superfans: number
+  avgSessionSec: number
+  avgSessionDelta: number
+  cities: { name: string; value: number }[]
+  gender: { male: number; female: number; other: number }
+  ages: { label: string; value: number }[]
+  superfansList: { handle: string; initial: string; tracks: number; tipped: number }[]
+}
+
+export function toAudience(wire: AudienceWire): Audience {
+  return {
+    rangeLabel: wire.rangeLabel,
+    monthlyListeners: wire.monthlyListeners,
+    listenersDelta: wire.listenersDelta,
+    followers: wire.followers,
+    followersGained: wire.followersGained,
+    followersPeriod: wire.followersPeriod,
+    superfans: wire.superfans,
+    avgSessionSec: wire.avgSessionSec,
+    avgSessionDelta: wire.avgSessionDelta,
+    cities: wire.cities.map((c): CountryStat => ({ name: c.name, value: c.value })),
+    gender: { male: wire.gender.male, female: wire.gender.female, other: wire.gender.other },
+    ages: wire.ages.map((a): AgeBucket => ({ label: a.label, value: a.value })),
+    superfansList: wire.superfansList.map(
+      (s): Superfan => ({ handle: s.handle, initial: s.initial, tracks: s.tracks, tipped: s.tipped }),
+    ),
   }
 }
