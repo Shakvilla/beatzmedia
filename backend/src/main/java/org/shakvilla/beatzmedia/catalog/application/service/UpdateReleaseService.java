@@ -1,6 +1,8 @@
 package org.shakvilla.beatzmedia.catalog.application.service;
 
 import java.time.Instant;
+import java.util.HashSet;
+import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
 
@@ -15,6 +17,7 @@ import org.shakvilla.beatzmedia.catalog.application.port.in.StudioReleaseDetailV
 import org.shakvilla.beatzmedia.catalog.application.port.in.UpdateRelease;
 import org.shakvilla.beatzmedia.catalog.application.port.out.CatalogRepository;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
+import org.shakvilla.beatzmedia.catalog.domain.DuplicateTrackRefException;
 import org.shakvilla.beatzmedia.catalog.domain.IllegalTransitionException;
 import org.shakvilla.beatzmedia.catalog.domain.Release;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
@@ -66,6 +69,10 @@ public class UpdateReleaseService implements UpdateRelease {
       if (release.getStatus() != ReleaseStatus.draft) {
         throw new IllegalTransitionException(release.getStatus(), "REPLACE_TRACKS");
       }
+      // INV-12: reject a wholesale replacement that duplicates a trackId (would inflate the
+      // finalize-time track count / INV-5 price sum) or a position (collides on the
+      // release_track composite PK) BEFORE touching the aggregate.
+      validateNoDuplicates(command.tracks());
       Set<String> existing =
           release.getTracks().stream().map(ReleaseTrack::trackId).collect(Collectors.toSet());
       for (TrackRef t : command.tracks()) {
@@ -112,5 +119,24 @@ public class UpdateReleaseService implements UpdateRelease {
     var tracks = repo.tracksByIds(
         release.getTracks().stream().map(ReleaseTrack::trackId).toList());
     return ReleaseViewMapper.toDetailView(release, tracks);
+  }
+
+  /**
+   * INV-12 guard: a wholesale {@code tracks} replacement must not repeat a {@code trackId} (would
+   * silently inflate the finalize-time track count / INV-5 price sum by double-counting a track)
+   * or a {@code position} (collides on the {@code release_track} composite primary key, which
+   * would otherwise surface as a raw persistence 500).
+   */
+  private void validateNoDuplicates(List<TrackRef> tracks) {
+    Set<String> seenTrackIds = new HashSet<>();
+    Set<Integer> seenPositions = new HashSet<>();
+    for (TrackRef t : tracks) {
+      if (!seenTrackIds.add(t.trackId())) {
+        throw new DuplicateTrackRefException("Duplicate trackId in tracks: " + t.trackId());
+      }
+      if (!seenPositions.add(t.position())) {
+        throw new DuplicateTrackRefException("Duplicate position in tracks: " + t.position());
+      }
+    }
   }
 }

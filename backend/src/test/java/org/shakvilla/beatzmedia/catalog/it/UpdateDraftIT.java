@@ -128,6 +128,83 @@ class UpdateDraftIT {
   }
 
   @Test
+  void patch_duplicate_track_id_returns_422_duplicate_track_ref() {
+    String token = provisionArtist();
+
+    String releaseId = given()
+        .header("Authorization", "Bearer " + token)
+        .contentType(ContentType.JSON)
+        .body("""
+            { "title": "Dup Track Test", "type": "single" }
+            """)
+        .when().post(RELEASES_URL)
+        .then().statusCode(201).extract().jsonPath().getString("id");
+
+    String trackId = given()
+        .header("Authorization", "Bearer " + token)
+        .contentType("multipart/form-data")
+        .multiPart("file", "song.wav", wavBytes(), "audio/wav")
+        .when().post(RELEASES_URL + "/" + releaseId + "/tracks")
+        .then().statusCode(201).extract().jsonPath().getString("id");
+
+    given()
+        .header("Authorization", "Bearer " + token)
+        .contentType(ContentType.JSON)
+        .body("""
+            { "tracks": [
+                { "trackId": "%s", "position": 0, "priceMinor": 500 },
+                { "trackId": "%s", "position": 1, "priceMinor": 600 }
+              ] }
+            """.formatted(trackId, trackId))
+        .when().patch(RELEASES_URL + "/" + releaseId)
+        .then()
+        .statusCode(422)
+        .body("error.code", equalTo("DUPLICATE_TRACK_REF"));
+  }
+
+  @Test
+  void patch_duplicate_position_returns_422_duplicate_track_ref() {
+    String token = provisionArtist();
+
+    String releaseId = given()
+        .header("Authorization", "Bearer " + token)
+        .contentType(ContentType.JSON)
+        .body("""
+            { "title": "Dup Position Test", "type": "single" }
+            """)
+        .when().post(RELEASES_URL)
+        .then().statusCode(201).extract().jsonPath().getString("id");
+
+    String track1 = given()
+        .header("Authorization", "Bearer " + token)
+        .contentType("multipart/form-data")
+        .multiPart("file", "song1.wav", wavBytes(), "audio/wav")
+        .when().post(RELEASES_URL + "/" + releaseId + "/tracks")
+        .then().statusCode(201).extract().jsonPath().getString("id");
+
+    String track2 = given()
+        .header("Authorization", "Bearer " + token)
+        .contentType("multipart/form-data")
+        .multiPart("file", "song2.wav", wavBytes(), "audio/wav")
+        .when().post(RELEASES_URL + "/" + releaseId + "/tracks")
+        .then().statusCode(201).extract().jsonPath().getString("id");
+
+    given()
+        .header("Authorization", "Bearer " + token)
+        .contentType(ContentType.JSON)
+        .body("""
+            { "tracks": [
+                { "trackId": "%s", "position": 0, "priceMinor": 500 },
+                { "trackId": "%s", "position": 0, "priceMinor": 600 }
+              ] }
+            """.formatted(track1, track2))
+        .when().patch(RELEASES_URL + "/" + releaseId)
+        .then()
+        .statusCode(422)
+        .body("error.code", equalTo("DUPLICATE_TRACK_REF"));
+  }
+
+  @Test
   void delete_track_from_draft_removes_it_and_leaves_the_other() {
     String token = provisionArtist();
 

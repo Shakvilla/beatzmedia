@@ -14,6 +14,7 @@ import org.shakvilla.beatzmedia.catalog.application.port.in.UpdateRelease.TrackR
 import org.shakvilla.beatzmedia.catalog.application.port.in.UpdateRelease.UpdateReleaseCommand;
 import org.shakvilla.beatzmedia.catalog.application.service.UpdateReleaseService;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
+import org.shakvilla.beatzmedia.catalog.domain.DuplicateTrackRefException;
 import org.shakvilla.beatzmedia.catalog.domain.IllegalTransitionException;
 import org.shakvilla.beatzmedia.catalog.domain.Release;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
@@ -50,6 +51,16 @@ class UpdateReleaseServiceTest {
         "r1", ARTIST.value(), "Draft Title", ReleaseType.single,
         Visibility.PUBLIC, null, null, null, NOW);
     r.addTrack(new ReleaseTrack("t1", 0, 250L), NOW);
+    repo.addRelease(r);
+    return r;
+  }
+
+  private Release draftWithTwoTracks() {
+    Release r = Release.createDraft(
+        "r1", ARTIST.value(), "Draft Title", ReleaseType.ep,
+        Visibility.PUBLIC, null, null, null, NOW);
+    r.addTrack(new ReleaseTrack("t1", 0, 250L), NOW);
+    r.addTrack(new ReleaseTrack("t2", 1, 250L), NOW);
     repo.addRelease(r);
     return r;
   }
@@ -126,5 +137,34 @@ class UpdateReleaseServiceTest {
 
     assertEquals("Highlife", view.genre());
     assertEquals("New bio", view.description());
+  }
+
+  /** INV-12 regression: a duplicated trackId in a wholesale tracks PATCH must 422, not persist. */
+  @Test
+  void tracksPatch_duplicateTrackId_throwsDuplicateTrackRef() {
+    draftWithTwoTracks();
+
+    UpdateReleaseCommand cmd = new UpdateReleaseCommand(
+        null, null, null, null, null,
+        List.of(new TrackRef("t1", 0, 250L), new TrackRef("t1", 1, 300L)));
+
+    assertThrows(DuplicateTrackRefException.class,
+        () -> service.update(new ReleaseId("r1"), ARTIST, cmd));
+  }
+
+  /**
+   * INV-12 regression: a duplicated position in a wholesale tracks PATCH must 422 rather than
+   * colliding on the release_track composite PK as a raw 500.
+   */
+  @Test
+  void tracksPatch_duplicatePosition_throwsDuplicateTrackRef() {
+    draftWithTwoTracks();
+
+    UpdateReleaseCommand cmd = new UpdateReleaseCommand(
+        null, null, null, null, null,
+        List.of(new TrackRef("t1", 0, 250L), new TrackRef("t2", 0, 300L)));
+
+    assertThrows(DuplicateTrackRefException.class,
+        () -> service.update(new ReleaseId("r1"), ARTIST, cmd));
   }
 }
