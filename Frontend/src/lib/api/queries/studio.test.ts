@@ -1,6 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import * as client from '../client'
-import { studioAnalyticsQuery, studioAudienceQuery } from './studio'
+import {
+  studioAnalyticsQuery, studioAudienceQuery,
+  studioProfileQuery, studioSettingsQuery, apiSaveStudioProfile, apiSaveStudioSettings,
+} from './studio'
 
 vi.mock('../client')
 
@@ -77,5 +80,58 @@ describe('studioAudienceQuery', () => {
 
   it('scopes the query key by range', () => {
     expect(studioAudienceQuery('7d').queryKey).not.toEqual(studioAudienceQuery('90d').queryKey)
+  })
+})
+
+const profileWire = {
+  displayName: 'Kojo Beats', username: '@kojo', hometown: 'Accra, Ghana',
+  genres: ['Afrobeats'], bio: 'Producer.', avatar: null, banner: null,
+  links: { instagram: 'kojo', twitter: '', youtube: '', website: '' },
+  shows: [{ id: 's1', venue: 'Alliance', date: 'Aug 1', city: 'Accra' }],
+  featuredTrackId: 't1', bookingEmail: 'book@kojo.com',
+  pressAssets: [{ id: 'a1', name: 'kit.pdf', url: 'https://x/kit.pdf' }],
+}
+
+describe('studioProfileQuery', () => {
+  it('requests /studio/profile and maps the view through', async () => {
+    vi.mocked(client.apiFetch).mockResolvedValue(profileWire)
+    const p = await studioProfileQuery().queryFn!({} as never)
+    expect(client.apiFetch).toHaveBeenCalledWith('/studio/profile')
+    expect(p.displayName).toBe('Kojo Beats')
+    expect(p.shows[0]).toEqual({ id: 's1', venue: 'Alliance', date: 'Aug 1', city: 'Accra' })
+  })
+})
+
+describe('apiSaveStudioProfile', () => {
+  it('PUTs the profile and strips blob: avatar/banner/press assets', async () => {
+    vi.mocked(client.apiFetch).mockResolvedValue(profileWire)
+    await apiSaveStudioProfile({
+      ...profileWire, avatar: 'blob:local', banner: 'https://x/b.jpg',
+      pressAssets: [{ id: 'a1', name: 'k', url: 'blob:x' }, { id: 'a2', name: 'ok', url: 'https://x/ok' }],
+    } as never)
+    const [path, opts] = vi.mocked(client.apiFetch).mock.calls[0]
+    expect(path).toBe('/studio/profile')
+    expect(opts).toMatchObject({ method: 'PUT' })
+    expect(opts!.body).toMatchObject({ avatar: null, banner: 'https://x/b.jpg' })
+    expect((opts!.body as { pressAssets: unknown[] }).pressAssets).toHaveLength(1)
+  })
+})
+
+describe('apiSaveStudioSettings', () => {
+  it('PUTs ONLY the Category-A subset (drops email/twoFactor/sessions/etc.)', async () => {
+    vi.mocked(client.apiFetch).mockResolvedValue({})
+    await apiSaveStudioSettings({
+      email: 'x@y.com', phone: '024', country: 'GH', language: 'English', timezone: 'GMT',
+      twoFactor: true, sessions: [{ id: 's' }], connectedApps: [{ id: 'a' }],
+      verification: { artist: true }, billing: { plan: 'Pro' },
+      notifications: { sales: true, tips: false, followers: false, payouts: false, weeklySummary: false, comments: false, marketing: false },
+      defaults: { trackPrice: 2, releaseVisibility: 'public', autoExplicit: false, allowOffers: true },
+      payouts: { autoWithdraw: false, autoWithdrawThreshold: 0, taxId: '' },
+      privacy: { discoverable: true, showRealName: false, acceptBookings: true, allowDms: false },
+      team: [{ id: 'u1', name: 'A', email: 'a@b.com', role: 'Manager' }],
+    } as never)
+    const body = vi.mocked(client.apiFetch).mock.calls[0][1]!.body as Record<string, unknown>
+    expect(Object.keys(body).sort()).toEqual(['defaults', 'notifications', 'payouts', 'privacy', 'team'])
+    expect(body.notifications).toMatchObject({ sales: true })
   })
 })

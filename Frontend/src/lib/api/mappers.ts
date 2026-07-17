@@ -30,6 +30,7 @@ import type {
   SourceStat,
   Superfan,
 } from '../studio-analytics'
+import type { StudioProfile, StudioSettings } from '../../studio-data'
 
 export interface ArtistWire {
   id: string
@@ -469,5 +470,53 @@ export function toAudience(wire: AudienceWire): Audience {
     superfansList: wire.superfansList.map(
       (s): Superfan => ({ handle: s.handle, initial: s.initial, tracks: s.tracks, tipped: s.tipped }),
     ),
+  }
+}
+
+// ── Studio profile ────────────────────────────────────────────────
+// StudioProfileView matches StudioProfile field-for-field, so the read
+// mapper is a pass-through. The save body is the whole (writable) shape
+// with blob: object URLs stripped — those are local-only and meaningless
+// server-side (no media-upload endpoint yet).
+export type StudioProfileWire = StudioProfile
+export function toStudioProfile(w: StudioProfileWire): StudioProfile {
+  return w
+}
+
+export type SaveStudioProfileBody = StudioProfile
+const dropBlob = (u: string | null): string | null => (u && u.startsWith('blob:') ? null : u)
+export function toSaveProfileBody(p: StudioProfile): SaveStudioProfileBody {
+  return {
+    ...p,
+    avatar: dropBlob(p.avatar),
+    banner: dropBlob(p.banner),
+    pressAssets: p.pressAssets.filter((a) => !a.url.startsWith('blob:')),
+  }
+}
+
+// ── Studio settings ───────────────────────────────────────────────
+// GET returns the full shape (Category A + B). PUT accepts ONLY the
+// Category-A writable subset; Category B (email/phone/2FA/sessions/apps/
+// verification/billing) has no persistence endpoint yet, so the save body
+// narrows to what the backend will actually store.
+export type StudioSettingsWire = StudioSettings
+export function toStudioSettings(w: StudioSettingsWire): StudioSettings {
+  return w
+}
+
+export interface SaveStudioSettingsBody {
+  notifications: StudioSettings['notifications']
+  defaults: StudioSettings['defaults']
+  payouts: StudioSettings['payouts']
+  privacy: StudioSettings['privacy']
+  team: StudioSettings['team']
+}
+export function toSaveSettingsBody(s: StudioSettings): SaveStudioSettingsBody {
+  return {
+    notifications: s.notifications,
+    defaults: s.defaults,
+    payouts: s.payouts,
+    privacy: s.privacy,
+    team: s.team,
   }
 }
