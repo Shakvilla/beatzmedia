@@ -1,11 +1,15 @@
 package org.shakvilla.beatzmedia.catalog.application.service;
 
+import java.time.Instant;
 import java.util.Set;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 
+import org.shakvilla.beatzmedia.audit.application.port.out.AuditWriter;
+import org.shakvilla.beatzmedia.audit.domain.AuditEntry;
+import org.shakvilla.beatzmedia.audit.domain.AuditType;
 import org.shakvilla.beatzmedia.catalog.application.port.in.MoneyView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.UploadReleaseTrack;
 import org.shakvilla.beatzmedia.catalog.application.port.in.UploadedTrackView;
@@ -57,17 +61,20 @@ public class UploadReleaseTrackService implements UploadReleaseTrack {
   private final UploadOriginalUseCase uploadOriginalUseCase;
   private final IdGenerator ids;
   private final Clock clock;
+  private final AuditWriter auditWriter;
 
   @Inject
   public UploadReleaseTrackService(
       CatalogRepository repo,
       UploadOriginalUseCase uploadOriginalUseCase,
       IdGenerator ids,
-      Clock clock) {
+      Clock clock,
+      AuditWriter auditWriter) {
     this.repo = repo;
     this.uploadOriginalUseCase = uploadOriginalUseCase;
     this.ids = ids;
     this.clock = clock;
+    this.auditWriter = auditWriter;
   }
 
   @Override
@@ -128,9 +135,22 @@ public class UploadReleaseTrackService implements UploadReleaseTrack {
     repo.saveTrack(stubTrack);
 
     // WU-CAT-5 fix: attach the newly-uploaded track to its draft release (previously orphaned).
+    Instant now = clock.now();
     int position = release.getTracks().size();
-    release.addTrack(new ReleaseTrack(trackId, position, DEFAULT_TRACK_PRICE_MINOR), clock.now());
+    release.addTrack(new ReleaseTrack(trackId, position, DEFAULT_TRACK_PRICE_MINOR), now);
     repo.saveRelease(release);
+
+    // INV-10: audit privileged mutation atomically in the same transaction (symmetric with
+    // RemoveReleaseTrackService's REMOVE_RELEASE_TRACK entry).
+    auditWriter.append(new AuditEntry(
+        ids.newId(),
+        artistId.value(),
+        "UPLOAD_RELEASE_TRACK",
+        "Release",
+        releaseId.value(),
+        AuditType.CATALOG,
+        null,
+        now));
 
     return new UploadedTrackView(
         trackId,
