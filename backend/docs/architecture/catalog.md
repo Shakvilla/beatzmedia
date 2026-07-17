@@ -442,7 +442,9 @@ Field-level, traceable to `Frontend/src/types/index.ts`, `studio-data.ts`, and
 - **Artist** — `id`, `name`, `image`, `coverImage?`, `verified?`, `monthlyListeners?`, `followers?`,
   `bio?`, `location?`, `genres?: Genre[]`. Sub-collections returned by `/tracks`, `/albums`, `/shows`.
 - **Playlist** — `id`, `title`, `description?`, `creator`, `creatorAvatar?`, `image`, `isPublic`,
-  `followers?`, `trackIds: ID[]`; detail embeds `tracks: Track[]`.
+  `followers?`, `trackIds: ID[]`; detail and `POST /catalog/resolve` embed `tracks: Track[]`.
+  `tracks` is always present but `/search` returns it empty — embedding costs an ownership lookup
+  per track of every matching playlist, and the search screen consumes `trackIds` only.
 - **ResolvedCatalogView** — `tracks: Track[]`, `artists: Artist[]`, `albums: Album[]`,
   `playlists: Playlist[]`; response for `POST /catalog/resolve`, reusing the per-kind views verbatim.
   Request `ResolveCatalogRequest` — `trackIds?`, `artistIds?`, `albumIds?`, `playlistIds?` (`ID[]`).

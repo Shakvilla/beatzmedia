@@ -96,7 +96,7 @@ public class SearchService implements Search {
     List<PlaylistView> playlistViews = results.playlists().stream()
         .map(hit -> playlistsById.get(hit.entityId()))
         .filter(p -> p != null)
-        .map(p -> toPlaylistView(p, callerId))
+        .map(this::toPlaylistView)
         .toList();
 
     // Map top result
@@ -146,11 +146,9 @@ public class SearchService implements Search {
         null);
   }
 
-  private PlaylistView toPlaylistView(Playlist p, Optional<String> callerId) {
-    // Tracks not embedded in search results; pass empty list for trackIds order.
-    List<TrackView> tracks = catalogRepository.tracksByIds(p.getTrackIds()).stream()
-        .map(t -> TrackMapper.toView(t, callerId, ownershipReader))
-        .toList();
+  private PlaylistView toPlaylistView(Playlist p) {
+    // Search results carry trackIds only; the detail endpoint embeds tracks. Hydrating them here
+    // would cost an ownership lookup per track of every matching playlist on a debounced hot path.
     return new PlaylistView(
         p.getId().value(),
         p.getTitle(),
@@ -161,6 +159,6 @@ public class SearchService implements Search {
         p.isPublic(),
         p.getFollowers(),
         p.getTrackIds(),
-        tracks);
+        List.of());
   }
 }
