@@ -140,7 +140,7 @@ class UpdateReleaseServiceTest {
     assertEquals("New bio", view.description());
   }
 
-  /** INV-12 regression: a duplicated trackId in a wholesale tracks PATCH must 422, not persist. */
+  /** WU-CAT-5 regression: a duplicated trackId in a wholesale tracks PATCH must 422, not persist. */
   @Test
   void tracksPatch_duplicateTrackId_throwsDuplicateTrackRef() {
     draftWithTwoTracks();
@@ -154,7 +154,7 @@ class UpdateReleaseServiceTest {
   }
 
   /**
-   * INV-12 regression: a duplicated position in a wholesale tracks PATCH must 422 rather than
+   * WU-CAT-5 regression: a duplicated position in a wholesale tracks PATCH must 422 rather than
    * colliding on the release_track composite PK as a raw 500.
    */
   @Test

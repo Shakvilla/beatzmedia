@@ -5,7 +5,7 @@ import org.shakvilla.beatzmedia.platform.domain.ErrorCode;
 
 /**
  * Thrown when a {@code PATCH .../:id} wholesale track-list replacement contains the same {@code
- * trackId} at more than one position, or two entries at the same {@code position} (INV-12: a
+ * trackId} at more than one position, or two entries at the same {@code position} (WU-CAT-5: a
  * duplicate {@code trackId} would inflate the finalize-time track count / INV-5 price sum; a
  * duplicate {@code position} collides on the {@code release_track} composite primary key). Maps
  * to 422 {@code DUPLICATE_TRACK_REF}. Catalog ADD §3 / WU-CAT-5.

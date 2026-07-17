@@ -69,7 +69,7 @@ public class UpdateReleaseService implements UpdateRelease {
       if (release.getStatus() != ReleaseStatus.draft) {
         throw new IllegalTransitionException(release.getStatus(), "REPLACE_TRACKS");
       }
-      // INV-12: reject a wholesale replacement that duplicates a trackId (would inflate the
+      // WU-CAT-5: reject a wholesale replacement that duplicates a trackId (would inflate the
       // finalize-time track count / INV-5 price sum) or a position (collides on the
       // release_track composite PK) BEFORE touching the aggregate.
       validateNoDuplicates(command.tracks());
@@ -122,7 +122,7 @@ public class UpdateReleaseService implements UpdateRelease {
   }
 
   /**
-   * INV-12 guard: a wholesale {@code tracks} replacement must not repeat a {@code trackId} (would
+   * WU-CAT-5 guard: a wholesale {@code tracks} replacement must not repeat a {@code trackId} (would
    * silently inflate the finalize-time track count / INV-5 price sum by double-counting a track)
    * or a {@code position} (collides on the {@code release_track} composite primary key, which
    * would otherwise surface as a raw persistence 500).

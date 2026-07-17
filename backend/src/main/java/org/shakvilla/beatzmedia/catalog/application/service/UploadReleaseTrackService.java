@@ -136,7 +136,13 @@ public class UploadReleaseTrackService implements UploadReleaseTrack {
 
     // WU-CAT-5 fix: attach the newly-uploaded track to its draft release (previously orphaned).
     Instant now = clock.now();
-    int position = release.getTracks().size();
+    // Derive the next position as max(existing)+1, NOT size(): removeTrack filters by trackId
+    // without renumbering, so after upload(A,B,C)->remove(B) the surviving positions are {0,2}
+    // and size() would yield 2 — colliding with C on the release_track composite PK (raw 500).
+    int position = release.getTracks().stream()
+        .mapToInt(ReleaseTrack::position)
+        .max()
+        .orElse(-1) + 1;
     release.addTrack(new ReleaseTrack(trackId, position, DEFAULT_TRACK_PRICE_MINOR), now);
     repo.saveRelease(release);
 

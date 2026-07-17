@@ -396,11 +396,11 @@ role; public reads accept anonymous (token, if present, decorates `ownership`/`p
 | GET | `/studio/releases?status=&page=&size=` | artist (owner) | — | `{ items: StudioRelease[], page, size, total }` | 200 | 401/403 | 02.1 |
 | POST | `/studio/releases` | artist | `CreateDraftRequest` (metadata only) | `StudioReleaseDetail` (`draft`) | 201 | — | 02.2 |
 | GET | `/studio/releases/:id` | artist (owner) | — | `StudioReleaseDetail` | 200 | 403/404 | 02.3 |
-| PATCH | `/studio/releases/:id` | artist (owner) | `UpdateReleaseRequest` | `StudioReleaseDetail` | 200 | 409 `ILLEGAL_TRANSITION`, 422 `TRACK_NOT_IN_RELEASE` | 02.3 |
+| PATCH | `/studio/releases/:id` | artist (owner) | `UpdateReleaseRequest` | `StudioReleaseDetail` | 200 | 409 `ILLEGAL_TRANSITION`, 422 `TRACK_NOT_IN_RELEASE`, 422 `DUPLICATE_TRACK_REF`, 422 `INVALID_PRICE` | 02.3 |
 | DELETE | `/studio/releases/:id` | artist (owner) | — | — | 204 | 409 `RELEASE_LIVE` | 02.3 |
 | POST | `/studio/releases/:id/tracks` | artist (owner) | multipart audio (WAV/FLAC) | `UploadedTrack` (attached) | 201 | 422 `UNSUPPORTED_FORMAT`, 413, 409 `ILLEGAL_TRANSITION` (non-draft) | 02.4 |
 | DELETE | `/studio/releases/:id/tracks/:trackId` | artist (owner) | — | — | 204 | 409 `ILLEGAL_TRANSITION` (non-draft), 404 `TRACK_NOT_FOUND` | 02.4 (WU-CAT-5) |
-| POST | `/studio/releases/:id/submit` | artist (owner) | `Idempotency-Key` header | `StudioReleaseDetail` (`in_review`) | 200 | 400 `MISSING_IDEMPOTENCY_KEY`, 409 `ILLEGAL_TRANSITION`, 422 `TRACK_COUNT_INVALID` | 02.2 (WU-CAT-5 finalize) |
+| POST | `/studio/releases/:id/submit` | artist (owner) | `Idempotency-Key` header | `StudioReleaseDetail` (`in_review`) | 200 | 400 `MISSING_IDEMPOTENCY_KEY`, 409 `ILLEGAL_TRANSITION`, 409 `IDEMPOTENCY_KEY_CONFLICT`, 422 `TRACK_COUNT_INVALID` | 02.2 (WU-CAT-5 finalize) |
 
 **~~POST `/admin/catalog/:id/{approve,takedown,reinstate}`~~ — relocated to the `admin` module
 (WU-ADM-3).** WU-CAT-4 originally hosted these three endpoints directly in
