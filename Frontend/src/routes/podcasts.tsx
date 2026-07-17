@@ -1,30 +1,69 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
+import { useSuspenseQuery, useSuspenseQueries } from '@tanstack/react-query'
 import { Play, Pause, Check, Plus, Mic } from 'lucide-react'
 import { Card, CardContent, CardImage, CardSubtitle, CardTitle } from '../components/ui/card'
 import { MediaRail } from '../features/discover/components/media-rail'
 import { EpisodeRow } from '../features/podcasts/components/episode-row'
+import { episodeAccessible } from '../features/podcasts/episode-access'
 import { usePlayer } from '../features/player/player-context'
 import { useCart } from '../features/cart/cart-context'
 import { useCollection } from '../features/collection/collection-context'
 import { useToast } from '../components/ui/toast-provider'
-import {
-  podcastCategories,
-  topShows,
-  trendingEpisodes,
-  getPodcast,
-  latestPlayable,
-  episodeToTrack,
-} from '../lib/podcast-data'
-import type { PodcastCategory } from '../types'
+import { podcastsListQuery, podcastEpisodesQuery } from '../lib/api/queries/podcasts'
+import type { Podcast, PodcastCategory, PodcastEpisode, Track } from '../types'
 import { cn } from '../utils/cn'
 
 export const Route = createFileRoute('/podcasts')({
+  loader: async ({ context: { queryClient } }) => {
+    const shows = await queryClient.ensureQueryData(podcastsListQuery())
+    const ranked = rankByPopularity(shows)
+    await Promise.all(
+      ranked
+        .slice(0, TRENDING_EPISODE_SHOW_LIMIT)
+        .map((show) => queryClient.ensureQueryData(podcastEpisodesQuery(show.id))),
+    )
+  },
   component: PodcastsComponent,
 })
 
 const RAIL_ITEM = 'snap-start shrink-0 w-44 sm:w-48 lg:w-52'
 type Filter = 'All' | PodcastCategory
+
+/** Static enumeration of the `PodcastCategory` union — used for the filter chips. */
+const podcastCategories: PodcastCategory[] = [
+  'News & Politics',
+  'Comedy',
+  'Business',
+  'Sports',
+  'Culture',
+  'Tech',
+  'Health',
+  'Storytelling',
+]
+
+/**
+ * There's no bulk "recent episodes across shows" endpoint, so the trending rail is
+ * built client-side from the top shows' individual episode lists. Bounded to keep
+ * the fan-out of `GET /podcasts/:id/episodes` calls reasonable.
+ */
+const TRENDING_EPISODE_SHOW_LIMIT = 12
+
+const byNewest = (a: PodcastEpisode, b: PodcastEpisode) => b.publishedAt.localeCompare(a.publishedAt)
+const rankByPopularity = (shows: Podcast[]) => [...shows].sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0))
+
+/** Adapt an episode into a Track so it can flow through the music player. */
+function episodeToTrack(ep: PodcastEpisode): Track {
+  return {
+    id: ep.id,
+    title: ep.title,
+    artistId: ep.podcastId,
+    artistName: ep.showTitle,
+    duration: ep.duration,
+    image: ep.image,
+    ownership: 'free',
+  }
+}
 
 function PodcastsComponent() {
   const { currentTrack, isPlaying, playQueue, togglePlay } = usePlayer()
@@ -33,13 +72,32 @@ function PodcastsComponent() {
   const { toast } = useToast()
   const [category, setCategory] = useState<Filter>('All')
 
+  const { data: allShows } = useSuspenseQuery(podcastsListQuery())
+  const topShows = rankByPopularity(allShows)
+  const episodeSourceShows = topShows.slice(0, TRENDING_EPISODE_SHOW_LIMIT)
+  const episodeQueries = useSuspenseQueries({
+    queries: episodeSourceShows.map((show) => podcastEpisodesQuery(show.id)),
+  })
+  const showById = new Map(allShows.map((show) => [show.id, show]))
+  const trendingEpisodes = episodeQueries.flatMap((q) => q.data).sort(byNewest)
+
+  if (topShows.length === 0) {
+    return (
+      <div className="flex flex-col items-center justify-center text-center gap-4 py-32">
+        <h1 className="text-title text-beatz-dark-bg dark:text-white">No shows yet</h1>
+        <p className="text-gray-500 dark:text-gray-300">Check back soon for new podcasts.</p>
+      </div>
+    )
+  }
+
   const featured = topShows[0]
   const subscribed = isShowFollowed(featured.id)
-  const featuredPlayable = latestPlayable(featured.id)
+  const featuredEpisodes = episodeQueries[0]?.data ?? []
+  const featuredPlayable = [...featuredEpisodes].sort(byNewest).find(episodeAccessible)
   const isFeaturedPlaying = isPlaying && currentTrack?.id === featuredPlayable?.id
 
   const shows = category === 'All' ? topShows : topShows.filter((p) => p.category === category)
-  const eps = category === 'All' ? trendingEpisodes : trendingEpisodes.filter((e) => getPodcast(e.podcastId)?.category === category)
+  const eps = category === 'All' ? trendingEpisodes : trendingEpisodes.filter((e) => showById.get(e.podcastId)?.category === category)
 
   const playFeatured = () => {
     if (!featuredPlayable) return

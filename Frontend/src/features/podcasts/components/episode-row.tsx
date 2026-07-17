@@ -1,7 +1,7 @@
 import { Play, Pause, Plus, Share2, Lock, Check } from 'lucide-react'
 import type { PodcastEpisode } from '../../../types'
 import { formatTotalDuration, formatPrice } from '../../../lib/format'
-import { episodeAccessible } from '../../../lib/podcast-data'
+import { episodeAccessible } from '../episode-access'
 import { cn } from '../../../utils/cn'
 
 interface EpisodeRowProps {
