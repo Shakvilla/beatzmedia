@@ -172,7 +172,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-CAT-4]
     llfrs: [LLFR-CATALOG-02.2, LLFR-CATALOG-02.4]
-    status: todo
+    status: in_progress
   - id: WU-LIB-1
     title: Collection — likes/follows/saved/user playlists/owned
     phase: 1
