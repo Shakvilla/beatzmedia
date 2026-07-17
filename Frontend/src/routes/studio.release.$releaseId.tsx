@@ -11,17 +11,15 @@ export const Route = createFileRoute('/studio/release/$releaseId')({
   loader: ({ context: { queryClient }, params: { releaseId } }) =>
     queryClient.ensureQueryData(studioReleaseQuery(releaseId)),
   component: ReleaseManage,
-  errorComponent: () => <ReleaseNotFound />,
-})
-
-function ReleaseNotFound() {
-  return (
+  // Inline (not a named component) so this file doesn't trip
+  // react-refresh/only-export-components — matches the sibling detail routes.
+  errorComponent: () => (
     <div className="flex flex-col items-center justify-center text-center gap-4 py-24">
       <p className="text-sm text-gray-500 dark:text-gray-300">This release no longer exists.</p>
       <Link to="/studio/releases" className="h-10 px-5 rounded-full bg-beatz-green text-black font-bold text-sm flex items-center">Back to releases</Link>
     </div>
-  )
-}
+  ),
+})
 
 const LABEL = 'text-[11px] font-bold uppercase tracking-[0.15em] text-gray-500 dark:text-gray-400'
 const CARD = 'rounded-2xl bg-white dark:bg-beatz-dark-surface border border-gray-200 dark:border-transparent p-6 shadow-sm dark:shadow-none'
