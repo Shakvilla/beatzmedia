@@ -1,63 +1,103 @@
 /**
- * Notifications store (mock).
+ * Notifications store.
  *
- * Holds the notification feed + read state, persisted to localStorage. Seeded
- * with a realistic mixed feed so the bell + inbox have content. Swap the seed
- * for a fetch/subscription later; consumers keep using `useNotifications()`.
+ * Backed by `GET /v1/me/notifications` (the feed plus the server's unread count, which the
+ * bell badge renders). Mark-read writes go to `POST /v1/me/notifications/read` and
+ * `/{id}/read`, applied optimistically so the badge updates instantly and then reconciles
+ * with the server. Consumers keep using `useNotifications()`.
  */
 
-import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
+import { createContext, useContext, useEffect, useMemo, useRef, type ReactNode } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { AppNotification, NotificationType } from '../../types'
+import { useAuth } from '../auth/auth-context'
+import { useToast } from '../../components/ui/toast-provider'
+import {
+  notificationsQuery,
+  apiMarkAllRead,
+  apiMarkOneRead,
+} from '../../lib/api/queries/notifications'
 
 export type { AppNotification, NotificationType }
 
-const PERSIST_KEY = 'beatzclik-notifications'
-
-const seed: AppNotification[] = [
-  { id: 'n1', type: 'sale', title: 'New sale', body: '“Soja” sold to @ama_b · +₵2.50', time: '12m ago', read: false, to: '/studio/payouts' },
-  { id: 'n2', type: 'tip', title: 'You got a tip', body: '@kwesi_ tipped you ₵5.00', time: '1h ago', read: false, to: '/studio/payouts' },
-  { id: 'n3', type: 'follower', title: 'New follower', body: '@yaw_g started following you', time: '3h ago', read: false, to: '/studio/audience' },
-  { id: 'n4', type: 'release', title: 'Release approved', body: '“Iron Boy” passed review and is scheduled', time: 'Yesterday', read: true, to: '/studio/releases' },
-  { id: 'n5', type: 'payout', title: 'Payout sent', body: '₵5,000.00 to MTN MoMo · 0244 ··· 9210', time: '2 days ago', read: true, to: '/studio/payouts' },
-  { id: 'n6', type: 'release', title: 'New from an artist you follow', body: 'Amaarae released “Fountain Baby II”', time: '3 days ago', read: true, to: '/' },
-  { id: 'n7', type: 'system', title: 'Verify your rights', body: 'Confirm catalog ownership to keep payouts clearing', time: '5 days ago', read: true, to: '/studio/settings' },
-]
+/** Cached feed shape — mirrors what `notificationsQuery` returns. */
+interface NotificationsFeed {
+  items: AppNotification[]
+  unread: number
+}
 
 interface NotificationsContextValue {
   notifications: AppNotification[]
   unread: number
   markRead: (id: string) => void
   markAllRead: () => void
-  clearAll: () => void
 }
+
+const NOTIFICATIONS_KEY = ['notifications']
+const EMPTY_FEED: NotificationsFeed = { items: [], unread: 0 }
 
 const NotificationsContext = createContext<NotificationsContextValue | null>(null)
 
-function load(): AppNotification[] {
-  try {
-    const raw = typeof window !== 'undefined' ? localStorage.getItem(PERSIST_KEY) : null
-    return raw ? (JSON.parse(raw) as AppNotification[]) : seed
-  } catch {
-    return seed
-  }
-}
-
 export function NotificationsProvider({ children }: { children: ReactNode }) {
-  const [notifications, setNotifications] = useState<AppNotification[]>(load)
-  const first = useRef(true)
+  const { isAuthenticated } = useAuth()
+  const { toast } = useToast()
+  const queryClient = useQueryClient()
 
+  const { data } = useQuery({ ...notificationsQuery(), enabled: isAuthenticated })
+  const feed = data ?? EMPTY_FEED
+
+  // Drop the feed cache on logout (the server is the source of truth). Only on an actual
+  // authed→unauthed transition — not on first mount, where auth hasn't hydrated yet.
+  const wasAuthed = useRef(isAuthenticated)
   useEffect(() => {
-    if (first.current) { first.current = false; return }
-    try { localStorage.setItem(PERSIST_KEY, JSON.stringify(notifications)) } catch { /* ignore */ }
-  }, [notifications])
+    if (wasAuthed.current && !isAuthenticated) {
+      queryClient.removeQueries({ queryKey: NOTIFICATIONS_KEY })
+    }
+    wasAuthed.current = isAuthenticated
+  }, [isAuthenticated, queryClient])
 
-  const value = useMemo<NotificationsContextValue>(() => ({
-    notifications,
-    unread: notifications.filter((n) => !n.read).length,
-    markRead: (id) => setNotifications((list) => list.map((n) => (n.id === id ? { ...n, read: true } : n))),
-    markAllRead: () => setNotifications((list) => list.map((n) => ({ ...n, read: true }))),
-    clearAll: () => setNotifications([]),
-  }), [notifications])
+  // Optimistic-cache helper: apply `transform` immediately, run `call`, roll back on error.
+  // Mirrors CollectionProvider — no cancelQueries (it would surface as a CancelledError in
+  // loaders); the onSettled invalidate reconciles with the server instead.
+  async function optimistic(
+    transform: (f: NotificationsFeed) => NotificationsFeed,
+    call: () => Promise<unknown>,
+  ) {
+    const prev = queryClient.getQueryData<NotificationsFeed>(NOTIFICATIONS_KEY) ?? EMPTY_FEED
+    queryClient.setQueryData<NotificationsFeed>(NOTIFICATIONS_KEY, transform(prev))
+    try {
+      await call()
+    } catch {
+      queryClient.setQueryData<NotificationsFeed>(NOTIFICATIONS_KEY, prev)
+      toast('Could not update your notifications', 'error')
+    } finally {
+      queryClient.invalidateQueries({ queryKey: NOTIFICATIONS_KEY })
+    }
+  }
+
+  const value = useMemo<NotificationsContextValue>(
+    () => ({
+      notifications: feed.items,
+      unread: feed.unread,
+      markRead: (id) =>
+        void optimistic(
+          (f) => ({
+            items: f.items.map((n) => (n.id === id ? { ...n, read: true } : n)),
+            // Only decrement when the target was actually unread, so repeated taps can't
+            // drive the badge below the server's real count.
+            unread: f.items.some((n) => n.id === id && !n.read) ? Math.max(0, f.unread - 1) : f.unread,
+          }),
+          () => apiMarkOneRead(id),
+        ),
+      markAllRead: () =>
+        void optimistic(
+          (f) => ({ items: f.items.map((n) => ({ ...n, read: true })), unread: 0 }),
+          () => apiMarkAllRead(),
+        ),
+    }),
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [feed],
+  )
 
   return <NotificationsContext.Provider value={value}>{children}</NotificationsContext.Provider>
 }
