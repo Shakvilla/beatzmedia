@@ -317,3 +317,17 @@ export interface CartStoreItem {
     merchVariants?: Record<string, string>
   }
 }
+
+export type NotificationType = 'sale' | 'tip' | 'follower' | 'payout' | 'release' | 'system'
+
+export interface AppNotification {
+  id: ID
+  type: NotificationType
+  title: string
+  body: string
+  /** Relative time label, e.g. "2h ago". */
+  time: string
+  read: boolean
+  /** Optional in-app destination. */
+  to?: string
+}

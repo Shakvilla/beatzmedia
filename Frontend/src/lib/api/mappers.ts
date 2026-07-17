@@ -19,6 +19,8 @@ import type {
   Podcast,
   PodcastEpisode,
   PodcastCategory,
+  AppNotification,
+  NotificationType,
 } from '../../types'
 import type {
   Analytics,
@@ -580,5 +582,28 @@ export function toStudioRelease(w: StudioReleaseWire): StudioRelease {
     streams: w.streams,
     revenue: w.revenue?.amount ?? 0,
     price: w.price?.amount ?? 0,
+  }
+}
+
+/** Wire shape of `AppNotificationDto` served by `GET /v1/me/notifications`. */
+export interface AppNotificationWire {
+  id: string
+  type: string
+  title: string
+  body: string
+  time: string
+  read: boolean
+  to: string | null
+}
+
+export function toAppNotification(wire: AppNotificationWire): AppNotification {
+  return {
+    id: wire.id,
+    type: wire.type as NotificationType,
+    title: wire.title,
+    body: wire.body,
+    time: wire.time,
+    read: wire.read,
+    to: wire.to ?? undefined,
   }
 }

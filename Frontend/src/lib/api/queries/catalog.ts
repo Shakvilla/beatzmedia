@@ -77,6 +77,18 @@ export function albumQuery(id: string) {
   })
 }
 
+/**
+ * `GET /v1/playlists/{id}` — an editorial (catalog) playlist. The response carries
+ * `trackIds`, not full tracks; resolve them with `resolveQuery({ trackIds })`.
+ * User-created playlists live on the collection context, not here.
+ */
+export function playlistQuery(id: string) {
+  return queryOptions({
+    queryKey: ['playlist', id],
+    queryFn: async () => toPlaylist(await apiFetch<PlaylistWire>(`/playlists/${id}`)),
+  })
+}
+
 export function trackQuery(id: string) {
   return queryOptions({
     queryKey: ['track', id],
