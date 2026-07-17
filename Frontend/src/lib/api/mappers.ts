@@ -1,4 +1,25 @@
-import type { Artist, Album, Track, TrackCredit, BrowseCategory, Playlist, Genre, OwnershipStatus, Money } from '../../types'
+import type {
+  Artist,
+  Album,
+  Track,
+  TrackCredit,
+  BrowseCategory,
+  Playlist,
+  Genre,
+  OwnershipStatus,
+  Money,
+  StoreItem,
+  StoreItemType,
+  LicenseOption,
+  LicenseTier,
+  Event,
+  TicketTier,
+  EventStatus,
+  EventCategory,
+  Podcast,
+  PodcastEpisode,
+  PodcastCategory,
+} from '../../types'
 
 export interface ArtistWire {
   id: string
@@ -149,5 +170,197 @@ export function toPlaylist(wire: PlaylistWire): Playlist {
     isPublic: wire.isPublic,
     followers: wire.followers ?? undefined,
     trackIds: wire.trackIds,
+  }
+}
+
+export interface LicenseOptionWire {
+  tier: LicenseTier
+  label: string
+  price: Money
+  features: string[]
+  terms: string | null
+}
+
+function toLicenseOption(wire: LicenseOptionWire): LicenseOption {
+  return {
+    tier: wire.tier,
+    label: wire.label,
+    price: wire.price,
+    features: wire.features,
+    terms: wire.terms ?? undefined,
+  }
+}
+
+export interface MerchVariantWire {
+  label: string
+  options: string[]
+}
+
+/** Mirrors `StoreItemView` served by `GET /v1/store` and `GET /v1/store/:id`. */
+export interface StoreItemWire {
+  id: string
+  type: StoreItemType
+  title: string
+  artistName: string
+  artistId: string | null
+  image: string
+  price: Money
+  genre: Genre | null
+  badges: string[] | null
+  description: string | null
+  popularity: number | null
+  createdAt: string | null
+  licenseOptions: LicenseOptionWire[] | null
+  variants: MerchVariantWire[] | null
+  quality: string | null
+  dropsAt: string | null
+  stockRemaining: number | null
+}
+
+export function toStoreItem(wire: StoreItemWire): StoreItem {
+  return {
+    id: wire.id,
+    type: wire.type,
+    title: wire.title,
+    artistName: wire.artistName,
+    artistId: wire.artistId ?? undefined,
+    image: wire.image,
+    price: wire.price,
+    genre: wire.genre ?? undefined,
+    badges: wire.badges ?? undefined,
+    description: wire.description ?? undefined,
+    popularity: wire.popularity ?? undefined,
+    createdAt: wire.createdAt ?? undefined,
+    licenseOptions: wire.licenseOptions?.map(toLicenseOption) ?? undefined,
+    variants: wire.variants ?? undefined,
+    quality: wire.quality ?? undefined,
+    dropsAt: wire.dropsAt ?? undefined,
+    stockRemaining: wire.stockRemaining ?? undefined,
+  }
+}
+
+/** Mirrors `TicketTierView` nested in `EventView` served by `GET /v1/events`. No `id` on the wire — the tier's internal id is not part of this shape. */
+export interface TicketTierWire {
+  name: string
+  price: Money
+  perks: string[] | null
+  soldOut: boolean | null
+}
+
+export function toTicketTier(wire: TicketTierWire): TicketTier {
+  return {
+    name: wire.name,
+    price: wire.price,
+    perks: wire.perks ?? undefined,
+    soldOut: wire.soldOut ?? undefined,
+  }
+}
+
+/** Mirrors `EventView` served by `GET /v1/events` and `GET /v1/events/:id`. */
+export interface EventWire {
+  id: string
+  title: string
+  artistName: string
+  artistId: string | null
+  lineup: string[] | null
+  image: string
+  date: string
+  doorsTime: string | null
+  venue: string
+  city: string
+  region: string | null
+  status: EventStatus
+  category: EventCategory
+  description: string | null
+  ticketTiers: TicketTierWire[]
+  popularity: number | null
+  ageRestriction: string | null
+}
+
+export function toEvent(wire: EventWire): Event {
+  return {
+    id: wire.id,
+    title: wire.title,
+    artistName: wire.artistName,
+    artistId: wire.artistId ?? undefined,
+    lineup: wire.lineup ?? undefined,
+    image: wire.image,
+    date: wire.date,
+    doorsTime: wire.doorsTime ?? undefined,
+    venue: wire.venue,
+    city: wire.city,
+    region: wire.region ?? undefined,
+    status: wire.status,
+    category: wire.category,
+    description: wire.description ?? undefined,
+    ticketTiers: wire.ticketTiers.map(toTicketTier),
+    popularity: wire.popularity ?? undefined,
+    ageRestriction: wire.ageRestriction ?? undefined,
+  }
+}
+
+/** Mirrors `PodcastView` served by `GET /v1/podcasts` and `GET /v1/podcasts/:id`. */
+export interface PodcastWire {
+  id: string
+  title: string
+  publisher: string
+  image: string
+  category: PodcastCategory
+  description: string | null
+  episodeCount: number | null
+  popularity: number | null
+  seasonPassPrice: Money | null
+  supportsTips: boolean | null
+}
+
+export function toPodcast(wire: PodcastWire): Podcast {
+  return {
+    id: wire.id,
+    title: wire.title,
+    publisher: wire.publisher,
+    image: wire.image,
+    category: wire.category,
+    description: wire.description ?? undefined,
+    episodeCount: wire.episodeCount ?? undefined,
+    popularity: wire.popularity ?? undefined,
+    seasonPassPrice: wire.seasonPassPrice ?? undefined,
+    supportsTips: wire.supportsTips ?? undefined,
+  }
+}
+
+/** Mirrors `PodcastEpisodeView` served by `GET /v1/podcasts/:id/episodes`. */
+export interface PodcastEpisodeWire {
+  id: string
+  podcastId: string
+  title: string
+  showTitle: string
+  image: string
+  duration: number
+  publishedAt: string
+  description: string | null
+  episodeNumber: number | null
+  isPremium: boolean | null
+  price: Money | null
+  isOwned: boolean | null
+  isEarlyAccess: boolean | null
+  publicAt: string | null
+}
+
+export function toPodcastEpisode(wire: PodcastEpisodeWire): PodcastEpisode {
+  return {
+    id: wire.id,
+    podcastId: wire.podcastId,
+    title: wire.title,
+    showTitle: wire.showTitle,
+    image: wire.image,
+    duration: wire.duration,
+    publishedAt: wire.publishedAt,
+    description: wire.description ?? undefined,
+    episodeNumber: wire.episodeNumber ?? undefined,
+    isPremium: wire.isPremium ?? undefined,
+    price: wire.price ?? undefined,
+    isOwned: wire.isOwned ?? undefined,
+    isEarlyAccess: wire.isEarlyAccess ?? undefined,
+    publicAt: wire.publicAt ?? undefined,
   }
 }

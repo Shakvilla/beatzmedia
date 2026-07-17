@@ -1,41 +1,45 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
+import { useQuery, useSuspenseQuery } from '@tanstack/react-query'
 import { ArrowLeft, CalendarDays, MapPin, Clock, Users, Minus, Plus, Smartphone, Share2 } from 'lucide-react'
 import { useToast } from '../components/ui/toast-provider'
 import { useCart } from '../features/cart/cart-context'
 import { TicketTierSelector } from '../features/events/components/ticket-tier-selector'
 import { StatusBadge, formatEventDate } from '../features/events/event-ui'
-import { getEvent } from '../lib/event-data'
-import { getArtist } from '../lib/mock-data'
+import { eventQuery } from '../lib/api/queries/events'
+import { artistQuery } from '../lib/api/queries/catalog'
 import { formatPrice } from '../lib/format'
 
 export const Route = createFileRoute('/event/$eventId')({
+  loader: async ({ context: { queryClient }, params: { eventId } }) => {
+    const event = await queryClient.ensureQueryData(eventQuery(eventId))
+    if (event.artistId) {
+      await queryClient.ensureQueryData(artistQuery(event.artistId))
+    }
+  },
   component: EventDetailPage,
+  errorComponent: () => (
+    <div className="flex flex-col items-center justify-center text-center gap-4 py-32">
+      <h1 className="text-title text-beatz-dark-bg dark:text-white">Event not found</h1>
+      <Link to="/events" className="h-11 px-6 rounded-full bg-beatz-green text-black font-bold flex items-center">
+        Back to events
+      </Link>
+    </div>
+  ),
 })
 
 function EventDetailPage() {
   const { eventId } = Route.useParams()
-  const event = getEvent(eventId)
+  const { data: event } = useSuspenseQuery(eventQuery(eventId))
+  const { data: artist } = useQuery({ ...artistQuery(event.artistId ?? ''), enabled: !!event.artistId })
   const { toast } = useToast()
   const { addItem } = useCart()
   const navigate = useNavigate()
 
-  const firstAvailable = event ? event.ticketTiers.findIndex((t) => !t.soldOut) : -1
+  const firstAvailable = event.ticketTiers.findIndex((t) => !t.soldOut)
   const [tierIndex, setTierIndex] = useState(firstAvailable === -1 ? 0 : firstAvailable)
   const [qty, setQty] = useState(1)
 
-  if (!event) {
-    return (
-      <div className="flex flex-col items-center justify-center text-center gap-4 py-32">
-        <h1 className="text-title text-beatz-dark-bg dark:text-white">Event not found</h1>
-        <Link to="/events" className="h-11 px-6 rounded-full bg-beatz-green text-black font-bold flex items-center">
-          Back to events
-        </Link>
-      </div>
-    )
-  }
-
-  const artist = event.artistId ? getArtist(event.artistId) : undefined
   const soldOut = event.status === 'sold-out'
   const tier = event.ticketTiers[tierIndex]
   const total = (tier?.price.amount ?? 0) * qty

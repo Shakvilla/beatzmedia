@@ -1,12 +1,18 @@
 import { createFileRoute, Link, getRouteApi } from '@tanstack/react-router'
+import { useSuspenseQuery } from '@tanstack/react-query'
 import { Sparkles, Disc3, AudioLines, Shirt, ArrowRight } from 'lucide-react'
 import { PremiumProductCard } from '../features/store/components/premium-product-card'
 import { StoreRail, type StoreTabPath } from '../features/store/components/store-rail'
 import { useStoreCart } from '../features/store/use-store-cart'
-import { beatItems, hifiItems, merchItems, exclusiveItems, filterStoreItems } from '../lib/store-data'
+import { filterByQuery } from '../features/store/filter-by-query'
+import { storeListQuery } from '../lib/api/queries/store'
 import { formatPrice } from '../lib/format'
+import type { StoreItem } from '../types'
 
+// Overview has no tab-level `type` filter — it fetches the whole catalog page
+// once and derives the hero + editorial rails from it client-side.
 export const Route = createFileRoute('/store/')({
+  loader: ({ context: { queryClient } }) => queryClient.ensureQueryData(storeListQuery({})),
   component: StoreOverview,
 })
 
@@ -22,9 +28,10 @@ const CATEGORIES: { to: StoreTabPath; label: string; caption: string; icon: Reac
 function StoreOverview() {
   const { q, sort } = storeApi.useSearch()
   const { addToCart } = useStoreCart()
+  const { data: allItems } = useSuspenseQuery(storeListQuery({ sort }))
 
   // Searching from the header collapses the overview into a single result grid.
-  const searchResults = q ? filterStoreItems([...hifiItems, ...beatItems, ...merchItems, ...exclusiveItems], { q, sort }) : null
+  const searchResults = q ? filterByQuery(allItems, q) : null
 
   if (searchResults) {
     return (
@@ -39,33 +46,39 @@ function StoreOverview() {
     )
   }
 
-  const featured = exclusiveItems[0]
+  const beatItems = allItems.filter((item) => item.type === 'BEAT_LICENSE')
+  const hifiItems = allItems.filter((item) => item.type === 'TRACK' || item.type === 'ALBUM')
+  const merchItems = allItems.filter((item) => item.type === 'MERCH')
+  const exclusiveItems = allItems.filter((item) => item.type === 'EXCLUSIVE')
+  const featured: StoreItem | undefined = exclusiveItems[0] ?? allItems[0]
 
   return (
     <div className="flex flex-col gap-16">
       {/* Featured hero */}
-      <Link
-        to="/store/$itemId"
-        params={{ itemId: featured.id }}
-        className="relative overflow-hidden rounded-3xl group min-h-[420px] lg:min-h-[460px] flex"
-      >
-        <img src={featured.image} alt={featured.title} className="absolute inset-0 w-full h-full object-cover transition-transform duration-[800ms] ease-out group-hover:scale-105" />
-        <div className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/60 to-transparent" />
-        <div className="relative z-10 flex flex-col justify-end gap-5 p-10 lg:p-16 max-w-2xl">
-          <span className="flex items-center gap-2 text-xs font-bold tracking-[0.3em] uppercase text-[#f6c644]">
-            <Sparkles size={14} /> Exclusive Drop
-          </span>
-          <h2 className="text-3xl sm:text-4xl lg:text-6xl font-bold text-white tracking-tight leading-[1.05]">{featured.title}</h2>
-          <p className="text-lg text-gray-200 max-w-lg leading-relaxed">{featured.description}</p>
-          <div className="flex items-center gap-5 mt-2">
-            <span className="h-12 px-7 rounded-full bg-beatz-green text-black font-bold flex items-center gap-2 group-hover:scale-105 transition-transform">
-              Shop now — from {formatPrice(featured.price)}
-              <ArrowRight size={18} />
+      {featured && (
+        <Link
+          to="/store/$itemId"
+          params={{ itemId: featured.id }}
+          className="relative overflow-hidden rounded-3xl group min-h-[420px] lg:min-h-[460px] flex"
+        >
+          <img src={featured.image} alt={featured.title} className="absolute inset-0 w-full h-full object-cover transition-transform duration-[800ms] ease-out group-hover:scale-105" />
+          <div className="absolute inset-0 bg-gradient-to-r from-black/90 via-black/60 to-transparent" />
+          <div className="relative z-10 flex flex-col justify-end gap-5 p-10 lg:p-16 max-w-2xl">
+            <span className="flex items-center gap-2 text-xs font-bold tracking-[0.3em] uppercase text-[#f6c644]">
+              <Sparkles size={14} /> Exclusive Drop
             </span>
-            <span className="text-sm text-white/70 font-bold">{featured.artistName}</span>
+            <h2 className="text-3xl sm:text-4xl lg:text-6xl font-bold text-white tracking-tight leading-[1.05]">{featured.title}</h2>
+            <p className="text-lg text-gray-200 max-w-lg leading-relaxed">{featured.description}</p>
+            <div className="flex items-center gap-5 mt-2">
+              <span className="h-12 px-7 rounded-full bg-beatz-green text-black font-bold flex items-center gap-2 group-hover:scale-105 transition-transform">
+                Shop now — from {formatPrice(featured.price)}
+                <ArrowRight size={18} />
+              </span>
+              <span className="text-sm text-white/70 font-bold">{featured.artistName}</span>
+            </div>
           </div>
-        </div>
-      </Link>
+        </Link>
+      )}
 
       {/* Browse by category */}
       <section className="grid grid-cols-2 lg:grid-cols-4 gap-4">

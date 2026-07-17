@@ -2,10 +2,16 @@ import { Link } from '@tanstack/react-router'
 import { MapPin } from 'lucide-react'
 import type { Event } from '../../../types'
 import { formatPrice } from '../../../lib/format'
-import { lowestTicketPrice } from '../../../lib/event-data'
 import { StatusBadge, eventMonth, eventDay } from '../event-ui'
 
+/** Lowest ticket tier price for "from ₵X" labels. Returns undefined when there are no tiers. */
+function lowestTicketPrice(event: Event) {
+  if (event.ticketTiers.length === 0) return undefined
+  return event.ticketTiers.reduce((lowest, tier) => (tier.price.amount < lowest.amount ? tier.price : lowest), event.ticketTiers[0].price)
+}
+
 export function EventCard({ event }: { event: Event }) {
+  const price = lowestTicketPrice(event)
   return (
     <Link to="/event/$eventId" params={{ eventId: event.id }} className="group flex flex-col cursor-pointer">
       <div className="relative aspect-[3/4] rounded-xl overflow-hidden ring-1 ring-black/5 dark:ring-white/5 shadow-sm transition-all duration-300 group-hover:shadow-2xl">
@@ -25,9 +31,11 @@ export function EventCard({ event }: { event: Event }) {
           <span className="text-xs text-white/70 flex items-center gap-1 truncate">
             <MapPin size={11} className="shrink-0" /> {event.venue}, {event.city}
           </span>
-          <span className="text-sm font-mono font-bold text-beatz-green mt-1">
-            from {formatPrice({ amount: lowestTicketPrice(event), currency: 'GHS' })}
-          </span>
+          {price && (
+            <span className="text-sm font-mono font-bold text-beatz-green mt-1">
+              from {formatPrice(price)}
+            </span>
+          )}
         </div>
       </div>
     </Link>

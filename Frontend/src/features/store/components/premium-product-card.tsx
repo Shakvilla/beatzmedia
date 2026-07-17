@@ -2,8 +2,13 @@ import { Link } from '@tanstack/react-router'
 import { Plus } from 'lucide-react'
 import type { StoreItem } from '../../../types'
 import { formatPrice } from '../../../lib/format'
-import { lowestLicensePrice } from '../../../lib/store-data'
 import { cn } from '../../../utils/cn'
+
+/** Lowest price across a beat's license tiers (for "from ₵X" display). */
+function lowestLicensePrice(item: StoreItem): number {
+  if (!item.licenseOptions?.length) return item.price.amount
+  return Math.min(...item.licenseOptions.map((l) => l.price.amount))
+}
 
 interface PremiumProductCardProps {
   item: StoreItem

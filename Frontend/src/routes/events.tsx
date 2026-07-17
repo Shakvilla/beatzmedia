@@ -1,24 +1,46 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useState } from 'react'
+import { useSuspenseQuery } from '@tanstack/react-query'
 import { CalendarDays, MapPin, Ticket } from 'lucide-react'
 import { MediaRail } from '../features/discover/components/media-rail'
 import { EventCard } from '../features/events/components/event-card'
 import { EventListRow } from '../features/events/components/event-list-row'
 import { StatusBadge, formatEventDate } from '../features/events/event-ui'
-import { featuredEvent, eventCities, eventsByCity, lowestTicketPrice, upcomingEvents } from '../lib/event-data'
+import { eventsListQuery } from '../lib/api/queries/events'
 import { formatPrice } from '../lib/format'
 import { cn } from '../utils/cn'
+import type { Event } from '../types'
 
 export const Route = createFileRoute('/events')({
+  loader: ({ context: { queryClient } }) => queryClient.ensureQueryData(eventsListQuery()),
   component: EventsComponent,
 })
 
 const RAIL_ITEM = 'snap-start shrink-0 w-44 sm:w-52 lg:w-56'
 
+/** Lowest ticket price for "from ₵X" labels. */
+function lowestTicketPrice(event: Event): number {
+  return Math.min(...event.ticketTiers.map((t) => t.price.amount))
+}
+
 function EventsComponent() {
+  const { data: events } = useSuspenseQuery(eventsListQuery())
   const [city, setCity] = useState('All')
-  const list = eventsByCity(city)
+
+  const upcomingEvents = [...events].sort((a, b) => a.date.localeCompare(b.date))
+  const featuredEvent = [...events].sort((a, b) => (b.popularity ?? 0) - (a.popularity ?? 0))[0]
+  const eventCities = Array.from(new Set(events.map((e) => e.city)))
+  const list = city === 'All' ? upcomingEvents : upcomingEvents.filter((e) => e.city === city)
   const festivals = upcomingEvents.filter((e) => e.category === 'Festival')
+
+  if (!featuredEvent) {
+    return (
+      <div className="flex flex-col items-center justify-center text-center gap-4 py-32">
+        <h1 className="text-title text-beatz-dark-bg dark:text-white">No events yet</h1>
+        <p className="text-gray-500 dark:text-gray-300 max-w-md">Check back soon for concerts, festivals and shows.</p>
+      </div>
+    )
+  }
 
   return (
     <div className="flex flex-col gap-12">

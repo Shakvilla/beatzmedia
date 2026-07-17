@@ -1,41 +1,54 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useState } from 'react'
+import { useSuspenseQuery } from '@tanstack/react-query'
 import { Play, Pause, Plus, Check, Heart, ShoppingCart, Crown } from 'lucide-react'
 import { usePlayer } from '../features/player/player-context'
 import { useCart } from '../features/cart/cart-context'
 import { useCollection } from '../features/collection/collection-context'
 import { useToast } from '../components/ui/toast-provider'
 import { EpisodeRow } from '../features/podcasts/components/episode-row'
+import { episodeAccessible } from '../features/podcasts/episode-access'
 import { SupportModal } from '../features/podcasts/components/support-modal'
-import {
-  getPodcast,
-  getShowEpisodes,
-  latestPlayable,
-  episodeAccessible,
-  episodeToTrack,
-} from '../lib/podcast-data'
+import { podcastQuery, podcastEpisodesQuery } from '../lib/api/queries/podcasts'
 import { formatPrice } from '../lib/format'
 import { cn } from '../utils/cn'
-import type { PodcastEpisode } from '../types'
+import type { PodcastEpisode, Track } from '../types'
 
 export const Route = createFileRoute('/podcast/$podcastId')({
+  loader: async ({ context: { queryClient }, params: { podcastId } }) => {
+    await queryClient.ensureQueryData(podcastQuery(podcastId))
+    await queryClient.ensureQueryData(podcastEpisodesQuery(podcastId))
+  },
   component: PodcastShowPage,
+  errorComponent: () => (
+    <div className="flex flex-col items-center justify-center text-center gap-4 py-32">
+      <h1 className="text-title text-beatz-dark-bg dark:text-white">Show not found</h1>
+      <Link to="/podcasts" className="h-11 px-6 rounded-full bg-beatz-green text-black font-bold flex items-center">
+        Back to podcasts
+      </Link>
+    </div>
+  ),
 })
+
+const byNewest = (a: PodcastEpisode, b: PodcastEpisode) => b.publishedAt.localeCompare(a.publishedAt)
+
+/** Adapt an episode into a Track so it can flow through the music player. */
+function episodeToTrack(ep: PodcastEpisode): Track {
+  return {
+    id: ep.id,
+    title: ep.title,
+    artistId: ep.podcastId,
+    artistName: ep.showTitle,
+    duration: ep.duration,
+    image: ep.image,
+    ownership: 'free',
+  }
+}
 
 function PodcastShowPage() {
   const { podcastId } = Route.useParams()
-  const show = getPodcast(podcastId)
-
-  if (!show) {
-    return (
-      <div className="flex flex-col items-center justify-center text-center gap-4 py-32">
-        <h1 className="text-title text-beatz-dark-bg dark:text-white">Show not found</h1>
-        <Link to="/podcasts" className="h-11 px-6 rounded-full bg-beatz-green text-black font-bold flex items-center">
-          Back to podcasts
-        </Link>
-      </div>
-    )
-  }
+  const { data: show } = useSuspenseQuery(podcastQuery(podcastId))
+  const { data: rawEpisodes } = useSuspenseQuery(podcastEpisodesQuery(podcastId))
 
   const { currentTrack, isPlaying, playQueue, togglePlay } = usePlayer()
   const { addItem } = useCart()
@@ -44,8 +57,8 @@ function PodcastShowPage() {
   const [supportOpen, setSupportOpen] = useState(false)
   const following = isShowFollowed(show.id)
 
-  const episodes = getShowEpisodes(show.id)
-  const playable = latestPlayable(show.id)
+  const episodes = [...rawEpisodes].sort(byNewest)
+  const playable = episodes.find(episodeAccessible)
   const premiumCount = episodes.filter((e) => e.isPremium).length
   const isShowPlaying = isPlaying && episodes.some((e) => e.id === currentTrack?.id)
 
