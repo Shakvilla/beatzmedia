@@ -196,12 +196,18 @@ public final class Release {
     if (title != null) {
       this.title = title;
     }
-    this.genre = genre;
-    this.description = description;
+    if (genre != null) {
+      this.genre = genre;
+    }
+    if (description != null) {
+      this.description = description;
+    }
     if (visibility != null) {
       this.visibility = visibility;
     }
-    this.scheduledAt = scheduledAt;
+    if (scheduledAt != null) {
+      this.scheduledAt = scheduledAt;
+    }
     this.updatedAt = now;
   }
 

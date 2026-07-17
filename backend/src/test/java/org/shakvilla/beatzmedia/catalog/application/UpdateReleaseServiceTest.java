@@ -106,4 +106,25 @@ class UpdateReleaseServiceTest {
     assertThrows(TrackNotInReleaseException.class,
         () -> service.update(new ReleaseId("r1"), ARTIST, cmd));
   }
+
+  /**
+   * Regression for the "null = no change" contract (UpdateRelease Javadoc): a first PATCH sets
+   * genre/description, then a second, narrower PATCH touching only visibility must NOT null them
+   * out.
+   */
+  @Test
+  void secondNarrowPatch_doesNotWipePreviouslySetGenreAndDescription() {
+    draftWithTrack();
+
+    service.update(
+        new ReleaseId("r1"), ARTIST,
+        new UpdateReleaseCommand(null, "Highlife", "New bio", null, null, null));
+
+    StudioReleaseDetailView view = service.update(
+        new ReleaseId("r1"), ARTIST,
+        new UpdateReleaseCommand(null, null, null, "public", null, null));
+
+    assertEquals("Highlife", view.genre());
+    assertEquals("New bio", view.description());
+  }
 }
