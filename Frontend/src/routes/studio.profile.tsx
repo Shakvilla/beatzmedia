@@ -1,5 +1,6 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMemo, useRef, useState } from 'react'
+import { useSuspenseQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ImagePlus, X, Plus, Trash2, BadgeCheck, Camera, AtSign, Play, Globe,
   Music2, Mail, Check, MapPin,
@@ -8,9 +9,11 @@ import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
 import { studioArtist, type StudioProfile, type StudioShow } from '../lib/studio-data'
 import { getArtistTracks } from '../lib/mock-data'
-import { useStudio } from '../features/studio/studio-context'
+import { studioProfileQuery, apiSaveStudioProfile } from '../lib/api/queries/studio'
+import { ApiError } from '../lib/api/errors'
 
 export const Route = createFileRoute('/studio/profile')({
+  loader: ({ context: { queryClient } }) => queryClient.ensureQueryData(studioProfileQuery()),
   component: ProfileComponent,
 })
 
@@ -23,7 +26,8 @@ const BIO_MAX = 300
 function ProfileComponent() {
   const { toast } = useToast()
   const navigate = useNavigate()
-  const { profile: storeProfile, setProfile } = useStudio()
+  const queryClient = useQueryClient()
+  const { data: storeProfile } = useSuspenseQuery(studioProfileQuery())
   const trackOptions = useMemo(() => getArtistTracks(studioArtist.id), [])
 
   const [p, setP] = useState<StudioProfile>(storeProfile)
@@ -54,7 +58,26 @@ function ProfileComponent() {
   }
   const removePress = (id: string) => set('pressAssets', p.pressAssets.filter((a) => a.id !== id))
 
-  const save = () => { setProfile(p); toast('Profile changes saved', 'success') }
+  const save = async () => {
+    const key = studioProfileQuery().queryKey
+    const previous = queryClient.getQueryData(key)
+    queryClient.setQueryData(key, p)          // optimistic — updates editor baseline + sidebar
+    try {
+      const saved = await apiSaveStudioProfile(p)
+      queryClient.setQueryData(key, saved)    // adopt server-canonical (e.g. normalized username)
+      setP(saved)
+      toast('Profile changes saved', 'success')
+    } catch (err) {
+      queryClient.setQueryData(key, previous) // rollback
+      const code = err instanceof ApiError ? err.code : null
+      toast(
+        code === 'USERNAME_TAKEN' ? 'That username is already taken.'
+        : code === 'INVALID_GENRE' ? 'One of your genres isn’t recognised.'
+        : 'Could not save your profile. Please try again.',
+        'error',
+      )
+    }
+  }
 
   return (
     <div className="flex flex-col gap-8">
