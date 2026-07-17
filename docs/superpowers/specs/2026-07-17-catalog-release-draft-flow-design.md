@@ -17,6 +17,12 @@ So: upload needs a release id, submit needs trackIds, and even sequenced, the up
 
 This WU makes the flow composable and correct. The **frontend wizard wiring is out of scope** — it becomes a follow-up slice once this lands.
 
+### Discovered backend state (grounds the design)
+
+- **`release_draft` table (V305) is an orphan** — a generic `draft JSONB` blob keyed by artist, referenced by **zero** Java code (an abandoned alternative draft design). This WU uses **real `release` rows with `status='draft'`** instead — the coherent approach that also fixes track attachment. The orphan table is left in place (dropping it is separate cleanup).
+- **Per-track splits are an unbuilt stub** — the `split_entry` table + `SplitEntry` domain + `SplitEntryEntity` exist, but **nothing writes to them**; `SubmitReleaseService` validates split *sums* then builds `ReleaseTrack(trackId, position, priceMinor)` **dropping the splits**, and `ReleaseTrack` has no splits field. **Per-track splits are DEFERRED to WU-CAT-6** (see Out of scope). This WU carries per-track **price** (via `release_track.price_minor`) and **order** (position) only.
+- **`saveRelease(Release)` already upserts the full track list** — it deletes existing `release_track` rows and re-persists from `release.getTracks()`. So "attach a track" and "replace the track list" are simply: load the aggregate → mutate it → `saveRelease`. It does **not** yet persist `genre`/`description` (the entity gains those fields here).
+
 ## Goal
 
 A coherent creator flow:
@@ -47,9 +53,9 @@ Multipart WAV/FLAC (existing validation: content-type in {wav, x-wav, flac, x-fl
 
 ### 3. `PATCH /v1/studio/releases/:id` — update draft **(extended)**
 
-Extends the current title-only PATCH. Body `UpdateReleaseBody`: `{ title?, genre?, description?, visibility?, scheduledAt?, tracks?: TrackRefBody[] }` where `TrackRefBody = { trackId, position, priceMinor, splits: SplitRefBody[] }` and `SplitRefBody = { name, email, role, percent, confirmation }`.
+Extends the current title-only PATCH. Body `UpdateReleaseBody`: `{ title?, genre?, description?, visibility?, scheduledAt?, tracks?: TrackRefBody[] }` where `TrackRefBody = { trackId, position, priceMinor }` (no splits this WU — deferred to WU-CAT-6).
 
-- If `tracks` is present, it **replaces** the draft's ordered track list (positions, per-track prices, splits) — the coarse "save the whole draft" shape the wizard's client-side draft model produces. `tracks` edits are **draft-only** → non-draft returns **409 `ILLEGAL_TRANSITION`**.
+- If `tracks` is present, it **replaces** the draft's ordered track list (positions, per-track prices) — the coarse "save the whole draft" shape the wizard's client-side draft model produces. `tracks` edits are **draft-only** → non-draft returns **409 `ILLEGAL_TRANSITION`**.
 - `title` alone remains editable on any status (preserves Slice 3a's rename on `in_review`/`live`).
 - Every `trackId` in `tracks` must already belong to this release (else **422 `TRACK_NOT_IN_RELEASE`**).
 - Response: **200** `StudioReleaseDetailView`.
@@ -62,7 +68,7 @@ Draft-only. Removes the `ReleaseTrack` from the release (and may delete the orph
 
 ### 5. `POST /v1/studio/releases/:id/submit` — finalize (new)
 
-Header **`Idempotency-Key` required** (the terminal side-effect; missing → 400 `MISSING_IDEMPOTENCY_KEY`, mirroring today's submit). Validates track count (INV-12) + split sums, recomputes list price (INV-5), transitions **draft → in_review**, appends a `SUBMIT_RELEASE` audit entry — all in one `@Transactional`. Not-draft → **409 `ILLEGAL_TRANSITION`**.
+Header **`Idempotency-Key` required** (the terminal side-effect; missing → 400 `MISSING_IDEMPOTENCY_KEY`, mirroring today's submit). Validates track count (INV-12), recomputes list price (INV-5), transitions **draft → in_review**, appends a `SUBMIT_RELEASE` audit entry — all in one `@Transactional`. Not-draft → **409 `ILLEGAL_TRANSITION`**. (Split-sum validation is out — no splits input this WU.)
 
 - Response: **200** `StudioReleaseDetailView` with `status: "in_review"`.
 
@@ -74,8 +80,7 @@ Header **`Idempotency-Key` required** (the terminal side-effect; missing → 400
 
 - **`StudioReleaseView`** (list; **unchanged**) — `{ id, title, type, status, date, trackCount, streams, revenue: MoneyView, price: MoneyView }`.
 - **`StudioReleaseDetailView`** (new; superset) — `StudioReleaseView` **+** `{ genre: string|null, description: string|null, visibility: string, scheduledAt: string|null, tracks: TrackDraftView[] }`.
-- **`TrackDraftView`** — `{ trackId, title, duration: number (sec), status: string, position: number, price: MoneyView, splits: SplitView[] }`.
-- **`SplitView`** — `{ name, email, role, percent, confirmation }`.
+- **`TrackDraftView`** — `{ trackId, title, duration: number (sec), status: string, position: number, price: MoneyView }`. (No `splits` this WU — deferred to WU-CAT-6.)
 
 ## Domain (`Release.java`)
 
@@ -101,7 +106,7 @@ Track attach/remove uses the existing `release_track` table (no new table). Conf
 
 ## Invariants & validation
 
-- **INV-12 — track count by type**, enforced at **finalize only** (drafts may be partial): `single` = 1, `ep` = 3–6, `album` = 7+, `mixtape` = ≥1. Violations → **422 `TRACK_COUNT_INVALID`** (existing code). Per-track split percentages must sum ≤ 100 → **422 `SPLIT_OVER_100`** (existing).
+- **INV-12 — track count by type**, enforced at **finalize only** (drafts may be partial): `single` = 1, `ep` = 3–6, `album` = 7+, `mixtape` = ≥1. Violations → **422 `TRACK_COUNT_INVALID`** (existing code). (Split-sum validation deferred with splits — WU-CAT-6.)
 - **INV-5 — list price** = Σ track `priceMinor` with the platform bundle discount; recomputed at finalize (reuse `computeListPrice`). Money stays integer minor units (pesewas); API serializes `MoneyView { amount(cedis), currency:"GHS" }`.
 - **INV-10 — audit**: `CREATE_DRAFT` and `SUBMIT_RELEASE` `AuditEntry`s, appended in the same transaction as the mutation.
 - **Idempotency** on `POST /:id/submit` only (via the existing idempotency-key mechanism). Draft create/edit are cheap and deletable — no key.
@@ -112,13 +117,15 @@ Track attach/remove uses the existing `release_track` table (no new table). Conf
 - **`coverImage` upload** — no endpoint; releases keep the generated gradient placeholder the detail page already renders. Deferred to a future media WU.
 - **`featuredArtists`, `label`** — deferred (no columns this WU).
 - **`primaryArtist`** (always the JWT artist), **`agreementAccepted`**, **`presaveGenerated`** — client-only UX state, never persisted.
+- **Per-track royalty splits + the collaborator-confirmation flow** — the `split_entry` write path, `TrackDraftView.splits`, and split-sum validation are **deferred to WU-CAT-6** (the table/domain/entity already exist; only the write path + confirmation flow are missing).
 - **The frontend wizard wiring** — separate follow-up slice (real multipart upload path + step wiring); this WU is backend-only.
 - **Transcode-ready gating on finalize** — deferred (see above).
+- **Dropping the orphan `release_draft` JSONB table** — separate cleanup.
 
 ## Testing (project Definition of Done)
 
 - **Unit** (`Release` domain): `createDraft` yields `draft`; `addTrack`/`removeTrack`/`replaceTracks` succeed on `draft` and throw `IllegalTransitionException` otherwise; `submit` transitions `draft → in_review` and recomputes list price; the full INV-12 count matrix (single/ep/album/mixtape bounds) + split-sum validation.
-- **Integration** (Testcontainers, `catalog/it/`): full round trip — create draft → multipart upload (asserts the `ReleaseTrack` is **attached** to the release) → PATCH price/splits/order → `POST /:id/submit` → `in_review` with the correct computed list price; the delete-track path; **edit-after-submit → 409 `ILLEGAL_TRANSITION`**; missing idempotency key on submit → 400; `single` with 0 or 2 tracks at submit → 422.
+- **Integration** (Testcontainers, `catalog/it/`): full round trip — create draft → multipart upload (asserts the `ReleaseTrack` is **attached** to the release) → PATCH price/order → `POST /:id/submit` → `in_review` with the correct computed list price; the delete-track path; **edit-after-submit → 409 `ILLEGAL_TRANSITION`**; missing idempotency key on submit → 400; `single` with 0 or 2 tracks at submit → 422.
 - **Contract**: the new/changed endpoint shapes validate against `API-CONTRACT.md` and `Frontend/src/types` / the studio-data release shapes; `StudioReleaseView` (list) is byte-for-byte unchanged; `StudioReleaseDetailView` documented as an additive superset.
 - **ArchUnit** (hexagonal deps), **Flyway-on-empty-DB**, **coverage gate**, **Spotless** — standard.
 
@@ -137,6 +144,7 @@ Track attach/remove uses the existing `release_track` table (no new table). Conf
 
 ## Follow-ups (separate slices)
 
-1. **Frontend release wizard wiring** (Studio Slice 3b-frontend) — real multipart upload path (`apiFetch` is JSON-only; needs FormData + XHR for progress), step-by-step wiring to these endpoints, "Save draft" via PATCH, submit via `/:id/submit`.
-2. **Cover-image upload** (media WU) + `featuredArtists`/`label` columns, if product wants them.
-3. **Transcode-ready gating** on finalize, if admins want it.
+1. **WU-CAT-6 — per-track royalty splits**: the `split_entry` write path (persist on PATCH, keyed by `track_id`), `TrackDraftView.splits`, split-sum validation at finalize, and the collaborator email-confirmation flow.
+2. **Frontend release wizard wiring** (Studio Slice 3b-frontend) — real multipart upload path (`apiFetch` is JSON-only; needs FormData + XHR for progress), step-by-step wiring to these endpoints, "Save draft" via PATCH, submit via `/:id/submit`.
+3. **Cover-image upload** (media WU) + `featuredArtists`/`label` columns, if product wants them.
+4. **Transcode-ready gating** on finalize, if admins want it.
