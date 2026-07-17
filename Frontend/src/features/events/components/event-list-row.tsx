@@ -4,12 +4,14 @@ import type { Event } from '../../../types'
 import { formatPrice } from '../../../lib/format'
 import { StatusBadge, eventMonth, eventDay } from '../event-ui'
 
-/** Lowest ticket tier price for "from ₵X" labels. */
+/** Lowest ticket tier price for "from ₵X" labels. Returns undefined when there are no tiers. */
 function lowestTicketPrice(event: Event) {
+  if (event.ticketTiers.length === 0) return undefined
   return event.ticketTiers.reduce((lowest, tier) => (tier.price.amount < lowest.amount ? tier.price : lowest), event.ticketTiers[0].price)
 }
 
 export function EventListRow({ event }: { event: Event }) {
+  const price = lowestTicketPrice(event)
   return (
     <Link
       to="/event/$eventId"
@@ -36,9 +38,11 @@ export function EventListRow({ event }: { event: Event }) {
 
       <div className="hidden sm:flex flex-col items-end gap-1.5 shrink-0">
         <StatusBadge status={event.status} />
-        <span className="text-sm font-mono font-bold text-beatz-green">
-          from {formatPrice(lowestTicketPrice(event))}
-        </span>
+        {price && (
+          <span className="text-sm font-mono font-bold text-beatz-green">
+            from {formatPrice(price)}
+          </span>
+        )}
       </div>
 
       <span className="hidden md:inline-flex h-9 px-4 rounded-full bg-beatz-green text-black text-xs font-bold items-center gap-1.5 shrink-0 group-hover:scale-105 transition-transform">

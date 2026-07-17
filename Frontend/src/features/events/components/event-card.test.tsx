@@ -1,5 +1,5 @@
-import { render, screen } from '@testing-library/react'
-import { describe, it, expect } from 'vitest'
+import { render, screen, cleanup } from '@testing-library/react'
+import { describe, it, expect, afterEach } from 'vitest'
 import {
   createRootRoute,
   createRoute,
@@ -9,6 +9,8 @@ import {
 } from '@tanstack/react-router'
 import { EventCard } from './event-card'
 import type { Event } from '../../../types'
+
+afterEach(cleanup)
 
 const event: Event = {
   id: 'iron-boy-live',
@@ -36,5 +38,12 @@ describe('EventCard', () => {
   it('renders the passed event without touching event-data', async () => {
     renderWithRouter(<EventCard event={event} />)
     expect(await screen.findByText('Iron Boy Live')).toBeTruthy()
+  })
+
+  it('renders without throwing and hides the price label when ticketTiers is empty', async () => {
+    const tierlessEvent: Event = { ...event, ticketTiers: [] }
+    renderWithRouter(<EventCard event={tierlessEvent} />)
+    expect(await screen.findByText('Iron Boy Live')).toBeTruthy()
+    expect(screen.queryByText(/from ₵/)).toBeNull()
   })
 })
