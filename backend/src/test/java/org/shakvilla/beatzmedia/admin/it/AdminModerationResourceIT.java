@@ -68,29 +68,13 @@ class AdminModerationResourceIT {
     String trackId = "mod-it-track-" + n;
     seedReadyTrackForArtist(trackId, artistToken);
 
-    given()
-        .header("Authorization", "Bearer " + artistToken)
-        .header("Idempotency-Key", "mod-it-key-" + n)
-        .contentType(ContentType.JSON)
-        .body("""
-            {
-              "title": "Queue Release",
-              "type": "single",
-              "visibility": "public",
-              "tracks": [
-                { "trackId": "%s", "position": 1, "priceMinor": 500, "splits": [] }
-              ]
-            }
-            """.formatted(trackId))
-        .when().post(RELEASES_URL)
-        .then().statusCode(201);
-
-    String releaseId = given()
-        .header("Authorization", "Bearer " + artistToken)
-        .queryParam("size", 50)
-        .when().get(RELEASES_URL)
-        .then().statusCode(200)
-        .extract().jsonPath().getString("items.find { it.title == 'Queue Release' }.id");
+    // WU-CAT-5: POST /v1/studio/releases now creates a metadata-only draft (no tracks, no
+    // Idempotency-Key) — the release-creation flow is draft -> upload-attached -> finalize.
+    // This admin-workflow test only needs an in_review release with one track already attached
+    // (it exercises the moderation queue, not the draft-authoring flow itself), so it seeds the
+    // release + release_track rows directly rather than driving the full draft flow.
+    String releaseId = "mod-it-release-" + n;
+    seedInReviewReleaseWithTrack(releaseId, accountIdFromToken(artistToken), "Queue Release", trackId);
 
     given()
         .header("Authorization", "Bearer " + moderatorToken)
@@ -290,6 +274,25 @@ class AdminModerationResourceIT {
     String payload = token.split("\\.")[1];
     String json = new String(Base64.getUrlDecoder().decode(payload));
     return json.replaceAll(".*\"sub\"\\s*:\\s*\"([^\"]+)\".*", "$1");
+  }
+
+  @Transactional
+  void seedInReviewReleaseWithTrack(String releaseId, String artistId, String title, String trackId) {
+    em.createNativeQuery(
+            "INSERT INTO release (id, artist_id, title, type, status, visibility,"
+                + " list_price_minor, created_at, updated_at)"
+                + " VALUES (:id, :artistId, :title, 'single', 'in_review', 'public',"
+                + " 500, now(), now())")
+        .setParameter("id", releaseId)
+        .setParameter("artistId", artistId)
+        .setParameter("title", title)
+        .executeUpdate();
+    em.createNativeQuery(
+            "INSERT INTO release_track (release_id, track_id, position, price_minor)"
+                + " VALUES (:releaseId, :trackId, 0, 500)")
+        .setParameter("releaseId", releaseId)
+        .setParameter("trackId", trackId)
+        .executeUpdate();
   }
 
   @Transactional
