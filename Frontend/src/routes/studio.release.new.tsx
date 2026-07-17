@@ -1,4 +1,5 @@
 import { createFileRoute, Outlet, useLocation, useNavigate } from '@tanstack/react-router'
+import { useSuspenseQuery } from '@tanstack/react-query'
 import { useEffect } from 'react'
 import { ArrowRight, ArrowLeft, Check } from 'lucide-react'
 import { cn } from '../utils/cn'
@@ -6,6 +7,7 @@ import { useToast } from '../components/ui/toast-provider'
 import { ReleaseDraftProvider, useReleaseDraft, type ReleaseDraft } from '../features/studio/release-draft-context'
 import { RELEASE_WIZARD_STEPS, releaseTypeLabel, isMultiTrack, type ReleaseStepSlug } from '../lib/studio-data'
 import { useStudio } from '../features/studio/studio-context'
+import { studioSettingsQuery } from '../lib/api/queries/studio'
 
 /** Format an ISO date (yyyy-mm-dd) as 'Mon DD, YYYY', or a fallback label. */
 function releaseDateLabel(iso: string): string {
@@ -25,12 +27,13 @@ function wizardTitle(slug: ReleaseStepSlug, draft: ReleaseDraft): string {
 }
 
 export const Route = createFileRoute('/studio/release/new')({
+  loader: ({ context: { queryClient } }) => queryClient.ensureQueryData(studioSettingsQuery()),
   component: WizardRoot,
 })
 
 function WizardRoot() {
   // Seed the draft from the artist's saved release defaults.
-  const { settings } = useStudio()
+  const { data: settings } = useSuspenseQuery(studioSettingsQuery())
   return (
     <ReleaseDraftProvider initial={{ price: settings.defaults.trackPrice, visibility: settings.defaults.releaseVisibility }}>
       <WizardChrome />

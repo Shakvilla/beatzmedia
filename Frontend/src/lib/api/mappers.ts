@@ -22,6 +22,17 @@ import type {
   AppNotification,
   NotificationType,
 } from '../../types'
+import type {
+  Analytics,
+  Audience,
+  MetricSeries,
+  CountryStat,
+  TopTrackStat,
+  AgeBucket,
+  SourceStat,
+  Superfan,
+} from '../studio-analytics'
+import type { StudioProfile, StudioSettings } from '../studio-data'
 
 export interface ArtistWire {
   id: string
@@ -364,6 +375,184 @@ export function toPodcastEpisode(wire: PodcastEpisodeWire): PodcastEpisode {
     isOwned: wire.isOwned ?? undefined,
     isEarlyAccess: wire.isEarlyAccess ?? undefined,
     publicAt: wire.publicAt ?? undefined,
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Studio analytics + audience
+// ---------------------------------------------------------------------------
+
+interface MetricSeriesWire { total: number; delta: number; current: number[]; previous: number[] }
+
+/** Mirrors `AnalyticsView` served by `GET /v1/studio/analytics?range=`. */
+export interface AnalyticsWire {
+  rangeLabel: string
+  axisLabel: string
+  labels: string[]
+  metrics: {
+    streams: MetricSeriesWire
+    sales: MetricSeriesWire
+    followers: MetricSeriesWire
+    tips: MetricSeriesWire
+  }
+  fans: number
+  countries: { name: string; value: number }[]
+  topTracks: { title: string; streams: number; revenue: number }[]
+  ages: { label: string; value: number }[]
+  revenue: { sales: number; streaming: number; tips: number }
+  engagement: { completion: number; save: number; skip: number }
+  sources: { name: string; pct: number }[]
+}
+
+const toMetricSeries = (w: MetricSeriesWire): MetricSeries => ({
+  total: w.total,
+  delta: w.delta,
+  current: w.current,
+  previous: w.previous,
+})
+
+export function toAnalytics(wire: AnalyticsWire): Analytics {
+  return {
+    rangeLabel: wire.rangeLabel,
+    axisLabel: wire.axisLabel,
+    labels: wire.labels,
+    metrics: {
+      streams: toMetricSeries(wire.metrics.streams),
+      sales: toMetricSeries(wire.metrics.sales),
+      followers: toMetricSeries(wire.metrics.followers),
+      tips: toMetricSeries(wire.metrics.tips),
+    },
+    fans: wire.fans,
+    countries: wire.countries.map((c): CountryStat => ({ name: c.name, value: c.value })),
+    topTracks: wire.topTracks.map(
+      (t): TopTrackStat => ({ title: t.title, streams: t.streams, revenue: t.revenue }),
+    ),
+    ages: wire.ages.map((a): AgeBucket => ({ label: a.label, value: a.value })),
+    revenue: { sales: wire.revenue.sales, streaming: wire.revenue.streaming, tips: wire.revenue.tips },
+    engagement: {
+      completion: wire.engagement.completion,
+      save: wire.engagement.save,
+      skip: wire.engagement.skip,
+    },
+    sources: wire.sources.map((s): SourceStat => ({ name: s.name, pct: s.pct })),
+  }
+}
+
+/** Mirrors `AudienceView` served by `GET /v1/studio/audience?range=`. */
+export interface AudienceWire {
+  rangeLabel: string
+  monthlyListeners: number
+  listenersDelta: number
+  followers: number
+  followersGained: number
+  followersPeriod: string
+  superfans: number
+  avgSessionSec: number
+  avgSessionDelta: number
+  cities: { name: string; value: number }[]
+  gender: { male: number; female: number; other: number }
+  ages: { label: string; value: number }[]
+  superfansList: { handle: string; initial: string; tracks: number; tipped: number }[]
+}
+
+export function toAudience(wire: AudienceWire): Audience {
+  return {
+    rangeLabel: wire.rangeLabel,
+    monthlyListeners: wire.monthlyListeners,
+    listenersDelta: wire.listenersDelta,
+    followers: wire.followers,
+    followersGained: wire.followersGained,
+    followersPeriod: wire.followersPeriod,
+    superfans: wire.superfans,
+    avgSessionSec: wire.avgSessionSec,
+    avgSessionDelta: wire.avgSessionDelta,
+    cities: wire.cities.map((c): CountryStat => ({ name: c.name, value: c.value })),
+    gender: { male: wire.gender.male, female: wire.gender.female, other: wire.gender.other },
+    ages: wire.ages.map((a): AgeBucket => ({ label: a.label, value: a.value })),
+    superfansList: wire.superfansList.map(
+      (s): Superfan => ({ handle: s.handle, initial: s.initial, tracks: s.tracks, tipped: s.tipped }),
+    ),
+  }
+}
+
+// ── Studio profile ────────────────────────────────────────────────
+// StudioProfileView serves null for any unset optional text field (and can
+// omit arrays) on a fresh profile — the read mapper coerces every field to
+// the non-null StudioProfile shape the UI expects. The save body is the
+// whole (writable) shape with blob: object URLs stripped — those are
+// local-only and meaningless server-side (no media-upload endpoint yet).
+export interface StudioProfileWire {
+  displayName: string | null
+  username: string | null
+  hometown: string | null
+  genres: string[] | null
+  bio: string | null
+  avatar: string | null
+  banner: string | null
+  links: { instagram: string; twitter: string; youtube: string; website: string } | null
+  shows: StudioProfile['shows'] | null
+  featuredTrackId: string | null
+  bookingEmail: string | null
+  pressAssets: StudioProfile['pressAssets'] | null
+}
+
+export function toStudioProfile(w: StudioProfileWire): StudioProfile {
+  return {
+    displayName: w.displayName ?? '',
+    username: w.username ?? '',
+    hometown: w.hometown ?? '',
+    genres: w.genres ?? [],
+    bio: w.bio ?? '',
+    avatar: w.avatar,
+    banner: w.banner,
+    links: {
+      instagram: w.links?.instagram ?? '',
+      twitter: w.links?.twitter ?? '',
+      youtube: w.links?.youtube ?? '',
+      website: w.links?.website ?? '',
+    },
+    shows: w.shows ?? [],
+    featuredTrackId: w.featuredTrackId,
+    bookingEmail: w.bookingEmail ?? '',
+    pressAssets: w.pressAssets ?? [],
+  }
+}
+
+export type SaveStudioProfileBody = StudioProfile
+const dropBlob = (u: string | null): string | null => (u && u.startsWith('blob:') ? null : u)
+export function toSaveProfileBody(p: StudioProfile): SaveStudioProfileBody {
+  return {
+    ...p,
+    avatar: dropBlob(p.avatar),
+    banner: dropBlob(p.banner),
+    pressAssets: p.pressAssets.filter((a) => !a.url.startsWith('blob:')),
+  }
+}
+
+// ── Studio settings ───────────────────────────────────────────────
+// GET returns the full shape (Category A + B). PUT accepts ONLY the
+// Category-A writable subset; Category B (email/phone/2FA/sessions/apps/
+// verification/billing) has no persistence endpoint yet, so the save body
+// narrows to what the backend will actually store.
+export type StudioSettingsWire = StudioSettings
+export function toStudioSettings(w: StudioSettingsWire): StudioSettings {
+  return w
+}
+
+export interface SaveStudioSettingsBody {
+  notifications: StudioSettings['notifications']
+  defaults: StudioSettings['defaults']
+  payouts: StudioSettings['payouts']
+  privacy: StudioSettings['privacy']
+  team: StudioSettings['team']
+}
+export function toSaveSettingsBody(s: StudioSettings): SaveStudioSettingsBody {
+  return {
+    notifications: s.notifications,
+    defaults: s.defaults,
+    payouts: s.payouts,
+    privacy: s.privacy,
+    team: s.team,
   }
 }
 

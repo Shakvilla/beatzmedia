@@ -1,14 +1,19 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
+import { useSuspenseQuery } from '@tanstack/react-query'
 import { ArrowUp, ArrowDown, Download } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
+import { studioAnalyticsQuery } from '../lib/api/queries/studio'
 import {
-  getAnalytics, formatCompact, ANALYTICS_RANGES,
+  formatCompact, ANALYTICS_RANGES,
   type AnalyticsRange, type MetricKey, type CountryStat, type TopTrackStat, type AgeBucket, type SourceStat,
 } from '../lib/studio-analytics'
 
+const DEFAULT_RANGE: AnalyticsRange = '28d'
+
 export const Route = createFileRoute('/studio/analytics')({
+  loader: ({ context: { queryClient } }) => queryClient.ensureQueryData(studioAnalyticsQuery(DEFAULT_RANGE)),
   component: AnalyticsComponent,
 })
 
@@ -25,11 +30,11 @@ const METRICS: { key: MetricKey; label: string; fmt: (n: number) => string }[] =
 
 function AnalyticsComponent() {
   const { toast } = useToast()
-  const [range, setRange] = useState<AnalyticsRange>('28d')
+  const [range, setRange] = useState<AnalyticsRange>(DEFAULT_RANGE)
   const [metric, setMetric] = useState<MetricKey>('streams')
   const [showPrev, setShowPrev] = useState(true)
   const [exportOpen, setExportOpen] = useState(false)
-  const data = useMemo(() => getAnalytics(range), [range])
+  const { data } = useSuspenseQuery(studioAnalyticsQuery(range))
 
   const active = data.metrics[metric]
   const metricMeta = METRICS.find((m) => m.key === metric)!

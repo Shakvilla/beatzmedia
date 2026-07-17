@@ -1,14 +1,19 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
+import { useSuspenseQuery } from '@tanstack/react-query'
 import { ArrowUp, Heart } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
+import { studioAudienceQuery } from '../lib/api/queries/studio'
 import {
-  getAudience, formatCompact, AUDIENCE_RANGES,
+  formatCompact, AUDIENCE_RANGES,
   type AudienceRange, type CountryStat, type AgeBucket, type Superfan,
 } from '../lib/studio-analytics'
 
+const DEFAULT_RANGE: AudienceRange = '28d'
+
 export const Route = createFileRoute('/studio/audience')({
+  loader: ({ context: { queryClient } }) => queryClient.ensureQueryData(studioAudienceQuery(DEFAULT_RANGE)),
   component: AudienceComponent,
 })
 
@@ -23,8 +28,8 @@ function formatSession(sec: number): string {
 
 function AudienceComponent() {
   const { toast } = useToast()
-  const [range, setRange] = useState<AudienceRange>('28d')
-  const data = useMemo(() => getAudience(range), [range])
+  const [range, setRange] = useState<AudienceRange>(DEFAULT_RANGE)
+  const { data } = useSuspenseQuery(studioAudienceQuery(range))
 
   return (
     <div className="flex flex-col gap-8">

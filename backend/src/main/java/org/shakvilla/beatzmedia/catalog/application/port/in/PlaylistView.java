@@ -5,7 +5,8 @@ import java.util.List;
 /**
  * Read-model / DTO for a playlist. Field names match the {@code Playlist} TypeScript type in
  * {@code Frontend/src/types/index.ts} and {@code API-CONTRACT.md} §3. The {@code tracks} list is
- * always populated (the detail endpoint embeds tracks). Catalog ADD §6 / LLFR-CATALOG-01.7.
+ * non-null but only populated by the endpoints that embed tracks (playlist detail, batch resolve);
+ * search returns it empty, carrying {@code trackIds} only. Catalog ADD §6 / LLFR-CATALOG-01.7.
  */
 public record PlaylistView(
     String id,

@@ -58,7 +58,7 @@ UI: home, search, artist, album, track, playlist pages. Shapes: `Artist`, `Album
 | Method | Path | Notes | Returns |
 |---|---|---|---|
 | GET | `/home` | curated feed (trending, top-10, featured albums, discover rails) | `{ trending: Track[], top10: Track[], featuredAlbums: Album[], rails: {...} }` |
-| GET | `/search?q=` | tracks/artists/albums/playlists + a top result | `{ tracks, artists, albums, playlists }` |
+| GET | `/search?q=` | tracks/artists/albums/playlists + a top result; returned playlists carry `trackIds` with `tracks` empty (use `/playlists/:id` to embed) | `{ tracks, artists, albums, playlists }` |
 | GET | `/browse-categories` | search-screen tiles | `BrowseCategory[]` |
 | GET | `/artists/:id` | profile + hero | `Artist` |
 | GET | `/artists/:id/tracks` | popular tracks | `Track[]` |

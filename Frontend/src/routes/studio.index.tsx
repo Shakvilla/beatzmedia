@@ -1,4 +1,5 @@
 import { createFileRoute, useNavigate, Link } from '@tanstack/react-router'
+import { useSuspenseQuery } from '@tanstack/react-query'
 import {
   Plus, ArrowUp, ArrowRight, ArrowUpRight, Wallet, Headphones, Users,
   Tag, Heart, Music2, CalendarDays, BadgeCheck, Disc3, type LucideIcon,
@@ -8,8 +9,13 @@ import { getAnalytics, getAudience, formatCompact } from '../lib/studio-analytic
 import { getPayouts, type PayoutTxn } from '../lib/studio-payouts'
 import { studioArtist } from '../lib/studio-data'
 import { useStudio } from '../features/studio/studio-context'
+import { studioProfileQuery, studioSettingsQuery } from '../lib/api/queries/studio'
 
 export const Route = createFileRoute('/studio/')({
+  loader: ({ context: { queryClient } }) => Promise.all([
+    queryClient.ensureQueryData(studioProfileQuery()),
+    queryClient.ensureQueryData(studioSettingsQuery()),
+  ]),
   component: OverviewComponent,
 })
 
@@ -28,7 +34,9 @@ function OverviewComponent() {
   const analytics = getAnalytics('28d')
   const audience = getAudience('28d')
   const payoutStats = getPayouts()
-  const { balance, transactions, profile, settings, releases } = useStudio()
+  const { balance, transactions, releases } = useStudio()
+  const { data: profile } = useSuspenseQuery(studioProfileQuery())
+  const { data: settings } = useSuspenseQuery(studioSettingsQuery())
   const firstName = (profile.displayName.trim() || studioArtist.name).split(' ')[0]
 
   const inReview = releases.find((r) => r.status === 'in_review')
