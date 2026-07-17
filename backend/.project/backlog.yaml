@@ -281,15 +281,13 @@ work_units:
     owner: payments-specialist
     depends_on: [WU-COM-3, WU-STO-1, WU-EVT-1, WU-POD-1]
     llfrs: []
-    status: in_review
-    # NOT built by slice 3 — registered so the gap is tracked. CheckoutService.gateKind() already
-    # hard-rejects episode/season-pass/ticket/store with 409 CHECKOUT_KIND_UNSUPPORTED (ADR-23 safe
-    # default) because their only pricing source today is client-supplied cart metadata
-    # (CatalogPricingServiceAdapter.priceFromMetadata) — not a live exploit (checkout blocks it), but a
-    # feature gap now that the owning modules (store/events/podcasts) have shipped real catalogs. Also
-    # covers the card hosted-checkout redirect (checkoutUrl, added to PaymentIntentView by WU-PAY-6 but
-    # unreachable through CheckoutResult) — both are gated behind the Redde credential human gate
-    # (PSP_REDDE stays off until real credentials are supplied) and should land together before go-live.
+    status: done
+    # Done (PR #134, ADR-31). Authoritative server-side pricing + settlement for
+    # episode/season-pass/ticket/store via commerce-declared SPIs (ModulePriceSource, SettlementSource)
+    # the owning modules implement — the former gateKind()/priceFromMetadata client-price path is gone,
+    # replaced by a payee-guard-before-charge (INV-4). Card hosted-checkout redirect (checkoutUrl) is
+    # threaded through CheckoutResult (null on MoMo/sandbox; non-null only once PSP_REDDE is enabled at
+    # the Redde credential human gate).
   - id: WU-PLY-1
     title: Stream URL (ownership-aware) + record play
     phase: 2
