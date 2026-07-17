@@ -2,8 +2,12 @@ import { Link } from '@tanstack/react-router'
 import { MapPin } from 'lucide-react'
 import type { Event } from '../../../types'
 import { formatPrice } from '../../../lib/format'
-import { lowestTicketPrice } from '../../../lib/event-data'
 import { StatusBadge, eventMonth, eventDay } from '../event-ui'
+
+/** Lowest ticket tier price for "from ₵X" labels. */
+function lowestTicketPrice(event: Event) {
+  return event.ticketTiers.reduce((lowest, tier) => (tier.price.amount < lowest.amount ? tier.price : lowest), event.ticketTiers[0].price)
+}
 
 export function EventCard({ event }: { event: Event }) {
   return (
@@ -26,7 +30,7 @@ export function EventCard({ event }: { event: Event }) {
             <MapPin size={11} className="shrink-0" /> {event.venue}, {event.city}
           </span>
           <span className="text-sm font-mono font-bold text-beatz-green mt-1">
-            from {formatPrice({ amount: lowestTicketPrice(event), currency: 'GHS' })}
+            from {formatPrice(lowestTicketPrice(event))}
           </span>
         </div>
       </div>

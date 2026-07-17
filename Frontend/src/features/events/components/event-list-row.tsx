@@ -2,8 +2,12 @@ import { Link } from '@tanstack/react-router'
 import { MapPin, Ticket } from 'lucide-react'
 import type { Event } from '../../../types'
 import { formatPrice } from '../../../lib/format'
-import { lowestTicketPrice } from '../../../lib/event-data'
 import { StatusBadge, eventMonth, eventDay } from '../event-ui'
+
+/** Lowest ticket tier price for "from ₵X" labels. */
+function lowestTicketPrice(event: Event) {
+  return event.ticketTiers.reduce((lowest, tier) => (tier.price.amount < lowest.amount ? tier.price : lowest), event.ticketTiers[0].price)
+}
 
 export function EventListRow({ event }: { event: Event }) {
   return (
@@ -33,7 +37,7 @@ export function EventListRow({ event }: { event: Event }) {
       <div className="hidden sm:flex flex-col items-end gap-1.5 shrink-0">
         <StatusBadge status={event.status} />
         <span className="text-sm font-mono font-bold text-beatz-green">
-          from {formatPrice({ amount: lowestTicketPrice(event), currency: 'GHS' })}
+          from {formatPrice(lowestTicketPrice(event))}
         </span>
       </div>
 
