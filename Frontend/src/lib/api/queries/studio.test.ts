@@ -100,6 +100,26 @@ describe('studioProfileQuery', () => {
     expect(p.displayName).toBe('Kojo Beats')
     expect(p.shows[0]).toEqual({ id: 's1', venue: 'Alliance', date: 'Aug 1', city: 'Accra' })
   })
+
+  it('coerces null/omitted optional text fields and arrays to non-null defaults for a fresh profile', async () => {
+    vi.mocked(client.apiFetch).mockResolvedValue({
+      displayName: '', username: '', hometown: null,
+      genres: [], bio: null, avatar: null, banner: null,
+      links: { instagram: '', twitter: '', youtube: '', website: '' },
+      shows: [], featuredTrackId: null, bookingEmail: null,
+      pressAssets: [],
+    })
+    const p = await studioProfileQuery().queryFn!({} as never)
+    expect(p.bio).toBe('')
+    expect(p.hometown).toBe('')
+    expect(p.bookingEmail).toBe('')
+    expect(p.genres).toEqual([])
+    expect(p.shows).toEqual([])
+    expect(p.pressAssets).toEqual([])
+    expect(p.avatar).toBeNull()
+    expect(p.banner).toBeNull()
+    expect(p.featuredTrackId).toBeNull()
+  })
 })
 
 describe('apiSaveStudioProfile', () => {

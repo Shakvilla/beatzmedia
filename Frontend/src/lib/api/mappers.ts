@@ -474,13 +474,46 @@ export function toAudience(wire: AudienceWire): Audience {
 }
 
 // ── Studio profile ────────────────────────────────────────────────
-// StudioProfileView matches StudioProfile field-for-field, so the read
-// mapper is a pass-through. The save body is the whole (writable) shape
-// with blob: object URLs stripped — those are local-only and meaningless
-// server-side (no media-upload endpoint yet).
-export type StudioProfileWire = StudioProfile
+// StudioProfileView serves null for any unset optional text field (and can
+// omit arrays) on a fresh profile — the read mapper coerces every field to
+// the non-null StudioProfile shape the UI expects. The save body is the
+// whole (writable) shape with blob: object URLs stripped — those are
+// local-only and meaningless server-side (no media-upload endpoint yet).
+export interface StudioProfileWire {
+  displayName: string | null
+  username: string | null
+  hometown: string | null
+  genres: string[] | null
+  bio: string | null
+  avatar: string | null
+  banner: string | null
+  links: { instagram: string; twitter: string; youtube: string; website: string } | null
+  shows: StudioProfile['shows'] | null
+  featuredTrackId: string | null
+  bookingEmail: string | null
+  pressAssets: StudioProfile['pressAssets'] | null
+}
+
 export function toStudioProfile(w: StudioProfileWire): StudioProfile {
-  return w
+  return {
+    displayName: w.displayName ?? '',
+    username: w.username ?? '',
+    hometown: w.hometown ?? '',
+    genres: w.genres ?? [],
+    bio: w.bio ?? '',
+    avatar: w.avatar,
+    banner: w.banner,
+    links: {
+      instagram: w.links?.instagram ?? '',
+      twitter: w.links?.twitter ?? '',
+      youtube: w.links?.youtube ?? '',
+      website: w.links?.website ?? '',
+    },
+    shows: w.shows ?? [],
+    featuredTrackId: w.featuredTrackId,
+    bookingEmail: w.bookingEmail ?? '',
+    pressAssets: w.pressAssets ?? [],
+  }
 }
 
 export type SaveStudioProfileBody = StudioProfile
