@@ -247,12 +247,23 @@ the part to an `UploadCommand` and call `MediaService.uploadOriginal`. Delivery 
   `DomainException` from the SDK cause chain and re-throws it — oversize uploads surface `413`, never
   `500` (guarded by `S3UploadCapIT` against real MinIO and by `S3ObjectStoreAdapterUnwrapTest`).
   **Streaming paths:** a known content length streams straight to the SDK via
-  `RequestBody.fromInputStream` (no heap buffer). The sync SDK cannot PUT a stream of *unknown*
-  length, so when the service passes `-1` (declared size absent or untrusted) the body is spooled to
-  a bounded temp file and PUT from disk via `RequestBody.fromFile`; the spool is itself capped at
+  `RequestBody.fromInputStream` (no heap buffer) **only when the body supports mark/reset** — the
+  sync SDK may re-read the payload (SigV4 payload signing, flexible-checksum precompute, or a retry)
+  and so needs a resettable body. Two cases instead spool the body to a bounded temp file and PUT
+  from disk via the re-readable `RequestBody.fromFile`: (1) *unknown* content length (`-1`, declared
+  size absent or untrusted) — the sync SDK cannot PUT a stream of unknown length; and (2) a
+  **non-markable** body of known length (WU-MED-2) — e.g. the Studio release-track / podcast-episode
+  upload, whose `Files.newInputStream` over the multipart temp file cannot be reset, so
+  `RequestBody.fromInputStream` throws `IllegalStateException: … does not support mark/reset, and was
+  already read once.` the moment the SDK re-reads it (this returned `500` on **every** track/episode
+  upload in live QA of the release wizard — the WU-CAT-5 unit tests stubbed the media port, so the
+  real adapter was never exercised with a non-markable stream). The spool is capped at
   `MAX_SPOOL_BYTES` (mirrors the 500 MB limit) as an adapter-level disk backstop, throws
   `FileTooLargeException` the moment the cap trips (still `413`), and the temp file is always deleted.
-  Guarded by `S3UnknownLengthUploadIT` (normal body stored byte-for-byte; over-cap body → `413`).
+  Guarded by `S3UnknownLengthUploadIT` (normal body stored byte-for-byte; over-cap body → `413`),
+  `S3ObjectStoreAdapterRetryableBodyTest` (deterministic — re-reads the request body to reproduce the
+  exact mark/reset `IllegalStateException`), and `S3KnownLengthNonMarkableUploadIT` (real-MinIO
+  byte-for-byte of a non-markable known-length body).
 - **ffmpeg transcoder adapter** (`AudioTranscoderPort`): probes duration (`ffprobe`), produces the full
   HLS rendition and the 30s preview clip via the Compose `transcoder` service (`jrottenberg/ffmpeg`,
   PRD §5.1). Long-running, off the request thread (async job).
