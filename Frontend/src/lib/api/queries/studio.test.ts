@@ -4,6 +4,7 @@ import {
   studioAnalyticsQuery, studioAudienceQuery,
   studioProfileQuery, studioSettingsQuery, apiSaveStudioProfile, apiSaveStudioSettings,
   studioReleasesQuery, studioReleaseQuery, apiRenameRelease, apiDeleteRelease,
+  apiCreateDraft, apiUploadTrack, apiUpdateRelease, apiSubmitRelease, apiDeleteTrack,
 } from './studio'
 
 vi.mock('../client')
@@ -209,5 +210,54 @@ describe('studioReleaseQuery / mutations', () => {
     vi.mocked(client.apiFetch).mockResolvedValue(undefined)
     await apiDeleteRelease('r1')
     expect(client.apiFetch).toHaveBeenCalledWith('/studio/releases/r1', { method: 'DELETE' })
+  })
+})
+
+describe('studio draft-flow functions', () => {
+  it('apiCreateDraft POSTs metadata and returns the new id', async () => {
+    vi.mocked(client.apiFetch).mockResolvedValue({ id: 'rel-9' })
+    const id = await apiCreateDraft({ title: 'Iron Boy', type: 'album', visibility: 'public' })
+    expect(id).toBe('rel-9')
+    expect(client.apiFetch).toHaveBeenCalledWith('/studio/releases', {
+      method: 'POST', body: { title: 'Iron Boy', type: 'album', visibility: 'public' },
+    })
+  })
+
+  it('apiUploadTrack sends a FormData with a "file" part and maps the response', async () => {
+    vi.mocked(client.apiFetch).mockResolvedValue({
+      id: 'trk-1', title: 'Intro', duration: 120, status: 'ready', progress: 100,
+      src: '/a.m3u8', price: { amount: 2.5, currency: 'GHS' }, explicit: false, position: 0,
+    })
+    const file = new File(['x'], 'intro.wav', { type: 'audio/wav' })
+    const t = await apiUploadTrack('rel-9', file)
+
+    const [path, opts] = vi.mocked(client.apiFetch).mock.calls[0]
+    expect(path).toBe('/studio/releases/rel-9/tracks')
+    expect(opts!.method).toBe('POST')
+    expect(opts!.body).toBeInstanceOf(FormData)
+    expect((opts!.body as FormData).get('file')).toBe(file)
+    expect(t).toMatchObject({ id: 'trk-1', price: 2.5, status: 'ready' })
+  })
+
+  it('apiUpdateRelease PATCHes the patch body', async () => {
+    vi.mocked(client.apiFetch).mockResolvedValue({})
+    await apiUpdateRelease('rel-9', { title: 'X', tracks: [{ trackId: 't1', position: 0, priceMinor: 250 }] })
+    expect(client.apiFetch).toHaveBeenCalledWith('/studio/releases/rel-9', {
+      method: 'PATCH', body: { title: 'X', tracks: [{ trackId: 't1', position: 0, priceMinor: 250 }] },
+    })
+  })
+
+  it('apiSubmitRelease POSTs with an Idempotency-Key header', async () => {
+    vi.mocked(client.apiFetch).mockResolvedValue({})
+    await apiSubmitRelease('rel-9', 'key-abc')
+    expect(client.apiFetch).toHaveBeenCalledWith('/studio/releases/rel-9/submit', {
+      method: 'POST', idempotencyKey: 'key-abc',
+    })
+  })
+
+  it('apiDeleteTrack DELETEs the track path', async () => {
+    vi.mocked(client.apiFetch).mockResolvedValue(undefined)
+    await apiDeleteTrack('rel-9', 'trk-1')
+    expect(client.apiFetch).toHaveBeenCalledWith('/studio/releases/rel-9/tracks/trk-1', { method: 'DELETE' })
   })
 })

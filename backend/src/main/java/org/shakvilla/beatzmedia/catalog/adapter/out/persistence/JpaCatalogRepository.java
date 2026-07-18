@@ -510,6 +510,31 @@ public class JpaCatalogRepository implements CatalogRepository {
   }
 
   @Override
+  public void saveArtistProfile(ArtistProfile profile) {
+    // Insert-only provisioning (WU-CAT-7): never clobber an already-provisioned profile's curated
+    // fields. The find guard also makes re-delivery of ArtistUpgraded a safe no-op; the PRIMARY KEY
+    // is the ultimate backstop against a concurrent double-insert.
+    if (em.find(ArtistProfileEntity.class, profile.getId().value()) != null) {
+      return;
+    }
+    Instant now = Instant.now();
+    ArtistProfileEntity e = new ArtistProfileEntity();
+    e.id = profile.getId().value();
+    e.name = profile.getName();
+    e.image = profile.getImage();
+    e.coverImage = profile.getCoverImage();
+    e.verified = profile.isVerified();
+    e.monthlyListeners = profile.getMonthlyListeners();
+    e.followers = profile.getFollowers();
+    e.bio = profile.getBio();
+    e.location = profile.getLocation();
+    e.genres = profile.getGenres().toArray(new String[0]);
+    e.createdAt = now;
+    e.updatedAt = now;
+    em.persist(e);
+  }
+
+  @Override
   public void saveReleaseWithIdempotencyKey(Release release, String idempotencyKey) {
     saveRelease(release);
     if (idempotencyKey != null) {

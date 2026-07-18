@@ -51,6 +51,15 @@ work_units:
     depends_on: [WU-PLT-1]
     llfrs: [LLFR-MEDIA-01.1, LLFR-MEDIA-01.2, LLFR-MEDIA-01.3]
     status: done
+  - id: WU-MED-2
+    title: Fix — retryable S3 PutObject body (non-markable stream upload 500)
+    phase: 0
+    module: media
+    add: media.md
+    owner: backend-engineer
+    depends_on: [WU-MED-1]
+    llfrs: [LLFR-MEDIA-01.1]
+    status: done   # PR #145 squash-merged to master 2026-07-18 (squash 224062b, all CI green + local verify.sh/smoke.sh green). Bug fix from live QA of the Studio release-creation wizard (frontend PR #144): every track/episode upload returned HTTP 500. S3ObjectStoreAdapter.putOriginal handed the AWS SDK v2 sync client a body built from a non-markable Files.newInputStream (StudioReleaseResource/StudioPodcastResource multipart temp file) via RequestBody.fromInputStream; the sync client re-reads the payload (SigV4 payload signing / flexible-checksum precompute / retry) and throws "Content input stream does not support mark/reset, and was already read once." WU-CAT-5 unit tests stubbed the media port so the real adapter was never exercised with a non-markable stream. Fix: known-length branch now streams-through only when body.markSupported(); otherwise spools to a bounded temp file and PUTs via retryable RequestBody.fromFile (unknown-length putViaTempSpool path unchanged; 500MB cap + unwrapDomainException 413 mapping preserved). Regression guard: S3ObjectStoreAdapterRetryableBodyTest (deterministic, reproduces the exact mark/reset IllegalStateException by re-reading the request body) + S3KnownLengthNonMarkableUploadIT (real MinIO byte-for-byte).
 
   # ---------------- Phase 1 — Identity & Catalog ----------------
   - id: WU-IDN-1
@@ -172,7 +181,27 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-CAT-4]
     llfrs: [LLFR-CATALOG-02.2, LLFR-CATALOG-02.4]
-    status: in_progress
+    status: done
+  - id: WU-CAT-7
+    title: Auto-provision artist_profile shell on ArtistUpgraded (fix real-artist release 500)
+    phase: 1
+    module: catalog
+    add: catalog.md
+    owner: backend-engineer
+    depends_on: [WU-CAT-5, WU-IDN-3]
+    llfrs: [LLFR-CATALOG-02.2]
+    status: done   # PR #146 squash-merged to master 2026-07-18 (squash a2a7c32, all CI green + local verify.sh/smoke.sh green). Catalog now auto-provisions the artist_profile shell on ArtistUpgraded, fixing the real-artist create-draft 500 from live QA.
+    # NOTE: WU-CAT-6 is reserved by catalog ADD §10 for per-track royalty splits; this fix takes the
+    # next free id WU-CAT-7 rather than renumbering (IDs are canonical).
+    # Live-QA defect (Studio release-creation wizard, frontend PR #144): a real (non-seed) account
+    # that upgrades to artist had NO artist_profile row, so POST /v1/studio/releases failed the
+    # release.artist_id -> artist_profile(id) FK with HTTP 500. Root cause: UpgradeToArtistService
+    # fired ArtistUpgraded and its javadoc promised catalog would seed the profile shell, but NO
+    # catalog observer existed (the 17 ITs papered over it with manual guarded artist_profile
+    # inserts). Fix: catalog.adapter.in.events.ArtistUpgradedObserver reacts AFTER_SUCCESS +
+    # REQUIRES_NEW -> ProvisionArtistProfile(Service) -> insert-only saveArtistProfile. Hexagonal:
+    # react to the identity domain event; never touch identity tables. Idempotent (find-then-insert
+    # + PK backstop). ArtistUpgraded gains an `avatar` field so the shell seeds a real image.
   - id: WU-CAT-8
     title: Home-feed discover rails
     phase: 1

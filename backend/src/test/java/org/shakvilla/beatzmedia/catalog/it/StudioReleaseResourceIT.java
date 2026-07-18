@@ -89,8 +89,9 @@ class StudioReleaseResourceIT {
     // Re-login to get artist-role JWT
     artistToken = login(ARTIST_EMAIL, ARTIST_PASSWORD);
 
-    // The ArtistUpgraded CDI observer (catalog module) that creates the artist_profile row
-    // is not yet implemented (WU-CAT-5). Seed the row directly so FK on release.artist_id holds.
+    // The ArtistUpgraded CDI observer (catalog module) now auto-creates the artist_profile row on
+    // become-artist (WU-CAT-7). This seed is a redundant, guarded safety net (SELECT-then-INSERT, so
+    // it no-ops when the row already exists) kept to keep this test independent of observer timing.
     seedArtistProfile(artistToken);
   }
 
@@ -260,9 +261,9 @@ class StudioReleaseResourceIT {
   }
 
   /**
-   * Seeds an artist_profile row for the dynamically-created test artist. The ArtistUpgraded CDI
-   * observer that normally does this lives in a future WU; this helper bridges the gap for IT
-   * purposes only.
+   * Seeds an artist_profile row for the dynamically-created test artist. As of WU-CAT-7 the
+   * ArtistUpgraded CDI observer already provisions this row on become-artist; this guarded helper
+   * (SELECT-then-INSERT) is now a redundant no-op kept only so the test is self-contained.
    */
   private void seedArtistProfile(String token) {
     // Decode the JWT subject claim directly — avoids a /v1/me round-trip that doesn't exist yet

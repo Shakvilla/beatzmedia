@@ -1,13 +1,15 @@
 import { queryOptions } from '@tanstack/react-query'
 import type { AnalyticsRange, AudienceRange } from '../../studio-analytics'
 import type { StudioProfile, StudioSettings, StudioRelease } from '../../studio-data'
+import type { ReleaseType } from '../../studio-data'
+import type { UploadedTrack } from '../../../features/studio/release-draft-context'
 import { apiFetch } from '../client'
 import { unwrapPage, type PageWire } from '../pagination'
 import {
   toAnalytics, toAudience, type AnalyticsWire, type AudienceWire,
   toStudioProfile, type StudioProfileWire, toSaveProfileBody, type SaveStudioProfileBody,
   toStudioSettings, type StudioSettingsWire, toSaveSettingsBody, type SaveStudioSettingsBody,
-  toStudioRelease, type StudioReleaseWire,
+  toStudioRelease, type StudioReleaseWire, toWizardTrack, type UploadedTrackWire,
 } from '../mappers'
 
 /**
@@ -84,4 +86,54 @@ export function apiRenameRelease(id: string, title: string): Promise<StudioRelea
 /** `DELETE /v1/studio/releases/:id` — draft/in_review only; throws ApiError for live. */
 export function apiDeleteRelease(id: string): Promise<void> {
   return apiFetch<void>(`/studio/releases/${id}`, { method: 'DELETE' })
+}
+
+// ── Release create-flow (WU-CAT-5 draft flow) ─────────────────────
+
+export interface CreateDraftInput {
+  title?: string
+  type: ReleaseType
+  genre?: string
+  description?: string
+  visibility?: 'public' | 'scheduled'
+  scheduledAt?: string
+}
+
+export interface TrackPatch { trackId: string; position: number; priceMinor: number }
+
+export interface UpdateReleaseInput {
+  title?: string
+  genre?: string
+  description?: string
+  visibility?: 'public' | 'scheduled'
+  scheduledAt?: string
+  tracks?: TrackPatch[]
+}
+
+/** `POST /v1/studio/releases` — create a metadata-only draft; returns the new id. */
+export function apiCreateDraft(input: CreateDraftInput): Promise<string> {
+  return apiFetch<{ id: string }>('/studio/releases', { method: 'POST', body: input }).then((r) => r.id)
+}
+
+/** `POST /v1/studio/releases/:id/tracks` — multipart upload-attach; part name is "file". */
+export function apiUploadTrack(releaseId: string, file: File): Promise<UploadedTrack> {
+  const form = new FormData()
+  form.append('file', file)
+  return apiFetch<UploadedTrackWire>(`/studio/releases/${releaseId}/tracks`, { method: 'POST', body: form })
+    .then(toWizardTrack)
+}
+
+/** `PATCH /v1/studio/releases/:id` — metadata + wholesale track list (draft-only). */
+export function apiUpdateRelease(releaseId: string, patch: UpdateReleaseInput): Promise<void> {
+  return apiFetch<unknown>(`/studio/releases/${releaseId}`, { method: 'PATCH', body: patch }).then(() => undefined)
+}
+
+/** `POST /v1/studio/releases/:id/submit` — finalize draft → in_review. */
+export function apiSubmitRelease(releaseId: string, idempotencyKey: string): Promise<void> {
+  return apiFetch<unknown>(`/studio/releases/${releaseId}/submit`, { method: 'POST', idempotencyKey }).then(() => undefined)
+}
+
+/** `DELETE /v1/studio/releases/:id/tracks/:trackId` — remove a draft track. */
+export function apiDeleteTrack(releaseId: string, trackId: string): Promise<void> {
+  return apiFetch<void>(`/studio/releases/${releaseId}/tracks/${trackId}`, { method: 'DELETE' })
 }

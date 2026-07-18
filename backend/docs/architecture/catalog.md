@@ -771,6 +771,7 @@ stateDiagram-v2
 | **WU-CAT-4** ✅ | Release state machine + scheduled go-live (CATALOG-02.5, PLATFORM-01.2) | WU-CAT-3, WU-PLT-2 | 5 |
 | **WU-CAT-5** ✅ | Release create flow — draft → upload-attached → finalize; repurposes the one-shot submit (CATALOG-02.2, 02.4) | WU-CAT-4 | 6 |
 | WU-CAT-6 | Per-track royalty splits + collaborator confirmation | WU-CAT-5 | 7 |
+| **WU-CAT-7** | Auto-provision `artist_profile` shell on identity `ArtistUpgraded` (fix real-artist release 500) | WU-CAT-5, WU-IDN-3 | 8 |
 
 Cross-reference PRD §8 / §8.1. Phase-1 order within catalog: WU-CAT-1 → WU-SRCH-1 → WU-CAT-2 ;
 WU-CAT-3 → WU-CAT-4 → WU-CAT-5 → WU-CAT-6 (WU-MED-1 lands in Phase 0 foundations).
@@ -951,7 +952,40 @@ POST /studio/releases (draft)  →  POST .../tracks × N (attach)  →  PATCH ..
   real content gate); dropping the orphan `release_draft` JSONB table (separate cleanup — still
   referenced by zero code).
 
-## 15. Implementation notes (WU-CAT-8, as-built)
+## 15. Implementation notes (WU-CAT-7, as-built)
+
+**Artist-profile provisioning is now automatic and event-driven.** Fixes a live-QA defect (Studio
+release-creation wizard, frontend PR #144): a real (non-seed) account that upgraded to artist had no
+`artist_profile` row, so `POST /v1/studio/releases` failed the `release.artist_id → artist_profile(id)`
+FK with HTTP 500. Only the seven slug-keyed dev-seed rows existed; nothing provisioned a profile for a
+genuinely-upgraded account. Identity's `UpgradeToArtistService` already fired `ArtistUpgraded` and its
+javadoc promised catalog would seed the shell, but **no catalog observer existed**.
+
+- **`catalog.adapter.in.events.ArtistUpgradedObserver`** (new inbound adapter) — reacts to identity's
+  `ArtistUpgraded` domain event `@Observes(during = AFTER_SUCCESS)` + `@Transactional(REQUIRES_NEW)`,
+  the same cross-module event-reaction pattern as `analytics.adapter.in.events.*Observer` and
+  `store.adapter.in.events.PurchaseConfirmedSubscriber`. Catalog reacts to the event and never reads
+  or writes an identity table; identity never touches `artist_profile`. Provisioning runs in its own
+  transaction after the upgrade commits, so it can never roll back the upgrade, and — because the
+  observer runs synchronously during commit completion on the request thread — the row is durable
+  before `POST /v1/me/become-artist` returns.
+- **`ProvisionArtistProfile` input port + `ProvisionArtistProfileService`** (new) — builds the shell
+  with sensible defaults: `image` = the account avatar (carried on a new `ArtistUpgraded.avatar`
+  field) or `/images/placeholder.jpg` when blank (the NOT NULL `artist_profile.image` column);
+  `verified=false`, `monthlyListeners=0`, `followers=0`, empty `genres`/`shows`, null cover/bio/location.
+  **Idempotent**: a no-op when a profile already exists for the id, so a redelivered event — or an id
+  that already had a curated/dev-seed profile — never clobbers existing data.
+- **`CatalogRepository.saveArtistProfile` + JPA impl** (new) — insert-only (find-then-insert); the
+  PRIMARY KEY is the ultimate backstop against a concurrent double-insert.
+- **Identity change (minimal).** `ArtistUpgraded` gains an `avatar` field; `UpgradeToArtistService`
+  populates it from the upgraded account. No identity behaviour change otherwise.
+- **Test-suite note.** The 17 pre-existing ITs that manually seeded `artist_profile` after
+  `become-artist` all guard their insert (a `SELECT 1` existence check or `ON CONFLICT (id) DO
+  NOTHING`), so auto-provisioning makes those seeds harmless no-ops rather than duplicate-key errors.
+  The new `ArtistUpgradeProvisioningIT` deliberately does **not** seed — it asserts the row exists
+  purely as a side effect of the upgrade, then that create-draft succeeds.
+
+## 16. Implementation notes (WU-CAT-8, as-built)
 
 **`GET /home` gains a `rails` object of discover rails, additive to the existing
 `trending`/`top10`/`featuredAlbums`.** `HomeFeedView` (`application.port.in`) grows a fourth field,

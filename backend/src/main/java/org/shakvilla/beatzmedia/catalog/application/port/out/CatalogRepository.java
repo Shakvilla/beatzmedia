@@ -28,6 +28,14 @@ public interface CatalogRepository {
 
   Optional<ArtistProfile> findArtist(ArtistId id);
 
+  /**
+   * Insert a new {@code artist_profile} row, or no-op if one already exists for this id. Used to
+   * provision the profile shell when an account upgrades to artist (WU-CAT-7, reacting to
+   * identity's {@code ArtistUpgraded} event). Insert-only: never overwrites an existing profile's
+   * curated fields. Catalog ADD §10.
+   */
+  void saveArtistProfile(ArtistProfile profile);
+
   List<Track> tracksByArtist(ArtistId id);
 
   List<Album> albumsByArtist(ArtistId id);

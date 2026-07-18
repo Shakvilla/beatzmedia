@@ -33,6 +33,7 @@ import type {
   Superfan,
 } from '../studio-analytics'
 import type { StudioProfile, StudioSettings, StudioRelease } from '../studio-data'
+import type { UploadedTrack } from '../../features/studio/release-draft-context'
 
 export interface ArtistWire {
   id: string
@@ -582,6 +583,36 @@ export function toStudioRelease(w: StudioReleaseWire): StudioRelease {
     streams: w.streams,
     revenue: w.revenue?.amount ?? 0,
     price: w.price?.amount ?? 0,
+  }
+}
+
+// ── Studio release wizard: upload-attach track ────────────────────
+// UploadedTrackView from POST /studio/releases/:id/tracks. price is a
+// MoneyView; the wizard's UploadedTrack wants plain cedis. status is
+// narrowed to the wizard's union.
+export interface UploadedTrackWire {
+  id: string
+  title: string
+  duration: number
+  status: string
+  progress: number
+  src: string | null
+  price: { amount: number; currency: string }
+  explicit: boolean
+  position: number
+}
+
+export function toWizardTrack(w: UploadedTrackWire): UploadedTrack {
+  const status = w.status === 'ready' || w.status === 'error' ? w.status : 'uploading'
+  return {
+    id: w.id,
+    title: w.title,
+    duration: w.duration ?? 0,
+    status,
+    progress: w.progress ?? 100,
+    src: w.src ?? '',
+    price: w.price?.amount ?? 0,
+    explicit: w.explicit ?? false,
   }
 }
 

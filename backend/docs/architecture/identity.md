@@ -18,8 +18,9 @@ authentication), **HLFR-IDENTITY-02** (current session & self-service), and **HL
 (admin team & RBAC).
 
 It explicitly does **not** own: the rich `ArtistProfile` content, releases, catalog, or studio
-profile (owned by `catalog`/`studio` — `identity` only creates the empty profile shell on upgrade and
-emits `ArtistUpgraded`); platform settings / feature flags (owned by `platform`/`admin`, read here
+profile (owned by `catalog`/`studio` — `identity` only emits `ArtistUpgraded` on upgrade; `catalog`
+reacts to that event to create the empty `artist_profile` shell (WU-CAT-7), and never lets `identity`
+touch the `artist_profile` table); platform settings / feature flags (owned by `platform`/`admin`, read here
 via `FeatureFlags`); the audit table itself (owned by `audit` — `identity` appends entries via the
 `AuditWriter` port, INV-10); and any money, library, or commerce state.
 
