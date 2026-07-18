@@ -1,52 +1,49 @@
 /**
- * Release-draft store for the new-release wizard.
- *
- * Holds the in-progress release as the creator moves across the wizard's four
- * steps (Details → Tracks → Pricing → Review). Scoped to the wizard layout
- * route rather than the whole app — mounted by `studio.release.new.tsx`.
- *
- * Persistence is in-memory for now (resets on refresh). When the API lands,
- * `saveDraft` / `publish` become mutations and the initial state is hydrated
- * from a fetched draft.
+ * Release-draft store for the new-release wizard, backed by the WU-CAT-5
+ * draft flow. Holds the in-progress release as the creator moves across the
+ * wizard's four steps (Details → Tracks → Splits → Review). The server draft
+ * is created on leaving Details; tracks are uploaded for real; splits / cover
+ * art / other extras stay client-only (not sent) until their backends land.
  */
 
-import { createContext, useContext, useMemo, useReducer, type ReactNode } from 'react'
+import {
+  createContext, useContext, useMemo, useReducer, useRef, type ReactNode,
+} from 'react'
 import type { Genre } from '../../types'
 import type { ReleaseType } from '../../lib/studio-data'
+import {
+  apiCreateDraft, apiUploadTrack, apiUpdateRelease, apiSubmitRelease, apiDeleteTrack,
+  type CreateDraftInput, type UpdateReleaseInput,
+} from '../../lib/api/queries/studio'
 
 /** How a collaborator's share has been confirmed. */
 export type SplitConfirmation = 'self' | 'confirmed' | 'pending' | 'auto'
 
-/** One collaborator's royalty share of a track. */
+/** One collaborator's royalty share of a track (client-only until WU-CAT-6). */
 export interface SplitEntry {
   id: string
   name: string
-  /** Email / handle used to send the confirmation request. */
   email: string
   role: string
-  /** Percentage of the creator pool (0–100). */
   percent: number
   confirmation: SplitConfirmation
 }
 
-/** A track being uploaded / staged in the release draft. */
+/** A track staged in the release draft. */
 export interface UploadedTrack {
   id: string
   title: string
-  /** Length in seconds. */
   duration: number
   status: 'uploading' | 'ready' | 'error'
-  /** Upload progress, 0–100. */
   progress: number
-  /** Object URL of the uploaded audio, so the artist can preview it. */
   src: string
-  /** Price in cedis; 0 = free. */
   price: number
-  /** Flagged as containing explicit content. */
   explicit: boolean
 }
 
 export interface ReleaseDraft {
+  /** Server draft id once created (on leaving Details); null before then. */
+  releaseId: string | null
   releaseType: ReleaseType
   title: string
   primaryArtist: string
@@ -55,22 +52,17 @@ export interface ReleaseDraft {
   releaseDate: string
   genre: Genre | ''
   description: string
-  /** Object URL / remote URL of the uploaded cover, if any. */
   coverImage: string | null
-  /** 'public' = live immediately, 'scheduled' = goes public on releaseDate. */
   visibility: 'public' | 'scheduled'
   tracks: UploadedTrack[]
-  /** Price per track in cedis; 0 = free. */
   price: number
-  /** Royalty splits keyed by track id. */
   splits: Record<string, SplitEntry[]>
-  /** Distribution agreement accepted on the review step. */
   agreementAccepted: boolean
-  /** Whether a pre-save link has been generated for a scheduled release. */
   presaveGenerated: boolean
 }
 
 const initialDraft: ReleaseDraft = {
+  releaseId: null,
   releaseType: 'single',
   title: '',
   primaryArtist: '',
@@ -90,7 +82,10 @@ const initialDraft: ReleaseDraft = {
 
 type DraftAction =
   | { type: 'SET_FIELD'; field: keyof ReleaseDraft; value: ReleaseDraft[keyof ReleaseDraft] }
-  | { type: 'ADD_TRACKS'; tracks: UploadedTrack[] }
+  | { type: 'SET_RELEASE_ID'; id: string }
+  | { type: 'ADD_PLACEHOLDER'; track: UploadedTrack }
+  | { type: 'REPLACE_TRACK'; tempId: string; track: UploadedTrack }
+  | { type: 'MARK_TRACK_ERROR'; id: string }
   | { type: 'UPDATE_TRACK'; id: string; patch: Partial<UploadedTrack> }
   | { type: 'REMOVE_TRACK'; id: string }
   | { type: 'MOVE_TRACK'; id: string; dir: -1 | 1 }
@@ -98,15 +93,26 @@ type DraftAction =
   | { type: 'SET_ALL_PRICES'; price: number }
   | { type: 'SET_TRACK_SPLITS'; trackId: string; splits: SplitEntry[] }
   | { type: 'APPLY_SPLITS_TO_ALL'; splits: SplitEntry[] }
-  | { type: 'TICK_UPLOADS' }
   | { type: 'RESET' }
 
 function reducer(state: ReleaseDraft, action: DraftAction): ReleaseDraft {
   switch (action.type) {
     case 'SET_FIELD':
       return { ...state, [action.field]: action.value }
-    case 'ADD_TRACKS':
-      return { ...state, tracks: [...state.tracks, ...action.tracks] }
+    case 'SET_RELEASE_ID':
+      return { ...state, releaseId: action.id }
+    case 'ADD_PLACEHOLDER':
+      return { ...state, tracks: [...state.tracks, action.track] }
+    case 'REPLACE_TRACK':
+      return {
+        ...state,
+        tracks: state.tracks.map((t) => (t.id === action.tempId ? action.track : t)),
+      }
+    case 'MARK_TRACK_ERROR':
+      return {
+        ...state,
+        tracks: state.tracks.map((t) => (t.id === action.id ? { ...t, status: 'error' } : t)),
+      }
     case 'UPDATE_TRACK':
       return {
         ...state,
@@ -137,21 +143,9 @@ function reducer(state: ReleaseDraft, action: DraftAction): ReleaseDraft {
     case 'APPLY_SPLITS_TO_ALL': {
       const next: Record<string, SplitEntry[]> = {}
       for (const t of state.tracks) {
-        // Clone entries with fresh ids so per-track edits stay independent.
         next[t.id] = action.splits.map((s) => ({ ...s, id: `${t.id}-${s.id}` }))
       }
       return { ...state, splits: next }
-    }
-    case 'TICK_UPLOADS': {
-      if (!state.tracks.some((t) => t.status === 'uploading')) return state
-      return {
-        ...state,
-        tracks: state.tracks.map((t) => {
-          if (t.status !== 'uploading') return t
-          const progress = Math.min(100, t.progress + 8 + Math.floor(Math.random() * 12))
-          return progress >= 100 ? { ...t, progress: 100, status: 'ready' } : { ...t, progress }
-        }),
-      }
     }
     case 'RESET':
       return initialDraft
@@ -160,18 +154,46 @@ function reducer(state: ReleaseDraft, action: DraftAction): ReleaseDraft {
   }
 }
 
+/** Map the wizard draft → create-draft body. visibility values match the backend 1:1. */
+function toCreateInput(d: ReleaseDraft): CreateDraftInput {
+  return {
+    title: d.title.trim() || undefined,
+    type: d.releaseType,
+    genre: d.genre || undefined,
+    description: d.description.trim() || undefined,
+    visibility: d.visibility,
+    scheduledAt:
+      d.visibility === 'scheduled' && d.releaseDate ? new Date(d.releaseDate).toISOString() : undefined,
+  }
+}
+
+/** Map the wizard draft → PATCH metadata (no tracks). */
+function toMetaPatch(d: ReleaseDraft): UpdateReleaseInput {
+  return {
+    title: d.title.trim() || undefined,
+    genre: d.genre || undefined,
+    description: d.description.trim() || undefined,
+    visibility: d.visibility,
+    scheduledAt:
+      d.visibility === 'scheduled' && d.releaseDate ? new Date(d.releaseDate).toISOString() : undefined,
+  }
+}
+
+const isServerId = (id: string) => !id.startsWith('tmp-')
+
 interface ReleaseDraftContextValue {
   draft: ReleaseDraft
   setField: <K extends keyof ReleaseDraft>(field: K, value: ReleaseDraft[K]) => void
-  addTracks: (tracks: UploadedTrack[]) => void
   updateTrack: (id: string, patch: Partial<UploadedTrack>) => void
-  removeTrack: (id: string) => void
+  removeTrack: (id: string) => Promise<void>
   moveTrack: (id: string, dir: -1 | 1) => void
   reorderTracks: (from: number, to: number) => void
   setAllPrices: (price: number) => void
   setTrackSplits: (trackId: string, splits: SplitEntry[]) => void
   applySplitsToAll: (splits: SplitEntry[]) => void
-  tickUploads: () => void
+  createOrUpdateDraft: () => Promise<void>
+  uploadTrack: (file: File) => Promise<void>
+  submitRelease: () => Promise<void>
   reset: () => void
 }
 
@@ -180,23 +202,86 @@ const ReleaseDraftContext = createContext<ReleaseDraftContextValue | null>(null)
 export function ReleaseDraftProvider({ children, initial }: { children: ReactNode; initial?: Partial<ReleaseDraft> }) {
   const [draft, dispatch] = useReducer(reducer, { ...initialDraft, ...initial })
 
-  const value = useMemo<ReleaseDraftContextValue>(
-    () => ({
+  // Mirror state in a ref so async actions read the latest releaseId/price/tracks
+  // even when several run concurrently (e.g. multiple uploads).
+  const stateRef = useRef(draft)
+  stateRef.current = draft
+
+  const value = useMemo<ReleaseDraftContextValue>(() => {
+    const ensureDraft = async (): Promise<string> => {
+      if (stateRef.current.releaseId) return stateRef.current.releaseId
+      const id = await apiCreateDraft(toCreateInput(stateRef.current))
+      stateRef.current = { ...stateRef.current, releaseId: id } // block concurrent double-create
+      dispatch({ type: 'SET_RELEASE_ID', id })
+      return id
+    }
+
+    return {
       draft,
       setField: (field, value) => dispatch({ type: 'SET_FIELD', field, value }),
-      addTracks: (tracks) => dispatch({ type: 'ADD_TRACKS', tracks }),
       updateTrack: (id, patch) => dispatch({ type: 'UPDATE_TRACK', id, patch }),
-      removeTrack: (id) => dispatch({ type: 'REMOVE_TRACK', id }),
       moveTrack: (id, dir) => dispatch({ type: 'MOVE_TRACK', id, dir }),
       reorderTracks: (from, to) => dispatch({ type: 'REORDER_TRACKS', from, to }),
       setAllPrices: (price) => dispatch({ type: 'SET_ALL_PRICES', price }),
       setTrackSplits: (trackId, splits) => dispatch({ type: 'SET_TRACK_SPLITS', trackId, splits }),
       applySplitsToAll: (splits) => dispatch({ type: 'APPLY_SPLITS_TO_ALL', splits }),
-      tickUploads: () => dispatch({ type: 'TICK_UPLOADS' }),
       reset: () => dispatch({ type: 'RESET' }),
-    }),
-    [draft],
-  )
+
+      createOrUpdateDraft: async () => {
+        if (!stateRef.current.releaseId) {
+          await ensureDraft()
+        } else {
+          await apiUpdateRelease(stateRef.current.releaseId, toMetaPatch(stateRef.current))
+        }
+      },
+
+      uploadTrack: async (file) => {
+        const tempId = `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+        dispatch({
+          type: 'ADD_PLACEHOLDER',
+          track: {
+            id: tempId,
+            title: file.name.replace(/\.[^.]+$/, ''),
+            duration: 0,
+            status: 'uploading',
+            progress: 0,
+            src: URL.createObjectURL(file),
+            price: stateRef.current.price,
+            explicit: false,
+          },
+        })
+        try {
+          const id = await ensureDraft()
+          const server = await apiUploadTrack(id, file)
+          dispatch({ type: 'REPLACE_TRACK', tempId, track: { ...server, price: stateRef.current.price } })
+        } catch {
+          dispatch({ type: 'MARK_TRACK_ERROR', id: tempId })
+        }
+      },
+
+      removeTrack: async (id) => {
+        const rid = stateRef.current.releaseId
+        dispatch({ type: 'REMOVE_TRACK', id })
+        if (rid && isServerId(id)) {
+          try {
+            await apiDeleteTrack(rid, id)
+          } catch {
+            // already removed from the UI; server cleanup can happen via the releases list
+          }
+        }
+      },
+
+      submitRelease: async () => {
+        const rid = await ensureDraft()
+        const s = stateRef.current
+        const tracks = s.tracks
+          .filter((t) => isServerId(t.id) && t.status !== 'error')
+          .map((t, i) => ({ trackId: t.id, position: i, priceMinor: Math.round(t.price * 100) }))
+        await apiUpdateRelease(rid, { ...toMetaPatch(s), tracks })
+        await apiSubmitRelease(rid, crypto.randomUUID())
+      },
+    }
+  }, [draft])
 
   return <ReleaseDraftContext.Provider value={value}>{children}</ReleaseDraftContext.Provider>
 }
