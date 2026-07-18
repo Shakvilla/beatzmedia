@@ -466,12 +466,14 @@ Field-level, traceable to `Frontend/src/types/index.ts`, `studio-data.ts`, and
   (`public|scheduled`), `scheduledAt?`, `tracks: TrackDraft[]`. Additive superset returned by `GET
   /studio/releases/:id` and every draft-flow mutation (`POST`/`PATCH`/`POST .../submit`).
 - **TrackDraft** (WU-CAT-5) — `trackId`, `title`, `duration` (sec), `status`
-  (`uploading|ready|error`), `position`, `price` (cedis). No `splits` yet (deferred to WU-CAT-6).
+  (`uploading|ready|error`), `position`, `price` (cedis), `splits: SplitEntry[]` (WU-CAT-6 —
+  collaborators only; the originating creator's share is implicit and never stored as a row, INV-12).
 - **UploadedTrack** — `id`, `title`, `duration` (sec), `status` (`uploading|ready|error`),
   `progress` (0–100), `src` (delivery URL), `price` (cedis; 0 = free), `explicit` (bool), `position`
   (WU-CAT-5 — index of the attached `ReleaseTrack` within its release).
 - **SplitEntry** — `id`, `name`, `email`, `role`, `percent` (0–100 of creator pool),
-  `confirmation` (`self|confirmed|pending|auto`). Deferred write path — see §14.
+  `confirmation` (`self|confirmed|pending|auto`). Persisted on `PATCH .../:id`, nested per track
+  (WU-CAT-6, as-built) — see §9.
 
 ## 7. Persistence schema & migrations
 
@@ -742,20 +744,27 @@ stateDiagram-v2
   `AccountRegistered` pattern already used by `identity` — no separate `EventPublisher` port exists in
   the codebase yet, so this ADD's illustrative `EventPublisher` output port is aspirational, not
   implemented; update if/when a cross-cutting event-bus port is introduced).
-- **Known gap — split persistence (tracked, deferred to WU-CAT-6).** The original `SubmitRelease`
-  (WU-CAT-3, **retired by WU-CAT-5** — see §14) validated that per-track split percentages sum to
-  ≤100 (INV-12, `SPLIT_OVER_100`) but never persisted `SplitEntry` rows to `split_entry` — they were
-  validated in memory and discarded. WU-CAT-5's replacement draft-flow (`CreateReleaseDraft` /
-  `UpdateRelease` / `FinalizeRelease`) carries no splits input at all — `TrackDraftView` has no
-  `splits` field and `ReleaseTrack` is unchanged (`trackId, position, priceMinor`) — so the gap is
-  now simply "not yet built" rather than "validated then discarded". WU-CAT-4's
-  `CatalogRepository.hasPendingSplits` guard remains implemented and unit/integration-tested against
-  the `split_entry` table, but with no rows ever written the guard is currently always "no pending
-  splits" (a real block against real pending data, not a silent gap for INV-12's *current* enforced
-  scope: no split can be pending if none are persisted). This is safe (never falsely blocks or
-  falsely allows a real pending split) but does not yet let an admin observe/confirm splits before
-  go-live. **WU-CAT-6** owns the `split_entry` write path (persist on `PATCH`, keyed by `track_id`),
-  `TrackDraftView.splits`, split-sum validation at finalize, and the collaborator-confirmation flow.
+- **Split persistence (WU-CAT-6, as-built).** The original `SubmitRelease` (WU-CAT-3, **retired by
+  WU-CAT-5** — see §14) validated that per-track split percentages sum to ≤100 (INV-12,
+  `SPLIT_OVER_100`) but never persisted `SplitEntry` rows to `split_entry` — they were validated in
+  memory and discarded; WU-CAT-5's replacement draft-flow then carried no splits input at all.
+  WU-CAT-6 closes the gap: `UpdateRelease`'s `tracks[]` replacement (`PATCH .../:id`) now accepts an
+  optional `splits[]` nested inside each track entry (`{name, email, role, percent}` — input has no
+  `id`/`confirmation`), persisted via the dedicated `CatalogRepository.saveTrackSplits(trackId,
+  splits)` — a wholesale per-track replace, **deliberately decoupled from `saveRelease`** so an
+  unrelated save on an aggregate that never loaded splits (the go-live scheduler, track upload/delete)
+  can never wipe `split_entry`. Splits are **collaborators only** — the originating creator's share is
+  implicit and never stored as a row (`Σ percent ≤ 100`, not `== 100`, per INV-12). Every persisted
+  collaborator lands with `confirmation = "pending"` (interim; the invite/accept flow that would move
+  a row to `confirmed`/`declined` — invite emails/notifications, a tokenized accept/decline endpoint,
+  resend, and a `declined` state, plus the frontend Splits-step wiring — is a separate follow-on WU).
+  `findRelease` loads splits into the aggregate, so `TrackDraftView.splits` (`SplitView {id, name,
+  email, role, percent, confirmation}`) is populated on `GET /:id` and every mutating draft endpoint.
+  `FinalizeRelease` validates per-track `Σ percent ≤ 100` before `Release.submit`, rejecting with 422
+  `SPLIT_OVER_100`; an individual row's `percent` outside 0–100 fails as a plain 422 field-validation
+  error, not `SPLIT_OVER_100`. WU-CAT-4's `CatalogRepository.hasPendingSplits` guard now has real data
+  to act on and blocks `in_review → live` while any split is `pending`. **No new migration** —
+  `split_entry`, its CHECKs, and `idx_split_track` already shipped in `V305` (§7).
 - **Observability.** Micrometer counters: releases by status, go-live job runs/failures, search QPS;
   spans on submit and the go-live sweep. Structured logs, no PII.
 

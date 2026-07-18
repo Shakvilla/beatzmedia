@@ -173,6 +173,15 @@ work_units:
     depends_on: [WU-CAT-4]
     llfrs: [LLFR-CATALOG-02.2, LLFR-CATALOG-02.4]
     status: in_progress
+  - id: WU-CAT-6
+    title: Release split persistence + finalize validation
+    phase: 1
+    module: catalog
+    add: catalog.md
+    owner: backend-engineer
+    depends_on: [WU-CAT-5]
+    llfrs: [LLFR-CATALOG-02.3]
+    status: in_progress
   - id: WU-LIB-1
     title: Collection — likes/follows/saved/user playlists/owned
     phase: 1
