@@ -6,7 +6,6 @@ import { MediaRail } from '../features/discover/components/media-rail'
 import { ArtistCircle } from '../features/discover/components/artist-circle'
 import { FeaturedCarousel } from '../features/discover/components/featured-carousel'
 import { usePlayer } from '../features/player/player-context'
-import { artists, playlists, albums } from '../lib/mock-data'
 import { homeQuery, browseCategoriesQuery } from '../lib/api/queries/catalog'
 import { formatCount } from '../lib/format'
 import { useAuth } from '../features/auth/auth-context'
@@ -30,8 +29,6 @@ function greeting(): string {
 
 const RAIL_ITEM = 'snap-start shrink-0 w-44 sm:w-48 lg:w-52'
 
-const quickPickPlaylists = playlists.slice(0, 3)
-
 function HomeComponent() {
   const { playQueue } = usePlayer()
   const { account } = useAuth()
@@ -41,6 +38,10 @@ function HomeComponent() {
   const trending = home.trending
   const top10 = home.top10
   const featuredAlbums = home.featuredAlbums
+  const newReleases = home.rails.newReleases
+  const popularArtists = home.rails.popularArtists
+  const curatedPlaylists = home.rails.curatedPlaylists
+  const quickPickPlaylists = curatedPlaylists.slice(0, 3)
 
   return (
     <div className="flex flex-col gap-14">
@@ -60,14 +61,15 @@ function HomeComponent() {
               </div>
             }
           />
-          {quickPickPlaylists.map((playlist) => (
-            <QuickPickCard
-              key={playlist.id}
-              title={playlist.title}
-              to={`/playlist/${playlist.id}`}
-              icon={<img src={playlist.image} alt={playlist.title} className="w-full h-full object-cover" />}
-            />
-          ))}
+          {quickPickPlaylists.length > 0 &&
+            quickPickPlaylists.map((playlist) => (
+              <QuickPickCard
+                key={playlist.id}
+                title={playlist.title}
+                to={`/playlist/${playlist.id}`}
+                icon={<img src={playlist.image} alt={playlist.title} className="w-full h-full object-cover" />}
+              />
+            ))}
         </div>
       </section>
 
@@ -75,23 +77,25 @@ function HomeComponent() {
       <FeaturedCarousel albums={featuredAlbums} />
 
       {/* Made for you */}
-      <MediaRail
-        title="Made for you"
-        subtitle="Mixes and playlists picked for your taste"
-        action={<span className="text-xs font-mono uppercase tracking-widest text-gray-500 dark:text-gray-300">Updated daily</span>}
-      >
-        {playlists.map((playlist) => (
-          <div key={playlist.id} className={RAIL_ITEM}>
-            <Card to={`/playlist/${playlist.id}`}>
-              <CardImage src={playlist.image} alt={playlist.title} />
-              <CardContent className="mt-2">
-                <CardTitle>{playlist.title}</CardTitle>
-                <CardSubtitle>{playlist.trackIds.length} songs • by {playlist.creator}</CardSubtitle>
-              </CardContent>
-            </Card>
-          </div>
-        ))}
-      </MediaRail>
+      {curatedPlaylists.length > 0 && (
+        <MediaRail
+          title="Made for you"
+          subtitle="Mixes and playlists picked for your taste"
+          action={<span className="text-xs font-mono uppercase tracking-widest text-gray-500 dark:text-gray-300">Updated daily</span>}
+        >
+          {curatedPlaylists.map((playlist) => (
+            <div key={playlist.id} className={RAIL_ITEM}>
+              <Card to={`/playlist/${playlist.id}`}>
+                <CardImage src={playlist.image} alt={playlist.title} />
+                <CardContent className="mt-2">
+                  <CardTitle>{playlist.title}</CardTitle>
+                  <CardSubtitle>{playlist.trackIds.length} songs • by {playlist.creator}</CardSubtitle>
+                </CardContent>
+              </Card>
+            </div>
+          ))}
+        </MediaRail>
+      )}
 
       {/* Trending */}
       <MediaRail title="Trending in Ghana 🇬🇭" subtitle="What the country has on repeat right now">
@@ -109,28 +113,32 @@ function HomeComponent() {
       </MediaRail>
 
       {/* New releases */}
-      <MediaRail title="New releases" subtitle="Fresh albums and EPs">
-        {albums.map((album) => (
-          <div key={album.id} className={RAIL_ITEM}>
-            <Card to={`/album/${album.id}`}>
-              <CardImage src={album.coverImage} alt={album.title} />
-              <CardContent className="mt-2">
-                <CardTitle>{album.title}</CardTitle>
-                <CardSubtitle>{album.artistName} • {album.year}</CardSubtitle>
-              </CardContent>
-            </Card>
-          </div>
-        ))}
-      </MediaRail>
+      {newReleases.length > 0 && (
+        <MediaRail title="New releases" subtitle="Fresh albums and EPs">
+          {newReleases.map((album) => (
+            <div key={album.id} className={RAIL_ITEM}>
+              <Card to={`/album/${album.id}`}>
+                <CardImage src={album.coverImage} alt={album.title} />
+                <CardContent className="mt-2">
+                  <CardTitle>{album.title}</CardTitle>
+                  <CardSubtitle>{album.artistName} • {album.year}</CardSubtitle>
+                </CardContent>
+              </Card>
+            </div>
+          ))}
+        </MediaRail>
+      )}
 
       {/* Popular artists */}
-      <MediaRail title="Popular artists" subtitle="The voices defining the sound of Ghana & Africa">
-        {artists.map((artist) => (
-          <div key={artist.id} className={RAIL_ITEM}>
-            <ArtistCircle artist={artist} />
-          </div>
-        ))}
-      </MediaRail>
+      {popularArtists.length > 0 && (
+        <MediaRail title="Popular artists" subtitle="The voices defining the sound of Ghana & Africa">
+          {popularArtists.map((artist) => (
+            <div key={artist.id} className={RAIL_ITEM}>
+              <ArtistCircle artist={artist} />
+            </div>
+          ))}
+        </MediaRail>
+      )}
 
       {/* Charts */}
       <section className="flex flex-col gap-5">
