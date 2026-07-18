@@ -152,7 +152,7 @@ public class StudioReleaseResource {
   @Path("/{id}")
   @Consumes(MediaType.APPLICATION_JSON)
   public StudioReleaseDetailView update(
-      @PathParam("id") String id, UpdateReleaseBody body) {
+      @PathParam("id") String id, @jakarta.validation.Valid UpdateReleaseBody body) {
     UpdateReleaseCommand cmd = new UpdateReleaseCommand(
         body.title(),
         body.genre(),
@@ -161,7 +161,12 @@ public class StudioReleaseResource {
         body.scheduledAt() != null ? java.time.Instant.parse(body.scheduledAt()) : null,
         body.tracks() != null
             ? body.tracks().stream()
-                .map(t -> new TrackRef(t.trackId(), t.position(), t.priceMinor()))
+                .map(t -> new TrackRef(
+                    t.trackId(), t.position(), t.priceMinor(),
+                    t.splits() == null ? null
+                        : t.splits().stream()
+                            .map(s -> new UpdateRelease.SplitRef(s.name(), s.email(), s.role(), s.percent()))
+                            .toList()))
                 .toList()
             : null);
     return updateRelease.update(new ReleaseId(id), artistId(), cmd);
@@ -269,7 +274,13 @@ public class StudioReleaseResource {
       String description,
       String visibility,
       String scheduledAt,
-      List<TrackRefBody> tracks) {}
+      @jakarta.validation.Valid List<TrackRefBody> tracks) {}
 
-  public record TrackRefBody(String trackId, int position, long priceMinor) {}
+  public record TrackRefBody(
+      String trackId, int position, long priceMinor,
+      @jakarta.validation.Valid List<SplitRefBody> splits) {}
+
+  public record SplitRefBody(
+      String name, String email, String role,
+      @jakarta.validation.constraints.Min(0) @jakarta.validation.constraints.Max(100) int percent) {}
 }

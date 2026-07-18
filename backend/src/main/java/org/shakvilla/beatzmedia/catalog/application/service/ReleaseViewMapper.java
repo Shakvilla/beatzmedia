@@ -51,13 +51,19 @@ public final class ReleaseViewMapper {
         .sorted(Comparator.comparingInt(ReleaseTrack::position))
         .map(rt -> {
           Track t = byId.get(rt.trackId());
+          List<TrackDraftView.SplitView> splitViews = r.getSplits().stream()
+              .filter(s -> s.trackId().equals(rt.trackId()))
+              .map(s -> new TrackDraftView.SplitView(
+                  s.id(), s.name(), s.email(), s.role(), s.percent(), s.confirmation().name()))
+              .toList();
           return new TrackDraftView(
               rt.trackId(),
               t != null ? t.getTitle() : "",
               t != null ? t.getDurationSec() : 0,
               t != null ? t.getStatus() : "uploading",
               rt.position(),
-              MoneyView.ofMinor(rt.priceMinor()));
+              MoneyView.ofMinor(rt.priceMinor()),
+              splitViews);
         })
         .toList();
 

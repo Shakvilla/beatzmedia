@@ -132,9 +132,13 @@ public class UpdateReleaseService implements UpdateRelease {
         null,
         now));
 
+    // WU-CAT-6: re-fetch so the returned view reflects the splits just persisted above — the
+    // in-memory `release` loaded at the top of this method predates those saveTrackSplits calls
+    // and still carries whichever splits were loaded then (stale for any track just touched).
+    Release toReturn = repo.findRelease(id).orElse(release);
     var tracks = repo.tracksByIds(
-        release.getTracks().stream().map(ReleaseTrack::trackId).toList());
-    return ReleaseViewMapper.toDetailView(release, tracks);
+        toReturn.getTracks().stream().map(ReleaseTrack::trackId).toList());
+    return ReleaseViewMapper.toDetailView(toReturn, tracks);
   }
 
   /**
