@@ -68,6 +68,20 @@ export const BUNDLE_DISCOUNT = 0.24
 /** Whether a release type allows more than one track. */
 export const isMultiTrack = (t: ReleaseType): boolean => t !== 'single'
 
+/**
+ * Client mirror of the backend track-count matrix (WU-CAT-5 submit). Returns a
+ * human message when the count is invalid for the type, or null when valid.
+ */
+export function trackCountError(type: ReleaseType, n: number): string | null {
+  switch (type) {
+    case 'single': return n === 1 ? null : 'A single must have exactly 1 track.'
+    case 'ep': return n >= 3 && n <= 6 ? null : 'An EP needs 3–6 tracks.'
+    case 'album': return n >= 7 ? null : 'An album needs at least 7 tracks.'
+    case 'mixtape': return n >= 1 ? null : 'A mixtape needs at least 1 track.'
+    default: return null
+  }
+}
+
 export const releaseTypeLabel = (t: ReleaseType): string =>
   releaseTypes.find((r) => r.value === t)?.label ?? t
 

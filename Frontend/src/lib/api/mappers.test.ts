@@ -472,3 +472,29 @@ describe('toPodcastEpisode', () => {
     expect(ep.publicAt).toBeUndefined()
   })
 })
+
+import { toWizardTrack } from './mappers'
+
+describe('toWizardTrack', () => {
+  it('unwraps MoneyView price and passes status/duration through', () => {
+    const t = toWizardTrack({
+      id: 'trk-1', title: 'Intro', duration: 181, status: 'ready', progress: 100,
+      src: '/audio/trk-1.m3u8', price: { amount: 2.5, currency: 'GHS' }, explicit: false, position: 0,
+    })
+    expect(t).toEqual({
+      id: 'trk-1', title: 'Intro', duration: 181, status: 'ready',
+      progress: 100, src: '/audio/trk-1.m3u8', price: 2.5, explicit: false,
+    })
+  })
+
+  it('coerces an unknown status to uploading and null src/price to safe defaults', () => {
+    const t = toWizardTrack({
+      id: 'trk-2', title: 'X', duration: 0, status: 'transcoding', progress: 0,
+      src: null as unknown as string, price: null as unknown as { amount: number; currency: string },
+      explicit: false, position: 1,
+    })
+    expect(t.status).toBe('uploading')
+    expect(t.src).toBe('')
+    expect(t.price).toBe(0)
+  })
+})
