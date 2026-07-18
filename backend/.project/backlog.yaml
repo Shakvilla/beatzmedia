@@ -190,7 +190,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-CAT-5, WU-IDN-3]
     llfrs: [LLFR-CATALOG-02.2]
-    status: in_progress
+    status: done   # PR #146 squash-merged to master 2026-07-18 (squash a2a7c32, all CI green + local verify.sh/smoke.sh green). Catalog now auto-provisions the artist_profile shell on ArtistUpgraded, fixing the real-artist create-draft 500 from live QA.
     # NOTE: WU-CAT-6 is reserved by catalog ADD §10 for per-track royalty splits; this fix takes the
     # next free id WU-CAT-7 rather than renumbering (IDs are canonical).
     # Live-QA defect (Studio release-creation wizard, frontend PR #144): a real (non-seed) account
