@@ -235,6 +235,66 @@ public class JpaCatalogRepository implements CatalogRepository {
   }
 
   @Override
+  public List<Album> newestAlbums(int limit) {
+    List<AlbumEntity> entities =
+        em.createQuery("SELECT a FROM AlbumEntity a ORDER BY a.year DESC", AlbumEntity.class)
+            .setMaxResults(limit)
+            .getResultList();
+    return mapAlbumsWithBatchedTrackIds(entities); // same helper featuredAlbums uses
+  }
+
+  @Override
+  public List<ArtistProfile> popularArtists(int limit) {
+    List<ArtistProfileEntity> entities =
+        em.createQuery(
+                "SELECT a FROM ArtistProfileEntity a ORDER BY a.monthlyListeners DESC NULLS LAST",
+                ArtistProfileEntity.class)
+            .setMaxResults(limit)
+            .getResultList();
+    if (entities.isEmpty()) return List.of();
+    List<String> ids = entities.stream().map(e -> e.id).toList();
+    List<ArtistShowEntity> allShows =
+        em.createQuery(
+                "SELECT s FROM ArtistShowEntity s WHERE s.artistId IN :ids ORDER BY s.position",
+                ArtistShowEntity.class)
+            .setParameter("ids", ids)
+            .getResultList();
+    Map<String, List<ArtistShowEntity>> showsByArtist =
+        allShows.stream().collect(Collectors.groupingBy(s -> s.artistId));
+    // Preserve query order (ranked); toDomain(e, shows) mirrors artistsByIds.
+    return entities.stream()
+        .map(e -> toDomain(e, showsByArtist.getOrDefault(e.id, Collections.emptyList())))
+        .toList();
+  }
+
+  @Override
+  public List<Playlist> curatedPlaylists(int limit) {
+    List<PlaylistEntity> entities =
+        em.createQuery(
+                "SELECT p FROM PlaylistEntity p WHERE p.isPublic = true ORDER BY p.followers DESC NULLS LAST",
+                PlaylistEntity.class)
+            .setMaxResults(limit)
+            .getResultList();
+    if (entities.isEmpty()) return List.of();
+    List<String> ids = entities.stream().map(e -> e.id).toList();
+    List<PlaylistTrackEntity> allTracks =
+        em.createQuery(
+                "SELECT pt FROM PlaylistTrackEntity pt WHERE pt.playlistId IN :ids ORDER BY pt.position",
+                PlaylistTrackEntity.class)
+            .setParameter("ids", ids)
+            .getResultList();
+    Map<String, List<String>> trackIdsByPlaylist =
+        allTracks.stream().collect(Collectors.groupingBy(
+            pt -> pt.playlistId, Collectors.mapping(pt -> pt.trackId, Collectors.toList())));
+    return entities.stream()
+        .map(e -> new Playlist(
+            new PlaylistId(e.id), e.title, e.description, e.creator, e.creatorAvatar, e.image,
+            e.isPublic, e.followers,
+            trackIdsByPlaylist.getOrDefault(e.id, Collections.emptyList())))
+        .toList();
+  }
+
+  @Override
   public List<Album> albumsByIds(List<String> ids) {
     if (ids == null || ids.isEmpty()) {
       return Collections.emptyList();

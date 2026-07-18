@@ -202,6 +202,15 @@ work_units:
     # REQUIRES_NEW -> ProvisionArtistProfile(Service) -> insert-only saveArtistProfile. Hexagonal:
     # react to the identity domain event; never touch identity tables. Idempotent (find-then-insert
     # + PK backstop). ArtistUpgraded gains an `avatar` field so the shell seeds a real image.
+  - id: WU-CAT-8
+    title: Home-feed discover rails
+    phase: 1
+    module: catalog
+    add: catalog.md
+    owner: backend-engineer
+    depends_on: [WU-CAT-2]
+    llfrs: [LLFR-CATALOG-01.1]
+    status: in_progress
   - id: WU-LIB-1
     title: Collection — likes/follows/saved/user playlists/owned
     phase: 1

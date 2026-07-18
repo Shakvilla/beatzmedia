@@ -57,7 +57,7 @@ UI: home, search, artist, album, track, playlist pages. Shapes: `Artist`, `Album
 
 | Method | Path | Notes | Returns |
 |---|---|---|---|
-| GET | `/home` | curated feed (trending, top-10, featured albums, discover rails) | `{ trending: Track[], top10: Track[], featuredAlbums: Album[], rails: {...} }` |
+| GET | `/home` | curated feed (trending, top-10, featured albums, discover rails); `rails.newReleases` = albums newest-first (`year DESC`), `rails.popularArtists` = by monthly listeners, `rails.curatedPlaylists` = public playlists by followers — each playlist carries `trackIds` with `tracks` empty (embed via `/playlists/:id`) | `{ trending: Track[], top10: Track[], featuredAlbums: Album[], rails: { newReleases: Album[], popularArtists: Artist[], curatedPlaylists: Playlist[] } }` |
 | GET | `/search?q=` | tracks/artists/albums/playlists + a top result; returned playlists carry `trackIds` with `tracks` empty (use `/playlists/:id` to embed) | `{ tracks, artists, albums, playlists }` |
 | GET | `/browse-categories` | search-screen tiles | `BrowseCategory[]` |
 | GET | `/artists/:id` | profile + hero | `Artist` |

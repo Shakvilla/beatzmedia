@@ -14,6 +14,7 @@ describe('catalog query factories', () => {
       trending: [{ id: 't1', title: 'A', artistId: 'a1', artistName: 'Art', albumId: null, albumTitle: null, duration: 10, image: 'i', ownership: 'free', price: null, plays: 1, audioUrl: null, credits: null, quality: null, year: null }],
       top10: [],
       featuredAlbums: [{ id: 'al1', title: 'B', artistId: 'a1', artistName: 'Art', year: 2024, coverImage: 'c', genres: null, trackIds: [], tracks: null }],
+      rails: { newReleases: [], popularArtists: [], curatedPlaylists: [] },
     })
 
     const result = await homeQuery().queryFn!(ctx)
@@ -21,6 +22,23 @@ describe('catalog query factories', () => {
     expect(apiFetch).toHaveBeenCalledWith('/home')
     expect(result.trending).toHaveLength(1)
     expect(result.featuredAlbums).toHaveLength(1)
+  })
+
+  it('homeQuery maps the discover rails', async () => {
+    vi.mocked(apiFetch).mockResolvedValue({
+      trending: [], top10: [], featuredAlbums: [],
+      rails: {
+        newReleases: [{ id: 'al1', title: 'A', artistId: 'ar1', artistName: 'Art', year: 2026, coverImage: '/c', genres: [], trackIds: [], tracks: null }],
+        popularArtists: [{ id: 'ar1', name: 'Art', image: '/i', coverImage: '/cc', verified: true, monthlyListeners: 5, followers: 3, bio: '', location: '', genres: [] }],
+        curatedPlaylists: [{ id: 'pl1', title: 'Mix', description: '', creator: 'BeatzClik', creatorAvatar: '/a', image: '/p', isPublic: true, followers: 9, trackIds: ['t1'], tracks: [] }],
+      },
+    })
+
+    const result = await homeQuery().queryFn!(ctx)
+
+    expect(result.rails.newReleases[0].id).toBe('al1')
+    expect(result.rails.popularArtists[0].id).toBe('ar1')
+    expect(result.rails.curatedPlaylists[0].id).toBe('pl1')
   })
 
   it('browseCategoriesQuery fetches /browse-categories', async () => {

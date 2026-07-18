@@ -984,3 +984,28 @@ javadoc promised catalog would seed the shell, but **no catalog observer existed
   NOTHING`), so auto-provisioning makes those seeds harmless no-ops rather than duplicate-key errors.
   The new `ArtistUpgradeProvisioningIT` deliberately does **not** seed — it asserts the row exists
   purely as a side effect of the upgrade, then that create-draft succeeds.
+
+## 16. Implementation notes (WU-CAT-8, as-built)
+
+**`GET /home` gains a `rails` object of discover rails, additive to the existing
+`trending`/`top10`/`featuredAlbums`.** `HomeFeedView` (`application.port.in`) grows a fourth field,
+`HomeFeedView.RailsView(newReleases: List<AlbumView>, popularArtists: List<ArtistView>,
+curatedPlaylists: List<PlaylistView>)`; `GetHomeFeedService.get` populates it from three new
+`CatalogRepository` read queries:
+
+- `newestAlbums(limit)` — all albums, `year DESC`, limit **10**. Reuses the same
+  `mapAlbumsWithBatchedTrackIds` helper as `featuredAlbums`.
+- `popularArtists(limit)` — all artist profiles, `monthlyListeners DESC NULLS LAST`, limit **10**.
+- `curatedPlaylists(limit)` — playlists **where `is_public = true`**, `followers DESC NULLS LAST`,
+  limit **6**.
+
+`NULLS LAST` on the two nullable ranking columns keeps unranked (null) artists/playlists from sorting
+to the top of a `DESC` order. Rail elements reuse the existing `AlbumView`/`ArtistView`/`PlaylistView`
+mappers unchanged; playlist rail items follow the list-summary convention — `trackIds` populated,
+`tracks` empty (embed via `GET /playlists/:id`).
+
+**No migration.** All three queries read existing columns (`album.year`,
+`artist_profile.monthly_listeners`, `playlist.is_public`/`playlist.followers`) already present from
+prior WUs. An empty rail is hidden by the frontend rather than rendered as an empty section — the only
+frontend behavior change; rails with data render byte-for-byte via the same card components as the
+rest of the home feed.

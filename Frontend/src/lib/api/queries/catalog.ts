@@ -20,6 +20,11 @@ interface HomeFeedWire {
   trending: TrackWire[]
   top10: TrackWire[]
   featuredAlbums: AlbumWire[]
+  rails: {
+    newReleases: AlbumWire[]
+    popularArtists: ArtistWire[]
+    curatedPlaylists: PlaylistWire[]
+  }
 }
 
 export function homeQuery() {
@@ -31,6 +36,11 @@ export function homeQuery() {
         trending: wire.trending.map(toTrack),
         top10: wire.top10.map(toTrack),
         featuredAlbums: wire.featuredAlbums.map(toAlbum),
+        rails: {
+          newReleases: wire.rails.newReleases.map(toAlbum),
+          popularArtists: wire.rails.popularArtists.map(toArtist),
+          curatedPlaylists: wire.rails.curatedPlaylists.map(toPlaylist),
+        },
       }
     },
   })
