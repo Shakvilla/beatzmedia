@@ -3,9 +3,10 @@ package org.shakvilla.beatzmedia.catalog.adapter.in.rest;
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.notNullValue;
 
-import io.quarkus.test.junit.QuarkusTest;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+
+import io.quarkus.test.junit.QuarkusTest;
 
 /** WU-CAT-8: GET /home serializes the rails object additively. */
 @QuarkusTest
