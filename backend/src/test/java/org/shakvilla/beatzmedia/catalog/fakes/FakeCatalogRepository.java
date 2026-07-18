@@ -91,6 +91,12 @@ public class FakeCatalogRepository implements CatalogRepository {
   }
 
   @Override
+  public void saveArtistProfile(ArtistProfile profile) {
+    // Insert-only, mirroring the JPA adapter: never clobber an existing profile.
+    artists.putIfAbsent(profile.getId().value(), profile);
+  }
+
+  @Override
   public List<Track> tracksByArtist(ArtistId id) {
     return tracks.values().stream()
         .filter(t -> t.getArtistId().value().equals(id.value()))

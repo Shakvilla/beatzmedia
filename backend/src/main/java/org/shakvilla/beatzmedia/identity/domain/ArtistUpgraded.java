@@ -11,9 +11,13 @@ import java.time.Instant;
  *
  * <p>The event is fired synchronously by {@code UpgradeToArtistService} after the account flag is
  * persisted, within the {@code @Transactional} boundary.
+ *
+ * <p>{@code avatar} carries the account's profile image so the catalog reactor can seed a real
+ * {@code artist_profile.image} (a NOT NULL column) without reading the identity account table.
  */
 public record ArtistUpgraded(
     String accountId,
     String email,
     String name,
+    String avatar,
     Instant upgradedAt) {}

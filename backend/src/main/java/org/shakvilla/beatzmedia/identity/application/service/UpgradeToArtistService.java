@@ -96,6 +96,7 @@ public class UpgradeToArtistService implements UpgradeToArtist {
             upgraded.getId().value(),
             upgraded.getEmail(),
             upgraded.getName(),
+            upgraded.getAvatar(),
             now));
 
     return toView(upgraded);
