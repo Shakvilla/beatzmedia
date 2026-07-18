@@ -38,14 +38,20 @@ import software.amazon.awssdk.services.s3.presigner.model.PresignedGetObjectRequ
  * S3/MinIO adapter implementing {@link ObjectStorePort} and {@link UrlSignerPort}.
  * Originals bucket is PRIVATE — never signed for client read. ADD §3 / §5.2 / ADR (WU-MED-1 §3).
  *
- * <p>Streaming note: when the content length is known, {@code putOriginal} streams the body straight
- * to the AWS SDK via {@link RequestBody#fromInputStream} — the body is never buffered into a heap
- * {@code byte[]} (only the 12-byte magic probe is read before the PUT). The AWS SDK v2 <em>sync</em>
- * client cannot PUT a stream of unknown length, so when content-length is {@code -1} (unknown) the
- * body is spooled to a bounded temporary file and streamed from disk via {@link
- * RequestBody#fromFile}. The spool is capped here in the adapter ({@link #MAX_SPOOL_BYTES}) using a
- * small fixed buffer, so neither the JVM heap nor the disk can be exhausted by a large or untrusted
- * body — independently of the caller's own limiting stream. See B3/S2/M-1 fix notes.
+ * <p>Streaming note: {@code putOriginal} streams the body straight to the AWS SDK via {@link
+ * RequestBody#fromInputStream} — never buffering it into a heap {@code byte[]} (only the 12-byte
+ * magic probe is read before the PUT) — but ONLY when the content length is known <em>and</em> the
+ * body supports mark/reset. The AWS SDK v2 <em>sync</em> client may read the payload more than once
+ * (SigV4 payload signing, flexible-checksum precompute, or a retry), so it needs a body it can
+ * reset. Two cases therefore spool the body to a bounded temporary file and stream it from disk via
+ * the re-readable {@link RequestBody#fromFile}: (1) unknown content-length ({@code -1}) — the sync
+ * client cannot PUT a stream of unknown length; and (2) a non-markable body of known length
+ * (WU-MED-2) — e.g. the Studio upload's {@code Files.newInputStream} over the multipart temp file,
+ * which throws {@code IllegalStateException: ... does not support mark/reset ...} the moment the
+ * sync client re-reads it. The spool is capped here in the adapter ({@link #MAX_SPOOL_BYTES}) using
+ * a small fixed buffer, so neither the JVM heap nor the disk can be exhausted by a large or
+ * untrusted body — independently of the caller's own limiting stream. See B3/S2/M-1 and WU-MED-2
+ * fix notes.
  */
 @ApplicationScoped
 public class S3ObjectStoreAdapter implements ObjectStorePort, UrlSignerPort {
@@ -106,14 +112,26 @@ public class S3ObjectStoreAdapter implements ObjectStorePort, UrlSignerPort {
             .contentType(contentType)
             .build();
     try {
-      if (contentLength >= 0) {
-        // Known, trusted length: stream straight through with no heap buffer.
+      if (contentLength >= 0 && body.markSupported()) {
+        // Known, trusted length AND a re-readable body: stream straight through with no spool. The
+        // AWS SDK v2 sync client may read the payload more than once (SigV4 payload signing,
+        // flexible-checksum precompute, or a retry), so it needs a body it can reset — which a
+        // mark/reset-capable stream provides. RequestBody.fromInputStream marks/resets it.
         s3Client.putObject(request, RequestBody.fromInputStream(body, contentLength));
       } else {
-        // Unknown/untrusted length: the service passes -1 when the declared size is absent
-        // (<= 0) or exceeds the cap. The AWS SDK v2 sync client cannot PUT a stream of unknown
-        // length — RequestBody.fromInputStream(body, -1) throws "Content-length must not be
-        // negative". Spool to a bounded temp file to learn the real length, then stream from disk.
+        // Spool to a bounded temp file and PUT via the retryable RequestBody.fromFile. Two cases
+        // land here:
+        //   (a) Unknown/untrusted length: the service passes -1 when the declared size is absent
+        //       (<= 0) or exceeds the cap. The sync client cannot PUT a stream of unknown length —
+        //       RequestBody.fromInputStream(body, -1) throws "Content-length must not be negative".
+        //   (b) Non-markable body of known length (WU-MED-2): the Studio release-track / podcast
+        //       upload opens the multipart temp file with Files.newInputStream, which does NOT
+        //       support mark/reset. RequestBody.fromInputStream over it throws
+        //       "Content input stream does not support mark/reset, and was already read once." the
+        //       moment the sync client re-reads the payload → HTTP 500 on every upload.
+        // fromFile is re-readable (re-opens the file per read) and never heap-buffers, so it is
+        // safe up to the 500MB cap for both cases. The spool is bounded (MAX_SPOOL_BYTES) so an
+        // untrusted body can never fill the disk.
         putViaTempSpool(request, body);
       }
     } catch (SdkException e) {
