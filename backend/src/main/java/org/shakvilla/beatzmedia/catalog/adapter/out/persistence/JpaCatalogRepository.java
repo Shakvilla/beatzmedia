@@ -15,6 +15,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.LockModeType;
+import jakarta.transaction.Transactional;
 
 import org.shakvilla.beatzmedia.catalog.application.port.out.CatalogRepository;
 import org.shakvilla.beatzmedia.catalog.application.port.out.CatalogRepository.IndexableTrack;
@@ -34,6 +35,8 @@ import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseTrack;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseType;
 import org.shakvilla.beatzmedia.catalog.domain.Show;
+import org.shakvilla.beatzmedia.catalog.domain.SplitConfirmation;
+import org.shakvilla.beatzmedia.catalog.domain.SplitEntry;
 import org.shakvilla.beatzmedia.catalog.domain.Track;
 import org.shakvilla.beatzmedia.catalog.domain.TrackCredit;
 import org.shakvilla.beatzmedia.catalog.domain.TrackId;
@@ -351,7 +354,7 @@ public class JpaCatalogRepository implements CatalogRepository {
                 .collect(Collectors.groupingBy(rt -> rt.pk.releaseId));
 
     List<Release> items = entities.stream()
-        .map(e -> toReleaseDomain(e, tracksByRelease.getOrDefault(e.id, List.of())))
+        .map(e -> toReleaseDomain(e, tracksByRelease.getOrDefault(e.id, List.of()), List.of()))
         .toList();
 
     return Page.of(items, pageRequest.page(), pageRequest.size(), total);
@@ -366,7 +369,21 @@ public class JpaCatalogRepository implements CatalogRepository {
             ReleaseTrackEntity.class)
         .setParameter("rid", id.value())
         .getResultList();
-    return Optional.of(toReleaseDomain(e, tracks));
+    List<SplitEntry> splits = loadSplitsForTracks(
+        tracks.stream().map(rt -> rt.trackId).toList());
+    return Optional.of(toReleaseDomain(e, tracks, splits));
+  }
+
+  /** Load split_entry rows for the given track ids into domain SplitEntry value objects. */
+  private List<SplitEntry> loadSplitsForTracks(List<String> trackIds) {
+    if (trackIds.isEmpty()) return List.of();
+    return em.createQuery(
+            "SELECT s FROM SplitEntryEntity s WHERE s.trackId IN :tids", SplitEntryEntity.class)
+        .setParameter("tids", trackIds)
+        .getResultList().stream()
+        .map(s -> new SplitEntry(s.id, s.trackId, s.name, s.email, s.role, s.percent,
+            SplitConfirmation.valueOf(s.confirmation)))
+        .toList();
   }
 
   @Override
@@ -408,6 +425,29 @@ public class JpaCatalogRepository implements CatalogRepository {
       rte.trackId = rt.trackId();
       rte.priceMinor = rt.priceMinor();
       em.persist(rte);
+    }
+  }
+
+  @Override
+  @Transactional
+  public void saveTrackSplits(String trackId, List<SplitEntry> splits) {
+    // Remove managed entities (not a bulk JPQL DELETE) so the L1 cache stays in sync.
+    List<SplitEntryEntity> existing = em.createQuery(
+            "SELECT s FROM SplitEntryEntity s WHERE s.trackId = :tid", SplitEntryEntity.class)
+        .setParameter("tid", trackId)
+        .getResultList();
+    existing.forEach(em::remove);
+    em.flush();
+    for (SplitEntry s : splits) {
+      SplitEntryEntity e = new SplitEntryEntity();
+      e.id = s.id();
+      e.trackId = s.trackId();
+      e.name = s.name();
+      e.email = s.email();
+      e.role = s.role();
+      e.percent = s.percent();
+      e.confirmation = s.confirmation().name();
+      em.persist(e);
     }
   }
 
@@ -473,7 +513,7 @@ public class JpaCatalogRepository implements CatalogRepository {
             ReleaseTrackEntity.class)
         .setParameter("rid", e.id)
         .getResultList();
-    return Optional.of(toReleaseDomain(e, tracks));
+    return Optional.of(toReleaseDomain(e, tracks, List.of()));
   }
 
   // ---- WU-CAT-4: release state machine + scheduled go-live ----
@@ -524,7 +564,7 @@ public class JpaCatalogRepository implements CatalogRepository {
                 .collect(Collectors.groupingBy(rt -> rt.pk.releaseId));
 
     return entities.stream()
-        .map(e -> toReleaseDomain(e, tracksByRelease.getOrDefault(e.id, List.of())))
+        .map(e -> toReleaseDomain(e, tracksByRelease.getOrDefault(e.id, List.of()), List.of()))
         .toList();
   }
 
@@ -644,25 +684,15 @@ public class JpaCatalogRepository implements CatalogRepository {
         .toList();
   }
 
-  private Release toReleaseDomain(ReleaseEntity e, List<ReleaseTrackEntity> trackEntities) {
+  private Release toReleaseDomain(
+      ReleaseEntity e, List<ReleaseTrackEntity> trackEntities, List<SplitEntry> splits) {
     List<ReleaseTrack> tracks = trackEntities.stream()
         .map(rt -> new ReleaseTrack(rt.trackId, rt.pk.position, rt.priceMinor))
         .toList();
     return Release.reconstitute(
-        e.id,
-        e.artistId,
-        e.title,
-        ReleaseType.valueOf(e.type),
-        ReleaseStatus.valueOf(e.status),
-        Visibility.fromDbValue(e.visibility),
-        e.scheduledAt,
-        e.wentLiveAt,
-        e.listPriceMinor,
-        e.createdAt,
-        e.updatedAt,
-        tracks,
-        e.genre,
-        e.description);
+        e.id, e.artistId, e.title, ReleaseType.valueOf(e.type), ReleaseStatus.valueOf(e.status),
+        Visibility.fromDbValue(e.visibility), e.scheduledAt, e.wentLiveAt, e.listPriceMinor,
+        e.createdAt, e.updatedAt, tracks, e.genre, e.description, splits);
   }
 
   // ---- Batch-mapping helpers ----
