@@ -182,6 +182,26 @@ work_units:
     depends_on: [WU-CAT-4]
     llfrs: [LLFR-CATALOG-02.2, LLFR-CATALOG-02.4]
     status: done
+  - id: WU-CAT-7
+    title: Auto-provision artist_profile shell on ArtistUpgraded (fix real-artist release 500)
+    phase: 1
+    module: catalog
+    add: catalog.md
+    owner: backend-engineer
+    depends_on: [WU-CAT-5, WU-IDN-3]
+    llfrs: [LLFR-CATALOG-02.2]
+    status: in_progress
+    # NOTE: WU-CAT-6 is reserved by catalog ADD §10 for per-track royalty splits; this fix takes the
+    # next free id WU-CAT-7 rather than renumbering (IDs are canonical).
+    # Live-QA defect (Studio release-creation wizard, frontend PR #144): a real (non-seed) account
+    # that upgrades to artist had NO artist_profile row, so POST /v1/studio/releases failed the
+    # release.artist_id -> artist_profile(id) FK with HTTP 500. Root cause: UpgradeToArtistService
+    # fired ArtistUpgraded and its javadoc promised catalog would seed the profile shell, but NO
+    # catalog observer existed (the 17 ITs papered over it with manual guarded artist_profile
+    # inserts). Fix: catalog.adapter.in.events.ArtistUpgradedObserver reacts AFTER_SUCCESS +
+    # REQUIRES_NEW -> ProvisionArtistProfile(Service) -> insert-only saveArtistProfile. Hexagonal:
+    # react to the identity domain event; never touch identity tables. Idempotent (find-then-insert
+    # + PK backstop). ArtistUpgraded gains an `avatar` field so the shell seeds a real image.
   - id: WU-LIB-1
     title: Collection — likes/follows/saved/user playlists/owned
     phase: 1
