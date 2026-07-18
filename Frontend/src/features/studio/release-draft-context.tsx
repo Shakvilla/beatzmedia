@@ -203,8 +203,12 @@ export function ReleaseDraftProvider({ children, initial }: { children: ReactNod
   const [draft, dispatch] = useReducer(reducer, { ...initialDraft, ...initial })
 
   // Mirror state in a ref so async actions read the latest releaseId/price/tracks
-  // even when several run concurrently (e.g. multiple uploads).
+  // even when several run concurrently (e.g. multiple uploads). Writing the ref
+  // during render is deliberate (the React "latest value" ref pattern) — a
+  // useEffect would lag the mirror one render behind the async closures that
+  // read it, reintroducing the staleness this ref exists to prevent.
   const stateRef = useRef(draft)
+  // eslint-disable-next-line react-hooks/refs
   stateRef.current = draft
 
   // Memoizes an in-flight create so concurrent callers (e.g. multi-file uploads)
