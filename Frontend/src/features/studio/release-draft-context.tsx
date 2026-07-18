@@ -207,13 +207,26 @@ export function ReleaseDraftProvider({ children, initial }: { children: ReactNod
   const stateRef = useRef(draft)
   stateRef.current = draft
 
+  // Memoizes an in-flight create so concurrent callers (e.g. multi-file uploads)
+  // share one apiCreateDraft instead of each firing its own (double-create race).
+  const createInFlight = useRef<Promise<string> | null>(null)
+
   const value = useMemo<ReleaseDraftContextValue>(() => {
-    const ensureDraft = async (): Promise<string> => {
-      if (stateRef.current.releaseId) return stateRef.current.releaseId
-      const id = await apiCreateDraft(toCreateInput(stateRef.current))
-      stateRef.current = { ...stateRef.current, releaseId: id } // block concurrent double-create
-      dispatch({ type: 'SET_RELEASE_ID', id })
-      return id
+    const ensureDraft = (): Promise<string> => {
+      if (stateRef.current.releaseId) return Promise.resolve(stateRef.current.releaseId)
+      if (createInFlight.current) return createInFlight.current
+      const p = (async () => {
+        const id = await apiCreateDraft(toCreateInput(stateRef.current))
+        stateRef.current = { ...stateRef.current, releaseId: id }
+        dispatch({ type: 'SET_RELEASE_ID', id })
+        return id
+      })()
+      createInFlight.current = p
+      // Clear the cache once settled so a later create (after reset) can run again.
+      p.finally(() => {
+        if (createInFlight.current === p) createInFlight.current = null
+      })
+      return p
     }
 
     return {

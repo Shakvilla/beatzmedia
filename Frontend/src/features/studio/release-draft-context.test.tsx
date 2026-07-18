@@ -65,4 +65,25 @@ describe('release-draft-context', () => {
     }))
     expect(studio.apiSubmitRelease).toHaveBeenCalledWith('rel-1', expect.any(String))
   })
+
+  it('concurrent uploadTrack calls create the draft only once', async () => {
+    let resolveCreate: (id: string) => void = () => {}
+    vi.mocked(studio.apiCreateDraft).mockReturnValue(
+      new Promise<string>((res) => { resolveCreate = res }),
+    )
+    vi.mocked(studio.apiUploadTrack).mockResolvedValue({
+      id: 'trk-9', title: 'Soja', duration: 180, status: 'ready', progress: 100, src: '/a', price: 0, explicit: false,
+    })
+    const { result } = renderHook(() => useReleaseDraft(), { wrapper })
+
+    await act(async () => {
+      const a = result.current.uploadTrack(new File(['x'], 'a.wav'))
+      const b = result.current.uploadTrack(new File(['y'], 'b.wav'))
+      resolveCreate('rel-1')
+      await Promise.all([a, b])
+    })
+
+    expect(studio.apiCreateDraft).toHaveBeenCalledOnce()
+    expect(result.current.draft.releaseId).toBe('rel-1')
+  })
 })
