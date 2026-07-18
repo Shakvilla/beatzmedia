@@ -51,6 +51,15 @@ work_units:
     depends_on: [WU-PLT-1]
     llfrs: [LLFR-MEDIA-01.1, LLFR-MEDIA-01.2, LLFR-MEDIA-01.3]
     status: done
+  - id: WU-MED-2
+    title: Fix — retryable S3 PutObject body (non-markable stream upload 500)
+    phase: 0
+    module: media
+    add: media.md
+    owner: backend-engineer
+    depends_on: [WU-MED-1]
+    llfrs: [LLFR-MEDIA-01.1]
+    status: in_review   # Bug fix from live QA of the Studio release-creation wizard (frontend PR #144): every track/episode upload returned HTTP 500. S3ObjectStoreAdapter.putOriginal handed the AWS SDK v2 sync client a body built from a non-markable Files.newInputStream (StudioReleaseResource/StudioPodcastResource multipart temp file) via RequestBody.fromInputStream; the sync client re-reads the payload (SigV4 payload signing / flexible-checksum precompute / retry) and throws "Content input stream does not support mark/reset, and was already read once." WU-CAT-5 unit tests stubbed the media port so the real adapter was never exercised with a non-markable stream. Fix: known-length branch now streams-through only when body.markSupported(); otherwise spools to a bounded temp file and PUTs via retryable RequestBody.fromFile (unknown-length putViaTempSpool path unchanged; 500MB cap + unwrapDomainException 413 mapping preserved). Regression guard: S3ObjectStoreAdapterRetryableBodyTest (deterministic, reproduces the exact mark/reset IllegalStateException by re-reading the request body) + S3KnownLengthNonMarkableUploadIT (real MinIO byte-for-byte). Mark done when PR merged + CI green.
 
   # ---------------- Phase 1 — Identity & Catalog ----------------
   - id: WU-IDN-1
