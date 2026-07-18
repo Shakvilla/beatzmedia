@@ -24,6 +24,8 @@ import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseNotFoundException;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseTrack;
+import org.shakvilla.beatzmedia.catalog.domain.SplitConfirmation;
+import org.shakvilla.beatzmedia.catalog.domain.SplitEntry;
 import org.shakvilla.beatzmedia.catalog.domain.TrackNotInReleaseException;
 import org.shakvilla.beatzmedia.catalog.domain.Visibility;
 import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
@@ -104,6 +106,20 @@ public class UpdateReleaseService implements UpdateRelease {
     }
 
     repo.saveRelease(release);
+
+    // WU-CAT-6: persist per-track collaborator splits (pending). Only tracks whose splits list is
+    // non-null are touched; null leaves that track's existing splits intact.
+    if (command.tracks() != null) {
+      for (UpdateRelease.TrackRef t : command.tracks()) {
+        if (t.splits() == null) continue;
+        List<SplitEntry> entries = t.splits().stream()
+            .map(s -> new SplitEntry(
+                ids.newId(), t.trackId(), s.name(), s.email(), s.role(), s.percent(),
+                SplitConfirmation.pending))
+            .toList();
+        repo.saveTrackSplits(t.trackId(), entries);
+      }
+    }
 
     // INV-10: audit privileged mutation atomically in the same transaction
     auditWriter.append(new AuditEntry(

@@ -2,6 +2,7 @@ package org.shakvilla.beatzmedia.catalog.application;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 
@@ -10,6 +11,7 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.shakvilla.beatzmedia.audit.fakes.FakeAuditWriter;
 import org.shakvilla.beatzmedia.catalog.application.port.in.StudioReleaseDetailView;
+import org.shakvilla.beatzmedia.catalog.application.port.in.UpdateRelease.SplitRef;
 import org.shakvilla.beatzmedia.catalog.application.port.in.UpdateRelease.TrackRef;
 import org.shakvilla.beatzmedia.catalog.application.port.in.UpdateRelease.UpdateReleaseCommand;
 import org.shakvilla.beatzmedia.catalog.application.service.UpdateReleaseService;
@@ -21,6 +23,7 @@ import org.shakvilla.beatzmedia.catalog.domain.Release;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseTrack;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseType;
+import org.shakvilla.beatzmedia.catalog.domain.SplitConfirmation;
 import org.shakvilla.beatzmedia.catalog.domain.TrackNotInReleaseException;
 import org.shakvilla.beatzmedia.catalog.domain.Visibility;
 import org.shakvilla.beatzmedia.catalog.fakes.FakeCatalogRepository;
@@ -182,5 +185,33 @@ class UpdateReleaseServiceTest {
 
     assertThrows(InvalidPriceException.class,
         () -> service.update(new ReleaseId("r1"), ARTIST, cmd));
+  }
+
+  @Test
+  void update_persistsNestedSplits_asPending() {
+    draftWithTrack(); // r1 with track t1
+
+    UpdateReleaseCommand cmd = new UpdateReleaseCommand(
+        null, null, null, null, null,
+        List.of(new TrackRef("t1", 0, 250L,
+            List.of(new SplitRef("Producer", "prod@example.com", "Producer", 30)))));
+
+    service.update(new ReleaseId("r1"), ARTIST, cmd);
+
+    var stored = repo.splitsFor("t1");
+    assertEquals(1, stored.size());
+    assertEquals(30, stored.get(0).percent());
+    assertEquals(SplitConfirmation.pending, stored.get(0).confirmation());
+    assertEquals("prod@example.com", stored.get(0).email());
+  }
+
+  @Test
+  void update_nullSplits_doesNotTouchThatTracksSplits() {
+    draftWithTrack();
+    UpdateReleaseCommand cmd = new UpdateReleaseCommand(
+        null, null, null, null, null,
+        List.of(new TrackRef("t1", 0, 250L, null))); // splits == null
+    service.update(new ReleaseId("r1"), ARTIST, cmd);
+    assertTrue(repo.saveTrackSplitsCalls().isEmpty());
   }
 }

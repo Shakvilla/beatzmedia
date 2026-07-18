@@ -29,6 +29,14 @@ public interface UpdateRelease {
       Instant scheduledAt,
       List<TrackRef> tracks) {}
 
-  /** A single track's order + price within a wholesale track-list replacement. */
-  record TrackRef(String trackId, int position, long priceMinor) {}
+  /** A single track's order + price within a wholesale track-list replacement (WU-CAT-6: + splits). */
+  record TrackRef(String trackId, int position, long priceMinor, List<SplitRef> splits) {
+    /** Legacy 3-arg form — no split changes for this track (splits == null → untouched). */
+    public TrackRef(String trackId, int position, long priceMinor) {
+      this(trackId, position, priceMinor, null);
+    }
+  }
+
+  /** A collaborator's royalty split of a track (collaborators only — creator is implicit). */
+  record SplitRef(String name, String email, String role, int percent) {}
 }
