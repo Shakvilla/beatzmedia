@@ -103,4 +103,19 @@ class SplitPersistenceIT {
     Release afterClear = repo.findRelease(new ReleaseId("rel-sp-2")).orElseThrow();
     assertTrue(afterClear.getSplits().isEmpty());
   }
+
+  @Test
+  @Transactional
+  void findReleaseByIdempotencyKey_loadsSplits() {
+    seedReleaseWithTrack("rel-sp-3", "trk-sp-3");
+    repo.saveTrackSplits("trk-sp-3", List.of(split("sp-c", "trk-sp-3", 15)));
+
+    Release release = repo.findRelease(new ReleaseId("rel-sp-3")).orElseThrow();
+    repo.saveReleaseWithIdempotencyKey(release, "idem-key-sp-3");
+
+    Release replay = repo.findReleaseByIdempotencyKey("idem-key-sp-3").orElseThrow();
+    assertEquals(1, replay.getSplits().size());
+    assertEquals(15, replay.getSplits().get(0).percent());
+    assertEquals("sp-c", replay.getSplits().get(0).id());
+  }
 }

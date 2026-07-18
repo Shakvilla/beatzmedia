@@ -513,7 +513,9 @@ public class JpaCatalogRepository implements CatalogRepository {
             ReleaseTrackEntity.class)
         .setParameter("rid", e.id)
         .getResultList();
-    return Optional.of(toReleaseDomain(e, tracks, List.of()));
+    List<SplitEntry> splits = loadSplitsForTracks(
+        tracks.stream().map(rt -> rt.trackId).toList());
+    return Optional.of(toReleaseDomain(e, tracks, splits));
   }
 
   // ---- WU-CAT-4: release state machine + scheduled go-live ----
