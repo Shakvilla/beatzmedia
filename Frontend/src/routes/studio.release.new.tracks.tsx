@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useEffect, useRef, useState } from 'react'
+import { useRef, useState } from 'react'
 import {
   Upload, Play, Pause, GripVertical, MoreHorizontal, X,
   ArrowUp, ArrowDown, Trash2, AlertTriangle, Image as ImageIcon,
@@ -14,19 +14,6 @@ export const Route = createFileRoute('/studio/release/new/tracks')({
 
 const LABEL = 'text-[11px] font-bold uppercase tracking-[0.15em] text-gray-500 dark:text-gray-400'
 
-function makeTrack(file: File, price: number): UploadedTrack {
-  return {
-    id: `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`,
-    title: file.name.replace(/\.[^.]+$/, ''),
-    duration: 0,
-    status: 'uploading',
-    progress: 0,
-    src: URL.createObjectURL(file),
-    price,
-    explicit: false,
-  }
-}
-
 function clock(seconds: number): string {
   if (!seconds) return '—'
   const m = Math.floor(seconds / 60)
@@ -37,7 +24,7 @@ function clock(seconds: number): string {
 const priceLabel = (p: number) => (p === 0 ? 'FREE' : `₵${p.toFixed(2)}`)
 
 function UploadTracksStep() {
-  const { draft, addTracks, updateTrack, removeTrack, moveTrack, reorderTracks, setAllPrices, tickUploads, setField } = useReleaseDraft()
+  const { draft, uploadTrack, removeTrack, updateTrack, moveTrack, reorderTracks, setAllPrices, setField } = useReleaseDraft()
   const multi = isMultiTrack(draft.releaseType)
 
   // Shared single-element audio preview so the artist can confirm uploads.
@@ -56,33 +43,11 @@ function UploadTracksStep() {
     setPlayingId(track.id)
   }
 
-  const hasUploading = draft.tracks.some((t) => t.status === 'uploading')
-  useEffect(() => {
-    if (!hasUploading) return
-    const id = window.setInterval(tickUploads, 400)
-    return () => window.clearInterval(id)
-  }, [hasUploading, tickUploads])
-
-  // Read real duration from each file's metadata; flag files we can't read.
-  const readMeta = (track: UploadedTrack) => {
-    const probe = new Audio()
-    probe.preload = 'metadata'
-    probe.src = track.src
-    probe.onloadedmetadata = () => {
-      if (Number.isFinite(probe.duration) && probe.duration > 0) {
-        updateTrack(track.id, { duration: Math.round(probe.duration) })
-      }
-    }
-    probe.onerror = () => updateTrack(track.id, { status: 'error' })
-  }
-
-  const ingest = (files: FileList | null) => {
+  const ingest = async (files: FileList | null) => {
     if (!files || files.length === 0) return
     const list = multi ? Array.from(files) : [files[0]]
-    const created = list.map((f) => makeTrack(f, draft.price))
-    if (!multi) draft.tracks.forEach((t) => removeTrack(t.id)) // single → replace
-    addTracks(created)
-    created.forEach(readMeta)
+    if (!multi) { await Promise.all(draft.tracks.map((t) => removeTrack(t.id))) } // single → replace
+    for (const f of list) await uploadTrack(f)
   }
 
   return (
@@ -469,7 +434,7 @@ function StatusPill({ track }: { track: UploadedTrack }) {
     return <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-beatz-red/15 text-beatz-red">metadata missing</span>
   }
   if (track.status === 'uploading') {
-    return <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-300">uploading {track.progress}%</span>
+    return <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-300">uploading…</span>
   }
   return <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-300">ready</span>
 }
