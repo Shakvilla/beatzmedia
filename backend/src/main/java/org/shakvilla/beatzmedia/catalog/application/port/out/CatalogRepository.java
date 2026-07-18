@@ -54,6 +54,15 @@ public interface CatalogRepository {
 
   List<Album> featuredAlbums(int limit);
 
+  /** WU-CAT-8 home rail: albums newest-first (ORDER BY year DESC), capped at {@code limit}. */
+  List<Album> newestAlbums(int limit);
+
+  /** WU-CAT-8 home rail: artists by monthly listeners DESC (nulls last), capped at {@code limit}. */
+  List<ArtistProfile> popularArtists(int limit);
+
+  /** WU-CAT-8 home rail: public playlists by followers DESC (nulls last), capped at {@code limit}. */
+  List<Playlist> curatedPlaylists(int limit);
+
   List<Album> albumsByIds(List<String> ids);
 
   List<ArtistProfile> artistsByIds(List<String> ids);
