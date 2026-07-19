@@ -24,6 +24,7 @@ import org.shakvilla.beatzmedia.catalog.domain.AlbumId;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistProfile;
 import org.shakvilla.beatzmedia.catalog.domain.BrowseCategory;
+import org.shakvilla.beatzmedia.catalog.domain.InviteOutcome;
 import org.shakvilla.beatzmedia.catalog.domain.LyricLine;
 import org.shakvilla.beatzmedia.catalog.domain.Lyrics;
 import org.shakvilla.beatzmedia.catalog.domain.OwnershipStatus;
@@ -37,6 +38,7 @@ import org.shakvilla.beatzmedia.catalog.domain.ReleaseType;
 import org.shakvilla.beatzmedia.catalog.domain.Show;
 import org.shakvilla.beatzmedia.catalog.domain.SplitConfirmation;
 import org.shakvilla.beatzmedia.catalog.domain.SplitEntry;
+import org.shakvilla.beatzmedia.catalog.domain.SplitInvite;
 import org.shakvilla.beatzmedia.catalog.domain.Track;
 import org.shakvilla.beatzmedia.catalog.domain.TrackCredit;
 import org.shakvilla.beatzmedia.catalog.domain.TrackId;
@@ -442,7 +444,7 @@ public class JpaCatalogRepository implements CatalogRepository {
         .setParameter("tids", trackIds)
         .getResultList().stream()
         .map(s -> new SplitEntry(s.id, s.trackId, s.name, s.email, s.role, s.percent,
-            SplitConfirmation.valueOf(s.confirmation)))
+            SplitConfirmation.valueOf(s.confirmation), s.accountId))
         .toList();
   }
 
@@ -507,6 +509,7 @@ public class JpaCatalogRepository implements CatalogRepository {
       e.role = s.role();
       e.percent = s.percent();
       e.confirmation = s.confirmation().name();
+      e.accountId = s.accountId();
       em.persist(e);
     }
   }
@@ -622,6 +625,106 @@ public class JpaCatalogRepository implements CatalogRepository {
         .setParameter("trackIds", trackIds)
         .getSingleResult();
     return pendingCount != null && pendingCount > 0;
+  }
+
+  // ---- WU-CAT-9: collaborator split invite/accept ----
+
+  @Override
+  public void saveSplitInvite(SplitInvite invite) {
+    SplitInviteEntity e = new SplitInviteEntity();
+    e.id = invite.id();
+    e.releaseId = invite.releaseId();
+    e.email = invite.email();
+    e.tokenHash = invite.tokenHash();
+    e.expiresAt = invite.expiresAt();
+    e.consumedAt = invite.consumedAt();
+    e.outcome = invite.outcome() == null ? null : invite.outcome().name();
+    e.createdAt = invite.createdAt();
+    em.persist(e);
+  }
+
+  @Override
+  public Optional<SplitInvite> findSplitInviteByHash(String tokenHash) {
+    List<SplitInviteEntity> rows = em.createQuery(
+            "SELECT i FROM SplitInviteEntity i WHERE i.tokenHash = :h", SplitInviteEntity.class)
+        .setParameter("h", tokenHash)
+        .getResultList();
+    if (rows.isEmpty()) return Optional.empty();
+    SplitInviteEntity e = rows.get(0);
+    return Optional.of(SplitInvite.reconstitute(e.id, e.releaseId, e.email, e.tokenHash,
+        e.expiresAt, e.consumedAt, e.outcome == null ? null : InviteOutcome.valueOf(e.outcome),
+        e.createdAt));
+  }
+
+  @Override
+  public void consumeSplitInvite(String tokenHash, InviteOutcome outcome, Instant at) {
+    em.createQuery(
+            "UPDATE SplitInviteEntity i SET i.consumedAt = :at, i.outcome = :o WHERE i.tokenHash = :h")
+        .setParameter("at", at)
+        .setParameter("o", outcome.name())
+        .setParameter("h", tokenHash)
+        .executeUpdate();
+    // Bulk JPQL UPDATE bypasses the L1 cache: evict so a subsequent find in the same transaction
+    // (e.g. findSplitInviteByHash) re-reads the row instead of returning the stale managed entity.
+    em.clear();
+  }
+
+  @Override
+  public List<String> pendingSplitEmailsForRelease(ReleaseId releaseId) {
+    List<String> trackIds = releaseTrackIds(releaseId.value());
+    if (trackIds.isEmpty()) return List.of();
+    return em.createQuery(
+            "SELECT DISTINCT s.email FROM SplitEntryEntity s "
+                + "WHERE s.trackId IN :trackIds AND s.confirmation = 'pending'", String.class)
+        .setParameter("trackIds", trackIds)
+        .getResultList();
+  }
+
+  @Override
+  public void confirmSplitsForReleaseEmail(ReleaseId releaseId, String email, String accountId) {
+    List<String> trackIds = releaseTrackIds(releaseId.value());
+    if (trackIds.isEmpty()) return;
+    em.createQuery(
+            "UPDATE SplitEntryEntity s SET s.confirmation = 'confirmed', s.accountId = :acc "
+                + "WHERE s.trackId IN :trackIds AND s.email = :email AND s.confirmation = 'pending'")
+        .setParameter("acc", accountId)
+        .setParameter("trackIds", trackIds)
+        .setParameter("email", email)
+        .executeUpdate();
+    // See consumeSplitInvite: bulk JPQL UPDATE bypasses the L1 cache.
+    em.clear();
+  }
+
+  @Override
+  public void declineSplitsForReleaseEmail(ReleaseId releaseId, String email) {
+    List<String> trackIds = releaseTrackIds(releaseId.value());
+    if (trackIds.isEmpty()) return;
+    em.createQuery(
+            "UPDATE SplitEntryEntity s SET s.confirmation = 'declined' "
+                + "WHERE s.trackId IN :trackIds AND s.email = :email AND s.confirmation = 'pending'")
+        .setParameter("trackIds", trackIds)
+        .setParameter("email", email)
+        .executeUpdate();
+    // See consumeSplitInvite: bulk JPQL UPDATE bypasses the L1 cache.
+    em.clear();
+  }
+
+  @Override
+  public void deleteUnconsumedInvitesForReleaseEmail(ReleaseId releaseId, String email) {
+    em.createQuery(
+            "DELETE FROM SplitInviteEntity i "
+                + "WHERE i.releaseId = :rid AND i.email = :email AND i.consumedAt IS NULL")
+        .setParameter("rid", releaseId.value())
+        .setParameter("email", email)
+        .executeUpdate();
+  }
+
+  /** Track ids belonging to a release (same join hasPendingSplits uses). */
+  private List<String> releaseTrackIds(String releaseId) {
+    return em.createQuery(
+            "SELECT rt.trackId FROM ReleaseTrackEntity rt WHERE rt.pk.releaseId = :rid", String.class)
+        .setParameter("rid", releaseId)
+        .getResultList();
   }
 
   @Override

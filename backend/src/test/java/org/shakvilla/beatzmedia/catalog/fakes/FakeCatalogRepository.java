@@ -17,13 +17,16 @@ import org.shakvilla.beatzmedia.catalog.domain.AlbumId;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistProfile;
 import org.shakvilla.beatzmedia.catalog.domain.BrowseCategory;
+import org.shakvilla.beatzmedia.catalog.domain.InviteOutcome;
 import org.shakvilla.beatzmedia.catalog.domain.Lyrics;
 import org.shakvilla.beatzmedia.catalog.domain.Playlist;
 import org.shakvilla.beatzmedia.catalog.domain.PlaylistId;
 import org.shakvilla.beatzmedia.catalog.domain.Release;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
+import org.shakvilla.beatzmedia.catalog.domain.SplitConfirmation;
 import org.shakvilla.beatzmedia.catalog.domain.SplitEntry;
+import org.shakvilla.beatzmedia.catalog.domain.SplitInvite;
 import org.shakvilla.beatzmedia.catalog.domain.Track;
 import org.shakvilla.beatzmedia.catalog.domain.TrackId;
 import org.shakvilla.beatzmedia.platform.domain.Page;
@@ -297,6 +300,69 @@ public class FakeCatalogRepository implements CatalogRepository {
   @Override
   public boolean hasPendingSplits(ReleaseId releaseId) {
     return releasesWithPendingSplits.contains(releaseId.value());
+  }
+
+  // ---- WU-CAT-9: collaborator split invite/accept ----
+
+  private final Map<String, SplitInvite> invitesByHash = new HashMap<>();
+
+  @Override
+  public void saveSplitInvite(SplitInvite invite) { invitesByHash.put(invite.tokenHash(), invite); }
+
+  @Override
+  public Optional<SplitInvite> findSplitInviteByHash(String tokenHash) {
+    return Optional.ofNullable(invitesByHash.get(tokenHash));
+  }
+
+  @Override
+  public void consumeSplitInvite(String tokenHash, InviteOutcome outcome, Instant at) {
+    SplitInvite i = invitesByHash.get(tokenHash);
+    if (i != null) i.consume(outcome, at);
+  }
+
+  @Override
+  public List<String> pendingSplitEmailsForRelease(ReleaseId releaseId) {
+    return releaseTrackIds(releaseId).stream()
+        .flatMap(tid -> splitsByTrack.getOrDefault(tid, List.of()).stream())
+        .filter(s -> s.confirmation() == SplitConfirmation.pending)
+        .map(SplitEntry::email).distinct().toList();
+  }
+
+  @Override
+  public void confirmSplitsForReleaseEmail(ReleaseId releaseId, String email, String accountId) {
+    remapReleaseEmailSplits(releaseId, email, s ->
+        new SplitEntry(s.id(), s.trackId(), s.name(), s.email(), s.role(), s.percent(),
+            SplitConfirmation.confirmed, accountId));
+  }
+
+  @Override
+  public void declineSplitsForReleaseEmail(ReleaseId releaseId, String email) {
+    remapReleaseEmailSplits(releaseId, email, s ->
+        new SplitEntry(s.id(), s.trackId(), s.name(), s.email(), s.role(), s.percent(),
+            SplitConfirmation.declined, s.accountId()));
+  }
+
+  @Override
+  public void deleteUnconsumedInvitesForReleaseEmail(ReleaseId releaseId, String email) {
+    invitesByHash.values().removeIf(i ->
+        i.releaseId().equals(releaseId.value()) && i.email().equals(email) && !i.isConsumed());
+  }
+
+  private List<String> releaseTrackIds(ReleaseId releaseId) {
+    Release r = releases.get(releaseId.value());
+    return r == null ? List.of()
+        : r.getTracks().stream().map(t -> t.trackId()).toList();
+  }
+
+  private void remapReleaseEmailSplits(ReleaseId releaseId, String email,
+      java.util.function.UnaryOperator<SplitEntry> f) {
+    for (String tid : releaseTrackIds(releaseId)) {
+      List<SplitEntry> cur = splitsByTrack.get(tid);
+      if (cur == null) continue;
+      splitsByTrack.put(tid, cur.stream()
+          .map(s -> s.email().equals(email) && s.confirmation() == SplitConfirmation.pending ? f.apply(s) : s)
+          .toList());
+    }
   }
 
   @Override
