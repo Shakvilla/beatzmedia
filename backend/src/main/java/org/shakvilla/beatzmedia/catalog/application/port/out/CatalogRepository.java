@@ -29,6 +29,14 @@ public interface CatalogRepository {
 
   Optional<ArtistProfile> findArtist(ArtistId id);
 
+  /**
+   * Insert a new {@code artist_profile} row, or no-op if one already exists for this id. Used to
+   * provision the profile shell when an account upgrades to artist (WU-CAT-7, reacting to
+   * identity's {@code ArtistUpgraded} event). Insert-only: never overwrites an existing profile's
+   * curated fields. Catalog ADD §10.
+   */
+  void saveArtistProfile(ArtistProfile profile);
+
   List<Track> tracksByArtist(ArtistId id);
 
   List<Album> albumsByArtist(ArtistId id);
@@ -54,6 +62,15 @@ public interface CatalogRepository {
   List<Track> top10Tracks(int limit);
 
   List<Album> featuredAlbums(int limit);
+
+  /** WU-CAT-8 home rail: albums newest-first (ORDER BY year DESC), capped at {@code limit}. */
+  List<Album> newestAlbums(int limit);
+
+  /** WU-CAT-8 home rail: artists by monthly listeners DESC (nulls last), capped at {@code limit}. */
+  List<ArtistProfile> popularArtists(int limit);
+
+  /** WU-CAT-8 home rail: public playlists by followers DESC (nulls last), capped at {@code limit}. */
+  List<Playlist> curatedPlaylists(int limit);
 
   List<Album> albumsByIds(List<String> ids);
 

@@ -60,7 +60,11 @@ class UpgradeToArtistServiceTest {
 
     assertTrue(result.isArtist(), "isArtist must be true after upgrade");
     assertEquals(1, eventBus.fired.size(), "ArtistUpgraded event must be published");
-    assertEquals("acc-1", eventBus.fired.get(0).accountId());
+    // Event carries the identity attributes the catalog reactor needs to seed artist_profile.
+    org.shakvilla.beatzmedia.identity.domain.ArtistUpgraded published = eventBus.fired.get(0);
+    assertEquals("acc-1", published.accountId());
+    assertEquals("Fan User", published.name());
+    assertEquals("acc-1@example.com", published.email());
     // INV-10: audit entry must be recorded on upgrade
     assertEquals(1, auditWriter.size(), "AuditEntry must be appended on BECOME_ARTIST");
     AuditEntry audit = auditWriter.all().get(0);

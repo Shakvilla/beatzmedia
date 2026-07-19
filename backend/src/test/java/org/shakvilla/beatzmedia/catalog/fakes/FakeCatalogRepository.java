@@ -94,6 +94,12 @@ public class FakeCatalogRepository implements CatalogRepository {
   }
 
   @Override
+  public void saveArtistProfile(ArtistProfile profile) {
+    // Insert-only, mirroring the JPA adapter: never clobber an existing profile.
+    artists.putIfAbsent(profile.getId().value(), profile);
+  }
+
+  @Override
   public List<Track> tracksByArtist(ArtistId id) {
     return tracks.values().stream()
         .filter(t -> t.getArtistId().value().equals(id.value()))
@@ -168,6 +174,33 @@ public class FakeCatalogRepository implements CatalogRepository {
   @Override
   public List<Album> featuredAlbums(int limit) {
     return albums.values().stream().limit(limit).collect(Collectors.toList());
+  }
+
+  @Override
+  public List<Album> newestAlbums(int limit) {
+    return albums.values().stream()
+        .sorted(java.util.Comparator.comparingInt(Album::getYear).reversed())
+        .limit(limit)
+        .toList();
+  }
+
+  @Override
+  public List<ArtistProfile> popularArtists(int limit) {
+    return artists.values().stream()
+        .sorted(java.util.Comparator.comparingLong(
+            (ArtistProfile a) -> a.getMonthlyListeners() == null ? 0L : a.getMonthlyListeners()).reversed())
+        .limit(limit)
+        .toList();
+  }
+
+  @Override
+  public List<Playlist> curatedPlaylists(int limit) {
+    return playlists.values().stream()
+        .filter(Playlist::isPublic)
+        .sorted(java.util.Comparator.comparingLong(
+            (Playlist p) -> p.getFollowers() == null ? 0L : p.getFollowers()).reversed())
+        .limit(limit)
+        .toList();
   }
 
   @Override

@@ -1,12 +1,13 @@
 import { createFileRoute, Outlet, useLocation, useNavigate } from '@tanstack/react-router'
 import { useSuspenseQuery, useQueryClient } from '@tanstack/react-query'
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { ArrowRight, ArrowLeft, Check } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
 import { ReleaseDraftProvider, useReleaseDraft, type ReleaseDraft } from '../features/studio/release-draft-context'
-import { RELEASE_WIZARD_STEPS, releaseTypeLabel, isMultiTrack, type ReleaseStepSlug } from '../lib/studio-data'
+import { RELEASE_WIZARD_STEPS, releaseTypeLabel, isMultiTrack, trackCountError, type ReleaseStepSlug } from '../lib/studio-data'
 import { studioReleasesQuery, studioSettingsQuery } from '../lib/api/queries/studio'
+import { ApiError } from '../lib/api/errors'
 
 /** Step title shown in the wizard header — the Tracks step adapts to release type. */
 function wizardTitle(slug: ReleaseStepSlug, draft: ReleaseDraft): string {
@@ -44,7 +45,9 @@ function WizardChrome() {
   const location = useLocation()
   const navigate = useNavigate()
   const { toast } = useToast()
-  const { draft, reset } = useReleaseDraft()
+  const { draft, reset, createOrUpdateDraft, submitRelease } = useReleaseDraft()
+  const [busy, setBusy] = useState(false)
+  const errMsg = (e: unknown, fb: string) => (e instanceof ApiError ? e.message : fb)
   const queryClient = useQueryClient()
 
   const slug = (location.pathname.split('/').pop() ?? 'details') as ReleaseStepSlug
@@ -65,39 +68,52 @@ function WizardChrome() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug])
 
-  const handleContinue = () => {
-    // Light per-step validation.
-    if (slug === 'details' && !draft.title.trim()) {
-      toast('Add a release title to continue', 'error')
-      return
+  const handleContinue = async () => {
+    if (busy) return
+
+    if (slug === 'details') {
+      if (!draft.title.trim()) { toast('Add a release title to continue', 'error'); return }
+      setBusy(true)
+      try { await createOrUpdateDraft() }
+      catch (e) { toast(errMsg(e, 'Could not save draft'), 'error'); return }
+      finally { setBusy(false) }
+      goTo('tracks'); return
     }
-    if (slug === 'tracks' && draft.tracks.length === 0) {
-      toast('Upload at least one track to continue', 'error')
-      return
+
+    if (slug === 'tracks') {
+      if (draft.tracks.length === 0) { toast('Upload at least one track to continue', 'error'); return }
+      if (draft.tracks.some((t) => t.status === 'uploading')) { toast('Wait for uploads to finish', 'error'); return }
+      goTo('splits'); return
     }
+
     if (slug === 'splits') {
       const bad = draft.tracks.find((t) => (draft.splits[t.id] ?? []).reduce((s, e) => s + e.percent, 0) !== 100)
-      if (bad) {
-        toast(`Splits for “${bad.title || 'a track'}” must total 100%`, 'error')
-        return
-      }
+      if (bad) { toast(`Splits for “${bad.title || 'a track'}” must total 100%`, 'error'); return }
+      goTo('review'); return
     }
-    if (isLast) {
-      if (!draft.coverImage) { toast('Add cover art before submitting', 'error'); return }
-      if (draft.tracks.length === 0) { toast('Upload at least one track', 'error'); return }
-      const badSplit = draft.tracks.find((t) => (draft.splits[t.id] ?? []).reduce((s, e) => s + e.percent, 0) !== 100)
-      if (badSplit) { toast(`Splits for “${badSplit.title || 'a track'}” must total 100%`, 'error'); return }
-      if (!draft.agreementAccepted) { toast('Accept the distribution agreement to submit', 'error'); return }
-    }
-    if (isLast) {
-      // TODO(slice-3b): wire real POST /v1/studio/releases submit + multipart track upload here.
-      queryClient.invalidateQueries({ queryKey: studioReleasesQuery().queryKey })
-      toast('Release publishing is coming soon.', 'info')
-      reset()
-      navigate({ to: '/studio/releases' })
+
+    // review (isLast) — keep both client gates (cover art + splits), plus the count matrix
+    if (!draft.coverImage) { toast('Add cover art before submitting', 'error'); return }
+    if (draft.tracks.length === 0) { toast('Upload at least one track', 'error'); return }
+    const badSplit = draft.tracks.find((t) => (draft.splits[t.id] ?? []).reduce((s, e) => s + e.percent, 0) !== 100)
+    if (badSplit) { toast(`Splits for “${badSplit.title || 'a track'}” must total 100%`, 'error'); return }
+    if (!draft.agreementAccepted) { toast('Accept the distribution agreement to submit', 'error'); return }
+    const countErr = trackCountError(draft.releaseType, draft.tracks.length)
+    if (countErr) { toast(countErr, 'error'); return }
+
+    setBusy(true)
+    try {
+      await submitRelease()
+    } catch (e) {
+      toast(errMsg(e, 'Could not submit release'), 'error')
       return
+    } finally {
+      setBusy(false)
     }
-    goTo(RELEASE_WIZARD_STEPS[stepIndex + 1].slug)
+    queryClient.invalidateQueries({ queryKey: studioReleasesQuery().queryKey })
+    toast('Release submitted for review', 'success')
+    reset()
+    navigate({ to: '/studio/releases' })
   }
 
   return (
@@ -123,7 +139,13 @@ function WizardChrome() {
           )}
           {!isLast && (
             <button
-              onClick={() => toast('Draft saved', 'success')}
+              onClick={async () => {
+                if (busy) return
+                setBusy(true)
+                try { await createOrUpdateDraft(); toast('Draft saved', 'success') }
+                catch (e) { toast(errMsg(e, 'Could not save draft'), 'error') }
+                finally { setBusy(false) }
+              }}
               className="h-11 px-5 rounded-full bg-gray-100 dark:bg-white/10 text-beatz-dark-bg dark:text-white font-bold text-sm hover:bg-gray-200 dark:hover:bg-white/15 transition-colors"
             >
               Save draft
@@ -131,8 +153,9 @@ function WizardChrome() {
           )}
           <button
             onClick={handleContinue}
+            disabled={busy}
             className={cn(
-              'h-11 px-6 rounded-full font-bold text-sm flex items-center gap-2 hover:scale-105 transition-transform',
+              'h-11 px-6 rounded-full font-bold text-sm flex items-center gap-2 hover:scale-105 transition-transform disabled:opacity-50 disabled:hover:scale-100',
               isLast ? 'bg-beatz-green text-black shadow-lg shadow-beatz-green/20' : 'bg-beatz-dark-bg dark:bg-white text-white dark:text-black',
             )}
           >

@@ -89,4 +89,23 @@ describe('apiFetch', () => {
     expect(JSON.parse(init.body)).toEqual({ email: 'a@b.com', password: 'pw' })
     expect(init.headers['Idempotency-Key']).toBe('key-1')
   })
+
+  it('sends a FormData body without a JSON Content-Type and without stringifying', async () => {
+    const fetchMock = mockFetchOnce(201, { id: 'trk-1' })
+    const form = new FormData()
+    form.append('file', new Blob(['x'], { type: 'audio/wav' }), 'song.wav')
+
+    await apiFetch('/studio/releases/r1/tracks', { method: 'POST', body: form })
+
+    const [, init] = fetchMock.mock.calls[0]
+    expect(init.body).toBe(form)                       // passed through, not JSON.stringify'd
+    expect(init.headers['Content-Type']).toBeUndefined()
+  })
+
+  it('still sets a JSON Content-Type for object bodies', async () => {
+    const fetchMock = mockFetchOnce(200, { ok: true })
+    await apiFetch('/x', { method: 'POST', body: { a: 1 } })
+    const [, init] = fetchMock.mock.calls[0]
+    expect(init.headers['Content-Type']).toBe('application/json')
+  })
 })

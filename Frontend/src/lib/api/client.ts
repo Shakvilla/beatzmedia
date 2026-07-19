@@ -21,7 +21,9 @@ export interface ApiFetchOptions {
 }
 
 export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): Promise<T> {
-  const headers: Record<string, string> = { 'Content-Type': 'application/json' }
+  const isForm = options.body instanceof FormData
+  const headers: Record<string, string> = {}
+  if (!isForm) headers['Content-Type'] = 'application/json'
   const token = getToken()
   if (token) headers.Authorization = `Bearer ${token}`
   if (options.idempotencyKey) headers['Idempotency-Key'] = options.idempotencyKey
@@ -29,7 +31,12 @@ export async function apiFetch<T>(path: string, options: ApiFetchOptions = {}): 
   const response = await fetch(`${BASE_URL}${path}`, {
     method: options.method ?? 'GET',
     headers,
-    body: options.body !== undefined ? JSON.stringify(options.body) : undefined,
+    body:
+      options.body === undefined
+        ? undefined
+        : isForm
+          ? (options.body as FormData)
+          : JSON.stringify(options.body),
   })
 
   if (response.status === 401) {

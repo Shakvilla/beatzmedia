@@ -1,6 +1,7 @@
 package org.shakvilla.beatzmedia.catalog.application;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
 import java.util.List;
@@ -14,7 +15,10 @@ import org.shakvilla.beatzmedia.catalog.application.service.GetHomeFeedService;
 import org.shakvilla.beatzmedia.catalog.domain.Album;
 import org.shakvilla.beatzmedia.catalog.domain.AlbumId;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
+import org.shakvilla.beatzmedia.catalog.domain.ArtistProfile;
 import org.shakvilla.beatzmedia.catalog.domain.OwnershipStatus;
+import org.shakvilla.beatzmedia.catalog.domain.Playlist;
+import org.shakvilla.beatzmedia.catalog.domain.PlaylistId;
 import org.shakvilla.beatzmedia.catalog.domain.Track;
 import org.shakvilla.beatzmedia.catalog.domain.TrackId;
 import org.shakvilla.beatzmedia.catalog.fakes.FakeCatalogRepository;
@@ -58,6 +62,37 @@ class GetHomeFeedServiceTest {
     HomeFeedView view = service.get(Optional.empty());
 
     assertEquals("high-plays", view.trending().get(0).id());
+  }
+
+  @Test
+  void get_populatesRailsFromRepo() {
+    // Seed one of each: public playlist, artist (monthlyListeners set), album.
+    repo.addAlbum(sampleAlbum("a1"));
+    repo.addArtist(sampleArtist());
+    repo.addPlaylist(samplePlaylist());
+
+    HomeFeedView view = service.get(Optional.empty());
+
+    assertNotNull(view.rails());
+    assertFalse(view.rails().newReleases().isEmpty(), "newReleases rail populated");
+    assertFalse(view.rails().popularArtists().isEmpty(), "popularArtists rail populated");
+    assertFalse(view.rails().curatedPlaylists().isEmpty(), "curatedPlaylists rail populated");
+    // Views carry through the domain values:
+    assertEquals(repo.newestAlbums(10).get(0).getId().value(), view.rails().newReleases().get(0).id());
+    assertEquals(repo.popularArtists(10).get(0).getId().value(), view.rails().popularArtists().get(0).id());
+    assertEquals(repo.curatedPlaylists(6).get(0).getId().value(), view.rails().curatedPlaylists().get(0).id());
+  }
+
+  private ArtistProfile sampleArtist() {
+    return new ArtistProfile(
+        new ArtistId("artist-1"), "Artist One", "https://img.test/artist.jpg", null, true,
+        5000L, 1000L, "Bio", "Accra", List.of("afrobeats"), List.of());
+  }
+
+  private Playlist samplePlaylist() {
+    return new Playlist(
+        new PlaylistId("vibes"), "Vibes", "Ghana heat", "BeatzClik", null,
+        "https://img.test/vibes.jpg", true, 42L, List.of("t1", "t2"));
   }
 
   private Track sampleTrack(String id, long plays, String status) {

@@ -247,6 +247,101 @@ Testcontainers (PRD §5.3). When Compose URLs are set, Dev Services stand down. 
 (`*IT`) target the Compose / Testcontainers Postgres + MinIO; unit tests use in-memory fakes for
 output ports.
 
+### 2.3 Running MinIO locally
+
+MinIO is the local stand-in for S3. It's already wired as the `objectstore` service in
+`backend/docker-compose.yml`, and a companion **`createbuckets`** one-shot job (`minio/mc`) creates the
+two required buckets. You almost never configure it by hand — pick one of the two workflows below.
+
+**Fixed facts** (defaults in `application.properties`, overridable via `BEATZ_S3_*` env):
+
+| Thing | Value |
+|---|---|
+| S3 API endpoint | `http://localhost:9000` (published), `http://objectstore:9000` (inside Compose) |
+| Web console | `http://localhost:9001` |
+| Root user / password | `minioadmin` / `minioadmin` |
+| Buckets (must exist) | `beatz-media-originals` (private masters), `beatz-media-delivery` (HLS/preview/art) |
+| Access style | **path-style** (required for MinIO; set in `S3ClientProducer` + `quarkus.s3.path-style-access=true`) |
+| Region | `us-east-1` (SDK requires one; MinIO ignores it) |
+| Data volume | `miniodata` (survives `down`, wiped by `down -v`) |
+
+#### Workflow A — full stack (MinIO + buckets + app, recommended)
+
+```bash
+cd backend
+docker compose up            # db, objectstore, createbuckets, mail, sms, app
+# MinIO console: http://localhost:9001  (minioadmin / minioadmin)
+```
+
+`createbuckets` runs after `objectstore` is healthy and blocks `app` startup
+(`condition: service_completed_successfully`), so the buckets always exist before the app serves an
+upload. This is exactly what `scripts/smoke.sh` boots — a green smoke run means MinIO is configured
+correctly.
+
+#### Workflow B — MinIO only, app via `quarkus:dev`
+
+Run just the infra and let the host-side app reach MinIO over the published `:9000` port (the
+`application.properties` defaults already point there — no extra env needed):
+
+```bash
+cd backend
+docker compose up -d db objectstore createbuckets   # MinIO + buckets on localhost:9000
+./mvnw quarkus:dev
+```
+
+> Do **not** rely on Quarkus Dev Services for S3 here: Dev Services only spins up its own MinIO when no
+> S3 config is present, and these defaults are present. Bringing up the Compose `objectstore` gives you
+> a stable endpoint, the console, and the pre-created buckets.
+
+#### Overriding the config
+
+Any of these env vars (see §4) override the `beatz.s3.*` defaults — e.g. to point `quarkus:dev` at a
+MinIO on a different host/port or a real S3:
+
+```bash
+BEATZ_S3_ENDPOINT=http://localhost:9000 \
+BEATZ_S3_ACCESS_KEY=minioadmin \
+BEATZ_S3_SECRET_KEY=minioadmin \
+BEATZ_S3_BUCKET_ORIGINALS=beatz-media-originals \
+BEATZ_S3_BUCKET_DELIVERY=beatz-media-delivery \
+./mvnw quarkus:dev
+```
+
+#### Creating buckets manually
+
+Both buckets **must exist** or uploads fail. If you run MinIO outside the Compose stack (so
+`createbuckets` didn't run), create them with the `mc` client on the Compose network:
+
+```bash
+docker run --rm --network beatzclik_default minio/mc:latest sh -c "\
+  mc alias set local http://objectstore:9000 minioadmin minioadmin && \
+  mc mb --ignore-existing local/beatz-media-originals && \
+  mc mb --ignore-existing local/beatz-media-delivery && \
+  mc anonymous set none local/beatz-media-originals && \
+  mc anonymous set none local/beatz-media-delivery"
+```
+
+…or just create them by hand in the console at `http://localhost:9001`. Keep both **private**
+(`mc anonymous set none`): the originals bucket is never presigned for client reads, and delivery is
+served only via time-boxed presigned URLs (INV-3 / `architecture/media.md`).
+
+#### Housekeeping & gotchas
+
+```bash
+docker compose logs -f objectstore createbuckets   # inspect MinIO / bucket-init output
+docker compose down                                 # stop, keep the miniodata volume
+docker compose down -v                              # stop + wipe pgdata/miniodata (createbuckets re-runs on next up)
+```
+
+- **Path-style access is mandatory** — MinIO doesn't support the AWS virtual-host bucket style. It's
+  already set for both the `S3Client` and the presigner in
+  `media/adapter/out/integration/S3ClientProducer.java`; don't switch it off.
+- **Upload 500s on `mark/reset`?** Fixed in WU-MED-2 — the adapter now spools a non-markable body to a
+  bounded temp file and PUTs via a retryable `RequestBody.fromFile` (see `architecture/media.md`). If
+  you see it again, you're on a pre-fix build.
+- **`Access Denied` / `NoSuchBucket` on upload** almost always means the buckets weren't created — run
+  the `mc` snippet above or restart the stack so `createbuckets` runs.
+
 ---
 
 ## 3. Quarkus configuration profiles
