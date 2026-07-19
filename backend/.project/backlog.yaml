@@ -211,6 +211,15 @@ work_units:
     depends_on: [WU-CAT-2]
     llfrs: [LLFR-CATALOG-01.1]
     status: in_progress
+  - id: WU-CAT-9
+    title: Collaborator split invite/accept flow
+    phase: 1
+    module: catalog
+    add: catalog.md
+    owner: backend-engineer
+    depends_on: [WU-CAT-6]
+    llfrs: [LLFR-CATALOG-02.2]
+    status: in_progress
   - id: WU-CAT-6
     title: Release split persistence + finalize validation
     phase: 1

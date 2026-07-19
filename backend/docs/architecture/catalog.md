@@ -755,9 +755,10 @@ stateDiagram-v2
   unrelated save on an aggregate that never loaded splits (the go-live scheduler, track upload/delete)
   can never wipe `split_entry`. Splits are **collaborators only** — the originating creator's share is
   implicit and never stored as a row (`Σ percent ≤ 100`, not `== 100`, per INV-12). Every persisted
-  collaborator lands with `confirmation = "pending"` (interim; the invite/accept flow that would move
+  collaborator lands with `confirmation = "pending"` (interim; the invite/accept flow that moves
   a row to `confirmed`/`declined` — invite emails/notifications, a tokenized accept/decline endpoint,
-  resend, and a `declined` state, plus the frontend Splits-step wiring — is a separate follow-on WU).
+  resend, and a `declined` state — was delivered by **WU-CAT-9** (see §17); the frontend
+  Splits-step wiring remains a separate follow-on).
   `findRelease` loads splits into the aggregate, so `TrackDraftView.splits` (`SplitView {id, name,
   email, role, percent, confirmation}`) is populated on `GET /:id` and every mutating draft endpoint.
   `FinalizeRelease` validates per-track `Σ percent ≤ 100` before `Release.submit`, rejecting with 422
@@ -1018,3 +1019,70 @@ mappers unchanged; playlist rail items follow the list-summary convention — `t
 prior WUs. An empty rail is hidden by the frontend rather than rendered as an empty section — the only
 frontend behavior change; rails with data render byte-for-byte via the same card components as the
 rest of the home feed.
+
+## 17. Implementation notes (WU-CAT-9, as-built)
+
+**Collaborator splits move from `pending` to `confirmed`/`declined` via a tokenized invite/accept
+flow.** WU-CAT-6 persisted `SplitEntry` rows but left every collaborator permanently `pending` (§9);
+WU-CAT-9 closes that gap end-to-end — issuance, delivery, accept, decline, resend — without touching
+`identity` or the go-live guard's semantics.
+
+- **Domain.** `SplitEntry` gains a nullable `accountId` (a bare `TEXT` column — **no cross-module FK**,
+  consistent with the module-boundary convention of referencing other modules' rows by id only) that
+  is stamped on accept, and `SplitConfirmation` gains a fourth state, `declined`. `declined` is
+  terminal and non-blocking: like `confirmed`, it does **not** hold up the `hasPendingSplits` go-live
+  guard (INV-12) — only `pending` blocks `in_review → live`; a declined collaborator's share reverts
+  to the originating creator's implicit remainder (no row is deleted or rewritten, the state itself
+  carries the meaning).
+- **`split_invite` table (migration `V971__catalog_split_invite.sql`).** Hash-only, single-use token
+  storage — mirrors the password-reset-token pattern already used by `identity`: the plaintext token is
+  **never persisted**, only its SHA-256 hash; verification re-hashes the presented token and looks up
+  by hash. Columns: `id`, `release_id` (FK → `release(id)` **ON DELETE CASCADE**), `collaborator_email`,
+  `token_hash`, `expires_at`, `consumed_at` (nullable — null while pending), `outcome`
+  (`accepted`|`declined`, nullable until consumed), `created_at`. One invite row covers **all** of a
+  given collaborator's pending `SplitEntry` rows across every track on the release (keyed on
+  `(release_id, collaborator_email)`, not per track/per split-row) — a collaborator with splits on
+  three tracks of the same release gets one email and one accept click, not three.
+- **Configuration.** `beatz.catalog.split-invite-ttl-seconds` (`@ConfigProperty`, in-code default
+  **1209600** = 14 days) and `beatz.catalog.split-invite-accept-base-url` (`@ConfigProperty`, in-code
+  default) — **neither key is present in `application.properties`**; both rely on their code-level
+  defaults today. An operator who needs a different TTL or a non-default accept-page host must add the
+  key explicitly.
+- **Issuance trigger.** Invites are issued from `FinalizeReleaseService` (the `POST .../submit` /
+  `in_review` transition, WU-CAT-5 §14), **after** the release save, and **after** the
+  idempotent-replay short-circuit — a replayed `Idempotency-Key` returns the saved view without
+  re-issuing invites, so a client retry can never double-email collaborators. For each distinct
+  collaborator email with at least one `pending` split on the release, catalog persists one
+  `split_invite` row and fires a `SplitInviteIssued` domain event (ids + the raw token — the token
+  exists in memory/the event only long enough to be handed to notifications; it is never logged or
+  persisted in plaintext). Catalog does **not** call `Mailer` itself — the **notifications** module
+  owns a new `@Observes` subscriber that renders and sends the invite email to the raw address (no
+  identity lookup — the email is whatever the artist typed into the splits step, whether or not it
+  matches a registered account).
+- **Endpoints** (all under `/v1`, `StudioReleaseResource`/new `SplitInviteResource`):
+  - `GET /splits/invites/{token}` — `@PermitAll`. Verifies the token by hash; returns
+    `SplitInviteView { status, artistName, releaseTitle, tracks: [{trackTitle, role, percent}] }` where
+    `status` is computed (not stored) as `"expired"` if `now > expires_at` and still unconsumed,
+    else the stored `outcome` (`"accepted"`/`"declined"`) if consumed, else `"pending"`. 404
+    `SPLIT_INVITE_NOT_FOUND` for an unknown/malformed token.
+  - `POST /splits/invites/{token}/accept` — `@Authenticated`. Stamps `jwt.subject` as the `accountId`
+    on every one of the collaborator's `pending` `SplitEntry` rows on the release and flips them to
+    `confirmed`; marks the invite `consumed_at`/`outcome=accepted`. **204.** 401 if unauthenticated;
+    410 `SPLIT_INVITE_GONE` if already consumed or past `expires_at` (an expired-but-unconsumed invite
+    reads as `"expired"` on the `GET` but still 410s on `accept`/`decline` — expiry is enforced at the
+    mutation, not just reported at the read).
+  - `POST /splits/invites/{token}/decline` — `@PermitAll` (no account needed to decline). Flips the
+    collaborator's `pending` rows to `declined`; the share reverts to the creator. **204.** Same 410
+    `SPLIT_INVITE_GONE` semantics as accept.
+  - `POST /studio/releases/{id}/resend-invites` — `@RolesAllowed("artist")`, owner-checked (403 if the
+    caller does not own the release). Re-issues invites for every collaborator still `pending` on the
+    release, following the exact same one-invite-per-collaborator-email issuance path as finalize.
+    **204.**
+- **Audit (INV-10).** Accept and decline each append exactly one `AuditEntry` per mutation (the
+  collaborator is the actor for accept/decline, the artist for resend); every privileged mutation in
+  this flow is audited.
+- **Out of scope (unchanged from the design doc).** Routing a confirmed collaborator's share of a sale
+  into their own payout balance is deferred to a payments/royalty WU (OQ-4) — `accountId` is captured
+  now so that future WU has a link to hang off, but no ledger/payout logic reads it yet. Frontend
+  Splits-step + accept-page wiring is a separate follow-on. See ADR-33 for the token-trust model and
+  its accepted residual risks.
