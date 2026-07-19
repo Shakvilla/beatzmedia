@@ -11,13 +11,12 @@ import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
 import org.eclipse.microprofile.jwt.JsonWebToken;
-
-import io.quarkus.security.Authenticated;
-
 import org.shakvilla.beatzmedia.catalog.application.port.in.AcceptSplitInvite;
 import org.shakvilla.beatzmedia.catalog.application.port.in.DeclineSplitInvite;
 import org.shakvilla.beatzmedia.catalog.application.port.in.GetSplitInvite;
 import org.shakvilla.beatzmedia.catalog.application.port.in.SplitInviteView;
+
+import io.quarkus.security.Authenticated;
 
 /**
  * Public collaborator split invite surface (WU-CAT-9). GET + decline are {@code @PermitAll} (a
