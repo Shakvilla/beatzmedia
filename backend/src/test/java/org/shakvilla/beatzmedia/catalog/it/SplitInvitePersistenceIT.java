@@ -48,6 +48,9 @@ class SplitInvitePersistenceIT {
   // pattern as SplitPersistenceIT / CatalogEnumerationIT).
   private static final String ARTIST_ID = "black-sherif";
 
+  // split_entry.id is a global PK and these @Transactional tests commit against the shared suite
+  // database, so ids must be namespaced per test class — plain 'sp-a'/'sp-b'/'sp-c' collide with
+  // SplitPersistenceIT (WU-CAT-6) when the whole IT suite runs.
   private SplitEntry pendingSplit(String id, String trackId, String email, int percent) {
     return new SplitEntry(id, trackId, "Collaborator", email, "Producer",
         percent, SplitConfirmation.pending);
@@ -107,8 +110,8 @@ class SplitInvitePersistenceIT {
   void confirmSplitsForReleaseEmail_flipsOnlyMatchingEmailToConfirmed_andSetsAccountId() {
     seedReleaseWithTrack("rel-inv-2", "trk-inv-2");
     repo.saveTrackSplits("trk-inv-2", List.of(
-        pendingSplit("sp-a", "trk-inv-2", "collab@example.com", 30),
-        pendingSplit("sp-b", "trk-inv-2", "other@example.com", 20)));
+        pendingSplit("sp-inv-a", "trk-inv-2", "collab@example.com", 30),
+        pendingSplit("sp-inv-b", "trk-inv-2", "other@example.com", 20)));
 
     repo.confirmSplitsForReleaseEmail(new ReleaseId("rel-inv-2"), "collab@example.com", "acct-123");
 
@@ -132,7 +135,7 @@ class SplitInvitePersistenceIT {
   void declineSplitsForReleaseEmail_flipsToDeclined_withoutSettingAccountId() {
     seedReleaseWithTrack("rel-inv-3", "trk-inv-3");
     repo.saveTrackSplits("trk-inv-3", List.of(
-        pendingSplit("sp-c", "trk-inv-3", "collab@example.com", 15)));
+        pendingSplit("sp-inv-c", "trk-inv-3", "collab@example.com", 15)));
 
     repo.declineSplitsForReleaseEmail(new ReleaseId("rel-inv-3"), "collab@example.com");
 
@@ -183,9 +186,9 @@ class SplitInvitePersistenceIT {
   void pendingSplitEmailsForRelease_returnsDistinctPendingEmailsOnly() {
     seedReleaseWithTrack("rel-inv-6", "trk-inv-6");
     repo.saveTrackSplits("trk-inv-6", List.of(
-        pendingSplit("sp-d", "trk-inv-6", "a@example.com", 10),
-        pendingSplit("sp-e", "trk-inv-6", "a@example.com", 5),
-        pendingSplit("sp-f", "trk-inv-6", "b@example.com", 20)));
+        pendingSplit("sp-inv-d", "trk-inv-6", "a@example.com", 10),
+        pendingSplit("sp-inv-e", "trk-inv-6", "a@example.com", 5),
+        pendingSplit("sp-inv-f", "trk-inv-6", "b@example.com", 20)));
     repo.confirmSplitsForReleaseEmail(new ReleaseId("rel-inv-6"), "b@example.com", "acct-b");
 
     List<String> emails = repo.pendingSplitEmailsForRelease(new ReleaseId("rel-inv-6"));
