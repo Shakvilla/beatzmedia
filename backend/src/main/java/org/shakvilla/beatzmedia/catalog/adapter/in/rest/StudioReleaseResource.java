@@ -35,6 +35,7 @@ import org.shakvilla.beatzmedia.catalog.application.port.in.GetRelease;
 import org.shakvilla.beatzmedia.catalog.application.port.in.ListStudioReleases;
 import org.shakvilla.beatzmedia.catalog.application.port.in.PageView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.RemoveReleaseTrack;
+import org.shakvilla.beatzmedia.catalog.application.port.in.ResendSplitInvites;
 import org.shakvilla.beatzmedia.catalog.application.port.in.StudioReleaseDetailView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.StudioReleaseView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.UpdateRelease;
@@ -81,6 +82,7 @@ public class StudioReleaseResource {
   private final UploadReleaseTrack uploadReleaseTrack;
   private final RemoveReleaseTrack removeReleaseTrack;
   private final FinalizeRelease finalizeRelease;
+  private final ResendSplitInvites resendSplitInvites;
   private final JsonWebToken jwt;
 
   @Inject
@@ -93,6 +95,7 @@ public class StudioReleaseResource {
       UploadReleaseTrack uploadReleaseTrack,
       RemoveReleaseTrack removeReleaseTrack,
       FinalizeRelease finalizeRelease,
+      ResendSplitInvites resendSplitInvites,
       JsonWebToken jwt) {
     this.listStudioReleases = listStudioReleases;
     this.createReleaseDraft = createReleaseDraft;
@@ -102,6 +105,7 @@ public class StudioReleaseResource {
     this.uploadReleaseTrack = uploadReleaseTrack;
     this.removeReleaseTrack = removeReleaseTrack;
     this.finalizeRelease = finalizeRelease;
+    this.resendSplitInvites = resendSplitInvites;
     this.jwt = jwt;
   }
 
@@ -244,6 +248,18 @@ public class StudioReleaseResource {
       throw new MissingIdempotencyKeyException();
     }
     return finalizeRelease.finalize(new ReleaseId(id), artistId(), idempotencyKey);
+  }
+
+  /**
+   * POST /v1/studio/releases/:id/resend-invites — WU-CAT-9. Re-issues collaborator split invites
+   * for every still-pending split on the release. Owner-only (403 UNAUTHORIZED otherwise); unknown
+   * release → 404 RELEASE_NOT_FOUND.
+   */
+  @POST
+  @Path("/{id}/resend-invites")
+  public Response resendInvites(@PathParam("id") String id) {
+    resendSplitInvites.resend(new ReleaseId(id), artistId());
+    return Response.noContent().build();
   }
 
   private ArtistId artistId() {
