@@ -258,6 +258,7 @@ public class FakeCatalogRepository implements CatalogRepository {
   public void saveTrackSplits(String trackId, List<SplitEntry> splits) {
     saveTrackSplitsCalls.add(trackId);
     splitsByTrack.put(trackId, List.copyOf(splits)); // wholesale replace (empty clears)
+    refreshSplitsForTrack(trackId);
   }
 
   /** Test accessor: the splits stored for a track by the last saveTrackSplits call. */
@@ -333,6 +334,7 @@ public class FakeCatalogRepository implements CatalogRepository {
     remapReleaseEmailSplits(releaseId, email, s ->
         new SplitEntry(s.id(), s.trackId(), s.name(), s.email(), s.role(), s.percent(),
             SplitConfirmation.confirmed, accountId));
+    refreshSplitsForRelease(releaseId);
   }
 
   @Override
@@ -340,6 +342,36 @@ public class FakeCatalogRepository implements CatalogRepository {
     remapReleaseEmailSplits(releaseId, email, s ->
         new SplitEntry(s.id(), s.trackId(), s.name(), s.email(), s.role(), s.percent(),
             SplitConfirmation.declined, s.accountId()));
+    refreshSplitsForRelease(releaseId);
+  }
+
+  /**
+   * Re-derives {@code releaseId}'s stored splits from {@code splitsByTrack} and replaces the map
+   * entry, mirroring the real JPA adapter (whose {@code findRelease} always re-queries {@code
+   * split_entry}). Scoped to the mutation call sites only — NOT a {@code findRelease} rebuild-on-
+   * read — so unrelated services that mutate a {@link Release} object reference directly (e.g.
+   * {@code UploadReleaseTrackService}) keep their existing identity semantics with this fake.
+   */
+  private void refreshSplitsForRelease(ReleaseId releaseId) {
+    Release r = releases.get(releaseId.value());
+    if (r == null) return;
+    List<SplitEntry> splits = r.getTracks().stream()
+        .map(t -> t.trackId())
+        .flatMap(tid -> splitsByTrack.getOrDefault(tid, List.of()).stream())
+        .toList();
+    releases.put(releaseId.value(), Release.reconstitute(
+        r.getId(), r.getArtistId(), r.getTitle(), r.getType(), r.getStatus(), r.getVisibility(),
+        r.getScheduledAt(), r.getWentLiveAt(), r.getListPriceMinor(), r.getCreatedAt(),
+        r.getUpdatedAt(), r.getTracks(), r.getGenre(), r.getDescription(), splits));
+  }
+
+  /** Same as {@link #refreshSplitsForRelease}, looked up by the owning release of a trackId. */
+  private void refreshSplitsForTrack(String trackId) {
+    for (Release r : releases.values()) {
+      if (r.getTracks().stream().anyMatch(t -> t.trackId().equals(trackId))) {
+        refreshSplitsForRelease(new ReleaseId(r.getId()));
+      }
+    }
   }
 
   @Override

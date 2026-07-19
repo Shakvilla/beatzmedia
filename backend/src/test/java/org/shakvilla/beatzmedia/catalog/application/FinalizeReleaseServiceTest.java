@@ -11,6 +11,7 @@ import org.junit.jupiter.api.Test;
 import org.shakvilla.beatzmedia.audit.fakes.FakeAuditWriter;
 import org.shakvilla.beatzmedia.catalog.application.port.in.StudioReleaseDetailView;
 import org.shakvilla.beatzmedia.catalog.application.service.FinalizeReleaseService;
+import org.shakvilla.beatzmedia.catalog.application.service.SplitInviteService;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
 import org.shakvilla.beatzmedia.catalog.domain.IdempotencyConflictException;
 import org.shakvilla.beatzmedia.catalog.domain.IllegalTransitionException;
@@ -19,9 +20,11 @@ import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseTrack;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseType;
+import org.shakvilla.beatzmedia.catalog.domain.SplitInviteIssued;
 import org.shakvilla.beatzmedia.catalog.domain.TrackCountInvalidException;
 import org.shakvilla.beatzmedia.catalog.domain.Visibility;
 import org.shakvilla.beatzmedia.catalog.fakes.FakeCatalogRepository;
+import org.shakvilla.beatzmedia.catalog.fakes.RecordingEvent;
 import org.shakvilla.beatzmedia.platform.domain.PlatformSettings;
 import org.shakvilla.beatzmedia.platform.fakes.FakeClock;
 import org.shakvilla.beatzmedia.platform.fakes.FakeIds;
@@ -46,12 +49,17 @@ class FinalizeReleaseServiceTest {
   void setUp() {
     repo = new FakeCatalogRepository();
     auditWriter = new FakeAuditWriter();
+    SplitInviteService splitInviteService = new SplitInviteService(
+        repo, FakeClock.at(NOW), FakeIds.sequential("inv"), auditWriter,
+        new RecordingEvent<SplitInviteIssued>(), 1_209_600L,
+        "http://localhost:5173/studio/splits/accept");
     service = new FinalizeReleaseService(
         repo,
         new FakePlatformSettingsProvider(PlatformSettings.defaults()),
         FakeClock.at(NOW),
         FakeIds.sequential("fin"),
-        auditWriter);
+        auditWriter,
+        splitInviteService);
   }
 
   private Release draft(ReleaseType type, int trackCount) {
