@@ -23,6 +23,7 @@ import org.shakvilla.beatzmedia.catalog.domain.PlaylistId;
 import org.shakvilla.beatzmedia.catalog.domain.Release;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
+import org.shakvilla.beatzmedia.catalog.domain.SplitEntry;
 import org.shakvilla.beatzmedia.catalog.domain.Track;
 import org.shakvilla.beatzmedia.catalog.domain.TrackId;
 import org.shakvilla.beatzmedia.platform.domain.Page;
@@ -41,6 +42,8 @@ public class FakeCatalogRepository implements CatalogRepository {
   private final Map<String, String> idempotencyKeys = new HashMap<>(); // key → releaseId
   private final Set<String> releasesWithPendingSplits = new HashSet<>();
   private final Map<String, Integer> markReadyCallCounts = new HashMap<>();
+  private final Map<String, List<SplitEntry>> splitsByTrack = new HashMap<>();
+  private final List<String> saveTrackSplitsCalls = new ArrayList<>();
   private int trendingLimit = 10;
 
   /** Test helper: mark a release as having at least one pending SplitEntry (INV-12). */
@@ -246,6 +249,22 @@ public class FakeCatalogRepository implements CatalogRepository {
   @Override
   public void deleteRelease(ReleaseId id) {
     releases.remove(id.value());
+  }
+
+  @Override
+  public void saveTrackSplits(String trackId, List<SplitEntry> splits) {
+    saveTrackSplitsCalls.add(trackId);
+    splitsByTrack.put(trackId, List.copyOf(splits)); // wholesale replace (empty clears)
+  }
+
+  /** Test accessor: the splits stored for a track by the last saveTrackSplits call. */
+  public List<SplitEntry> splitsFor(String trackId) {
+    return splitsByTrack.getOrDefault(trackId, List.of());
+  }
+
+  /** Test accessor: trackIds saveTrackSplits was called for, in order. */
+  public List<String> saveTrackSplitsCalls() {
+    return saveTrackSplitsCalls;
   }
 
   @Override

@@ -28,6 +28,7 @@ public final class Release {
   private List<ReleaseTrack> tracks;
   private String genre;
   private String description;
+  private List<SplitEntry> splits;
 
   private Release(
       String id,
@@ -43,7 +44,8 @@ public final class Release {
       Instant updatedAt,
       List<ReleaseTrack> tracks,
       String genre,
-      String description) {
+      String description,
+      List<SplitEntry> splits) {
     this.id = id;
     this.artistId = artistId;
     this.title = title;
@@ -58,6 +60,7 @@ public final class Release {
     this.tracks = List.copyOf(tracks);
     this.genre = genre;
     this.description = description;
+    this.splits = List.copyOf(splits);
   }
 
   /**
@@ -80,7 +83,7 @@ public final class Release {
     long listPrice = computeListPrice(type, tracks, bundleDiscountPct);
     return new Release(
         id, artistId, title, type, ReleaseStatus.in_review, visibility,
-        scheduledAt, null, listPrice, now, now, tracks, null, null);
+        scheduledAt, null, listPrice, now, now, tracks, null, null, List.of());
   }
 
   /**
@@ -101,7 +104,7 @@ public final class Release {
       Instant now) {
     return new Release(
         id, artistId, title, type, ReleaseStatus.draft, visibility,
-        scheduledAt, null, 0L, now, now, List.of(), genre, description);
+        scheduledAt, null, 0L, now, now, List.of(), genre, description, List.of());
   }
 
   /** Factory for reconstituting a release from DB storage. */
@@ -122,7 +125,31 @@ public final class Release {
       String description) {
     return new Release(
         id, artistId, title, type, status, visibility,
-        scheduledAt, wentLiveAt, listPriceMinor, createdAt, updatedAt, tracks, genre, description);
+        scheduledAt, wentLiveAt, listPriceMinor, createdAt, updatedAt, tracks, genre, description,
+        List.of());
+  }
+
+  /** Reconstitute a release including its persisted collaborator splits (WU-CAT-6). */
+  public static Release reconstitute(
+      String id,
+      String artistId,
+      String title,
+      ReleaseType type,
+      ReleaseStatus status,
+      Visibility visibility,
+      Instant scheduledAt,
+      Instant wentLiveAt,
+      long listPriceMinor,
+      Instant createdAt,
+      Instant updatedAt,
+      List<ReleaseTrack> tracks,
+      String genre,
+      String description,
+      List<SplitEntry> splits) {
+    return new Release(
+        id, artistId, title, type, status, visibility,
+        scheduledAt, wentLiveAt, listPriceMinor, createdAt, updatedAt, tracks, genre, description,
+        splits);
   }
 
   private static long computeListPrice(
@@ -218,9 +245,24 @@ public final class Release {
    */
   public void submit(int bundleDiscountPct, Instant now) {
     requireDraft("SUBMIT");
+    validateSplitSums();
     this.listPriceMinor = computeListPrice(this.type, this.tracks, bundleDiscountPct);
     this.status = ReleaseStatus.in_review;
     this.updatedAt = now;
+  }
+
+  /** INV-12: for each track, Σ(collaborator percent) ≤ 100 (creator holds the remainder). */
+  private void validateSplitSums() {
+    java.util.Map<String, Integer> byTrack = new java.util.HashMap<>();
+    for (SplitEntry s : splits) {
+      byTrack.merge(s.trackId(), s.percent(), Integer::sum);
+    }
+    for (var e : byTrack.entrySet()) {
+      if (e.getValue() > 100) {
+        throw new SplitOver100Exception(
+            "Split percentages for track " + e.getKey() + " sum to " + e.getValue() + " (> 100)");
+      }
+    }
   }
 
   // -------------------------------------------------------------------------
@@ -330,4 +372,5 @@ public final class Release {
   public List<ReleaseTrack> getTracks() { return tracks; }
   public String getGenre() { return genre; }
   public String getDescription() { return description; }
+  public List<SplitEntry> getSplits() { return splits; }
 }

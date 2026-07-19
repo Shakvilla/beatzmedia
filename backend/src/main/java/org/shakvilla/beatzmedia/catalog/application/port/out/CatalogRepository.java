@@ -15,6 +15,7 @@ import org.shakvilla.beatzmedia.catalog.domain.PlaylistId;
 import org.shakvilla.beatzmedia.catalog.domain.Release;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
+import org.shakvilla.beatzmedia.catalog.domain.SplitEntry;
 import org.shakvilla.beatzmedia.catalog.domain.Track;
 import org.shakvilla.beatzmedia.catalog.domain.TrackId;
 import org.shakvilla.beatzmedia.platform.domain.Page;
@@ -86,6 +87,13 @@ public interface CatalogRepository {
   void saveRelease(Release release);
 
   void deleteRelease(ReleaseId id);
+
+  /**
+   * WU-CAT-6 — wholesale-replace one track's collaborator splits in {@code split_entry}. Deletes
+   * the track's existing rows and inserts {@code splits} (empty list clears them). Decoupled from
+   * {@link #saveRelease} so an unrelated save (upload, scheduler go-live) can never wipe splits.
+   */
+  void saveTrackSplits(String trackId, List<SplitEntry> splits);
 
   /** Save a new Track row (used when creating a stub track during upload). */
   void saveTrack(Track track);
