@@ -9,6 +9,7 @@ import org.shakvilla.beatzmedia.catalog.domain.AlbumId;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistProfile;
 import org.shakvilla.beatzmedia.catalog.domain.BrowseCategory;
+import org.shakvilla.beatzmedia.catalog.domain.InviteOutcome;
 import org.shakvilla.beatzmedia.catalog.domain.Lyrics;
 import org.shakvilla.beatzmedia.catalog.domain.Playlist;
 import org.shakvilla.beatzmedia.catalog.domain.PlaylistId;
@@ -16,6 +17,7 @@ import org.shakvilla.beatzmedia.catalog.domain.Release;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
 import org.shakvilla.beatzmedia.catalog.domain.SplitEntry;
+import org.shakvilla.beatzmedia.catalog.domain.SplitInvite;
 import org.shakvilla.beatzmedia.catalog.domain.Track;
 import org.shakvilla.beatzmedia.catalog.domain.TrackId;
 import org.shakvilla.beatzmedia.platform.domain.Page;
@@ -118,6 +120,29 @@ public interface CatalogRepository {
    * cannot go live while any split is unconfirmed.
    */
   boolean hasPendingSplits(ReleaseId releaseId);
+
+  // ---- WU-CAT-9: collaborator split invite/accept ----
+
+  /** Persist a freshly issued split invite. */
+  void saveSplitInvite(SplitInvite invite);
+
+  /** Look up a split invite by its token's SHA-256 hash. */
+  Optional<SplitInvite> findSplitInviteByHash(String tokenHash);
+
+  /** Mark an invite consumed with a terminal outcome. */
+  void consumeSplitInvite(String tokenHash, InviteOutcome outcome, Instant at);
+
+  /** Distinct collaborator emails with at least one {@code pending} split on this release. */
+  List<String> pendingSplitEmailsForRelease(ReleaseId releaseId);
+
+  /** Flip this collaborator's {@code pending} splits on the release to {@code confirmed} + link account. */
+  void confirmSplitsForReleaseEmail(ReleaseId releaseId, String email, String accountId);
+
+  /** Flip this collaborator's {@code pending} splits on the release to {@code declined}. */
+  void declineSplitsForReleaseEmail(ReleaseId releaseId, String email);
+
+  /** Delete any not-yet-consumed invites for this collaborator on the release (resend replaces them). */
+  void deleteUnconsumedInvitesForReleaseEmail(ReleaseId releaseId, String email);
 
   /**
    * Returns all releases in status {@code scheduled} whose {@code scheduled_at <= now}. Used by

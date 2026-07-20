@@ -42,6 +42,7 @@ public class FinalizeReleaseService implements FinalizeRelease {
   private final Clock clock;
   private final IdGenerator ids;
   private final AuditWriter auditWriter;
+  private final SplitInviteService splitInviteService;
 
   @Inject
   public FinalizeReleaseService(
@@ -49,12 +50,14 @@ public class FinalizeReleaseService implements FinalizeRelease {
       PlatformSettingsProvider settings,
       Clock clock,
       IdGenerator ids,
-      AuditWriter auditWriter) {
+      AuditWriter auditWriter,
+      SplitInviteService splitInviteService) {
     this.repo = repo;
     this.settings = settings;
     this.clock = clock;
     this.ids = ids;
     this.auditWriter = auditWriter;
+    this.splitInviteService = splitInviteService;
   }
 
   @Override
@@ -88,6 +91,10 @@ public class FinalizeReleaseService implements FinalizeRelease {
     // if not draft.
     release.submit(settings.current().bundleDiscountPct(), now);
     repo.saveReleaseWithIdempotencyKey(release, idempotencyKey);
+
+    // WU-CAT-9: issue collaborator split invites for any pending splits (fires SplitInviteIssued
+    // per collaborator; notifications emails them). Re-fetch so getSplits() is populated.
+    repo.findRelease(id).ifPresent(splitInviteService::issueInvitesForPending);
 
     // INV-10: audit privileged mutation atomically in the same transaction
     auditWriter.append(new AuditEntry(

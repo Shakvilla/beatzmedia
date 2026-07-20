@@ -224,7 +224,7 @@ UI: studio overview, releases, 4-step release wizard, analytics, audience, payou
 `StudioReleaseDetail` = `StudioRelease` **+** `{ genre, description, visibility: public|scheduled, scheduledAt, tracks: TrackDraft[] }`
 — additive superset returned by `GET /:id` and every draft-flow mutation (create/PATCH/submit).
 
-`TrackDraft { trackId, title, duration, status: uploading|ready|error, position, price, splits: SplitEntry[] }` (WU-CAT-6). `SplitEntry { id, name, email, role, percent, confirmation: self|confirmed|pending|auto }` — **collaborators only**: the originating creator's share is implicit and never stored as a row, so `Σ percent ≤ 100` (not `== 100`), per INV-12. `PATCH .../:id` accepts `splits` nested under each `tracks[]` entry on input (`{name, email, role, percent}` — no `id`/`confirmation`, wholesale-replace per track); every persisted collaborator lands with `confirmation:"pending"` until the (not-yet-built) invite/accept flow lands.
+`TrackDraft { trackId, title, duration, status: uploading|ready|error, position, price, splits: SplitEntry[] }` (WU-CAT-6). `SplitEntry { id, name, email, role, percent, confirmation: self|confirmed|pending|declined|auto }` — **collaborators only**: the originating creator's share is implicit and never stored as a row, so `Σ percent ≤ 100` (not `== 100`), per INV-12. `PATCH .../:id` accepts `splits` nested under each `tracks[]` entry on input (`{name, email, role, percent}` — no `id`/`confirmation`, wholesale-replace per track); every persisted collaborator lands with `confirmation:"pending"` until the invite/accept flow (WU-CAT-9, see below) moves it to `confirmed`/`declined` — `declined` is terminal and non-blocking for go-live, same as `confirmed`.
 
 > **WU-CAT-5 (release create flow).** The creation flow is **draft → upload-attached → finalize**,
 > replacing the old one-shot "wizard submit" (which posted the full draft — details + tracks +
@@ -241,7 +241,18 @@ UI: studio overview, releases, 4-step release wizard, analytics, audience, payou
 | DELETE | `/studio/releases/:id` | delete a `draft`/`in_review` release (409 `RELEASE_LIVE` for `live`) |
 | POST | `/studio/releases/:id/tracks` | multipart audio upload (WAV/FLAC, ≤500MB) → **201** `UploadedTrack` (`{ id, title, duration, status, progress, src, price, explicit, position }`) — the track is **attached** to the release as a `TrackDraft` (draft-only; 409 `ILLEGAL_TRANSITION` on a non-draft release) |
 | DELETE | `/studio/releases/:id/tracks/:trackId` | remove a draft track → **204**. Draft-only (409); unknown `trackId` → 404 `TRACK_NOT_FOUND` |
-| POST | `/studio/releases/:id/submit` | **finalize**: `draft → in_review`. Requires `Idempotency-Key` header (400 `MISSING_IDEMPOTENCY_KEY` if absent). Validates the track-count matrix per `type` (`single`=1, `ep`=3–6, `album`=7+, `mixtape`≥1 — else 422 `TRACK_COUNT_INVALID`) and, per track, `Σ splits.percent ≤ 100` (else 422 `SPLIT_OVER_100`, INV-12), recomputes `price` (bundle discount), transitions the release → **200** `StudioReleaseDetail` with `status:"in_review"`. Not-draft → 409 `ILLEGAL_TRANSITION`. A reused `Idempotency-Key` whose stored release/artist doesn't match the caller → 409 `IDEMPOTENCY_KEY_CONFLICT` (no data leak). |
+| POST | `/studio/releases/:id/submit` | **finalize**: `draft → in_review`. Requires `Idempotency-Key` header (400 `MISSING_IDEMPOTENCY_KEY` if absent). Validates the track-count matrix per `type` (`single`=1, `ep`=3–6, `album`=7+, `mixtape`≥1 — else 422 `TRACK_COUNT_INVALID`) and, per track, `Σ splits.percent ≤ 100` (else 422 `SPLIT_OVER_100`, INV-12), recomputes `price` (bundle discount), transitions the release → **200** `StudioReleaseDetail` with `status:"in_review"`. Not-draft → 409 `ILLEGAL_TRANSITION`. A reused `Idempotency-Key` whose stored release/artist doesn't match the caller → 409 `IDEMPOTENCY_KEY_CONFLICT` (no data leak). On success, catalog issues one **collaborator split invite** per distinct pending `splits[].email` on the release (WU-CAT-9, see below); a replayed `Idempotency-Key` does not re-issue. |
+| POST | `/studio/releases/:id/resend-invites` | artist (owner) — re-issue invites for every collaborator still `confirmation:"pending"` on the release → **204**. 403 if not the owning artist. No `Idempotency-Key`; intentionally repeatable (a double-call re-emails). |
+
+### Collaborator split invites (WU-CAT-9)
+
+`SplitInviteView { status: "pending"|"accepted"|"declined"|"expired", artistName, releaseTitle, tracks: [{ trackTitle, role, percent }] }` — `status` is computed at read time (`"expired"` once past the 14-day TTL if still unconsumed, else the stored outcome, else `"pending"`). The invite token is opaque, single-use, and delivered only by email (`SplitInviteIssued`, sent by `notifications`) — it is never returned by any other endpoint.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/splits/invites/:token` | public — → `SplitInviteView`. 404 `SPLIT_INVITE_NOT_FOUND` for an unknown/malformed token. |
+| POST | `/splits/invites/:token/accept` | requires auth — links the caller's account to every one of their `pending` splits on the release and confirms them → **204**. 401 if unauthenticated; 410 `SPLIT_INVITE_GONE` if already consumed or past the TTL. |
+| POST | `/splits/invites/:token/decline` | public — declines every one of the collaborator's `pending` splits on the release (the share reverts to the creator) → **204**. 410 `SPLIT_INVITE_GONE` if already consumed or past the TTL. |
 
 ### Podcasts (creator)
 `StudioPodcastShow { id, title, category }`

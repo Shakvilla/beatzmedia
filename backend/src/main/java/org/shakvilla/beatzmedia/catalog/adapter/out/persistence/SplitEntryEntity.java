@@ -31,7 +31,10 @@ public class SplitEntryEntity {
   @Column(name = "percent", nullable = false)
   public int percent;
 
-  /** Values: self | confirmed | pending | auto */
+  @Column(name = "account_id")
+  public String accountId;
+
+  /** Values: self | confirmed | pending | auto | declined */
   @Column(name = "confirmation", nullable = false)
   public String confirmation;
 }

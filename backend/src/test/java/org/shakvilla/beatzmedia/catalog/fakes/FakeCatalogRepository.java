@@ -17,13 +17,16 @@ import org.shakvilla.beatzmedia.catalog.domain.AlbumId;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistProfile;
 import org.shakvilla.beatzmedia.catalog.domain.BrowseCategory;
+import org.shakvilla.beatzmedia.catalog.domain.InviteOutcome;
 import org.shakvilla.beatzmedia.catalog.domain.Lyrics;
 import org.shakvilla.beatzmedia.catalog.domain.Playlist;
 import org.shakvilla.beatzmedia.catalog.domain.PlaylistId;
 import org.shakvilla.beatzmedia.catalog.domain.Release;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
+import org.shakvilla.beatzmedia.catalog.domain.SplitConfirmation;
 import org.shakvilla.beatzmedia.catalog.domain.SplitEntry;
+import org.shakvilla.beatzmedia.catalog.domain.SplitInvite;
 import org.shakvilla.beatzmedia.catalog.domain.Track;
 import org.shakvilla.beatzmedia.catalog.domain.TrackId;
 import org.shakvilla.beatzmedia.platform.domain.Page;
@@ -255,6 +258,7 @@ public class FakeCatalogRepository implements CatalogRepository {
   public void saveTrackSplits(String trackId, List<SplitEntry> splits) {
     saveTrackSplitsCalls.add(trackId);
     splitsByTrack.put(trackId, List.copyOf(splits)); // wholesale replace (empty clears)
+    refreshSplitsForTrack(trackId);
   }
 
   /** Test accessor: the splits stored for a track by the last saveTrackSplits call. */
@@ -297,6 +301,100 @@ public class FakeCatalogRepository implements CatalogRepository {
   @Override
   public boolean hasPendingSplits(ReleaseId releaseId) {
     return releasesWithPendingSplits.contains(releaseId.value());
+  }
+
+  // ---- WU-CAT-9: collaborator split invite/accept ----
+
+  private final Map<String, SplitInvite> invitesByHash = new HashMap<>();
+
+  @Override
+  public void saveSplitInvite(SplitInvite invite) { invitesByHash.put(invite.tokenHash(), invite); }
+
+  @Override
+  public Optional<SplitInvite> findSplitInviteByHash(String tokenHash) {
+    return Optional.ofNullable(invitesByHash.get(tokenHash));
+  }
+
+  @Override
+  public void consumeSplitInvite(String tokenHash, InviteOutcome outcome, Instant at) {
+    SplitInvite i = invitesByHash.get(tokenHash);
+    if (i != null) i.consume(outcome, at);
+  }
+
+  @Override
+  public List<String> pendingSplitEmailsForRelease(ReleaseId releaseId) {
+    return releaseTrackIds(releaseId).stream()
+        .flatMap(tid -> splitsByTrack.getOrDefault(tid, List.of()).stream())
+        .filter(s -> s.confirmation() == SplitConfirmation.pending)
+        .map(SplitEntry::email).distinct().toList();
+  }
+
+  @Override
+  public void confirmSplitsForReleaseEmail(ReleaseId releaseId, String email, String accountId) {
+    remapReleaseEmailSplits(releaseId, email, s ->
+        new SplitEntry(s.id(), s.trackId(), s.name(), s.email(), s.role(), s.percent(),
+            SplitConfirmation.confirmed, accountId));
+    refreshSplitsForRelease(releaseId);
+  }
+
+  @Override
+  public void declineSplitsForReleaseEmail(ReleaseId releaseId, String email) {
+    remapReleaseEmailSplits(releaseId, email, s ->
+        new SplitEntry(s.id(), s.trackId(), s.name(), s.email(), s.role(), s.percent(),
+            SplitConfirmation.declined, s.accountId()));
+    refreshSplitsForRelease(releaseId);
+  }
+
+  /**
+   * Re-derives {@code releaseId}'s stored splits from {@code splitsByTrack} and replaces the map
+   * entry, mirroring the real JPA adapter (whose {@code findRelease} always re-queries {@code
+   * split_entry}). Scoped to the mutation call sites only — NOT a {@code findRelease} rebuild-on-
+   * read — so unrelated services that mutate a {@link Release} object reference directly (e.g.
+   * {@code UploadReleaseTrackService}) keep their existing identity semantics with this fake.
+   */
+  private void refreshSplitsForRelease(ReleaseId releaseId) {
+    Release r = releases.get(releaseId.value());
+    if (r == null) return;
+    List<SplitEntry> splits = r.getTracks().stream()
+        .map(t -> t.trackId())
+        .flatMap(tid -> splitsByTrack.getOrDefault(tid, List.of()).stream())
+        .toList();
+    releases.put(releaseId.value(), Release.reconstitute(
+        r.getId(), r.getArtistId(), r.getTitle(), r.getType(), r.getStatus(), r.getVisibility(),
+        r.getScheduledAt(), r.getWentLiveAt(), r.getListPriceMinor(), r.getCreatedAt(),
+        r.getUpdatedAt(), r.getTracks(), r.getGenre(), r.getDescription(), splits));
+  }
+
+  /** Same as {@link #refreshSplitsForRelease}, looked up by the owning release of a trackId. */
+  private void refreshSplitsForTrack(String trackId) {
+    for (Release r : releases.values()) {
+      if (r.getTracks().stream().anyMatch(t -> t.trackId().equals(trackId))) {
+        refreshSplitsForRelease(new ReleaseId(r.getId()));
+      }
+    }
+  }
+
+  @Override
+  public void deleteUnconsumedInvitesForReleaseEmail(ReleaseId releaseId, String email) {
+    invitesByHash.values().removeIf(i ->
+        i.releaseId().equals(releaseId.value()) && i.email().equals(email) && !i.isConsumed());
+  }
+
+  private List<String> releaseTrackIds(ReleaseId releaseId) {
+    Release r = releases.get(releaseId.value());
+    return r == null ? List.of()
+        : r.getTracks().stream().map(t -> t.trackId()).toList();
+  }
+
+  private void remapReleaseEmailSplits(ReleaseId releaseId, String email,
+      java.util.function.UnaryOperator<SplitEntry> f) {
+    for (String tid : releaseTrackIds(releaseId)) {
+      List<SplitEntry> cur = splitsByTrack.get(tid);
+      if (cur == null) continue;
+      splitsByTrack.put(tid, cur.stream()
+          .map(s -> s.email().equals(email) && s.confirmation() == SplitConfirmation.pending ? f.apply(s) : s)
+          .toList());
+    }
   }
 
   @Override
