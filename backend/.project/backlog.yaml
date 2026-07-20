@@ -219,7 +219,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-CAT-6]
     llfrs: [LLFR-CATALOG-02.2]
-    status: in_progress
+    status: done
   - id: WU-CAT-6
     title: Release split persistence + finalize validation
     phase: 1
