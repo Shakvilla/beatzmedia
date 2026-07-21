@@ -1,10 +1,11 @@
 import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Mic, MoreHorizontal, Pencil, Trash2, ExternalLink } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
-import { useStudio } from '../features/studio/studio-context'
-import { getStudioShows, type StudioEpisode, type EpisodeStatus } from '../lib/studio-data'
+import { studioShowsQuery, studioEpisodesQuery, apiDeleteEpisode } from '../lib/api/queries/podcasts-studio'
+import type { StudioEpisode, EpisodeStatus } from '../lib/studio-data'
 import { formatDuration } from '../lib/format'
 import { formatCompact } from '../lib/studio-analytics'
 
@@ -23,8 +24,18 @@ function coverGradient(t: string): string {
 function StudioPodcasts() {
   const { toast } = useToast()
   const navigate = useNavigate()
-  const { episodes, removeEpisode } = useStudio()
-  const shows = getStudioShows()
+  const queryClient = useQueryClient()
+  const { data: shows = [] } = useQuery(studioShowsQuery())
+  const { data: episodes = [] } = useQuery(studioEpisodesQuery())
+
+  const onDelete = async (id: string) => {
+    await apiDeleteEpisode(id)
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: studioEpisodesQuery().queryKey }),
+      queryClient.invalidateQueries({ queryKey: studioShowsQuery().queryKey }),
+    ])
+    toast('Episode deleted', 'success')
+  }
 
   if (episodes.length === 0 && shows.length === 0) {
     return (
@@ -73,7 +84,7 @@ function StudioPodcasts() {
               onPlay={() => toast(`Previewing “${e.title}”`, 'info')}
               onEdit={() => toast(`Edit “${e.title}”`, 'info')}
               onView={() => navigate({ to: '/podcasts' })}
-              onDelete={() => { removeEpisode(e.id); toast('Episode deleted', 'success') }}
+              onDelete={() => onDelete(e.id)}
             />
           ))}
         </div>
