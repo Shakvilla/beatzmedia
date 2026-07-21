@@ -498,3 +498,27 @@ describe('toWizardTrack', () => {
     expect(t.price).toBe(0)
   })
 })
+
+import { toStudioShow, toStudioEpisode } from './mappers'
+
+describe('toStudioShow', () => {
+  it('maps id/title/category 1:1', () => {
+    expect(toStudioShow({ id: 'sh1', title: 'Konongo Diaries', category: 'Storytelling' }))
+      .toEqual({ id: 'sh1', title: 'Konongo Diaries', category: 'Storytelling' })
+  })
+})
+
+describe('toStudioEpisode', () => {
+  it('maps all fields, price wire→number, status passthrough', () => {
+    const wire = { id: 'ep1', showId: 'sh1', showTitle: 'Konongo Diaries', title: 'Ep 12',
+      duration: 2940, status: 'published', premium: true, price: 5, publishedAt: 'May 02', plays: 18400 }
+    expect(toStudioEpisode(wire)).toEqual({
+      id: 'ep1', showId: 'sh1', showTitle: 'Konongo Diaries', title: 'Ep 12', duration: 2940,
+      status: 'published', premium: true, price: 5, publishedAt: 'May 02', plays: 18400,
+    })
+  })
+  it('coerces a string price to number', () => {
+    expect(toStudioEpisode({ id: 'e', showId: 's', showTitle: 'S', title: 'T', duration: 1,
+      status: 'draft', premium: false, price: '0', publishedAt: 'x', plays: 0 }).price).toBe(0)
+  })
+})

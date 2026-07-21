@@ -32,7 +32,7 @@ import type {
   SourceStat,
   Superfan,
 } from '../studio-analytics'
-import type { StudioProfile, StudioSettings, StudioRelease } from '../studio-data'
+import type { StudioProfile, StudioSettings, StudioRelease, StudioPodcastShow, StudioEpisode, EpisodeStatus } from '../studio-data'
 import type { UploadedTrack } from '../../features/studio/release-draft-context'
 
 export interface ArtistWire {
@@ -583,6 +583,24 @@ export function toStudioRelease(w: StudioReleaseWire): StudioRelease {
     streams: w.streams,
     revenue: w.revenue?.amount ?? 0,
     price: w.price?.amount ?? 0,
+  }
+}
+
+// ── Studio podcasts ───────────────────────────────────────────────
+export interface StudioPodcastShowWire { id: string; title: string; category: string }
+export function toStudioShow(w: StudioPodcastShowWire): StudioPodcastShow {
+  return { id: w.id, title: w.title, category: w.category }
+}
+
+export interface EpisodeWire {
+  id: string; showId: string; showTitle: string; title: string; duration: number
+  status: string; premium: boolean; price: number | string; publishedAt: string; plays: number
+}
+export function toStudioEpisode(w: EpisodeWire): StudioEpisode {
+  return {
+    id: w.id, showId: w.showId, showTitle: w.showTitle, title: w.title, duration: w.duration,
+    status: w.status as EpisodeStatus, premium: w.premium, price: Number(w.price),
+    publishedAt: w.publishedAt, plays: w.plays,
   }
 }
 
