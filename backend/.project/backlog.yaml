@@ -210,7 +210,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-CAT-2]
     llfrs: [LLFR-CATALOG-01.1]
-    status: in_progress
+    status: done
   - id: WU-CAT-9
     title: Collaborator split invite/accept flow
     phase: 1
@@ -228,7 +228,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-CAT-5]
     llfrs: [LLFR-CATALOG-02.3]
-    status: in_progress
+    status: done
   - id: WU-LIB-1
     title: Collection — likes/follows/saved/user playlists/owned
     phase: 1
