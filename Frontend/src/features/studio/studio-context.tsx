@@ -13,24 +13,17 @@
  */
 
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
-import {
-  getStudioEpisodes,
-  type StudioEpisode,
-} from '../../lib/studio-data'
 import { getPayouts, type PayoutTxn, type PayoutMethod } from '../../lib/studio-payouts'
 
 const PERSIST_KEY = 'beatzclik-studio'
 
 interface StudioState {
-  episodes: StudioEpisode[]
   balance: number
   transactions: PayoutTxn[]
   methods: PayoutMethod[]
 }
 
 interface StudioContextValue extends StudioState {
-  addEpisode: (e: StudioEpisode) => void
-  removeEpisode: (id: string) => void
   withdraw: (amount: number, method: PayoutMethod) => void
   setDefaultMethod: (id: string) => void
   removeMethod: (id: string) => void
@@ -45,7 +38,6 @@ const todayLabel = () => new Date().toLocaleDateString('en-US', { month: 'short'
 function seed(): StudioState {
   const p = getPayouts()
   return {
-    episodes: getStudioEpisodes(),
     balance: p.available,
     transactions: p.transactions,
     methods: p.methods,
@@ -59,7 +51,6 @@ function hydrate(): StudioState {
     if (!raw) return base
     const saved = JSON.parse(raw) as Partial<StudioState>
     return {
-      episodes: saved.episodes ?? base.episodes,
       balance: saved.balance ?? base.balance,
       transactions: saved.transactions ?? base.transactions,
       methods: saved.methods ?? base.methods,
@@ -80,8 +71,6 @@ export function StudioProvider({ children }: { children: ReactNode }) {
 
   const value = useMemo<StudioContextValue>(() => ({
     ...state,
-    addEpisode: (e) => setState((s) => ({ ...s, episodes: [e, ...s.episodes] })),
-    removeEpisode: (id) => setState((s) => ({ ...s, episodes: s.episodes.filter((e) => e.id !== id) })),
     withdraw: (amount, method) => setState((s) => ({
       ...s,
       balance: round2(s.balance - amount),
