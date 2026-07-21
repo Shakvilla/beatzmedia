@@ -29,12 +29,16 @@ function StudioPodcasts() {
   const { data: episodes = [] } = useQuery(studioEpisodesQuery())
 
   const onDelete = async (id: string) => {
-    await apiDeleteEpisode(id)
-    await Promise.all([
-      queryClient.invalidateQueries({ queryKey: studioEpisodesQuery().queryKey }),
-      queryClient.invalidateQueries({ queryKey: studioShowsQuery().queryKey }),
-    ])
-    toast('Episode deleted', 'success')
+    try {
+      await apiDeleteEpisode(id)
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: studioEpisodesQuery().queryKey }),
+        queryClient.invalidateQueries({ queryKey: studioShowsQuery().queryKey }),
+      ])
+      toast('Episode deleted', 'success')
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Could not delete the episode', 'error')
+    }
   }
 
   if (episodes.length === 0 && shows.length === 0) {

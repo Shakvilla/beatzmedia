@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, Link } from '@tanstack/react-router'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Upload, Play, Pause, ImagePlus, X } from 'lucide-react'
 import { cn } from '../utils/cn'
@@ -25,6 +25,13 @@ function NewEpisode() {
   const { data: shows = [] } = useQuery(studioShowsQuery())
 
   const [showId, setShowId] = useState(shows[0]?.id ?? NEW_SHOW)
+  const showInit = useRef(false)
+  useEffect(() => {
+    if (!showInit.current && shows.length > 0) {
+      showInit.current = true
+      setShowId(shows[0].id)
+    }
+  }, [shows])
   const [newShowTitle, setNewShowTitle] = useState('')
   const [newShowCat, setNewShowCat] = useState<string>(STUDIO_PODCAST_CATEGORIES[0])
   const [title, setTitle] = useState('')

@@ -1,8 +1,8 @@
 /**
  * Shared Artist Studio store.
  *
- * Owns the persistent, mutable studio state — episodes and the payout
- * balance/ledger/methods — so edits survive navigation and refresh.
+ * Owns the persistent, mutable studio state — the payout
+ * balance/transactions/methods — so edits survive navigation and refresh.
  * (Profile and settings are query-backed via `studioProfileQuery()` /
  * `studioSettingsQuery()`, and releases via `studioReleasesQuery()` /
  * `studioReleaseQuery()`, and no longer live here.)
