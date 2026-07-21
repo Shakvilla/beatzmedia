@@ -1,10 +1,11 @@
 import { createFileRoute, useNavigate, Link } from '@tanstack/react-router'
-import { useRef, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Upload, Play, Pause, ImagePlus, X } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
-import { useStudio } from '../features/studio/studio-context'
-import { getStudioShows, STUDIO_PODCAST_CATEGORIES, type StudioEpisode } from '../lib/studio-data'
+import { studioShowsQuery, studioEpisodesQuery, apiCreateEpisode } from '../lib/api/queries/podcasts-studio'
+import { STUDIO_PODCAST_CATEGORIES } from '../lib/studio-data'
 import { formatDuration } from '../lib/format'
 
 export const Route = createFileRoute('/studio/podcasts/new')({
@@ -20,10 +21,17 @@ const NEW_SHOW = '__new__'
 function NewEpisode() {
   const { toast } = useToast()
   const navigate = useNavigate()
-  const { addEpisode } = useStudio()
-  const shows = getStudioShows()
+  const queryClient = useQueryClient()
+  const { data: shows = [] } = useQuery(studioShowsQuery())
 
   const [showId, setShowId] = useState(shows[0]?.id ?? NEW_SHOW)
+  const showInit = useRef(false)
+  useEffect(() => {
+    if (!showInit.current && shows.length > 0) {
+      showInit.current = true
+      setShowId(shows[0].id)
+    }
+  }, [shows])
   const [newShowTitle, setNewShowTitle] = useState('')
   const [newShowCat, setNewShowCat] = useState<string>(STUDIO_PODCAST_CATEGORIES[0])
   const [title, setTitle] = useState('')
@@ -36,13 +44,16 @@ function NewEpisode() {
   const [premium, setPremium] = useState(false)
   const [price, setPrice] = useState(5)
   const [earlyAccess, setEarlyAccess] = useState(false)
+  const [submitting, setSubmitting] = useState(false)
 
   const audioRef = useRef<HTMLAudioElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const coverRef = useRef<HTMLInputElement>(null)
+  const audioFileRef = useRef<File | null>(null)
 
   const onAudio = (f?: File) => {
     if (!f) return
+    audioFileRef.current = f
     const src = URL.createObjectURL(f)
     setAudio({ src, name: f.name, duration: 0 })
     const probe = new Audio()
@@ -59,23 +70,35 @@ function NewEpisode() {
   const showTitle = showId === NEW_SHOW ? newShowTitle.trim() : (shows.find((s) => s.id === showId)?.title ?? '')
   const canSubmit = title.trim() !== '' && !!audio && showTitle !== '' && (visibility === 'public' || date !== '')
 
-  const submit = () => {
-    if (!canSubmit || !audio) { toast('Add an episode title, audio and a show to publish', 'error'); return }
-    const ep: StudioEpisode = {
-      id: `ep-${Date.now()}`,
-      showId: showId === NEW_SHOW ? `sh-${Date.now()}` : showId,
-      showTitle,
-      title: title.trim(),
-      duration: audio.duration,
-      status: visibility === 'scheduled' ? 'scheduled' : 'published',
-      premium,
-      price: premium ? price : 0,
-      publishedAt: visibility === 'scheduled' && date ? new Date(date).toLocaleDateString('en-US', { month: 'short', day: 'numeric' }) : new Date().toLocaleDateString('en-US', { month: 'short', day: 'numeric' }),
-      plays: 0,
+  const submit = async () => {
+    const file = audioFileRef.current
+    if (!canSubmit || !file) { toast('Add an episode title, audio and a show to publish', 'error'); return }
+    setSubmitting(true)
+    try {
+      await apiCreateEpisode({
+        audio: file,
+        showId: showId === NEW_SHOW ? null : showId,
+        newShow: showId === NEW_SHOW ? { title: newShowTitle.trim(), category: newShowCat } : null,
+        title: title.trim(),
+        description: description.trim(),
+        cover, // client preview URL or null — backend takes a URL string
+        visibility,
+        date: visibility === 'scheduled' ? date : null,
+        premium,
+        price: premium ? price : null,
+        earlyAccess,
+      })
+      await Promise.all([
+        queryClient.invalidateQueries({ queryKey: studioEpisodesQuery().queryKey }),
+        queryClient.invalidateQueries({ queryKey: studioShowsQuery().queryKey }),
+      ])
+      toast(visibility === 'scheduled' ? 'Episode scheduled' : 'Episode published 🎙️', 'success')
+      navigate({ to: '/studio/podcasts' })
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Could not publish the episode', 'error')
+    } finally {
+      setSubmitting(false)
     }
-    addEpisode(ep)
-    toast(visibility === 'scheduled' ? 'Episode scheduled' : 'Episode published 🎙️', 'success')
-    navigate({ to: '/studio/podcasts' })
   }
 
   return (
@@ -88,7 +111,7 @@ function NewEpisode() {
           <Link to="/studio/podcasts" className="flex items-center gap-1.5 text-xs font-bold text-gray-400 hover:text-beatz-dark-bg dark:hover:text-white transition-colors w-fit"><ArrowLeft size={14} /> Podcasts</Link>
           <h1 className="text-display text-beatz-dark-bg dark:text-white">New episode</h1>
         </div>
-        <button onClick={submit} disabled={!canSubmit} className="h-11 px-6 rounded-full bg-beatz-green text-black font-bold text-sm hover:scale-105 transition-transform shadow-lg shadow-beatz-green/20 disabled:opacity-40 disabled:hover:scale-100">
+        <button onClick={submit} disabled={!canSubmit || submitting} className="h-11 px-6 rounded-full bg-beatz-green text-black font-bold text-sm hover:scale-105 transition-transform shadow-lg shadow-beatz-green/20 disabled:opacity-40 disabled:hover:scale-100">
           {visibility === 'scheduled' ? 'Schedule' : 'Publish'}
         </button>
       </div>
@@ -112,7 +135,7 @@ function NewEpisode() {
                 <span className="text-sm font-bold text-beatz-dark-bg dark:text-white truncate">{audio.name}</span>
                 <span className="text-xs text-gray-500 dark:text-gray-400">{audio.duration ? formatDuration(audio.duration) : 'reading…'}</span>
               </div>
-              <button onClick={() => { setAudio(null); setPlaying(false) }} aria-label="Remove" className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-beatz-red hover:bg-beatz-red/10 transition-colors"><X size={18} /></button>
+              <button onClick={() => { audioFileRef.current = null; setAudio(null); setPlaying(false) }} aria-label="Remove" className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-beatz-red hover:bg-beatz-red/10 transition-colors"><X size={18} /></button>
             </div>
           )}
 
