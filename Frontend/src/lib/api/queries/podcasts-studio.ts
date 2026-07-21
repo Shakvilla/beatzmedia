@@ -1,5 +1,5 @@
 import { queryOptions } from '@tanstack/react-query'
-import type { StudioPodcastShow, StudioEpisode } from '../../studio-data'
+import type { StudioEpisode } from '../../studio-data'
 import { apiFetch } from '../client'
 import {
   toStudioShow, type StudioPodcastShowWire,

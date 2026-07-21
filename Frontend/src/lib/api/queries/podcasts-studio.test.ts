@@ -34,7 +34,7 @@ describe('apiCreateEpisode', () => {
     const audio = new File(['x'], 'ep.mp3', { type: 'audio/mpeg' })
     await apiCreateEpisode({ audio, showId: 'sh1', newShow: null, title: 'T', description: 'D',
       cover: null, visibility: 'public', date: null, premium: false, price: null, earlyAccess: false })
-    const [path, opts] = apiFetch.mock.calls[0]
+    const [path, opts] = apiFetch.mock.calls[0]! as [string, any]
     expect(path).toBe('/studio/podcasts/episodes')
     expect(opts.method).toBe('POST')
     expect(opts.body).toBeInstanceOf(FormData)
@@ -54,7 +54,7 @@ describe('apiCreateEpisode', () => {
     await apiCreateEpisode({ audio, showId: null, newShow: { title: 'New', category: 'Storytelling' },
       title: 'T', description: '', cover: null, visibility: 'scheduled', date: '2030-01-02',
       premium: true, price: 5, earlyAccess: true })
-    const data = JSON.parse((apiFetch.mock.calls[0][1].body as FormData).get('data') as string)
+    const data = JSON.parse(((apiFetch.mock.calls[0]![1] as any).body as FormData).get('data') as string)
     expect(data.showId).toBeNull()
     expect(data.newShow).toEqual({ title: 'New', category: 'Storytelling' })
     expect(data.date).toBe('2030-01-02T00:00:00.000Z')
