@@ -1,14 +1,18 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowUp, Download, Plus, Search, Check, Trash2, Clock, Smartphone, Landmark } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { Modal } from '../components/ui/modal'
 import { useToast } from '../components/ui/toast-provider'
 import {
-  getPayouts, withdrawalFee, arrivalTime, daysUntilFriday, MIN_PAYOUT,
-  type PayoutTxn, type PayoutType, type PayoutStatus, type PayoutMethod, type MethodKind,
+  withdrawalFee, arrivalTime, daysUntilFriday, MIN_PAYOUT,
+  type Payouts, type PayoutTxn, type PayoutType, type PayoutStatus, type PayoutMethod,
 } from '../lib/studio-payouts'
-import { useStudio } from '../features/studio/studio-context'
+import {
+  payoutsQuery, apiRequestWithdrawal, apiAddPayoutMethod, apiSetDefaultPayoutMethod, apiRemovePayoutMethod,
+  MOMO_NETWORKS, GHANA_BANK_CODES, type NewPayoutMethodInput,
+} from '../lib/api/queries/payouts'
 
 export const Route = createFileRoute('/studio/payouts')({
   component: PayoutsComponent,
@@ -21,11 +25,16 @@ const cedis0 = (n: number) => `₵${n.toLocaleString('en-US')}`
 
 const TYPE_FILTERS: ('All' | PayoutType)[] = ['All', 'Sale', 'Royalty', 'Tip', 'Cash-out']
 
+const EMPTY: Payouts = {
+  available: 0, pending: 0, thisMonth: 0, thisMonthDelta: 0, lifetime: 0, since: '',
+  earnings: [], bySource: { sales: 0, royalties: 0, tips: 0 }, methods: [], transactions: [],
+}
+
 function PayoutsComponent() {
   const { toast } = useToast()
-  const base = useMemo(() => getPayouts(), [])
-  const studio = useStudio()
-  const { balance: available, transactions: txns, methods } = studio
+  const queryClient = useQueryClient()
+  const { data: base = EMPTY } = useQuery(payoutsQuery())
+  const { available, transactions: txns, methods } = base
   const [withdrawOpen, setWithdrawOpen] = useState(false)
   const [addOpen, setAddOpen] = useState(false)
 
@@ -36,18 +45,36 @@ function PayoutsComponent() {
   const daysToFri = daysUntilFriday()
   const nextPayout = daysToFri === 0 ? 'Next payout today · Friday' : `Next payout in ${daysToFri} day${daysToFri > 1 ? 's' : ''} · Friday`
 
-  const withdraw = (amount: number, method: PayoutMethod) => {
-    studio.withdraw(amount, method)
-    setWithdrawOpen(false)
-    toast(`Withdrawal of ${cedis2(amount)} to ${method.label} requested`, 'success')
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: payoutsQuery().queryKey })
+
+  const withdraw = async (amount: number, method: PayoutMethod) => {
+    try {
+      await apiRequestWithdrawal(amount, method.id)
+      await invalidate()
+      setWithdrawOpen(false)
+      toast(`Withdrawal of ${cedis2(amount)} to ${method.label} requested`, 'success')
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Withdrawal failed', 'error')
+    }
   }
 
-  const setDefaultMethod = (id: string) => studio.setDefaultMethod(id)
-  const removeMethod = (id: string) => studio.removeMethod(id)
-  const addMethod = (m: Omit<PayoutMethod, 'id' | 'isDefault'>) => {
-    studio.addMethod(m)
-    setAddOpen(false)
-    toast(`${m.label} added`, 'success')
+  const setDefaultMethod = async (id: string) => {
+    try { await apiSetDefaultPayoutMethod(id); await invalidate() }
+    catch (e) { toast(e instanceof Error ? e.message : 'Could not set default', 'error') }
+  }
+  const removeMethod = async (id: string) => {
+    try { await apiRemovePayoutMethod(id); await invalidate() }
+    catch (e) { toast(e instanceof Error ? e.message : 'Could not remove method', 'error') }
+  }
+  const addMethod = async (input: NewPayoutMethodInput) => {
+    try {
+      await apiAddPayoutMethod(input)
+      await invalidate()
+      setAddOpen(false)
+      toast(`${input.label} added`, 'success')
+    } catch (e) {
+      toast(e instanceof Error ? e.message : 'Could not add method', 'error')
+    }
   }
 
   const filtered = txns.filter((t) =>
@@ -328,13 +355,44 @@ function WithdrawModal({ isOpen, onClose, max, methods, onConfirm }: {
   )
 }
 
-function AddMethodModal({ isOpen, onClose, onAdd }: { isOpen: boolean; onClose: () => void; onAdd: (m: { label: string; detail: string; kind: MethodKind }) => void }) {
-  const [kind, setKind] = useState<MethodKind>('momo')
-  const [label, setLabel] = useState('')
-  const [detail, setDetail] = useState('')
-  const valid = label.trim() && detail.trim()
+const ADD_METHOD_INPUT = 'w-full h-12 rounded-xl bg-white/5 border border-white/10 px-4 text-white placeholder:text-white/20 focus:outline-none focus:border-beatz-green/60'
 
-  const reset = () => { setKind('momo'); setLabel(''); setDetail('') }
+function AddMethodModal({ isOpen, onClose, onAdd }: {
+  isOpen: boolean; onClose: () => void; onAdd: (input: NewPayoutMethodInput) => void
+}) {
+  const [kind, setKind] = useState<'momo' | 'bank'>('momo')
+  const [network, setNetwork] = useState(MOMO_NETWORKS[0].value)
+  const [wallet, setWallet] = useState('')
+  const [bankCode, setBankCode] = useState(GHANA_BANK_CODES[0].code)
+  const [accountName, setAccountName] = useState('')
+  const [accountNumber, setAccountNumber] = useState('')
+
+  const momoValid = wallet.trim() !== ''
+  const bankValid = accountName.trim() !== '' && accountNumber.trim() !== ''
+  const valid = kind === 'momo' ? momoValid : bankValid
+
+  const reset = () => {
+    setKind('momo'); setNetwork(MOMO_NETWORKS[0].value); setWallet('')
+    setBankCode(GHANA_BANK_CODES[0].code); setAccountName(''); setAccountNumber('')
+  }
+
+  const submit = () => {
+    if (!valid) return
+    if (kind === 'momo') {
+      const label = `${MOMO_NETWORKS.find((n) => n.value === network)!.label} MoMo`
+      onAdd({
+        kind, label, detail: wallet.trim(), network, walletNumber: wallet.trim(),
+        bankName: null, bankCode: null, accountName: null, accountNumber: null,
+      })
+    } else {
+      const bank = GHANA_BANK_CODES.find((b) => b.code === bankCode)!
+      onAdd({
+        kind, label: bank.name, detail: accountNumber.trim(), network: null, walletNumber: null,
+        bankName: bank.name, bankCode, accountName: accountName.trim(), accountNumber: accountNumber.trim(),
+      })
+    }
+    reset()
+  }
 
   return (
     <Modal isOpen={isOpen} onClose={onClose} title="Add payout method">
@@ -347,11 +405,30 @@ function AddMethodModal({ isOpen, onClose, onAdd }: { isOpen: boolean; onClose: 
             </button>
           ))}
         </div>
-        <input value={label} onChange={(e) => setLabel(e.target.value)} placeholder={kind === 'momo' ? 'Provider (e.g. MTN MoMo)' : 'Bank name'}
-          className="w-full h-12 rounded-xl bg-white/5 border border-white/10 px-4 text-white placeholder:text-white/20 focus:outline-none focus:border-beatz-green/60" />
-        <input value={detail} onChange={(e) => setDetail(e.target.value)} placeholder={kind === 'momo' ? 'Phone number' : 'Account number'}
-          className="w-full h-12 rounded-xl bg-white/5 border border-white/10 px-4 text-white placeholder:text-white/20 focus:outline-none focus:border-beatz-green/60" />
-        <button onClick={() => { if (valid) { onAdd({ label: label.trim(), detail: detail.trim(), kind }); reset() } }} disabled={!valid}
+
+        {kind === 'momo' ? (
+          <>
+            <select value={network} onChange={(e) => setNetwork(e.target.value)}
+              className={cn(ADD_METHOD_INPUT, 'appearance-none cursor-pointer')}>
+              {MOMO_NETWORKS.map((n) => <option key={n.value} value={n.value}>{n.label}</option>)}
+            </select>
+            <input value={wallet} onChange={(e) => setWallet(e.target.value)} placeholder="Wallet number"
+              className={ADD_METHOD_INPUT} />
+          </>
+        ) : (
+          <>
+            <select value={bankCode} onChange={(e) => setBankCode(e.target.value)}
+              className={cn(ADD_METHOD_INPUT, 'appearance-none cursor-pointer')}>
+              {GHANA_BANK_CODES.map((b) => <option key={b.code} value={b.code}>{b.name}</option>)}
+            </select>
+            <input value={accountName} onChange={(e) => setAccountName(e.target.value)} placeholder="Account name"
+              className={ADD_METHOD_INPUT} />
+            <input value={accountNumber} onChange={(e) => setAccountNumber(e.target.value)} placeholder="Account number"
+              className={ADD_METHOD_INPUT} />
+          </>
+        )}
+
+        <button onClick={submit} disabled={!valid}
           className="h-12 rounded-full bg-beatz-green text-black font-bold hover:scale-[1.02] transition-transform disabled:opacity-40 disabled:hover:scale-100">
           Add method
         </button>
