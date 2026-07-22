@@ -39,6 +39,19 @@
 
     <dependencyManagement>
         <dependencies>
+            <!-- Jackson BOM pin (imported BEFORE quarkus-bom so it wins): quarkus-bom
+                 3.37.3 ships jackson 2.22.0, whose jackson-core carries a HIGH advisory
+                 GHSA-r7wm-3cxj-wff9 (async parser maxNumberLength bypass), fixed in 2.22.1.
+                 Jackson is the app's JSON serializer (reachable), so this is a real patch,
+                 not a suppression. Importing the whole jackson-bom keeps core/databind/
+                 annotations aligned. Remove once quarkus-bom ships jackson >= 2.22.1. -->
+            <dependency>
+                <groupId>com.fasterxml.jackson</groupId>
+                <artifactId>jackson-bom</artifactId>
+                <version>2.22.1</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
             <dependency>
                 <groupId>${quarkus.platform.group-id}</groupId>
                 <artifactId>${quarkus.platform.artifact-id}</artifactId>
