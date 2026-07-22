@@ -126,7 +126,7 @@ function NewEpisode() {
               className="w-full rounded-2xl border-2 border-dashed border-gray-300 dark:border-white/15 flex flex-col items-center justify-center gap-3 py-16 hover:border-beatz-green/60 transition-colors">
               <Upload size={30} className="text-beatz-green" />
               <span className="text-lg font-bold text-beatz-dark-bg dark:text-white">Drop episode audio</span>
-              <span className="text-xs text-gray-400 dark:text-gray-500">MP3, WAV or M4A · up to 500 MB</span>
+              <span className="text-xs text-gray-400 dark:text-gray-500">WAV or FLAC · up to 500 MB</span>
             </button>
           ) : (
             <div className={cn(CARD, 'flex items-center gap-4')}>
