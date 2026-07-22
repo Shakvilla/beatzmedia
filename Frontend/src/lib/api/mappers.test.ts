@@ -522,3 +522,45 @@ describe('toStudioEpisode', () => {
       status: 'draft', premium: false, price: '0', publishedAt: 'x', plays: 0 }).price).toBe(0)
   })
 })
+
+import { toPayouts, toPayoutMethod, toPayoutTxn } from './mappers'
+
+describe('toPayoutTxn', () => {
+  it('maps a sale (gross present) with money as numbers', () => {
+    expect(toPayoutTxn({ id: 't1', date: 'May 02', source: 'Track sale', type: 'Sale',
+      gross: 350, net: 245, status: 'cleared' })).toEqual({
+      id: 't1', date: 'May 02', source: 'Track sale', type: 'Sale', gross: 350, net: 245, status: 'cleared' })
+  })
+  it('keeps gross null for a cash-out and coerces string money', () => {
+    const r = toPayoutTxn({ id: 't4', date: 'Apr 28', source: 'Withdrawal', type: 'Cash-out',
+      gross: null, net: '-5000', status: 'paid' })
+    expect(r.gross).toBeNull()
+    expect(r.net).toBe(-5000)
+  })
+})
+
+describe('toPayoutMethod', () => {
+  it('maps id/label/detail/kind/isDefault', () => {
+    expect(toPayoutMethod({ id: 'm1', label: 'MTN MoMo', detail: '0244 ... 9210', kind: 'momo', isDefault: true }))
+      .toEqual({ id: 'm1', label: 'MTN MoMo', detail: '0244 ... 9210', kind: 'momo', isDefault: true })
+  })
+})
+
+describe('toPayouts', () => {
+  it('maps the whole view, coercing money and nested lists', () => {
+    const wire = {
+      available: 18420.5, pending: 1240.8, thisMonth: 21680, thisMonthDelta: 24, lifetime: 142490,
+      since: 'Jan 2024',
+      earnings: [{ label: 'May', value: 21680 }],
+      bySource: { sales: 12400, royalties: 6420, tips: 2860 },
+      methods: [{ id: 'm1', label: 'MTN MoMo', detail: '0244', kind: 'momo', isDefault: true }],
+      transactions: [{ id: 't1', date: 'May 02', source: 'Sale', type: 'Sale', gross: 350, net: 245, status: 'cleared' }],
+    }
+    const p = toPayouts(wire)
+    expect(p.available).toBe(18420.5)
+    expect(p.earnings[0]).toEqual({ label: 'May', value: 21680 })
+    expect(p.bySource).toEqual({ sales: 12400, royalties: 6420, tips: 2860 })
+    expect(p.methods[0].id).toBe('m1')
+    expect(p.transactions[0].net).toBe(245)
+  })
+})

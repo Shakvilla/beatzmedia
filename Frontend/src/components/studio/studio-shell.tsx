@@ -4,8 +4,14 @@ import { useEffect, useState } from 'react'
 import { Home, Upload, LineChart, Users, Wallet, Disc3, BadgeCheck, ArrowLeft, Settings, Menu, X, Mic, type LucideIcon } from 'lucide-react'
 import { cn } from '../../utils/cn'
 import { studioArtist } from '../../lib/studio-data'
-import { initialsOf } from '../../features/studio/studio-context'
 import { studioProfileQuery } from '../../lib/api/queries/studio'
+
+/** Two-letter monogram from a display name. */
+function initialsOf(name: string): string {
+  const parts = name.trim().split(/\s+/).filter(Boolean)
+  if (parts.length === 0) return '?'
+  return (parts[0][0] + (parts[1]?.[0] ?? '')).toUpperCase()
+}
 
 const NAV: { to: string; icon: LucideIcon; label: string }[] = [
   { to: '/studio', icon: Home, label: 'Overview' },
