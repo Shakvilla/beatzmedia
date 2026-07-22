@@ -26,3 +26,38 @@ vulnerabilities:
       application. Temporary suppression pending a Red Hat UBI9 rebuild carrying
       python3 >= 3.9.25-7.el9_8.2.
     expired_at: 2026-08-16
+  - id: CVE-2026-58016
+    # HIGH — integer underflow in glib gio/gdbusintrospection.c (D-Bus introspection
+    # XML parsing). Ships in the Red Hat UBI9 base image (package glib2,
+    # 2.68.4-19.el9_8.1); fixed in 2.68.4-19.el9_8.2, pending a Red Hat rebuild of
+    # registry.access.redhat.com/ubi9/openjdk-25-runtime.
+    #
+    # Not reachable from beatzmedia: the JVM service never uses glib/GDBus; glib2 is
+    # present only as a transitive base-image OS package. Newly disclosed (master last
+    # scanned clean before 2026-07-22), so it affects every branch equally — not
+    # introduced by any application change.
+    #
+    # Remove once the base image ships glib2 >= 2.68.4-19.el9_8.2 (bump the tag in
+    # src/main/docker/Dockerfile.jvm and delete this block).
+    statement: >-
+      Base-image-only OS package (glib2); GDBus introspection not invoked by the
+      application. Temporary suppression pending a Red Hat UBI9 rebuild carrying
+      glib2 >= 2.68.4-19.el9_8.2.
+    expired_at: 2026-08-16
+  - id: CVE-2026-54369
+    # HIGH — symlink-traversal privilege escalation via libacl. Ships in the Red Hat
+    # UBI9 base image (package libacl, 2.3.1-4.el9); fixed in 2.4.0-1.el9_8, pending a
+    # Red Hat rebuild of registry.access.redhat.com/ubi9/openjdk-25-runtime.
+    #
+    # Not reachable from beatzmedia: the JVM service performs no setfacl/ACL symlink
+    # operations; libacl is present only as a transitive base-image OS package. Newly
+    # disclosed (master last scanned clean before 2026-07-22), so it affects every
+    # branch equally — not introduced by any application change.
+    #
+    # Remove once the base image ships libacl >= 2.4.0-1.el9_8 (bump the tag in
+    # src/main/docker/Dockerfile.jvm and delete this block).
+    statement: >-
+      Base-image-only OS package (libacl); ACL/symlink operations not performed by
+      the application. Temporary suppression pending a Red Hat UBI9 rebuild carrying
+      libacl >= 2.4.0-1.el9_8.
+    expired_at: 2026-08-16
