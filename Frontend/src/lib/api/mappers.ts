@@ -34,6 +34,7 @@ import type {
 } from '../studio-analytics'
 import type { StudioProfile, StudioSettings, StudioRelease, StudioPodcastShow, StudioEpisode, EpisodeStatus } from '../studio-data'
 import type { UploadedTrack } from '../../features/studio/release-draft-context'
+import type { Payouts, PayoutMethod, PayoutTxn, PayoutType, PayoutStatus, MethodKind } from '../studio-payouts'
 
 export interface ArtistWire {
   id: string
@@ -654,5 +655,40 @@ export function toAppNotification(wire: AppNotificationWire): AppNotification {
     time: wire.time,
     read: wire.read,
     to: wire.to ?? undefined,
+  }
+}
+
+// ── Studio payouts ────────────────────────────────────────────────
+export interface PayoutMethodWire { id: string; label: string; detail: string; kind: string; isDefault: boolean }
+export function toPayoutMethod(w: PayoutMethodWire): PayoutMethod {
+  return { id: w.id, label: w.label, detail: w.detail, kind: w.kind as MethodKind, isDefault: w.isDefault }
+}
+
+export interface PayoutTxnWire {
+  id: string; date: string; source: string; type: string
+  gross: number | string | null; net: number | string; status: string
+}
+export function toPayoutTxn(w: PayoutTxnWire): PayoutTxn {
+  return {
+    id: w.id, date: w.date, source: w.source, type: w.type as PayoutType,
+    gross: w.gross === null ? null : Number(w.gross), net: Number(w.net), status: w.status as PayoutStatus,
+  }
+}
+
+export interface PayoutsWire {
+  available: number | string; pending: number | string; thisMonth: number | string
+  thisMonthDelta: number; lifetime: number | string; since: string
+  earnings: { label: string; value: number | string }[]
+  bySource: { sales: number | string; royalties: number | string; tips: number | string }
+  methods: PayoutMethodWire[]; transactions: PayoutTxnWire[]
+}
+export function toPayouts(w: PayoutsWire): Payouts {
+  return {
+    available: Number(w.available), pending: Number(w.pending), thisMonth: Number(w.thisMonth),
+    thisMonthDelta: w.thisMonthDelta, lifetime: Number(w.lifetime), since: w.since,
+    earnings: w.earnings.map((e) => ({ label: e.label, value: Number(e.value) })),
+    bySource: { sales: Number(w.bySource.sales), royalties: Number(w.bySource.royalties), tips: Number(w.bySource.tips) },
+    methods: w.methods.map(toPayoutMethod),
+    transactions: w.transactions.map(toPayoutTxn),
   }
 }
