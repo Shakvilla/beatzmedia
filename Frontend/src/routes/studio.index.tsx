@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate, Link } from '@tanstack/react-router'
-import { useSuspenseQuery } from '@tanstack/react-query'
+import { useSuspenseQuery, useQuery } from '@tanstack/react-query'
 import {
   Plus, ArrowUp, ArrowRight, ArrowUpRight, Wallet, Headphones, Users,
   Tag, Heart, Music2, CalendarDays, BadgeCheck, Disc3, type LucideIcon,
@@ -8,8 +8,8 @@ import { cn } from '../utils/cn'
 import { getAnalytics, getAudience, formatCompact } from '../lib/studio-analytics'
 import { getPayouts, type PayoutTxn } from '../lib/studio-payouts'
 import { studioArtist } from '../lib/studio-data'
-import { useStudio } from '../features/studio/studio-context'
 import { studioProfileQuery, studioSettingsQuery, studioReleasesQuery } from '../lib/api/queries/studio'
+import { payoutsQuery } from '../lib/api/queries/payouts'
 
 export const Route = createFileRoute('/studio/')({
   loader: ({ context: { queryClient } }) => Promise.all([
@@ -35,7 +35,9 @@ function OverviewComponent() {
   const analytics = getAnalytics('28d')
   const audience = getAudience('28d')
   const payoutStats = getPayouts()
-  const { balance, transactions } = useStudio()
+  const { data: payouts } = useQuery(payoutsQuery())
+  const balance = payouts?.available ?? 0
+  const transactions = payouts?.transactions ?? []
   const { data: profile } = useSuspenseQuery(studioProfileQuery())
   const { data: settings } = useSuspenseQuery(studioSettingsQuery())
   const { data: releases } = useSuspenseQuery(studioReleasesQuery())
