@@ -692,3 +692,24 @@ export function toPayouts(w: PayoutsWire): Payouts {
     transactions: w.transactions.map(toPayoutTxn),
   }
 }
+
+// ── Admin support ─────────────────────────────────────────────────
+import type { SupportTicket, SupportMessage, TicketStatus, TicketPriority } from '../admin-data'
+import { relativeTime, relativeTimeAgo } from '../format'
+
+export interface SupportMessageWire { id: string; from: string; author: string; text: string; time: string }
+export function toSupportMessage(w: SupportMessageWire, now?: number): SupportMessage {
+  return { id: w.id, from: w.from as 'user' | 'agent', author: w.author, text: w.text, time: relativeTimeAgo(w.time, now) }
+}
+
+export interface SupportTicketWire {
+  id: string; subject: string; requester: string; channel: string
+  priority: string; status: string; age: string; messages: SupportMessageWire[]
+}
+export function toSupportTicket(w: SupportTicketWire, now?: number): SupportTicket {
+  return {
+    id: w.id, subject: w.subject, requester: w.requester, channel: w.channel,
+    priority: w.priority as TicketPriority, status: w.status as TicketStatus,
+    age: relativeTime(w.age, now), messages: w.messages.map((m) => toSupportMessage(m, now)),
+  }
+}
