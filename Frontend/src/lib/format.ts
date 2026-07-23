@@ -45,3 +45,21 @@ export function formatTotalDuration(totalSeconds: number): string {
   const rest = minutes % 60
   return rest ? `${hours} hr ${rest} min` : `${hours} hr`
 }
+
+/** ISO-8601 → compact relative age: "just now" | "5m" | "2h" | "3d". */
+export function relativeTime(iso: string, now: number = Date.now()): string {
+  const diffMs = now - Date.parse(iso)
+  const sec = Math.max(0, Math.floor(diffMs / 1000))
+  if (sec < 60) return 'just now'
+  const min = Math.floor(sec / 60)
+  if (min < 60) return `${min}m`
+  const hr = Math.floor(min / 60)
+  if (hr < 24) return `${hr}h`
+  return `${Math.floor(hr / 24)}d`
+}
+
+/** Like relativeTime but suffixed " ago" (except "just now"): "2h ago" | "just now". */
+export function relativeTimeAgo(iso: string, now: number = Date.now()): string {
+  const r = relativeTime(iso, now)
+  return r === 'just now' ? r : `${r} ago`
+}
