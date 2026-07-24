@@ -11,11 +11,16 @@ import {
   toTicketTier,
   toPodcast,
   toPodcastEpisode,
+  toAdminUserRow,
+  toUsersList,
+  toUserDetail,
   type StoreItemWire,
   type EventWire,
   type TicketTierWire,
   type PodcastWire,
   type PodcastEpisodeWire,
+  type PagedUsersWire,
+  type UserDetailWire,
 } from './mappers'
 
 describe('toArtist', () => {
@@ -562,5 +567,42 @@ describe('toPayouts', () => {
     expect(p.bySource).toEqual({ sales: 12400, royalties: 6420, tips: 2860 })
     expect(p.methods[0].id).toBe('m1')
     expect(p.transactions[0].net).toBe(245)
+  })
+})
+
+describe('admin users mappers', () => {
+  const rowWire = {
+    id: 'u1', name: 'Ama Boateng', initial: 'AB', email: 'ama@x.com',
+    role: 'artist', verified: true, joined: 'Jan 2025', lastActive: '2h', status: 'active',
+  }
+
+  it('toAdminUserRow maps 1:1 with narrowed unions', () => {
+    const r = toAdminUserRow(rowWire)
+    expect(r).toEqual({
+      id: 'u1', name: 'Ama Boateng', initial: 'AB', email: 'ama@x.com',
+      role: 'artist', verified: true, joined: 'Jan 2025', lastActive: '2h', status: 'active',
+    })
+  })
+
+  it('toUsersList maps items + counts', () => {
+    const wire: PagedUsersWire = {
+      items: [rowWire], page: 1, size: 100, total: 1,
+      counts: { all: 10, fans: 7, artists: 3, verified: 2, suspended: 1 },
+    }
+    const list = toUsersList(wire)
+    expect(list.users).toHaveLength(1)
+    expect(list.users[0].name).toBe('Ama Boateng')
+    expect(list.counts).toEqual({ all: 10, fans: 7, artists: 3, verified: 2, suspended: 1 })
+  })
+
+  it('toUserDetail projects summary + actionLog, ignoring activity/orders/devices', () => {
+    const wire: UserDetailWire = {
+      summary: rowWire,
+      activity: [], orders: [], devices: [],
+      actionLog: [{ id: 'l1', action: 'Verified artist', by: 'Admin', time: '1h ago' }],
+    }
+    const d = toUserDetail(wire)
+    expect(d.summary.id).toBe('u1')
+    expect(d.actionLog).toEqual([{ id: 'l1', action: 'Verified artist', by: 'Admin', time: '1h ago' }])
   })
 })

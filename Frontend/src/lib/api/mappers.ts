@@ -35,6 +35,7 @@ import type {
 import type { StudioProfile, StudioSettings, StudioRelease, StudioPodcastShow, StudioEpisode, EpisodeStatus } from '../studio-data'
 import type { UploadedTrack } from '../../features/studio/release-draft-context'
 import type { Payouts, PayoutMethod, PayoutTxn, PayoutType, PayoutStatus, MethodKind } from '../studio-payouts'
+import type { AdminUserRow, UserRole, UserStatus, UserActionLog } from '../admin-data'
 
 export interface ArtistWire {
   id: string
@@ -691,4 +692,67 @@ export function toPayouts(w: PayoutsWire): Payouts {
     methods: w.methods.map(toPayoutMethod),
     transactions: w.transactions.map(toPayoutTxn),
   }
+}
+
+// ── Admin users (AdminUsersResource) ──────────────────────────────────────────
+export interface AdminUserRowWire {
+  id: string
+  name: string
+  initial: string
+  email: string
+  role: string
+  verified: boolean
+  joined: string
+  lastActive: string
+  status: string
+}
+export interface UserCountsWire { all: number; fans: number; artists: number; verified: number; suspended: number }
+export interface PagedUsersWire {
+  items: AdminUserRowWire[]
+  page: number
+  size: number
+  total: number
+  counts: UserCountsWire
+}
+export interface UserActionLogWire { id: string; action: string; by: string; time: string }
+export interface UserDetailWire {
+  summary: AdminUserRowWire
+  activity: unknown[]
+  orders: unknown[]
+  devices: unknown[]
+  actionLog: UserActionLogWire[]
+}
+
+export interface UserCounts { all: number; fans: number; artists: number; verified: number; suspended: number }
+export interface AdminUsersList { users: AdminUserRow[]; counts: UserCounts }
+export interface AdminUserDetailData { summary: AdminUserRow; actionLog: UserActionLog[] }
+
+export function toAdminUserRow(w: AdminUserRowWire): AdminUserRow {
+  return {
+    id: w.id,
+    name: w.name,
+    initial: w.initial,
+    email: w.email,
+    role: w.role as UserRole,
+    verified: w.verified,
+    joined: w.joined,
+    lastActive: w.lastActive,
+    status: w.status as UserStatus,
+  }
+}
+
+export function toUserCounts(w: UserCountsWire): UserCounts {
+  return { all: w.all, fans: w.fans, artists: w.artists, verified: w.verified, suspended: w.suspended }
+}
+
+export function toUsersList(w: PagedUsersWire): AdminUsersList {
+  return { users: w.items.map(toAdminUserRow), counts: toUserCounts(w.counts) }
+}
+
+export function toUserActionLog(w: UserActionLogWire): UserActionLog {
+  return { id: w.id, action: w.action, by: w.by, time: w.time }
+}
+
+export function toUserDetail(w: UserDetailWire): AdminUserDetailData {
+  return { summary: toAdminUserRow(w.summary), actionLog: w.actionLog.map(toUserActionLog) }
 }
