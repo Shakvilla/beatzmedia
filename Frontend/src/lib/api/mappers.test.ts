@@ -11,6 +11,14 @@ import {
   toTicketTier,
   toPodcast,
   toPodcastEpisode,
+  toWizardTrack,
+  toStudioShow,
+  toStudioEpisode,
+  toPayouts,
+  toPayoutMethod,
+  toPayoutTxn,
+  toSupportTicket,
+  toSupportMessage,
   type StoreItemWire,
   type EventWire,
   type TicketTierWire,
@@ -473,8 +481,6 @@ describe('toPodcastEpisode', () => {
   })
 })
 
-import { toWizardTrack } from './mappers'
-
 describe('toWizardTrack', () => {
   it('unwraps MoneyView price and passes status/duration through', () => {
     const t = toWizardTrack({
@@ -499,8 +505,6 @@ describe('toWizardTrack', () => {
   })
 })
 
-import { toStudioShow, toStudioEpisode } from './mappers'
-
 describe('toStudioShow', () => {
   it('maps id/title/category 1:1', () => {
     expect(toStudioShow({ id: 'sh1', title: 'Konongo Diaries', category: 'Storytelling' }))
@@ -522,8 +526,6 @@ describe('toStudioEpisode', () => {
       status: 'draft', premium: false, price: '0', publishedAt: 'x', plays: 0 }).price).toBe(0)
   })
 })
-
-import { toPayouts, toPayoutMethod, toPayoutTxn } from './mappers'
 
 describe('toPayoutTxn', () => {
   it('maps a sale (gross present) with money as numbers', () => {
@@ -562,5 +564,25 @@ describe('toPayouts', () => {
     expect(p.bySource).toEqual({ sales: 12400, royalties: 6420, tips: 2860 })
     expect(p.methods[0].id).toBe('m1')
     expect(p.transactions[0].net).toBe(245)
+  })
+})
+
+const NOW = Date.parse('2026-07-22T12:00:00Z')
+
+describe('toSupportMessage', () => {
+  it('maps fields + relative time', () => {
+    expect(toSupportMessage({ id: 'm1', from: 'agent', author: 'Yaa', text: 'hi',
+      time: '2026-07-22T10:00:00Z' }, NOW)).toEqual({ id: 'm1', from: 'agent', author: 'Yaa', text: 'hi', time: '2h ago' })
+  })
+})
+
+describe('toSupportTicket', () => {
+  it('maps fields, relative age, nested messages', () => {
+    const t = toSupportTicket({ id: 't1', subject: 'Payout', requester: 'Black Sherif', channel: 'email',
+      priority: 'high', status: 'open', age: '2026-07-22T10:00:00Z',
+      messages: [{ id: 'm1', from: 'user', author: 'BS', text: 'q', time: '2026-07-22T11:59:40Z' }] }, NOW)
+    expect(t).toEqual({ id: 't1', subject: 'Payout', requester: 'Black Sherif', channel: 'email',
+      priority: 'high', status: 'open', age: '2h',
+      messages: [{ id: 'm1', from: 'user', author: 'BS', text: 'q', time: 'just now' }] })
   })
 })
