@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useEffect, useMemo, useState } from 'react'
+import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Search, Send, Check, UserPlus } from 'lucide-react'
 import { cn } from '../utils/cn'
@@ -39,16 +39,11 @@ function AdminSupport() {
   )
   const active = tickets.find((t) => t.id === activeId) ?? list[0]
 
-  useEffect(() => {
-    // Seed the active ticket once real data arrives, so a status change that drops it out of the
-    // filtered list doesn't fall back to a different ticket.
-    if (!activeId && list[0]) setActiveId(list[0].id) // eslint-disable-line react-hooks/set-state-in-effect
-  }, [activeId, list])
-
   const invalidate = () => queryClient.invalidateQueries({ queryKey: supportTicketsQuery().queryKey })
 
   const send = async () => {
     if (!reply.trim() || !active || submitting) return
+    setActiveId(active.id)
     setSubmitting(true)
     try {
       await apiReplyToTicket(active.id, reply.trim())
@@ -60,11 +55,13 @@ function AdminSupport() {
   }
   const assign = async () => {
     if (!active || !account) return
+    setActiveId(active.id)
     try { await apiAssignTicket(active.id, account.id); await invalidate(); toast('Assigned to you', 'success') }
     catch (e) { toast(e instanceof Error ? e.message : 'Could not assign', 'error') }
   }
   const resolve = async () => {
     if (!active || submitting) return
+    setActiveId(active.id)
     setSubmitting(true)
     try { await apiResolveTicket(active.id); await invalidate(); toast('Ticket resolved', 'success') }
     catch (e) { toast(e instanceof Error ? e.message : 'Could not resolve', 'error') }
