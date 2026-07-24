@@ -1,5 +1,6 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ArrowLeft, BadgeCheck, MoreHorizontal, Ban, RotateCcw, KeyRound, LogIn, Mail, Download,
   Monitor, Clock, ShieldCheck,
@@ -7,7 +8,9 @@ import {
 import { cn } from '../utils/cn'
 import { Modal } from '../components/ui/modal'
 import { useToast } from '../components/ui/toast-provider'
-import { getAdminUsers, getUserDetail, type AdminUserRow, type UserStatus, type UserActionLog } from '../lib/admin-data'
+import { getUserDetail, type UserStatus } from '../lib/admin-data'
+import { userDetailQuery, usersQuery, apiVerifyUser, apiSuspendUser, apiReactivateUser } from '../lib/api/queries/admin-users'
+import { AdminLoadError } from '../components/admin/load-error'
 
 export const Route = createFileRoute('/admin/users/$userId')({
   component: AdminUserDetail,
@@ -20,18 +23,28 @@ const cedis = (n: number) => `₵${n.toLocaleString('en-US', { minimumFractionDi
 function AdminUserDetail() {
   const { userId } = Route.useParams()
   const { toast } = useToast()
-  const found = useMemo(() => getAdminUsers().find((u) => u.id === userId), [userId])
+  const queryClient = useQueryClient()
+  const { data, isLoading, isError, refetch } = useQuery(userDetailQuery(userId))
   const detail = useMemo(() => getUserDetail(), [])
 
-  const [user, setUser] = useState<AdminUserRow | undefined>(found)
   const [suspendOpen, setSuspendOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
-  const [log, setLog] = useState<UserActionLog[]>(() =>
-    found ? [{ id: 'l0', action: `Joined as ${found.role}`, by: 'system', time: found.joined }] : [],
-  )
+
+  if (isError) {
+    return (
+      <div className="py-24">
+        <AdminLoadError label="Couldn't load this user." onRetry={() => refetch()} />
+      </div>
+    )
+  }
+
+  const user = data?.summary
+  const log = data?.actionLog ?? []
 
   if (!user) {
-    return (
+    return isLoading ? (
+      <div className="py-24 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</div>
+    ) : (
       <div className="flex flex-col items-center justify-center text-center gap-4 py-24">
         <p className="text-sm text-gray-500 dark:text-gray-300">User not found.</p>
         <Link to="/admin/users" className="h-10 px-5 rounded-full bg-beatz-green text-black font-bold text-sm flex items-center">Back to users</Link>
@@ -39,9 +52,17 @@ function AdminUserDetail() {
     )
   }
 
-  const addLog = (action: string) => setLog((l) => [{ id: `l-${Date.now()}`, action, by: 'Admin · Yaa', time: 'just now' }, ...l])
-  const setStatus = (status: UserStatus, action: string) => { setUser((u) => (u ? { ...u, status } : u)); addLog(action); toast(action, 'success') }
-  const verify = () => { setUser((u) => (u ? { ...u, verified: true } : u)); addLog('Verified artist'); toast(`${user.name} verified`, 'success') }
+  const invalidate = async () => {
+    await queryClient.invalidateQueries({ queryKey: userDetailQuery(userId).queryKey })
+    await queryClient.invalidateQueries({ queryKey: usersQuery().queryKey })
+  }
+  const runAction = async (fn: () => Promise<void>, okMsg: string, errMsg: string) => {
+    try { await fn(); await invalidate(); toast(okMsg, 'success') }
+    catch { toast(errMsg, 'error') }
+  }
+  const verify = () => runAction(() => apiVerifyUser(user.id), `${user.name} verified`, 'Could not verify user')
+  const reactivate = () => runAction(() => apiReactivateUser(user.id), 'Reactivated account', 'Could not reactivate user')
+  const suspend = (reason: string) => runAction(() => apiSuspendUser(user.id, reason), `Suspended · ${reason}`, 'Could not suspend user')
 
   const isArtist = user.role === 'artist'
   const stats = isArtist
@@ -73,7 +94,7 @@ function AdminUserDetail() {
               <button onClick={verify} className="h-10 px-4 rounded-full bg-beatz-green/10 text-beatz-green text-sm font-bold flex items-center gap-2 hover:bg-beatz-green/20 transition-colors"><BadgeCheck size={15} /> Verify</button>
             )}
             {user.status === 'suspended'
-              ? <button onClick={() => setStatus('active', 'Reactivated account')} className="h-10 px-4 rounded-full bg-gray-100 dark:bg-white/10 text-beatz-dark-bg dark:text-white text-sm font-bold flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors"><RotateCcw size={15} /> Reactivate</button>
+              ? <button onClick={reactivate} className="h-10 px-4 rounded-full bg-gray-100 dark:bg-white/10 text-beatz-dark-bg dark:text-white text-sm font-bold flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors"><RotateCcw size={15} /> Reactivate</button>
               : <button onClick={() => setSuspendOpen(true)} className="h-10 px-4 rounded-full bg-beatz-red/10 text-beatz-red text-sm font-bold flex items-center gap-2 hover:bg-beatz-red/20 transition-colors"><Ban size={15} /> Suspend</button>}
             <div className="relative">
               <button onClick={() => setMenuOpen((o) => !o)} aria-label="More" className="w-10 h-10 flex items-center justify-center rounded-full bg-gray-100 dark:bg-white/10 text-beatz-dark-bg dark:text-white hover:bg-gray-200 dark:hover:bg-white/15 transition-colors"><MoreHorizontal size={18} /></button>
@@ -81,10 +102,10 @@ function AdminUserDetail() {
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
                   <div className="absolute right-0 top-12 z-50 w-48 py-1 rounded-xl bg-white dark:bg-beatz-dark-surface-2 border border-gray-200 dark:border-white/10 shadow-xl">
-                    <MenuItem icon={LogIn} label="Log in as user" onClick={() => { addLog('Impersonated account'); toast('Opening an impersonation session', 'info'); setMenuOpen(false) }} />
-                    <MenuItem icon={KeyRound} label="Reset password" onClick={() => { addLog('Sent password reset'); toast('Password reset link sent', 'success'); setMenuOpen(false) }} />
+                    <MenuItem icon={LogIn} label="Log in as user" onClick={() => { toast('Opening an impersonation session', 'info'); setMenuOpen(false) }} />
+                    <MenuItem icon={KeyRound} label="Reset password" onClick={() => { toast('Password reset link sent', 'success'); setMenuOpen(false) }} />
                     <MenuItem icon={Mail} label="Email user" onClick={() => { toast(`Compose email to ${user.email}`, 'info'); setMenuOpen(false) }} />
-                    <MenuItem icon={Download} label="Export data (GDPR)" onClick={() => { addLog('Exported user data'); toast('Preparing data export', 'success'); setMenuOpen(false) }} />
+                    <MenuItem icon={Download} label="Export data (GDPR)" onClick={() => { toast('Preparing data export', 'success'); setMenuOpen(false) }} />
                   </div>
                 </>
               )}
@@ -168,7 +189,7 @@ function AdminUserDetail() {
       </div>
 
       <SuspendModal isOpen={suspendOpen} name={user.name} onClose={() => setSuspendOpen(false)}
-        onConfirm={(reason) => { setSuspendOpen(false); setStatus('suspended', `Suspended · ${reason}`) }} />
+        onConfirm={(reason) => { setSuspendOpen(false); suspend(reason) }} />
     </div>
   )
 }
