@@ -36,6 +36,7 @@ import type { StudioProfile, StudioSettings, StudioRelease, StudioPodcastShow, S
 import type { UploadedTrack } from '../../features/studio/release-draft-context'
 import type { Payouts, PayoutMethod, PayoutTxn, PayoutType, PayoutStatus, MethodKind } from '../studio-payouts'
 import type { AdminUserRow, UserRole, UserStatus, UserActionLog } from '../admin-data'
+import { relativeTimeAgo, monthYear } from '../format'
 
 export interface ArtistWire {
   id: string
@@ -727,7 +728,7 @@ export interface UserCounts { all: number; fans: number; artists: number; verifi
 export interface AdminUsersList { users: AdminUserRow[]; counts: UserCounts }
 export interface AdminUserDetailData { summary: AdminUserRow; actionLog: UserActionLog[] }
 
-export function toAdminUserRow(w: AdminUserRowWire): AdminUserRow {
+export function toAdminUserRow(w: AdminUserRowWire, now?: number): AdminUserRow {
   return {
     id: w.id,
     name: w.name,
@@ -735,8 +736,8 @@ export function toAdminUserRow(w: AdminUserRowWire): AdminUserRow {
     email: w.email,
     role: w.role as UserRole,
     verified: w.verified,
-    joined: w.joined,
-    lastActive: w.lastActive,
+    joined: monthYear(w.joined),
+    lastActive: relativeTimeAgo(w.lastActive, now),
     status: w.status as UserStatus,
   }
 }
@@ -745,14 +746,14 @@ export function toUserCounts(w: UserCountsWire): UserCounts {
   return { all: w.all, fans: w.fans, artists: w.artists, verified: w.verified, suspended: w.suspended }
 }
 
-export function toUsersList(w: PagedUsersWire): AdminUsersList {
-  return { users: w.items.map(toAdminUserRow), counts: toUserCounts(w.counts) }
+export function toUsersList(w: PagedUsersWire, now?: number): AdminUsersList {
+  return { users: w.items.map((r) => toAdminUserRow(r, now)), counts: toUserCounts(w.counts) }
 }
 
-export function toUserActionLog(w: UserActionLogWire): UserActionLog {
-  return { id: w.id, action: w.action, by: w.by, time: w.time }
+export function toUserActionLog(w: UserActionLogWire, now?: number): UserActionLog {
+  return { id: w.id, action: w.action, by: w.by, time: relativeTimeAgo(w.time, now) }
 }
 
-export function toUserDetail(w: UserDetailWire): AdminUserDetailData {
-  return { summary: toAdminUserRow(w.summary), actionLog: w.actionLog.map(toUserActionLog) }
+export function toUserDetail(w: UserDetailWire, now?: number): AdminUserDetailData {
+  return { summary: toAdminUserRow(w.summary, now), actionLog: w.actionLog.map((l) => toUserActionLog(l, now)) }
 }

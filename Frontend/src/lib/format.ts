@@ -45,3 +45,29 @@ export function formatTotalDuration(totalSeconds: number): string {
   const rest = minutes % 60
   return rest ? `${hours} hr ${rest} min` : `${hours} hr`
 }
+
+/** ISO-8601 → short relative bucket: "just now" | "5m" | "3h" | "2d". Empty string on unparseable. */
+export function relativeTime(iso: string, now: number = Date.now()): string {
+  const ms = Date.parse(iso)
+  if (!Number.isFinite(ms)) return ''
+  const sec = Math.max(0, Math.floor((now - ms) / 1000))
+  if (sec < 60) return 'just now'
+  const min = Math.floor(sec / 60)
+  if (min < 60) return `${min}m`
+  const hr = Math.floor(min / 60)
+  if (hr < 24) return `${hr}h`
+  return `${Math.floor(hr / 24)}d`
+}
+
+/** relativeTime with " ago" appended, except "just now" and the empty (unparseable) case. */
+export function relativeTimeAgo(iso: string, now?: number): string {
+  const r = relativeTime(iso, now)
+  return r === '' || r === 'just now' ? r : `${r} ago`
+}
+
+/** ISO-8601 → "Mon YYYY" (e.g. "Mar 2024"), matching the admin "joined" column. Empty string on unparseable. */
+export function monthYear(iso: string): string {
+  const ms = Date.parse(iso)
+  if (!Number.isFinite(ms)) return ''
+  return new Intl.DateTimeFormat('en-US', { month: 'short', year: 'numeric' }).format(new Date(ms))
+}
