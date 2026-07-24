@@ -11,6 +11,14 @@ import {
   toTicketTier,
   toPodcast,
   toPodcastEpisode,
+  toWizardTrack,
+  toStudioShow,
+  toStudioEpisode,
+  toPayouts,
+  toPayoutMethod,
+  toPayoutTxn,
+  toSupportTicket,
+  toSupportMessage,
   type StoreItemWire,
   type EventWire,
   type TicketTierWire,
@@ -473,8 +481,6 @@ describe('toPodcastEpisode', () => {
   })
 })
 
-import { toWizardTrack } from './mappers'
-
 describe('toWizardTrack', () => {
   it('unwraps MoneyView price and passes status/duration through', () => {
     const t = toWizardTrack({
@@ -499,8 +505,6 @@ describe('toWizardTrack', () => {
   })
 })
 
-import { toStudioShow, toStudioEpisode } from './mappers'
-
 describe('toStudioShow', () => {
   it('maps id/title/category 1:1', () => {
     expect(toStudioShow({ id: 'sh1', title: 'Konongo Diaries', category: 'Storytelling' }))
@@ -522,8 +526,6 @@ describe('toStudioEpisode', () => {
       status: 'draft', premium: false, price: '0', publishedAt: 'x', plays: 0 }).price).toBe(0)
   })
 })
-
-import { toPayouts, toPayoutMethod, toPayoutTxn } from './mappers'
 
 describe('toPayoutTxn', () => {
   it('maps a sale (gross present) with money as numbers', () => {
@@ -564,8 +566,6 @@ describe('toPayouts', () => {
     expect(p.transactions[0].net).toBe(245)
   })
 })
-
-import { toSupportTicket, toSupportMessage } from './mappers'
 
 const NOW = Date.parse('2026-07-22T12:00:00Z')
 

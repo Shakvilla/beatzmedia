@@ -35,6 +35,8 @@ import type {
 import type { StudioProfile, StudioSettings, StudioRelease, StudioPodcastShow, StudioEpisode, EpisodeStatus } from '../studio-data'
 import type { UploadedTrack } from '../../features/studio/release-draft-context'
 import type { Payouts, PayoutMethod, PayoutTxn, PayoutType, PayoutStatus, MethodKind } from '../studio-payouts'
+import type { SupportTicket, SupportMessage, TicketStatus, TicketPriority } from '../admin-data'
+import { relativeTime, relativeTimeAgo } from '../format'
 
 export interface ArtistWire {
   id: string
@@ -694,9 +696,6 @@ export function toPayouts(w: PayoutsWire): Payouts {
 }
 
 // ── Admin support ─────────────────────────────────────────────────
-import type { SupportTicket, SupportMessage, TicketStatus, TicketPriority } from '../admin-data'
-import { relativeTime, relativeTimeAgo } from '../format'
-
 export interface SupportMessageWire { id: string; from: string; author: string; text: string; time: string }
 export function toSupportMessage(w: SupportMessageWire, now?: number): SupportMessage {
   return { id: w.id, from: w.from as 'user' | 'agent', author: w.author, text: w.text, time: relativeTimeAgo(w.time, now) }
