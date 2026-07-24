@@ -52,6 +52,21 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
+            <!-- Netty BOM pin (imported BEFORE quarkus-bom so it wins): quarkus-bom
+                 3.37.3 ships Netty 4.1.135.Final, against which Trivy flags a batch of
+                 HIGH advisories disclosed 2026-07 — CVE-2026-59901 (netty-codec Bzip2Decoder
+                 infinite loop), CVE-2026-55851 (netty-codec-haproxy), and CVE-2026-55831 /
+                 -55833 / -56745 (netty-codec-http). All are fixed in 4.1.136.Final. Netty is
+                 the reachable transport under Quarkus REST/gRPC, so this is a real patch, not
+                 a suppression. Importing the whole netty-bom keeps every netty-* module
+                 aligned. Remove once quarkus-bom ships Netty >= 4.1.136.Final. -->
+            <dependency>
+                <groupId>io.netty</groupId>
+                <artifactId>netty-bom</artifactId>
+                <version>4.1.136.Final</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
             <dependency>
                 <groupId>${quarkus.platform.group-id}</groupId>
                 <artifactId>${quarkus.platform.artifact-id}</artifactId>
