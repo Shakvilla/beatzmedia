@@ -11,11 +11,16 @@ import {
   toTicketTier,
   toPodcast,
   toPodcastEpisode,
+  toAdminUserRow,
+  toUsersList,
+  toUserDetail,
   type StoreItemWire,
   type EventWire,
   type TicketTierWire,
   type PodcastWire,
   type PodcastEpisodeWire,
+  type PagedUsersWire,
+  type UserDetailWire,
 } from './mappers'
 
 describe('toArtist', () => {
@@ -562,5 +567,50 @@ describe('toPayouts', () => {
     expect(p.bySource).toEqual({ sales: 12400, royalties: 6420, tips: 2860 })
     expect(p.methods[0].id).toBe('m1')
     expect(p.transactions[0].net).toBe(245)
+  })
+})
+
+describe('admin users mappers', () => {
+  const NOW = Date.parse('2025-01-01T12:00:00Z')
+  const rowWire = {
+    id: 'u1', name: 'Ama Boateng', initial: 'AB', email: 'ama@x.com',
+    role: 'artist', verified: true,
+    joined: '2024-03-15T10:30:00Z', lastActive: '2025-01-01T10:00:00Z', status: 'active',
+  }
+
+  it('toAdminUserRow maps 1:1 with narrowed unions + formatted timestamps', () => {
+    const r = toAdminUserRow(rowWire, NOW)
+    expect(r).toEqual({
+      id: 'u1', name: 'Ama Boateng', initial: 'AB', email: 'ama@x.com',
+      role: 'artist', verified: true, joined: 'Mar 2024', lastActive: '2h ago', status: 'active',
+    })
+  })
+
+  it('toUsersList maps items + counts', () => {
+    const wire: PagedUsersWire = {
+      items: [rowWire], page: 1, size: 100, total: 1,
+      counts: { all: 10, fans: 7, artists: 3, verified: 2, suspended: 1 },
+    }
+    const list = toUsersList(wire, NOW)
+    expect(list.users).toHaveLength(1)
+    expect(list.users[0].name).toBe('Ama Boateng')
+    expect(list.users[0].joined).toBe('Mar 2024')
+    expect(list.users[0].lastActive).toBe('2h ago')
+    expect(list.counts).toEqual({ all: 10, fans: 7, artists: 3, verified: 2, suspended: 1 })
+  })
+
+  it('toUserDetail projects summary + formatted actionLog, ignoring activity/orders/devices', () => {
+    const wire: UserDetailWire = {
+      summary: rowWire,
+      activity: [{ junk: true }], orders: [{ junk: true }], devices: [{ junk: true }],
+      actionLog: [{ id: 'l1', action: 'Verified artist', by: 'Admin', time: '2025-01-01T11:00:00Z' }],
+    }
+    const d = toUserDetail(wire, NOW)
+    expect(d.summary.id).toBe('u1')
+    expect(d.summary.joined).toBe('Mar 2024')
+    expect(d.actionLog).toEqual([{ id: 'l1', action: 'Verified artist', by: 'Admin', time: '1h ago' }])
+    expect(d).not.toHaveProperty('activity')
+    expect(d).not.toHaveProperty('orders')
+    expect(d).not.toHaveProperty('devices')
   })
 })

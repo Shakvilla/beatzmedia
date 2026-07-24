@@ -1,9 +1,12 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Search, Download, MoreHorizontal, BadgeCheck, Ban, RotateCcw, Eye, Check } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
-import { getAdminUsers, USER_COUNTS, type AdminUserRow, type UserStatus } from '../lib/admin-data'
+import type { AdminUserRow, UserStatus } from '../lib/admin-data'
+import { usersQuery, apiVerifyUser, apiSuspendUser, apiReactivateUser } from '../lib/api/queries/admin-users'
+import { AdminLoadError } from '../components/admin/load-error'
 import { usePaged, Pagination } from '../components/admin/pagination'
 
 export const Route = createFileRoute('/admin/users')({
@@ -13,13 +16,6 @@ export const Route = createFileRoute('/admin/users')({
 const CARD = 'rounded-2xl bg-white dark:bg-beatz-dark-surface border border-gray-200 dark:border-transparent shadow-sm dark:shadow-none'
 
 type FilterKey = 'all' | 'fans' | 'artists' | 'verified' | 'suspended'
-const FILTERS: { key: FilterKey; label: string; count: number }[] = [
-  { key: 'all', label: 'All', count: USER_COUNTS.all },
-  { key: 'fans', label: 'Fans', count: USER_COUNTS.fans },
-  { key: 'artists', label: 'Artists', count: USER_COUNTS.artists },
-  { key: 'verified', label: 'Verified', count: USER_COUNTS.verified },
-  { key: 'suspended', label: 'Suspended', count: USER_COUNTS.suspended },
-]
 
 const matchesFilter = (u: AdminUserRow, f: FilterKey) =>
   f === 'all' ? true : f === 'fans' ? u.role === 'fan' : f === 'artists' ? u.role === 'artist' : f === 'verified' ? u.verified : u.status === 'suspended'
@@ -27,10 +23,22 @@ const matchesFilter = (u: AdminUserRow, f: FilterKey) =>
 function AdminUsers() {
   const { toast } = useToast()
   const navigate = useNavigate()
-  const [users, setUsers] = useState<AdminUserRow[]>(() => getAdminUsers())
+  const queryClient = useQueryClient()
+  const { data, isError, isLoading, refetch } = useQuery(usersQuery())
+  const users = data?.users ?? []
+  const counts = data?.counts ?? { all: 0, fans: 0, artists: 0, verified: 0, suspended: 0 }
+
   const [filter, setFilter] = useState<FilterKey>('all')
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
+
+  const FILTERS: { key: FilterKey; label: string; count: number }[] = [
+    { key: 'all', label: 'All', count: counts.all },
+    { key: 'fans', label: 'Fans', count: counts.fans },
+    { key: 'artists', label: 'Artists', count: counts.artists },
+    { key: 'verified', label: 'Verified', count: counts.verified },
+    { key: 'suspended', label: 'Suspended', count: counts.suspended },
+  ]
 
   const q = query.trim().toLowerCase()
   const rows = useMemo(
@@ -39,17 +47,33 @@ function AdminUsers() {
   )
   const paged = usePaged(rows)
 
-  const setStatus = (id: string, status: UserStatus) => setUsers((list) => list.map((u) => (u.id === id ? { ...u, status } : u)))
-  const verify = (id: string) => setUsers((list) => list.map((u) => (u.id === id ? { ...u, verified: true } : u)))
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: usersQuery().queryKey })
+
+  const handleVerify = async (u: AdminUserRow) => {
+    try { await apiVerifyUser(u.id); await invalidate(); toast(`${u.name} verified`, 'success') }
+    catch { toast('Could not verify user', 'error') }
+  }
+  const handleSuspend = async (u: AdminUserRow) => {
+    try { await apiSuspendUser(u.id, 'Suspended from user list'); await invalidate(); toast(`${u.name} suspended`, 'success') }
+    catch { toast('Could not suspend user', 'error') }
+  }
+  const handleReactivate = async (u: AdminUserRow) => {
+    try { await apiReactivateUser(u.id); await invalidate(); toast(`${u.name} reactivated`, 'success') }
+    catch { toast('Could not reactivate user', 'error') }
+  }
 
   const allShownSelected = rows.length > 0 && rows.every((u) => selected.has(u.id))
   const toggleAll = () => setSelected(allShownSelected ? new Set() : new Set(rows.map((u) => u.id)))
   const toggleOne = (id: string) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
 
-  const bulkSuspend = () => {
-    setUsers((list) => list.map((u) => (selected.has(u.id) ? { ...u, status: 'suspended' } : u)))
-    toast(`${selected.size} user${selected.size > 1 ? 's' : ''} suspended`, 'success')
-    setSelected(new Set())
+  const bulkSuspend = async () => {
+    const ids = [...selected]
+    try {
+      await Promise.all(ids.map((id) => apiSuspendUser(id, 'Suspended from user list')))
+      await invalidate()
+      toast(`${ids.length} user${ids.length > 1 ? 's' : ''} suspended`, 'success')
+      setSelected(new Set())
+    } catch { toast('Could not suspend the selected users', 'error') }
   }
 
   return (
@@ -106,15 +130,19 @@ function AdminUsers() {
               <span className="w-8 shrink-0" />
             </div>
 
-            {rows.length === 0 ? (
+            {isError ? (
+              <AdminLoadError label="Couldn't load users." onRetry={() => refetch()} />
+            ) : isLoading ? (
+              <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</div>
+            ) : rows.length === 0 ? (
               <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">No matching users.</div>
             ) : (
               paged.pageItems.map((u) => (
                 <UserRow key={u.id} user={u} selected={selected.has(u.id)} onSelect={() => toggleOne(u.id)}
                   onView={() => navigate({ to: '/admin/users/$userId', params: { userId: u.id } })}
-                  onVerify={() => { verify(u.id); toast(`${u.name} verified`, 'success') }}
-                  onSuspend={() => { setStatus(u.id, 'suspended'); toast(`${u.name} suspended`, 'success') }}
-                  onReactivate={() => { setStatus(u.id, 'active'); toast(`${u.name} reactivated`, 'success') }}
+                  onVerify={() => handleVerify(u)}
+                  onSuspend={() => handleSuspend(u)}
+                  onReactivate={() => handleReactivate(u)}
                 />
               ))
             )}
