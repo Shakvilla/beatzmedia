@@ -35,8 +35,8 @@ import type {
 import type { StudioProfile, StudioSettings, StudioRelease, StudioPodcastShow, StudioEpisode, EpisodeStatus } from '../studio-data'
 import type { UploadedTrack } from '../../features/studio/release-draft-context'
 import type { Payouts, PayoutMethod, PayoutTxn, PayoutType, PayoutStatus, MethodKind } from '../studio-payouts'
-import type { AdminUserRow, UserRole, UserStatus, UserActionLog, CatalogItem, CatalogStatus, CatalogType } from '../admin-data'
-import { relativeTimeAgo, monthYear, formatDuration } from '../format'
+import type { AdminUserRow, UserRole, UserStatus, UserActionLog, CatalogItem, CatalogStatus, CatalogType, ModerationItem, ModReason, ModSeverity, ModStatus } from '../admin-data'
+import { relativeTimeAgo, monthYear, formatDuration, relativeTime } from '../format'
 
 export interface ArtistWire {
   id: string
@@ -869,5 +869,47 @@ export function toCatalogDetail(w: CatalogDetailWire, now?: number): CatalogDeta
     tracks: w.tracklist.map((t) => ({ position: t.position, title: t.title, isrc: t.isrc, duration: formatDuration(t.durationSec) })),
     splits: w.splits.map((s) => ({ name: s.name, role: s.role, pct: s.percent })),
     log: w.actionLog.map((l) => ({ id: l.id, action: l.action, time: relativeTimeAgo(l.time, now) })),
+  }
+}
+
+// ── Admin moderation (AdminModerationResource) ────────────────────────────────
+export interface ModerationCaseWire {
+  id: string
+  item: string
+  reporter: string
+  reason: string
+  time: string
+  severity: string
+  status: string
+  escalated: boolean
+}
+export interface ModerationSummaryWire { openCount: number; slaHours: number; escalatedCount: number }
+export interface ModerationQueueWire {
+  items: ModerationCaseWire[]
+  page: number
+  size: number
+  total: number
+  summary: ModerationSummaryWire
+}
+
+export interface ModerationSummary { open: number; sla: number; escalated: number }
+export interface ModerationQueueData { items: ModerationItem[]; summary: ModerationSummary }
+
+export function toModerationCase(w: ModerationCaseWire, now?: number): ModerationItem {
+  return {
+    id: w.id,
+    item: w.item,
+    reporter: w.reporter,
+    reason: w.reason as ModReason,
+    age: relativeTime(w.time, now),
+    severity: w.severity as ModSeverity,
+    status: w.status as ModStatus,
+  }
+}
+
+export function toModerationQueue(w: ModerationQueueWire, now?: number): ModerationQueueData {
+  return {
+    items: w.items.map((c) => toModerationCase(c, now)),
+    summary: { open: w.summary.openCount, sla: w.summary.slaHours, escalated: w.summary.escalatedCount },
   }
 }

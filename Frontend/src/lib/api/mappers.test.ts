@@ -18,6 +18,8 @@ import {
   toCatalogList,
   toCatalogDetail,
   toCatalogStatus,
+  toModerationCase,
+  toModerationQueue,
   type StoreItemWire,
   type EventWire,
   type TicketTierWire,
@@ -27,6 +29,7 @@ import {
   type UserDetailWire,
   type PagedCatalogWire,
   type CatalogDetailWire,
+  type ModerationQueueWire,
 } from './mappers'
 
 describe('toArtist', () => {
@@ -684,5 +687,21 @@ describe('admin catalog mappers', () => {
       tracklist: [], splits: [], actionLog: [],
     }
     expect(toCatalogDetail(wire).status).toBe('pending')
+  })
+})
+
+describe('admin moderation mappers', () => {
+  const caseWire = { id: 'm1', item: 'Track · X', reporter: '@dj', reason: 'Copyright', time: '2026-07-24T06:00:00Z', severity: 'high', status: 'open', escalated: false }
+
+  it('toModerationCase maps age via relativeTime and narrows unions', () => {
+    const c = toModerationCase(caseWire, Date.parse('2026-07-24T12:00:00Z'))
+    expect(c).toEqual({ id: 'm1', item: 'Track · X', reporter: '@dj', reason: 'Copyright', age: '6h', severity: 'high', status: 'open' })
+  })
+
+  it('toModerationQueue maps items + summary', () => {
+    const wire: ModerationQueueWire = { items: [caseWire], page: 1, size: 100, total: 1, summary: { openCount: 5, slaHours: 6, escalatedCount: 3 } }
+    const q = toModerationQueue(wire, Date.parse('2026-07-24T12:00:00Z'))
+    expect(q.items).toHaveLength(1)
+    expect(q.summary).toEqual({ open: 5, sla: 6, escalated: 3 })
   })
 })
