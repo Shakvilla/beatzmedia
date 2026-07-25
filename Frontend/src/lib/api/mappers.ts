@@ -35,8 +35,8 @@ import type {
 import type { StudioProfile, StudioSettings, StudioRelease, StudioPodcastShow, StudioEpisode, EpisodeStatus } from '../studio-data'
 import type { UploadedTrack } from '../../features/studio/release-draft-context'
 import type { Payouts, PayoutMethod, PayoutTxn, PayoutType, PayoutStatus, MethodKind } from '../studio-payouts'
-import type { AdminUserRow, UserRole, UserStatus, UserActionLog, CatalogItem, CatalogStatus, CatalogType, ModerationItem, ModReason, ModSeverity, ModStatus } from '../admin-data'
-import { relativeTimeAgo, monthYear, formatDuration, relativeTime } from '../format'
+import type { AdminUserRow, UserRole, UserStatus, UserActionLog, CatalogItem, CatalogStatus, CatalogType, ModerationItem, ModReason, ModSeverity, ModStatus, Finance, PendingPayout, ProviderMix, Dispute } from '../admin-data'
+import { relativeTimeAgo, monthYear, formatDuration, relativeTime, toCedis, monthDay } from '../format'
 
 export interface ArtistWire {
   id: string
@@ -937,5 +937,68 @@ export function toModerationQueue(w: ModerationQueueWire, now?: number): Moderat
   return {
     items: w.items.map((c) => toModerationCase(c, now)),
     summary: { open: w.summary.openCount, sla: w.summary.slaHours, escalated: w.summary.escalatedCount },
+  }
+}
+
+// ── Admin finance overview (AdminFinanceOverviewResource) ─────────────────────
+// Money on THIS endpoint is a bare BigDecimal of cedis (a plain JSON number), unlike the
+// disputes/payouts endpoints which use the { amount, currency } MoneyView envelope.
+export interface FinanceKpisWire {
+  gmvMtd: number
+  gmvDelta: number
+  platformFee: number
+  feeTakePct: number
+  payoutsDue: number
+  payoutsArtists: number
+  momoFloat: number
+}
+export interface PendingPayoutSummaryWire { id: string; artist: string; amount: number; method: string; status: string }
+export interface ProviderMixWire { name: string; value: number }
+export interface DisputeSummaryWire {
+  id: string
+  kind: string
+  subject: string
+  detail: string
+  amount: number | null
+  opened: string | null
+}
+export interface FinanceOverviewWire {
+  kpis: FinanceKpisWire
+  pendingPayouts: PendingPayoutSummaryWire[]
+  providerMix: ProviderMixWire[]
+  disputes: DisputeSummaryWire[]
+}
+
+export function toFinanceOverview(w: FinanceOverviewWire): Finance {
+  return {
+    kpis: {
+      gmvMtd: toCedis(w.kpis.gmvMtd),
+      gmvDelta: w.kpis.gmvDelta,
+      platformFee: toCedis(w.kpis.platformFee),
+      feeTakePct: w.kpis.feeTakePct,
+      payoutsDue: toCedis(w.kpis.payoutsDue),
+      payoutsArtists: w.kpis.payoutsArtists,
+      momoFloat: toCedis(w.kpis.momoFloat),
+    },
+    pendingPayouts: w.pendingPayouts.map(
+      (p): PendingPayout => ({
+        id: p.id,
+        artist: p.artist,
+        amount: toCedis(p.amount),
+        method: p.method,
+        status: p.status as PendingPayout['status'],
+      }),
+    ),
+    providerMix: w.providerMix.map((m): ProviderMix => ({ name: m.name, value: m.value })),
+    disputes: w.disputes.map(
+      (d): Dispute => ({
+        id: d.id,
+        kind: d.kind,
+        subject: d.subject,
+        detail: d.detail,
+        amount: d.amount == null ? undefined : toCedis(d.amount),
+        opened: d.opened ? monthDay(d.opened) : undefined,
+      }),
+    ),
   }
 }

@@ -21,6 +21,7 @@ import {
   toCatalogType,
   toModerationCase,
   toModerationQueue,
+  toFinanceOverview,
   type StoreItemWire,
   type EventWire,
   type TicketTierWire,
@@ -31,6 +32,7 @@ import {
   type PagedCatalogWire,
   type CatalogDetailWire,
   type ModerationQueueWire,
+  type FinanceOverviewWire,
 } from './mappers'
 
 describe('toArtist', () => {
@@ -759,5 +761,30 @@ describe('admin moderation mappers', () => {
     const q = toModerationQueue(wire, Date.parse('2026-07-24T12:00:00Z'))
     expect(q.items).toHaveLength(1)
     expect(q.summary).toEqual({ open: 5, sla: 6, escalated: 3 })
+  })
+})
+
+describe('finance overview mapper', () => {
+  const wire: FinanceOverviewWire = {
+    kpis: { gmvMtd: 842000.0, gmvDelta: 12, platformFee: 252600.0, feeTakePct: 30, payoutsDue: 42180.5, payoutsArtists: 318, momoFloat: 96000.0 },
+    pendingPayouts: [{ id: 'p1', artist: 'Black Sherif', amount: 12400.0, method: 'MoMo · MTN', status: 'ready' }],
+    providerMix: [{ name: 'MTN', value: 62 }, { name: 'Voda', value: 24 }],
+    disputes: [{ id: 'd1', kind: 'Refund request', subject: '@ama_b', detail: 'Album not delivered', amount: 18.99, opened: '2026-04-22T10:00:00Z' }],
+  }
+
+  it('maps kpis as plain cedis numbers', () => {
+    const f = toFinanceOverview(wire)
+    expect(f.kpis).toEqual({ gmvMtd: 842000, gmvDelta: 12, platformFee: 252600, feeTakePct: 30, payoutsDue: 42180.5, payoutsArtists: 318, momoFloat: 96000 })
+  })
+
+  it('maps pending payouts and narrows the status union', () => {
+    const f = toFinanceOverview(wire)
+    expect(f.pendingPayouts).toEqual([{ id: 'p1', artist: 'Black Sherif', amount: 12400, method: 'MoMo · MTN', status: 'ready' }])
+  })
+
+  it('maps provider mix 1:1 and converts each dispute opened date to a short label', () => {
+    const f = toFinanceOverview(wire)
+    expect(f.providerMix).toEqual([{ name: 'MTN', value: 62 }, { name: 'Voda', value: 24 }])
+    expect(f.disputes[0]).toEqual({ id: 'd1', kind: 'Refund request', subject: '@ama_b', detail: 'Album not delivered', amount: 18.99, opened: 'Apr 22' })
   })
 })
