@@ -817,6 +817,27 @@ export interface CatalogDetail {
   log: CatalogLogEntry[]
 }
 
+/**
+ * Backend serves the raw release status (`draft|in_review|scheduled|live|takedown`); the admin UI
+ * speaks `pending|published|takedown`. Bucketing mirrors CatalogAdminReaderAdapter's own counts
+ * query and filter switch. Note `flagged` is never produced: flagging opens a moderation case
+ * rather than transitioning the release, so no release ever carries a `flagged` status.
+ */
+export function toCatalogStatus(wire: string): CatalogStatus {
+  switch (wire) {
+    case 'draft':
+    case 'in_review':
+      return 'pending'
+    case 'scheduled':
+    case 'live':
+      return 'published'
+    case 'takedown':
+      return 'takedown'
+    default:
+      return 'pending'
+  }
+}
+
 export function toCatalogItem(w: CatalogItemWire): CatalogItem {
   return {
     id: w.id,
@@ -825,7 +846,7 @@ export function toCatalogItem(w: CatalogItemWire): CatalogItem {
     artist: w.artist,
     type: w.type as CatalogType,
     tracks: w.tracks,
-    status: w.status as CatalogStatus,
+    status: toCatalogStatus(w.status),
   }
 }
 
@@ -843,7 +864,7 @@ export function toCatalogDetail(w: CatalogDetailWire, now?: number): CatalogDeta
     note: w.note ?? undefined,
     artist: w.artist,
     type: w.type as CatalogType,
-    status: w.status as CatalogStatus,
+    status: toCatalogStatus(w.status),
     upc: w.upc,
     tracks: w.tracklist.map((t) => ({ position: t.position, title: t.title, isrc: t.isrc, duration: formatDuration(t.durationSec) })),
     splits: w.splits.map((s) => ({ name: s.name, role: s.role, pct: s.percent })),

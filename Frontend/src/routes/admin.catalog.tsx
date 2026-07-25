@@ -73,12 +73,17 @@ function AdminCatalog() {
 
   const bulkApprove = async () => {
     const ids = [...selected]
-    try {
-      await Promise.all(ids.map((id) => apiApproveCatalog(id)))
-      await invalidate()
+    const results = await Promise.allSettled(ids.map((id) => apiApproveCatalog(id)))
+    const failed = results.filter((r) => r.status === 'rejected').length
+    await invalidate()
+    setSelected(new Set())
+    if (failed === 0) {
       toast(`${ids.length} release${ids.length > 1 ? 's' : ''} approved`, 'success')
-      setSelected(new Set())
-    } catch { toast('Could not approve the selected releases', 'error') }
+    } else if (failed === ids.length) {
+      toast('Could not approve the selected releases', 'error')
+    } else {
+      toast(`${ids.length - failed} of ${ids.length} releases approved`, 'error')
+    }
   }
 
   return (

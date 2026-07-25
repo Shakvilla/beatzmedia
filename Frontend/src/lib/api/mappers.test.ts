@@ -17,6 +17,7 @@ import {
   toCatalogItem,
   toCatalogList,
   toCatalogDetail,
+  toCatalogStatus,
   type StoreItemWire,
   type EventWire,
   type TicketTierWire,
@@ -620,6 +621,26 @@ describe('admin users mappers', () => {
   })
 })
 
+describe('toCatalogStatus', () => {
+  it('buckets draft and in_review as pending', () => {
+    expect(toCatalogStatus('draft')).toBe('pending')
+    expect(toCatalogStatus('in_review')).toBe('pending')
+  })
+
+  it('buckets scheduled and live as published', () => {
+    expect(toCatalogStatus('scheduled')).toBe('published')
+    expect(toCatalogStatus('live')).toBe('published')
+  })
+
+  it('maps takedown 1:1', () => {
+    expect(toCatalogStatus('takedown')).toBe('takedown')
+  })
+
+  it('falls back to pending for an unknown wire value', () => {
+    expect(toCatalogStatus('some-future-status')).toBe('pending')
+  })
+})
+
 describe('admin catalog mappers', () => {
   const rowWire = { id: 'c1', title: 'Iron Boy', note: 'submitted 2h ago', artist: 'Black Sherif', type: 'Album', tracks: 14, status: 'pending' }
 
@@ -628,6 +649,10 @@ describe('admin catalog mappers', () => {
       id: 'c1', title: 'Iron Boy', note: 'submitted 2h ago', artist: 'Black Sherif', type: 'Album', tracks: 14, status: 'pending',
     })
     expect(toCatalogItem({ ...rowWire, note: null }).note).toBeUndefined()
+  })
+
+  it('toCatalogItem translates a realistic wire status (in_review) to the pending bucket', () => {
+    expect(toCatalogItem({ ...rowWire, status: 'in_review' }).status).toBe('pending')
   })
 
   it('toCatalogList maps items + the three counts', () => {
@@ -651,5 +676,13 @@ describe('admin catalog mappers', () => {
     expect(d.splits).toEqual([{ name: 'Black Sherif', role: 'Primary artist', pct: 70 }])
     expect(d.log[0].action).toBe('Submitted')
     expect(typeof d.log[0].time).toBe('string')
+  })
+
+  it('toCatalogDetail translates a realistic wire status (in_review) to the pending bucket', () => {
+    const wire: CatalogDetailWire = {
+      id: 'c1', title: 'Iron Boy', note: null, artist: 'Black Sherif', type: 'Album', status: 'in_review', upc: 'BZ900123',
+      tracklist: [], splits: [], actionLog: [],
+    }
+    expect(toCatalogDetail(wire).status).toBe('pending')
   })
 })
