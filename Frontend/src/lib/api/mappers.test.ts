@@ -26,6 +26,10 @@ import {
   toPendingPayout,
   toDisputeStatus,
   toDisputeDetail,
+  toAdminOverview,
+  toHealth,
+  toAuditType,
+  toAuditPage,
   type StoreItemWire,
   type EventWire,
   type TicketTierWire,
@@ -39,6 +43,8 @@ import {
   type FinanceOverviewWire,
   type LedgerPageWire,
   type DisputeDetailWire,
+  type AdminOverviewWire,
+  type AuditPageWire,
 } from './mappers'
 
 describe('toArtist', () => {
@@ -852,5 +858,65 @@ describe('dispute detail mapper', () => {
     const d = toDisputeDetail(wire)
     expect(d.wireStatus).toBe('escalated')
     expect(d.status).toBe('open')
+  })
+})
+
+describe('admin overview mapper', () => {
+  const wire: AdminOverviewWire = {
+    rangeLabel: 'last 7 days',
+    kpis: { activeUsers: 1260, streams: 842000, gmv: 51580.5, newArtists: 12, deltas: { users: 0, streams: 15, gmv: -18 } },
+    gmvByDay: [1200.5, 800, 0],
+    needsAttention: [],
+    topArtists: [{ name: 'Black Sherif', revenue: 42180 }],
+    paymentMethods: [],
+  }
+
+  it('passes bare-cedis money through as plain numbers', () => {
+    const o = toAdminOverview(wire)
+    expect(o.kpis.gmv).toBe(51580.5)
+    expect(o.topArtists).toEqual([{ name: 'Black Sherif', revenue: 42180 }])
+    expect(o.gmvByDay).toEqual([1200.5, 800, 0])
+  })
+
+  it('preserves a NEGATIVE delta (the backend really produces these)', () => {
+    expect(toAdminOverview(wire).kpis.deltas.gmv).toBe(-18)
+  })
+
+  it('maps the always-empty Category-B arrays as empty, not fabricated', () => {
+    const o = toAdminOverview(wire)
+    expect(o.needsAttention).toEqual([])
+    expect(o.paymentMethods).toEqual([])
+  })
+})
+
+describe('health mapper', () => {
+  it('maps the honest-empty payload the backend always returns', () => {
+    const h = toHealth({ status: 'normal', metrics: [], listeners: [], incidents: [] })
+    expect(h).toEqual({ status: 'normal', metrics: [], listeners: [], incidents: [] })
+  })
+
+  it('narrows an unknown status to degraded rather than trusting it', () => {
+    expect(toHealth({ status: 'something-else', metrics: [], listeners: [], incidents: [] }).status).toBe('degraded')
+  })
+})
+
+describe('audit mappers', () => {
+  it('narrows a known type and falls back to settings for an unknown one', () => {
+    expect(toAuditType('finance')).toBe('finance')
+    expect(toAuditType('brand-new-type')).toBe('settings')
+  })
+
+  it('maps a page: relative time, compound target, and the server total', () => {
+    const wire: AuditPageWire = {
+      items: [{ id: 'a1', actor: 'Admin · Yaa', action: 'Suspended account', target: 'AdminMember:acc-123', type: 'user', time: '2026-07-25T10:00:00Z' }],
+      page: 2, size: 8, total: 91,
+    }
+    const p = toAuditPage(wire, Date.parse('2026-07-25T12:00:00Z'))
+    expect(p.total).toBe(91)
+    expect(p.page).toBe(2)
+    expect(p.items[0]).toEqual({
+      id: 'a1', actor: 'Admin · Yaa', action: 'Suspended account',
+      target: 'AdminMember:acc-123', type: 'user', time: '2h ago',
+    })
   })
 })
