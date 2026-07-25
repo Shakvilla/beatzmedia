@@ -1,9 +1,12 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { MoreHorizontal, Check, ShieldX, ArrowUpCircle, X } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
-import { getModerationQueue, MOD_TYPES, MOD_SLA_HOURS, MOD_ESCALATED, type ModerationItem, type ModReason, type ModSeverity, type ModStatus } from '../lib/admin-data'
+import { MOD_TYPES, type ModerationItem, type ModReason, type ModSeverity, type ModStatus } from '../lib/admin-data'
+import { moderationQuery, apiReviewCase, apiApproveCase, apiRemoveCase, apiEscalateCase, apiDismissCase } from '../lib/api/queries/admin-moderation'
+import { AdminLoadError } from '../components/admin/load-error'
 import { usePaged, Pagination } from '../components/admin/pagination'
 
 export const Route = createFileRoute('/admin/moderation')({
@@ -21,18 +24,30 @@ const STATUS_TABS: { key: ModStatus | 'all'; label: string }[] = [
 
 function AdminModeration() {
   const { toast } = useToast()
-  const [items, setItems] = useState<ModerationItem[]>(() => getModerationQueue())
+  const queryClient = useQueryClient()
+  const { data, isError, refetch } = useQuery(moderationQuery())
+  const items = data?.items ?? []
+  const summary = data?.summary ?? { open: 0, sla: 0, escalated: 0 }
+
   const [status, setStatus] = useState<ModStatus | 'all'>('open')
   const [type, setType] = useState<ModReason | 'all'>('all')
 
-  const openCount = items.filter((i) => i.status === 'open').length
   const rows = useMemo(
     () => items.filter((i) => (status === 'all' || i.status === status) && (type === 'all' || i.reason === type)),
     [items, status, type],
   )
   const paged = usePaged(rows)
 
-  const setItemStatus = (id: string, s: ModStatus) => setItems((list) => list.map((i) => (i.id === id ? { ...i, status: s } : i)))
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: moderationQuery().queryKey })
+  const runAction = async (fn: () => Promise<void>, okMsg: string, errMsg: string, tone: 'success' | 'info' = 'success') => {
+    try { await fn(); await invalidate(); toast(okMsg, tone) }
+    catch { toast(errMsg, 'error') }
+  }
+  const review = (it: ModerationItem) => runAction(() => apiReviewCase(it.id), `Reviewing “${it.item}”`, 'Could not start review', 'info')
+  const approve = (it: ModerationItem) => runAction(() => apiApproveCase(it.id), 'Content approved & kept', 'Could not approve content')
+  const remove = (it: ModerationItem) => runAction(() => apiRemoveCase(it.id), 'Content removed', 'Could not remove content')
+  const escalate = (it: ModerationItem) => runAction(() => apiEscalateCase(it.id), 'Escalated to senior review', 'Could not escalate', 'info')
+  const dismiss = (it: ModerationItem) => runAction(() => apiDismissCase(it.id), 'Report dismissed', 'Could not dismiss report')
 
   return (
     <div className="flex flex-col gap-6">
@@ -40,7 +55,7 @@ function AdminModeration() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="flex flex-col gap-1">
           <h1 className="text-display text-beatz-dark-bg dark:text-white">Moderation queue</h1>
-          <span className="text-sm text-gray-500 dark:text-gray-300">{openCount} open · {MOD_SLA_HOURS}h SLA · {MOD_ESCALATED} escalated</span>
+          <span className="text-sm text-gray-500 dark:text-gray-300">{summary.open} open · {summary.sla}h SLA · {summary.escalated} escalated</span>
         </div>
         <div className="flex items-center gap-1 p-1 rounded-full bg-gray-100 dark:bg-white/10">
           {STATUS_TABS.map((t) => (
@@ -72,16 +87,18 @@ function AdminModeration() {
               <span className="w-28 text-right shrink-0">Action</span>
             </div>
 
-            {rows.length === 0 ? (
+            {isError ? (
+              <AdminLoadError label="Couldn't load the moderation queue." onRetry={() => refetch()} />
+            ) : rows.length === 0 ? (
               <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">Nothing in this queue.</div>
             ) : (
               paged.pageItems.map((it) => (
                 <ModRow key={it.id} item={it}
-                  onReview={() => { setItemStatus(it.id, 'in_review'); toast(`Reviewing “${it.item}”`, 'info') }}
-                  onApprove={() => { setItemStatus(it.id, 'resolved'); toast('Content approved & kept', 'success') }}
-                  onRemove={() => { setItemStatus(it.id, 'resolved'); toast('Content removed', 'success') }}
-                  onEscalate={() => toast('Escalated to senior review', 'info')}
-                  onDismiss={() => { setItemStatus(it.id, 'resolved'); toast('Report dismissed', 'success') }}
+                  onReview={() => review(it)}
+                  onApprove={() => approve(it)}
+                  onRemove={() => remove(it)}
+                  onEscalate={() => escalate(it)}
+                  onDismiss={() => dismiss(it)}
                 />
               ))
             )}
