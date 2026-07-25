@@ -1,10 +1,13 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { Search, Download, User, ListMusic, Wallet, Flag, SlidersHorizontal, Radio, Clock, type LucideIcon } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
-import { getAuditLog, type AuditEntry, type AuditType } from '../lib/admin-data'
-import { usePaged, Pagination } from '../components/admin/pagination'
+import { useQuery } from '@tanstack/react-query'
+import type { AuditEntry, AuditType } from '../lib/admin-data'
+import { auditQuery, AUDIT_PAGE_SIZE } from '../lib/api/queries/admin-overview'
+import { useServerPaged, Pagination } from '../components/admin/pagination'
+import { AdminLoadError } from '../components/admin/load-error'
 
 export const Route = createFileRoute('/admin/audit')({
   component: AdminAudit,
@@ -24,13 +27,23 @@ const TYPES: (AuditType | 'all')[] = ['all', 'user', 'catalog', 'finance', 'mode
 
 function AdminAudit() {
   const { toast } = useToast()
-  const entries = useMemo(() => getAuditLog(), [])
   const [type, setType] = useState<AuditType | 'all'>('all')
   const [query, setQuery] = useState('')
+  const [debouncedQ, setDebouncedQ] = useState('')
+  const [page, setPage] = useState(1)
 
-  const q = query.trim().toLowerCase()
-  const rows = entries.filter((e) => (type === 'all' || e.type === type) && (!q || `${e.actor} ${e.action} ${e.target}`.toLowerCase().includes(q)))
-  const paged = usePaged(rows)
+  // Search is a server param now, so debounce it: one request per pause, not per keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedQ(query.trim())
+      setPage(1)
+    }, 300)
+    return () => clearTimeout(t)
+  }, [query])
+
+  const { data, isLoading, isError, refetch } = useQuery(auditQuery(type, debouncedQ, page))
+  const rows: AuditEntry[] = data?.items ?? []
+  const paged = useServerPaged({ items: rows, total: data?.total ?? 0, page, setPage, size: AUDIT_PAGE_SIZE })
 
   return (
     <div className="flex flex-col gap-6">
@@ -47,7 +60,7 @@ function AdminAudit() {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap">
           {TYPES.map((t) => (
-            <button key={t} onClick={() => setType(t)}
+            <button key={t} onClick={() => { setType(t); setPage(1) }}
               className={cn('h-9 px-4 rounded-full text-sm font-bold transition-colors capitalize',
                 type === t ? 'bg-beatz-green/15 text-beatz-green' : 'bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/15')}>
               {t === 'all' ? 'All' : TYPE_META[t].label}
@@ -62,7 +75,11 @@ function AdminAudit() {
       </div>
 
       <section className={cn(CARD, 'p-2 sm:p-4')}>
-        {rows.length === 0 ? (
+        {isError ? (
+          <AdminLoadError label="Couldn't load the audit log." onRetry={() => refetch()} />
+        ) : isLoading ? (
+          <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</div>
+        ) : rows.length === 0 ? (
           <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">No matching entries.</div>
         ) : (
           paged.pageItems.map((e) => <AuditRow key={e.id} entry={e} />)
