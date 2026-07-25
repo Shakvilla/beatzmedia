@@ -35,7 +35,7 @@ import type {
 import type { StudioProfile, StudioSettings, StudioRelease, StudioPodcastShow, StudioEpisode, EpisodeStatus } from '../studio-data'
 import type { UploadedTrack } from '../../features/studio/release-draft-context'
 import type { Payouts, PayoutMethod, PayoutTxn, PayoutType, PayoutStatus, MethodKind } from '../studio-payouts'
-import type { AdminUserRow, UserRole, UserStatus, UserActionLog, CatalogItem, CatalogStatus, CatalogType, ModerationItem, ModReason, ModSeverity, ModStatus, Finance, PendingPayout, ProviderMix, Dispute, LedgerTxn, LedgerType, TimelineEntry } from '../admin-data'
+import type { AdminUserRow, UserRole, UserStatus, UserActionLog, CatalogItem, CatalogStatus, CatalogType, ModerationItem, ModReason, ModSeverity, ModStatus, Finance, PendingPayout, ProviderMix, Dispute, LedgerTxn, LedgerType, TimelineEntry, AdminOverview, AttentionItem, RevenueArtist, PayMethod, Health, HealthMetric, Incident, AuditEntry, AuditType } from '../admin-data'
 import { relativeTimeAgo, monthYear, formatDuration, relativeTime, toCedis, monthDay } from '../format'
 
 export interface ArtistWire {
@@ -1105,4 +1105,104 @@ export function toDisputeDetail(w: DisputeDetailWire, now?: number): DisputeDeta
       (t): TimelineEntry => ({ id: t.id, text: t.text, time: t.time ? relativeTimeAgo(t.time, now) : '' }),
     ),
   }
+}
+
+// ── Admin overview / health / audit ───────────────────────────────────────────
+// Money on these endpoints is a bare BigDecimal of cedis (a plain JSON number),
+// matching admin-data's convention — there is no { amount, currency } envelope here.
+export interface AdminOverviewWire {
+  rangeLabel: string
+  kpis: {
+    activeUsers: number
+    streams: number
+    gmv: number
+    newArtists: number
+    deltas: { users: number; streams: number; gmv: number }
+  }
+  gmvByDay: number[]
+  needsAttention: { id: string; label: string; sub: string; to: string }[]
+  topArtists: { name: string; revenue: number }[]
+  paymentMethods: { name: string; value: number }[]
+}
+
+export function toAdminOverview(w: AdminOverviewWire): AdminOverview {
+  return {
+    rangeLabel: w.rangeLabel,
+    kpis: {
+      activeUsers: w.kpis.activeUsers,
+      streams: w.kpis.streams,
+      gmv: w.kpis.gmv,
+      newArtists: w.kpis.newArtists,
+      // Deltas are signed percentages — a negative is real, never clamp it.
+      deltas: { users: w.kpis.deltas.users, streams: w.kpis.deltas.streams, gmv: w.kpis.deltas.gmv },
+    },
+    gmvByDay: w.gmvByDay,
+    // needsAttention and paymentMethods are Category B: the service returns List.of()
+    // unconditionally, so these are expected to be empty until a future WU backs them.
+    needsAttention: w.needsAttention.map((a): AttentionItem => ({ id: a.id, label: a.label, sub: a.sub, to: a.to })),
+    topArtists: w.topArtists.map((a): RevenueArtist => ({ name: a.name, revenue: a.revenue })),
+    paymentMethods: w.paymentMethods.map((m): PayMethod => ({ name: m.name, value: m.value })),
+  }
+}
+
+export interface HealthWire {
+  status: string
+  metrics: { label: string; value: string; sub: string }[]
+  listeners: number[]
+  incidents: { id: string; title: string; date: string; status: string }[]
+}
+
+/**
+ * The backend currently returns a hardcoded honest-empty payload (`status:"normal"` and three
+ * empty arrays) — there is no APM, incident tracker, or listener telemetry behind it yet. An
+ * unrecognised status maps to `degraded` rather than `normal`, so a future real status can never
+ * be silently reported as healthy.
+ */
+export function toHealth(w: HealthWire): Health {
+  return {
+    status: w.status === 'normal' ? 'normal' : 'degraded',
+    metrics: w.metrics.map((m): HealthMetric => ({ label: m.label, value: m.value, sub: m.sub })),
+    listeners: w.listeners,
+    incidents: w.incidents.map(
+      (i): Incident => ({ id: i.id, title: i.title, date: i.date, status: i.status === 'resolved' ? 'resolved' : 'open' }),
+    ),
+  }
+}
+
+export interface AuditEntryWire {
+  id: string
+  actor: string
+  action: string
+  target: string
+  type: string
+  time: string
+}
+export interface AuditPageWire { items: AuditEntryWire[]; page: number; size: number; total: number }
+export interface AuditPage { items: AuditEntry[]; page: number; size: number; total: number }
+
+const AUDIT_TYPES: AuditType[] = ['user', 'catalog', 'finance', 'moderation', 'settings', 'editorial']
+
+/**
+ * The wire value is the backend enum's `name().toLowerCase()`, which happens to equal these
+ * literals — but no dedicated mapper guarantees that, and the audit row looks its icon up by type
+ * (`TYPE_META[type]`), so an unrecognised value would crash the row. Fall back to `settings`.
+ */
+export function toAuditType(wire: string): AuditType {
+  return (AUDIT_TYPES as string[]).includes(wire) ? (wire as AuditType) : 'settings'
+}
+
+export function toAuditEntry(w: AuditEntryWire, now?: number): AuditEntry {
+  return {
+    id: w.id,
+    actor: w.actor,
+    action: w.action,
+    // Compound `targetType:targetId` from the backend, e.g. "AdminMember:acc-123".
+    target: w.target,
+    type: toAuditType(w.type),
+    time: w.time ? relativeTimeAgo(w.time, now) : '',
+  }
+}
+
+export function toAuditPage(w: AuditPageWire, now?: number): AuditPage {
+  return { items: w.items.map((e) => toAuditEntry(e, now)), page: w.page, size: w.size, total: w.total }
 }
