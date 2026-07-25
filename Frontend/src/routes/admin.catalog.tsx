@@ -1,9 +1,12 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Search, MoreHorizontal, Check, Eye, Flag, ShieldX, Disc3 } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
-import { getCatalog, CATALOG_SUMMARY, CATALOG_COUNTS, type CatalogItem, type CatalogStatus } from '../lib/admin-data'
+import { CATALOG_SUMMARY, type CatalogItem, type CatalogStatus } from '../lib/admin-data'
+import { catalogQuery, apiApproveCatalog, apiFlagCatalog, apiTakedownCatalog } from '../lib/api/queries/admin-catalog'
+import { AdminLoadError } from '../components/admin/load-error'
 import { usePaged, Pagination } from '../components/admin/pagination'
 
 export const Route = createFileRoute('/admin/catalog')({
@@ -13,12 +16,6 @@ export const Route = createFileRoute('/admin/catalog')({
 const CARD = 'rounded-2xl bg-white dark:bg-beatz-dark-surface border border-gray-200 dark:border-transparent shadow-sm dark:shadow-none'
 
 type FilterKey = 'pending' | 'published' | 'takedown' | 'all'
-const FILTERS: { key: FilterKey; label: string; count?: number }[] = [
-  { key: 'pending', label: 'Pending review', count: CATALOG_COUNTS.pending },
-  { key: 'published', label: 'Published', count: CATALOG_COUNTS.published },
-  { key: 'takedown', label: 'Takedown', count: CATALOG_COUNTS.takedown },
-  { key: 'all', label: 'All' },
-]
 
 const inFilter = (c: CatalogItem, f: FilterKey) =>
   f === 'all' ? true : f === 'pending' ? (c.status === 'pending' || c.status === 'flagged') : f === 'published' ? c.status === 'published' : c.status === 'takedown'
@@ -32,10 +29,21 @@ function coverGradient(title: string): string {
 function AdminCatalog() {
   const { toast } = useToast()
   const navigate = useNavigate()
-  const [items, setItems] = useState<CatalogItem[]>(() => getCatalog())
+  const queryClient = useQueryClient()
+  const { data, isError, refetch } = useQuery(catalogQuery())
+  const items = data?.items ?? []
+  const counts = data?.counts ?? { pending: 0, published: 0, takedown: 0 }
+
   const [filter, setFilter] = useState<FilterKey>('pending')
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
+
+  const FILTERS: { key: FilterKey; label: string; count?: number }[] = [
+    { key: 'pending', label: 'Pending review', count: counts.pending },
+    { key: 'published', label: 'Published', count: counts.published },
+    { key: 'takedown', label: 'Takedown', count: counts.takedown },
+    { key: 'all', label: 'All' },
+  ]
 
   const q = query.trim().toLowerCase()
   const rows = useMemo(
@@ -44,15 +52,33 @@ function AdminCatalog() {
   )
   const paged = usePaged(rows)
 
-  const setStatus = (id: string, status: CatalogStatus) => setItems((list) => list.map((c) => (c.id === id ? { ...c, status } : c)))
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: catalogQuery().queryKey })
+
+  const handleApprove = async (c: CatalogItem) => {
+    try { await apiApproveCatalog(c.id); await invalidate(); toast(`“${c.title}” approved`, 'success') }
+    catch { toast('Could not approve release', 'error') }
+  }
+  const handleFlag = async (c: CatalogItem) => {
+    try { await apiFlagCatalog(c.id); await invalidate(); toast(`“${c.title}” flagged`, 'info') }
+    catch { toast('Could not flag release', 'error') }
+  }
+  const handleTakedown = async (c: CatalogItem) => {
+    try { await apiTakedownCatalog(c.id, 'Taken down from catalog list'); await invalidate(); toast(`“${c.title}” taken down`, 'success') }
+    catch { toast('Could not take down release', 'error') }
+  }
+
   const allShownSelected = rows.length > 0 && rows.every((c) => selected.has(c.id))
   const toggleAll = () => setSelected(allShownSelected ? new Set() : new Set(rows.map((c) => c.id)))
   const toggleOne = (id: string) => setSelected((s) => { const n = new Set(s); n.has(id) ? n.delete(id) : n.add(id); return n })
 
-  const bulkApprove = () => {
-    setItems((list) => list.map((c) => (selected.has(c.id) ? { ...c, status: 'published' } : c)))
-    toast(`${selected.size} release${selected.size > 1 ? 's' : ''} approved`, 'success')
-    setSelected(new Set())
+  const bulkApprove = async () => {
+    const ids = [...selected]
+    try {
+      await Promise.all(ids.map((id) => apiApproveCatalog(id)))
+      await invalidate()
+      toast(`${ids.length} release${ids.length > 1 ? 's' : ''} approved`, 'success')
+      setSelected(new Set())
+    } catch { toast('Could not approve the selected releases', 'error') }
   }
 
   return (
@@ -114,15 +140,17 @@ function AdminCatalog() {
               <span className="w-28 text-right shrink-0">Action</span>
             </div>
 
-            {rows.length === 0 ? (
+            {isError ? (
+              <AdminLoadError label="Couldn't load catalog." onRetry={() => refetch()} />
+            ) : rows.length === 0 ? (
               <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">Nothing here.</div>
             ) : (
               paged.pageItems.map((c) => (
                 <CatalogRow key={c.id} item={c} selected={selected.has(c.id)} onSelect={() => toggleOne(c.id)}
-                  onApprove={() => { setStatus(c.id, 'published'); toast(`“${c.title}” approved`, 'success') }}
+                  onApprove={() => handleApprove(c)}
                   onView={() => navigate({ to: '/admin/catalog/$itemId', params: { itemId: c.id } })}
-                  onFlag={() => { setStatus(c.id, 'flagged'); toast(`“${c.title}” flagged`, 'info') }}
-                  onTakedown={() => { setStatus(c.id, 'takedown'); toast(`“${c.title}” taken down`, 'success') }}
+                  onFlag={() => handleFlag(c)}
+                  onTakedown={() => handleTakedown(c)}
                 />
               ))
             )}
