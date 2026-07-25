@@ -1,4 +1,4 @@
-import { queryOptions } from '@tanstack/react-query'
+import { keepPreviousData, queryOptions } from '@tanstack/react-query'
 import { apiFetch } from '../client'
 import {
   toFinanceOverview, toLedgerPage, toPendingPayout, toDisputeDetail,
@@ -25,11 +25,12 @@ export function financeOverviewQuery() {
  */
 export function ledgerQuery(type: string, q: string, page: number) {
   const params = new URLSearchParams({ page: String(page), size: String(LEDGER_PAGE_SIZE) })
-  if (type !== 'all') params.set('type', type)
+  if (type && type !== 'all') params.set('type', type)
   if (q) params.set('q', q)
   return queryOptions({
     queryKey: ['admin', 'finance', 'ledger', type, q, page],
     queryFn: async () => toLedgerPage(await apiFetch<LedgerPageWire>(`/admin/finance/ledger?${params}`)),
+    placeholderData: keepPreviousData,
   })
 }
 
@@ -37,7 +38,7 @@ export function ledgerQuery(type: string, q: string, page: number) {
 export function disputeQuery(id: string) {
   return queryOptions({
     queryKey: ['admin', 'finance', 'dispute', id],
-    queryFn: async () => toDisputeDetail(await apiFetch<DisputeDetailWire>(`/admin/finance/disputes/${id}`)),
+    queryFn: async () => toDisputeDetail(await apiFetch<DisputeDetailWire>(`/admin/finance/disputes/${encodeURIComponent(id)}`)),
   })
 }
 
@@ -55,7 +56,7 @@ export function pendingPayoutsQuery() {
  * confirm-only modal collects no partial amount.
  */
 export function apiRefundDispute(id: string, reason: string): Promise<void> {
-  return apiFetch<unknown>(`/admin/finance/disputes/${id}/refund`, {
+  return apiFetch<unknown>(`/admin/finance/disputes/${encodeURIComponent(id)}/refund`, {
     method: 'POST',
     body: { reason },
     idempotencyKey: crypto.randomUUID(),
@@ -64,24 +65,28 @@ export function apiRefundDispute(id: string, reason: string): Promise<void> {
 
 /** `POST /v1/admin/finance/disputes/:id/reject` — `reason` is required (non-blank). */
 export function apiRejectDispute(id: string, reason: string): Promise<void> {
-  return apiFetch<unknown>(`/admin/finance/disputes/${id}/reject`, { method: 'POST', body: { reason } }).then(() => undefined)
+  return apiFetch<unknown>(`/admin/finance/disputes/${encodeURIComponent(id)}/reject`, { method: 'POST', body: { reason } }).then(() => undefined)
 }
 
 /** `POST /v1/admin/finance/disputes/:id/escalate` — raises to senior finance; stays open. */
 export function apiEscalateDispute(id: string): Promise<void> {
-  return apiFetch<unknown>(`/admin/finance/disputes/${id}/escalate`, { method: 'POST' }).then(() => undefined)
+  return apiFetch<unknown>(`/admin/finance/disputes/${encodeURIComponent(id)}/escalate`, { method: 'POST' }).then(() => undefined)
 }
 
 /**
  * `POST /v1/admin/finance/payouts/run-weekly` — pays every ready, KYC-verified withdrawal.
  * Money POST: `Idempotency-Key` REQUIRED. The server's per-withdrawal exactly-once guard means a
  * retry cannot double-pay.
+ *
+ * Returns the server's authoritative paid `count`: the run skips KYC-unverified creators and
+ * isolates per-withdrawal failures, so the number actually paid can be lower than the number of
+ * `ready` rows the client was showing. The caller must report THIS count, never its own guess.
  */
-export function apiRunWeeklyPayouts(): Promise<void> {
-  return apiFetch<unknown>('/admin/finance/payouts/run-weekly', {
+export function apiRunWeeklyPayouts(): Promise<{ count: number }> {
+  return apiFetch<{ count: number }>('/admin/finance/payouts/run-weekly', {
     method: 'POST',
     idempotencyKey: crypto.randomUUID(),
-  }).then(() => undefined)
+  }).then((batch) => ({ count: batch?.count ?? 0 }))
 }
 
 /**
@@ -89,7 +94,7 @@ export function apiRunWeeklyPayouts(): Promise<void> {
  * Money POST: `Idempotency-Key` REQUIRED. Blocks with 409 when the artist's KYC is unverified.
  */
 export function apiSendPayout(id: string): Promise<void> {
-  return apiFetch<unknown>(`/admin/finance/payouts/${id}/send`, {
+  return apiFetch<unknown>(`/admin/finance/payouts/${encodeURIComponent(id)}/send`, {
     method: 'POST',
     idempotencyKey: crypto.randomUUID(),
   }).then(() => undefined)

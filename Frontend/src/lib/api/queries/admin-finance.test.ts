@@ -86,21 +86,26 @@ describe('admin-finance mutations', () => {
     const [url, opts] = f.mock.calls[0]
     expect(url).toBe('/v1/admin/finance/disputes/d1/reject')
     expect(JSON.parse(opts.body)).toEqual({ reason: 'evidence sufficient' })
+    expect(opts.headers['Idempotency-Key']).toBeUndefined()
   })
 
   it('apiEscalateDispute POSTs to /escalate', async () => {
     const f = mockFetch(200, disputeWire); vi.stubGlobal('fetch', f)
     await apiEscalateDispute('d1')
-    expect(f.mock.calls[0][0]).toBe('/v1/admin/finance/disputes/d1/escalate')
+    const [url, opts] = f.mock.calls[0]
+    expect(url).toBe('/v1/admin/finance/disputes/d1/escalate')
+    expect(opts.method).toBe('POST')
   })
 
-  it('apiRunWeeklyPayouts POSTs WITH an Idempotency-Key', async () => {
-    const f = mockFetch(200, {}); vi.stubGlobal('fetch', f)
-    await apiRunWeeklyPayouts()
+  it('apiRunWeeklyPayouts POSTs WITH an Idempotency-Key and surfaces the server\'s authoritative paid count', async () => {
+    const f = mockFetch(200, { id: 'b1', kind: 'weekly', count: 7, total: { amount: 1, currency: 'GHS' }, runAt: null })
+    vi.stubGlobal('fetch', f)
+    const result = await apiRunWeeklyPayouts()
     const [url, opts] = f.mock.calls[0]
     expect(url).toBe('/v1/admin/finance/payouts/run-weekly')
     expect(opts.method).toBe('POST')
     expect(opts.headers['Idempotency-Key']).toBeTruthy()
+    expect(result).toEqual({ count: 7 })
   })
 
   it('apiSendPayout POSTs WITH an Idempotency-Key', async () => {
@@ -111,10 +116,14 @@ describe('admin-finance mutations', () => {
     expect(opts.headers['Idempotency-Key']).toBeTruthy()
   })
 
-  it('generates a DIFFERENT Idempotency-Key per call so retries are not collapsed', async () => {
+  it.each([
+    ['apiSendPayout', () => apiSendPayout('w1')],
+    ['apiRunWeeklyPayouts', () => apiRunWeeklyPayouts()],
+    ['apiRefundDispute', () => apiRefundDispute('d1', 'reason')],
+  ] as const)('%s generates a DIFFERENT Idempotency-Key per call', async (_name, call) => {
     const f = mockFetch(200, {}); vi.stubGlobal('fetch', f)
-    await apiSendPayout('w1')
-    await apiSendPayout('w1')
+    await call()
+    await call()
     expect(f.mock.calls[0][1].headers['Idempotency-Key']).not.toBe(f.mock.calls[1][1].headers['Idempotency-Key'])
   })
 })
