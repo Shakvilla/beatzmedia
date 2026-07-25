@@ -14,6 +14,13 @@ import {
   toAdminUserRow,
   toUsersList,
   toUserDetail,
+  toCatalogItem,
+  toCatalogList,
+  toCatalogDetail,
+  toCatalogStatus,
+  toCatalogType,
+  toModerationCase,
+  toModerationQueue,
   type StoreItemWire,
   type EventWire,
   type TicketTierWire,
@@ -21,6 +28,9 @@ import {
   type PodcastEpisodeWire,
   type PagedUsersWire,
   type UserDetailWire,
+  type PagedCatalogWire,
+  type CatalogDetailWire,
+  type ModerationQueueWire,
 } from './mappers'
 
 describe('toArtist', () => {
@@ -612,5 +622,142 @@ describe('admin users mappers', () => {
     expect(d).not.toHaveProperty('activity')
     expect(d).not.toHaveProperty('orders')
     expect(d).not.toHaveProperty('devices')
+  })
+})
+
+describe('toCatalogStatus', () => {
+  it('buckets draft and in_review as pending', () => {
+    expect(toCatalogStatus('draft')).toBe('pending')
+    expect(toCatalogStatus('in_review')).toBe('pending')
+  })
+
+  it('buckets scheduled and live as published', () => {
+    expect(toCatalogStatus('scheduled')).toBe('published')
+    expect(toCatalogStatus('live')).toBe('published')
+  })
+
+  it('maps takedown 1:1', () => {
+    expect(toCatalogStatus('takedown')).toBe('takedown')
+  })
+
+  it('falls back to pending for an unknown wire value', () => {
+    expect(toCatalogStatus('some-future-status')).toBe('pending')
+  })
+})
+
+describe('toCatalogType', () => {
+  it('maps single', () => {
+    expect(toCatalogType('single')).toBe('Single')
+  })
+
+  it('maps ep', () => {
+    expect(toCatalogType('ep')).toBe('EP')
+  })
+
+  it('maps album', () => {
+    expect(toCatalogType('album')).toBe('Album')
+  })
+
+  it('maps mixtape', () => {
+    expect(toCatalogType('mixtape')).toBe('Mixtape')
+  })
+
+  it('falls back to Compilation (diagnostic sentinel) for an unknown wire value', () => {
+    expect(toCatalogType('some-future-type')).toBe('Compilation')
+  })
+})
+
+describe('admin catalog mappers', () => {
+  const rowWire = { id: 'c1', title: 'Iron Boy', note: 'submitted 2h ago', artist: 'Black Sherif', type: 'album', tracks: 14, status: 'pending' }
+
+  it('toCatalogItem maps 1:1 with narrowed unions, translates the wire type, and null note → undefined', () => {
+    expect(toCatalogItem(rowWire)).toEqual({
+      id: 'c1', title: 'Iron Boy', note: 'submitted 2h ago', artist: 'Black Sherif', type: 'Album', tracks: 14, status: 'pending',
+    })
+    expect(toCatalogItem({ ...rowWire, note: null }).note).toBeUndefined()
+  })
+
+  it('toCatalogItem translates a realistic wire status (in_review) to the pending bucket', () => {
+    expect(toCatalogItem({ ...rowWire, status: 'in_review' }).status).toBe('pending')
+  })
+
+  it('toCatalogList maps items + the three counts', () => {
+    const wire: PagedCatalogWire = { items: [rowWire], page: 1, size: 100, total: 1, counts: { pending: 24, published: 18396, takedown: 8 } }
+    const list = toCatalogList(wire)
+    expect(list.items).toHaveLength(1)
+    expect(list.items[0].title).toBe('Iron Boy')
+    expect(list.items[0].type).toBe('Album')
+    expect(list.counts).toEqual({ pending: 24, published: 18396, takedown: 8 })
+  })
+
+  it('toCatalogDetail translates the wire type, formats duration + relative log time, and projects splits', () => {
+    const wire: CatalogDetailWire = {
+      id: 'c1', title: 'Iron Boy', note: null, artist: 'Black Sherif', type: 'album', status: 'pending', upc: 'BZ900123',
+      tracklist: [{ position: 1, trackId: 't1', title: 'Intro', isrc: 'GHA-26-1001', durationSec: 132, priceMinor: 500 }],
+      splits: [{ trackId: 't1', name: 'Black Sherif', role: 'Primary artist', percent: 70, confirmation: 'confirmed' }],
+      actionLog: [{ id: 'l1', action: 'Submitted', by: 'system', time: '2026-07-24T10:00:00Z' }],
+    }
+    const d = toCatalogDetail(wire, 1721815200000) // now = 2024-07-24T10:00:00Z fixed; only checks it's a string
+    expect(d.type).toBe('Album')
+    expect(d.upc).toBe('BZ900123')
+    expect(d.tracks).toEqual([{ position: 1, title: 'Intro', isrc: 'GHA-26-1001', duration: '2:12' }])
+    expect(d.splits).toEqual([{ name: 'Black Sherif', role: 'Primary artist', pct: 70 }])
+    expect(d.log[0].action).toBe('Submitted')
+    expect(typeof d.log[0].time).toBe('string')
+  })
+
+  it('toCatalogDetail translates a realistic wire status (in_review) to the pending bucket', () => {
+    const wire: CatalogDetailWire = {
+      id: 'c1', title: 'Iron Boy', note: null, artist: 'Black Sherif', type: 'album', status: 'in_review', upc: 'BZ900123',
+      tracklist: [], splits: [], actionLog: [],
+    }
+    expect(toCatalogDetail(wire).status).toBe('pending')
+  })
+
+  it('toCatalogDetail dedupes splits selected across every track of a multi-track release', () => {
+    const splitRow = (trackId: string) => [
+      { trackId, name: 'Black Sherif', role: 'Primary artist', percent: 70, confirmation: 'confirmed' },
+      { trackId, name: 'Beat Butcha', role: 'Producer', percent: 20, confirmation: 'confirmed' },
+      { trackId, name: 'Beatzclik Publishing', role: 'Publisher', percent: 10, confirmation: 'confirmed' },
+    ]
+    const wire: CatalogDetailWire = {
+      id: 'c1', title: 'Iron Boy', note: null, artist: 'Black Sherif', type: 'album', status: 'live', upc: 'BZ900123',
+      tracklist: [],
+      splits: [...splitRow('t1'), ...splitRow('t2')],
+      actionLog: [],
+    }
+    const d = toCatalogDetail(wire)
+    expect(d.splits).toEqual([
+      { name: 'Black Sherif', role: 'Primary artist', pct: 70 },
+      { name: 'Beat Butcha', role: 'Producer', pct: 20 },
+      { name: 'Beatzclik Publishing', role: 'Publisher', pct: 10 },
+    ])
+  })
+
+  it('toCatalogDetail carries null upc through as null', () => {
+    const wire: CatalogDetailWire = {
+      id: 'c1', title: 'Iron Boy', note: null, artist: 'Black Sherif', type: 'album', status: 'live', upc: null,
+      tracklist: [{ position: 1, trackId: 't1', title: 'Intro', isrc: null, durationSec: 132, priceMinor: 500 }],
+      splits: [], actionLog: [],
+    }
+    const d = toCatalogDetail(wire)
+    expect(d.upc).toBeNull()
+    expect(d.tracks[0].isrc).toBeNull()
+  })
+})
+
+describe('admin moderation mappers', () => {
+  const caseWire = { id: 'm1', item: 'Track · X', reporter: '@dj', reason: 'Copyright', time: '2026-07-24T06:00:00Z', severity: 'high', status: 'open', escalated: false }
+
+  it('toModerationCase maps age via relativeTime and narrows unions', () => {
+    const c = toModerationCase(caseWire, Date.parse('2026-07-24T12:00:00Z'))
+    expect(c).toEqual({ id: 'm1', item: 'Track · X', reporter: '@dj', reason: 'Copyright', age: '6h', severity: 'high', status: 'open' })
+  })
+
+  it('toModerationQueue maps items + summary', () => {
+    const wire: ModerationQueueWire = { items: [caseWire], page: 1, size: 100, total: 1, summary: { openCount: 5, slaHours: 6, escalatedCount: 3 } }
+    const q = toModerationQueue(wire, Date.parse('2026-07-24T12:00:00Z'))
+    expect(q.items).toHaveLength(1)
+    expect(q.summary).toEqual({ open: 5, sla: 6, escalated: 3 })
   })
 })

@@ -21,6 +21,17 @@ export function usePaged<T>(items: T[], size = 8): Paged<T> {
   return { page: safePage, setPage, pageCount, pageItems: items.slice(start, start + size), total: items.length, size }
 }
 
+/** At most this many numbered page buttons render at once; beyond that the range windows around the current page. */
+const MAX_NUMBERED_PAGES = 7
+
+/** Windows the numbered-button range: identical `[1..pageCount]` when small, else 7 centred on `page` and clamped to the ends. */
+function pageWindow(page: number, pageCount: number): number[] {
+  if (pageCount <= MAX_NUMBERED_PAGES) return Array.from({ length: pageCount }, (_, i) => i + 1)
+  let start = page - Math.floor(MAX_NUMBERED_PAGES / 2)
+  start = Math.max(1, Math.min(start, pageCount - MAX_NUMBERED_PAGES + 1))
+  return Array.from({ length: MAX_NUMBERED_PAGES }, (_, i) => start + i)
+}
+
 export function Pagination<T>({ paged }: { paged: Paged<T> }) {
   const { page, pageCount, setPage, total, size } = paged
   if (pageCount <= 1) return null
@@ -35,7 +46,7 @@ export function Pagination<T>({ paged }: { paged: Paged<T> }) {
           className="w-8 h-8 flex items-center justify-center rounded-lg text-gray-500 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10 disabled:opacity-30 disabled:hover:bg-transparent transition-colors">
           <ChevronLeft size={16} />
         </button>
-        {Array.from({ length: pageCount }, (_, i) => i + 1).map((n) => (
+        {pageWindow(page, pageCount).map((n) => (
           <button key={n} onClick={() => setPage(n)}
             className={cn('w-8 h-8 rounded-lg text-sm font-bold transition-colors',
               n === page ? 'bg-beatz-green/15 text-beatz-green' : 'text-gray-500 dark:text-gray-300 hover:bg-gray-100 dark:hover:bg-white/10')}>

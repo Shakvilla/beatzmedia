@@ -35,8 +35,8 @@ import type {
 import type { StudioProfile, StudioSettings, StudioRelease, StudioPodcastShow, StudioEpisode, EpisodeStatus } from '../studio-data'
 import type { UploadedTrack } from '../../features/studio/release-draft-context'
 import type { Payouts, PayoutMethod, PayoutTxn, PayoutType, PayoutStatus, MethodKind } from '../studio-payouts'
-import type { AdminUserRow, UserRole, UserStatus, UserActionLog } from '../admin-data'
-import { relativeTimeAgo, monthYear } from '../format'
+import type { AdminUserRow, UserRole, UserStatus, UserActionLog, CatalogItem, CatalogStatus, CatalogType, ModerationItem, ModReason, ModSeverity, ModStatus } from '../admin-data'
+import { relativeTimeAgo, monthYear, formatDuration, relativeTime } from '../format'
 
 export interface ArtistWire {
   id: string
@@ -756,4 +756,186 @@ export function toUserActionLog(w: UserActionLogWire, now?: number): UserActionL
 
 export function toUserDetail(w: UserDetailWire, now?: number): AdminUserDetailData {
   return { summary: toAdminUserRow(w.summary, now), actionLog: w.actionLog.map((l) => toUserActionLog(l, now)) }
+}
+
+// ── Admin catalog (AdminCatalogResource) ──────────────────────────────────────
+export interface CatalogItemWire {
+  id: string
+  title: string
+  note: string | null
+  artist: string
+  type: string
+  tracks: number
+  status: string
+}
+export interface CatalogCountsWire { pending: number; published: number; takedown: number }
+export interface PagedCatalogWire {
+  items: CatalogItemWire[]
+  page: number
+  size: number
+  total: number
+  counts: CatalogCountsWire
+}
+export interface CatalogTrackWire {
+  position: number
+  trackId: string
+  title: string
+  isrc: string | null
+  durationSec: number
+  priceMinor: number
+}
+export interface CatalogSplitWire { trackId: string; name: string; role: string; percent: number; confirmation: string }
+export interface CatalogActionLogWire { id: string; action: string; by: string; time: string }
+export interface CatalogDetailWire {
+  id: string
+  title: string
+  note: string | null
+  artist: string
+  type: string
+  status: string
+  upc: string | null
+  tracklist: CatalogTrackWire[]
+  splits: CatalogSplitWire[]
+  actionLog: CatalogActionLogWire[]
+}
+
+export interface CatalogCounts { pending: number; published: number; takedown: number }
+export interface CatalogList { items: CatalogItem[]; counts: CatalogCounts }
+export interface CatalogDetailTrack { position: number; title: string; isrc: string | null; duration: string }
+export interface CatalogSplit { name: string; role: string; pct: number }
+export interface CatalogLogEntry { id: string; action: string; time: string }
+export interface CatalogDetail {
+  id: string
+  title: string
+  note?: string
+  artist: string
+  type: CatalogType
+  status: CatalogStatus
+  upc: string | null
+  tracks: CatalogDetailTrack[]
+  splits: CatalogSplit[]
+  log: CatalogLogEntry[]
+}
+
+/**
+ * Backend serves the raw release status (`draft|in_review|scheduled|live|takedown`); the admin UI
+ * speaks `pending|published|takedown`. Bucketing mirrors CatalogAdminReaderAdapter's own counts
+ * query and filter switch. Note `flagged` is never produced: flagging opens a moderation case
+ * rather than transitioning the release, so no release ever carries a `flagged` status.
+ */
+export function toCatalogStatus(wire: string): CatalogStatus {
+  switch (wire) {
+    case 'draft':
+    case 'in_review':
+      return 'pending'
+    case 'scheduled':
+    case 'live':
+      return 'published'
+    case 'takedown':
+      return 'takedown'
+    default:
+      return 'pending'
+  }
+}
+
+/**
+ * Backend serves the lowercase `ReleaseType` enum name (`single|ep|album|mixtape`); the admin UI
+ * renders title-case. The `'Compilation'` fallback is a deliberate diagnostic sentinel: the backend
+ * has no `compilation` release type, so if this ever renders in the UI it means an unrecognised
+ * `ReleaseType` value reached the mapper (as opposed to silently mislabelling it, e.g. as a Single).
+ */
+export function toCatalogType(wire: string): CatalogType {
+  switch (wire) {
+    case 'single': return 'Single'
+    case 'ep': return 'EP'
+    case 'album': return 'Album'
+    case 'mixtape': return 'Mixtape'
+    default: return 'Compilation'
+  }
+}
+
+export function toCatalogItem(w: CatalogItemWire): CatalogItem {
+  return {
+    id: w.id,
+    title: w.title,
+    note: w.note ?? undefined,
+    artist: w.artist,
+    type: toCatalogType(w.type),
+    tracks: w.tracks,
+    status: toCatalogStatus(w.status),
+  }
+}
+
+export function toCatalogList(w: PagedCatalogWire): CatalogList {
+  return {
+    items: w.items.map(toCatalogItem),
+    counts: { pending: w.counts.pending, published: w.counts.published, takedown: w.counts.takedown },
+  }
+}
+
+export function toCatalogDetail(w: CatalogDetailWire, now?: number): CatalogDetail {
+  const seenSplits = new Set<string>()
+  const splits = w.splits
+    .filter((s) => {
+      const k = `${s.name}|${s.role}|${s.percent}`
+      if (seenSplits.has(k)) return false
+      seenSplits.add(k)
+      return true
+    })
+    .map((s) => ({ name: s.name, role: s.role, pct: s.percent }))
+
+  return {
+    id: w.id,
+    title: w.title,
+    note: w.note ?? undefined,
+    artist: w.artist,
+    type: toCatalogType(w.type),
+    status: toCatalogStatus(w.status),
+    upc: w.upc ?? null,
+    tracks: w.tracklist.map((t) => ({ position: t.position, title: t.title, isrc: t.isrc ?? null, duration: formatDuration(t.durationSec) })),
+    splits,
+    log: w.actionLog.map((l) => ({ id: l.id, action: l.action, time: relativeTimeAgo(l.time, now) })),
+  }
+}
+
+// ── Admin moderation (AdminModerationResource) ────────────────────────────────
+export interface ModerationCaseWire {
+  id: string
+  item: string
+  reporter: string
+  reason: string
+  time: string
+  severity: string
+  status: string
+  escalated: boolean
+}
+export interface ModerationSummaryWire { openCount: number; slaHours: number; escalatedCount: number }
+export interface ModerationQueueWire {
+  items: ModerationCaseWire[]
+  page: number
+  size: number
+  total: number
+  summary: ModerationSummaryWire
+}
+
+export interface ModerationSummary { open: number; sla: number; escalated: number }
+export interface ModerationQueueData { items: ModerationItem[]; summary: ModerationSummary }
+
+export function toModerationCase(w: ModerationCaseWire, now?: number): ModerationItem {
+  return {
+    id: w.id,
+    item: w.item,
+    reporter: w.reporter,
+    reason: w.reason as ModReason,
+    age: relativeTime(w.time, now),
+    severity: w.severity as ModSeverity,
+    status: w.status as ModStatus,
+  }
+}
+
+export function toModerationQueue(w: ModerationQueueWire, now?: number): ModerationQueueData {
+  return {
+    items: w.items.map((c) => toModerationCase(c, now)),
+    summary: { open: w.summary.openCount, sla: w.summary.slaHours, escalated: w.summary.escalatedCount },
+  }
 }

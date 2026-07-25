@@ -1,10 +1,14 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Disc3, Check, Flag, ShieldX, Clock, Play } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { Modal } from '../components/ui/modal'
 import { useToast } from '../components/ui/toast-provider'
-import { getCatalog, type CatalogItem, type CatalogStatus } from '../lib/admin-data'
+import { type CatalogStatus } from '../lib/admin-data'
+import { catalogItemQuery, apiApproveCatalog, apiFlagCatalog, apiTakedownCatalog } from '../lib/api/queries/admin-catalog'
+import { AdminLoadError } from '../components/admin/load-error'
+import { ApiError } from '../lib/api/errors'
 
 export const Route = createFileRoute('/admin/catalog/$itemId')({
   component: AdminCatalogDetail,
@@ -17,33 +21,50 @@ function coverGradient(t: string): string {
   for (let i = 0; i < t.length; i++) h = (h * 31 + t.charCodeAt(i)) % 360
   return `linear-gradient(135deg, hsl(${h} 50% 44%), hsl(${(h + 48) % 360} 55% 32%))`
 }
-const dur = (i: number) => `${2 + ((i * 37) % 3)}:${(10 + ((i * 17) % 49)).toString().padStart(2, '0')}`
-
-interface Log { id: string; action: string; time: string }
 
 function AdminCatalogDetail() {
   const { itemId } = Route.useParams()
   const { toast } = useToast()
-  const found = useMemo(() => getCatalog().find((c) => c.id === itemId), [itemId])
-  const [item, setItem] = useState<CatalogItem | undefined>(found)
+  const queryClient = useQueryClient()
+  const { data, isError, error, refetch } = useQuery(catalogItemQuery(itemId))
   const [takedownOpen, setTakedownOpen] = useState(false)
-  const [log, setLog] = useState<Log[]>(found ? [{ id: 'l0', action: `Submitted by ${found.artist}`, time: found.note ?? '—' }] : [])
 
-  if (!item) {
+  if (isError) {
+    if (error instanceof ApiError && error.status === 404) {
+      return (
+        <div className="flex flex-col items-center justify-center text-center gap-4 py-24">
+          <p className="text-sm text-gray-500 dark:text-gray-300">Release not found.</p>
+          <Link to="/admin/catalog" className="h-10 px-5 rounded-full bg-beatz-green text-black font-bold text-sm flex items-center">Back to catalog</Link>
+        </div>
+      )
+    }
     return (
-      <div className="flex flex-col items-center justify-center text-center gap-4 py-24">
-        <p className="text-sm text-gray-500 dark:text-gray-300">Release not found.</p>
-        <Link to="/admin/catalog" className="h-10 px-5 rounded-full bg-beatz-green text-black font-bold text-sm flex items-center">Back to catalog</Link>
+      <div className="py-24">
+        <AdminLoadError label="Couldn't load this release." onRetry={() => refetch()} />
       </div>
     )
   }
 
-  const addLog = (action: string) => setLog((l) => [{ id: `l-${Date.now()}`, action, time: 'just now' }, ...l])
-  const setStatus = (status: CatalogStatus, action: string) => { setItem((c) => (c ? { ...c, status } : c)); addLog(action); toast(action, 'success') }
+  const item = data
+  if (!item) {
+    return (
+      <div className="py-24 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</div>
+    )
+  }
+
+  const invalidate = async () => {
+    await queryClient.invalidateQueries({ queryKey: ['admin', 'catalog'] })
+  }
+  const invalidateModeration = () => queryClient.invalidateQueries({ queryKey: ['admin', 'moderation'] })
+  const runAction = async (fn: () => Promise<void>, okMsg: string, errMsg: string) => {
+    try { await fn(); await invalidate(); toast(okMsg, 'success') }
+    catch { toast(errMsg, 'error') }
+  }
+  const approve = () => runAction(() => apiApproveCatalog(item.id), 'Approved & published', 'Could not approve release')
+  const flag = () => runAction(async () => { await apiFlagCatalog(item.id); await invalidateModeration() }, 'Flagged for review', 'Could not flag release')
+  const takedown = (reason: string) => runAction(() => apiTakedownCatalog(item.id, reason), `Taken down · ${reason}`, 'Could not take down release')
+
   const reviewable = item.status === 'pending' || item.status === 'flagged'
-  const tracks = Array.from({ length: item.tracks }, (_, i) => ({ n: i + 1, title: item.tracks === 1 ? item.title : `${item.title} · ${i + 1}`, duration: dur(i) }))
-  const isrc = (n: number) => `GHA-26-${(1000 + n).toString()}`
-  const splits = [{ name: item.artist, role: 'Primary artist', pct: 70 }, { name: 'Producer', role: 'Production', pct: 20 }, { name: 'Label', role: 'Label cut', pct: 10 }]
 
   return (
     <div className="flex flex-col gap-8">
@@ -59,12 +80,12 @@ function AdminCatalogDetail() {
                 <h1 className="text-3xl font-bold tracking-tight text-beatz-dark-bg dark:text-white">{item.title}</h1>
                 <StatusPill status={item.status} />
               </div>
-              <span className="text-sm text-gray-500 dark:text-gray-300">{item.artist} · {item.type} · {item.tracks} track{item.tracks === 1 ? '' : 's'}{item.note ? ` · ${item.note}` : ''}</span>
+              <span className="text-sm text-gray-500 dark:text-gray-300">{item.artist} · {item.type} · {item.tracks.length} track{item.tracks.length === 1 ? '' : 's'}{item.note ? ` · ${item.note}` : ''}</span>
             </div>
           </div>
           <div className="flex items-center gap-2">
-            {reviewable && <button onClick={() => setStatus('published', 'Approved & published')} className="h-10 px-4 rounded-full bg-beatz-green text-black text-sm font-bold hover:scale-105 transition-transform"><span className="flex items-center gap-2"><Check size={15} /> Approve</span></button>}
-            {item.status !== 'flagged' && <button onClick={() => setStatus('flagged', 'Flagged for review')} className="h-10 px-4 rounded-full bg-gray-100 dark:bg-white/10 text-beatz-dark-bg dark:text-white text-sm font-bold flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors"><Flag size={15} /> Flag</button>}
+            {reviewable && <button onClick={approve} className="h-10 px-4 rounded-full bg-beatz-green text-black text-sm font-bold hover:scale-105 transition-transform"><span className="flex items-center gap-2"><Check size={15} /> Approve</span></button>}
+            {item.status !== 'flagged' && <button onClick={flag} className="h-10 px-4 rounded-full bg-gray-100 dark:bg-white/10 text-beatz-dark-bg dark:text-white text-sm font-bold flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors"><Flag size={15} /> Flag</button>}
             <button onClick={() => setTakedownOpen(true)} className="h-10 px-4 rounded-full bg-beatz-red/10 text-beatz-red text-sm font-bold flex items-center gap-2 hover:bg-beatz-red/20 transition-colors"><ShieldX size={15} /> Take down</button>
           </div>
         </div>
@@ -75,12 +96,12 @@ function AdminCatalogDetail() {
         <section className={cn(CARD, 'flex flex-col gap-4')}>
           <h2 className="text-lg font-bold text-beatz-dark-bg dark:text-white">Tracklist</h2>
           <div className="flex flex-col">
-            {tracks.map((t) => (
-              <div key={t.n} className="flex items-center gap-3 py-2.5 border-b border-dashed border-gray-200 dark:border-white/5 last:border-0 group">
-                <span className="w-5 text-sm font-mono text-gray-400 dark:text-gray-500 shrink-0">{t.n}</span>
+            {item.tracks.map((t) => (
+              <div key={t.position} className="flex items-center gap-3 py-2.5 border-b border-dashed border-gray-200 dark:border-white/5 last:border-0 group">
+                <span className="w-5 text-sm font-mono text-gray-400 dark:text-gray-500 shrink-0">{t.position}</span>
                 <button onClick={() => toast(`Previewing “${t.title}”`, 'info')} className="w-7 h-7 rounded-full bg-beatz-green/10 text-beatz-green flex items-center justify-center shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"><Play size={12} fill="currentColor" /></button>
                 <span className="flex-1 text-sm font-bold text-beatz-dark-bg dark:text-white truncate">{t.title}</span>
-                <span className="text-xs font-mono text-gray-400 dark:text-gray-500 shrink-0">{isrc(t.n)}</span>
+                <span className="text-xs font-mono text-gray-400 dark:text-gray-500 shrink-0">{t.isrc ?? '—'}</span>
                 <span className="w-12 text-right text-sm font-mono text-gray-500 dark:text-gray-300 shrink-0">{t.duration}</span>
               </div>
             ))}
@@ -91,16 +112,16 @@ function AdminCatalogDetail() {
         <div className="flex flex-col gap-6">
           <section className={cn(CARD, 'flex flex-col gap-3')}>
             <h2 className="text-lg font-bold text-beatz-dark-bg dark:text-white">Metadata</h2>
-            <Meta label="UPC" value={`BZ${(900000 + item.title.length * 137).toString()}`} />
+            <Meta label="UPC" value={item.upc ?? '—'} />
             <Meta label="Primary genre" value="Hiplife / Drill" />
             <Meta label="Label" value={item.artist === 'Various' ? 'Beatzclik Compilations' : 'Independent'} />
-            <Meta label="Tracks" value={`${item.tracks}`} last />
+            <Meta label="Tracks" value={`${item.tracks.length}`} last />
           </section>
 
           <section className={cn(CARD, 'flex flex-col gap-3')}>
             <h2 className="text-lg font-bold text-beatz-dark-bg dark:text-white">Rights & splits</h2>
-            {splits.map((s) => (
-              <div key={s.name} className="flex items-center gap-3 py-1.5">
+            {item.splits.map((s) => (
+              <div key={`${s.name}-${s.role}-${s.pct}`} className="flex items-center gap-3 py-1.5">
                 <div className="flex flex-col flex-1 min-w-0">
                   <span className="text-sm font-bold text-beatz-dark-bg dark:text-white truncate">{s.name}</span>
                   <span className="text-xs text-gray-500 dark:text-gray-400">{s.role}</span>
@@ -112,7 +133,7 @@ function AdminCatalogDetail() {
 
           <section className={cn(CARD, 'flex flex-col gap-3')}>
             <h2 className="text-lg font-bold text-beatz-dark-bg dark:text-white">Action history</h2>
-            {log.map((l) => (
+            {item.log.map((l) => (
               <div key={l.id} className="flex items-center gap-3 py-2 border-b border-dashed border-gray-200 dark:border-white/5 last:border-0">
                 <Clock size={13} className="text-gray-400 shrink-0" />
                 <span className="flex-1 text-sm text-beatz-dark-bg dark:text-white truncate">{l.action}</span>
@@ -124,7 +145,7 @@ function AdminCatalogDetail() {
       </div>
 
       <TakedownModal isOpen={takedownOpen} title={item.title} onClose={() => setTakedownOpen(false)}
-        onConfirm={(reason) => { setTakedownOpen(false); setStatus('takedown', `Taken down · ${reason}`) }} />
+        onConfirm={(reason) => { setTakedownOpen(false); takedown(reason) }} />
     </div>
   )
 }
