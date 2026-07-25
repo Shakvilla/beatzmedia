@@ -21,6 +21,11 @@ import {
   toCatalogType,
   toModerationCase,
   toModerationQueue,
+  toFinanceOverview,
+  toLedgerPage,
+  toPendingPayout,
+  toDisputeStatus,
+  toDisputeDetail,
   type StoreItemWire,
   type EventWire,
   type TicketTierWire,
@@ -31,6 +36,9 @@ import {
   type PagedCatalogWire,
   type CatalogDetailWire,
   type ModerationQueueWire,
+  type FinanceOverviewWire,
+  type LedgerPageWire,
+  type DisputeDetailWire,
 } from './mappers'
 
 describe('toArtist', () => {
@@ -759,5 +767,90 @@ describe('admin moderation mappers', () => {
     const q = toModerationQueue(wire, Date.parse('2026-07-24T12:00:00Z'))
     expect(q.items).toHaveLength(1)
     expect(q.summary).toEqual({ open: 5, sla: 6, escalated: 3 })
+  })
+})
+
+describe('finance overview mapper', () => {
+  const wire: FinanceOverviewWire = {
+    kpis: { gmvMtd: 842000.0, gmvDelta: 12, platformFee: 252600.0, feeTakePct: 30, payoutsDue: 42180.5, payoutsArtists: 318, momoFloat: 96000.0 },
+    pendingPayouts: [{ id: 'p1', artist: 'Black Sherif', amount: 12400.0, method: 'MoMo · MTN', status: 'ready' }],
+    providerMix: [{ name: 'MTN', value: 62 }, { name: 'Voda', value: 24 }],
+    disputes: [{ id: 'd1', kind: 'Refund request', subject: '@ama_b', detail: 'Album not delivered', amount: 18.99, opened: '2026-04-22T10:00:00Z' }],
+  }
+
+  it('maps kpis as plain cedis numbers', () => {
+    const f = toFinanceOverview(wire)
+    expect(f.kpis).toEqual({ gmvMtd: 842000, gmvDelta: 12, platformFee: 252600, feeTakePct: 30, payoutsDue: 42180.5, payoutsArtists: 318, momoFloat: 96000 })
+  })
+
+  it('maps pending payouts and narrows the status union', () => {
+    const f = toFinanceOverview(wire)
+    expect(f.pendingPayouts).toEqual([{ id: 'p1', artist: 'Black Sherif', amount: 12400, method: 'MoMo · MTN', status: 'ready' }])
+  })
+
+  it('maps provider mix 1:1 and converts each dispute opened date to a short label', () => {
+    const f = toFinanceOverview(wire)
+    expect(f.providerMix).toEqual([{ name: 'MTN', value: 62 }, { name: 'Voda', value: 24 }])
+    expect(f.disputes[0]).toEqual({ id: 'd1', kind: 'Refund request', subject: '@ama_b', detail: 'Album not delivered', amount: 18.99, opened: 'Apr 22' })
+  })
+})
+
+describe('ledger mappers', () => {
+  it('maps a page: signed amounts, short dates, display-token types, and the server total', () => {
+    const wire: LedgerPageWire = {
+      items: [
+        { id: 'l1', date: '2026-05-02T08:00:00Z', type: 'Sale', party: 'Black Sherif', ref: 'BZ-1', amount: 2.5 },
+        { id: 'l2', date: null, type: 'Payout', party: 'DJ Kojo', ref: 'BZ-2', amount: -42180 },
+      ],
+      page: 2, size: 8, total: 137,
+    }
+    const p = toLedgerPage(wire)
+    expect(p.total).toBe(137)
+    expect(p.page).toBe(2)
+    expect(p.items[0]).toEqual({ id: 'l1', date: 'May 02', type: 'Sale', party: 'Black Sherif', ref: 'BZ-1', amount: 2.5 })
+    expect(p.items[1].amount).toBe(-42180)
+    expect(p.items[1].date).toBe('')
+  })
+})
+
+describe('pending payout mapper', () => {
+  it('unwraps the MoneyView envelope (this endpoint differs from the overview)', () => {
+    const p = toPendingPayout({ id: 'p1', artist: 'Fido', amount: { amount: 9400.5, currency: 'GHS' }, method: 'MoMo · MTN', status: 'kyc_pending' })
+    expect(p).toEqual({ id: 'p1', artist: 'Fido', amount: 9400.5, method: 'MoMo · MTN', status: 'kyc_pending' })
+  })
+})
+
+describe('dispute detail mapper', () => {
+  it('maps the four wire statuses onto the UI two, with escalated still open', () => {
+    expect(toDisputeStatus('open')).toBe('open')
+    expect(toDisputeStatus('escalated')).toBe('open')
+    expect(toDisputeStatus('refunded')).toBe('resolved')
+    expect(toDisputeStatus('rejected')).toBe('resolved')
+    expect(toDisputeStatus('something-new')).toBe('open')
+  })
+
+  it('unwraps MoneyView, shortens opened, and renders timeline times as relative', () => {
+    const wire: DisputeDetailWire = {
+      id: 'd1', kind: 'Refund request', subject: '@ama_b', detail: 'Album not delivered',
+      amount: { amount: 18.99, currency: 'GHS' }, status: 'open', opened: '2026-04-22T10:00:00Z',
+      timeline: [{ id: 't1', text: 'Dispute opened by fan', time: '2026-04-22T10:00:00Z' }],
+    }
+    const d = toDisputeDetail(wire, Date.parse('2026-04-25T10:00:00Z'))
+    expect(d.kind).toBe('Refund request')
+    expect(d.amount).toBe(18.99)
+    expect(d.opened).toBe('Apr 22')
+    expect(d.status).toBe('open')
+    expect(d.wireStatus).toBe('open')
+    expect(d.timeline).toEqual([{ id: 't1', text: 'Dispute opened by fan', time: '3d ago' }])
+  })
+
+  it('carries the raw wireStatus through even though the folded status hides it (escalated)', () => {
+    const wire: DisputeDetailWire = {
+      id: 'd2', kind: 'Chargeback', subject: '@kwesi', detail: 'Card dispute',
+      amount: { amount: 40, currency: 'GHS' }, status: 'escalated', opened: null, timeline: [],
+    }
+    const d = toDisputeDetail(wire)
+    expect(d.wireStatus).toBe('escalated')
+    expect(d.status).toBe('open')
   })
 })

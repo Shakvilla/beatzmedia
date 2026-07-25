@@ -35,8 +35,8 @@ import type {
 import type { StudioProfile, StudioSettings, StudioRelease, StudioPodcastShow, StudioEpisode, EpisodeStatus } from '../studio-data'
 import type { UploadedTrack } from '../../features/studio/release-draft-context'
 import type { Payouts, PayoutMethod, PayoutTxn, PayoutType, PayoutStatus, MethodKind } from '../studio-payouts'
-import type { AdminUserRow, UserRole, UserStatus, UserActionLog, CatalogItem, CatalogStatus, CatalogType, ModerationItem, ModReason, ModSeverity, ModStatus } from '../admin-data'
-import { relativeTimeAgo, monthYear, formatDuration, relativeTime } from '../format'
+import type { AdminUserRow, UserRole, UserStatus, UserActionLog, CatalogItem, CatalogStatus, CatalogType, ModerationItem, ModReason, ModSeverity, ModStatus, Finance, PendingPayout, ProviderMix, Dispute, LedgerTxn, LedgerType, TimelineEntry } from '../admin-data'
+import { relativeTimeAgo, monthYear, formatDuration, relativeTime, toCedis, monthDay } from '../format'
 
 export interface ArtistWire {
   id: string
@@ -937,5 +937,172 @@ export function toModerationQueue(w: ModerationQueueWire, now?: number): Moderat
   return {
     items: w.items.map((c) => toModerationCase(c, now)),
     summary: { open: w.summary.openCount, sla: w.summary.slaHours, escalated: w.summary.escalatedCount },
+  }
+}
+
+// ── Admin finance overview (AdminFinanceOverviewResource) ─────────────────────
+// Money on THIS endpoint is a bare BigDecimal of cedis (a plain JSON number), unlike the
+// disputes/payouts endpoints which use the { amount, currency } MoneyView envelope.
+export interface FinanceKpisWire {
+  gmvMtd: number
+  gmvDelta: number
+  platformFee: number
+  feeTakePct: number
+  payoutsDue: number
+  payoutsArtists: number
+  momoFloat: number
+}
+export interface PendingPayoutSummaryWire { id: string; artist: string; amount: number; method: string; status: string }
+export interface ProviderMixWire { name: string; value: number }
+export interface DisputeSummaryWire {
+  id: string
+  kind: string
+  subject: string
+  detail: string
+  amount: number | null
+  opened: string | null
+}
+export interface FinanceOverviewWire {
+  kpis: FinanceKpisWire
+  pendingPayouts: PendingPayoutSummaryWire[]
+  providerMix: ProviderMixWire[]
+  disputes: DisputeSummaryWire[]
+}
+
+export function toFinanceOverview(w: FinanceOverviewWire): Finance {
+  return {
+    kpis: {
+      gmvMtd: toCedis(w.kpis.gmvMtd),
+      gmvDelta: w.kpis.gmvDelta,
+      platformFee: toCedis(w.kpis.platformFee),
+      feeTakePct: w.kpis.feeTakePct,
+      payoutsDue: toCedis(w.kpis.payoutsDue),
+      payoutsArtists: w.kpis.payoutsArtists,
+      momoFloat: toCedis(w.kpis.momoFloat),
+    },
+    pendingPayouts: w.pendingPayouts.map(
+      (p): PendingPayout => ({
+        id: p.id,
+        artist: p.artist,
+        amount: toCedis(p.amount),
+        method: p.method,
+        status: p.status as PendingPayout['status'],
+      }),
+    ),
+    providerMix: w.providerMix.map((m): ProviderMix => ({ name: m.name, value: m.value })),
+    disputes: w.disputes.map(
+      (d): Dispute => ({
+        id: d.id,
+        kind: d.kind,
+        subject: d.subject,
+        detail: d.detail,
+        amount: d.amount == null ? undefined : toCedis(d.amount),
+        opened: d.opened ? monthDay(d.opened) : undefined,
+      }),
+    ),
+  }
+}
+
+// ── Admin finance ledger / payouts / disputes ─────────────────────────────────
+/** The `MoneyView` envelope used by the disputes + payouts endpoints. */
+export interface MoneyWire { amount: number; currency: string }
+
+export interface LedgerEntryWire {
+  id: string
+  date: string | null
+  type: string
+  party: string
+  ref: string
+  amount: number
+}
+export interface LedgerPageWire { items: LedgerEntryWire[]; page: number; size: number; total: number }
+export interface LedgerPage { items: LedgerTxn[]; page: number; size: number; total: number }
+
+export function toLedgerEntry(w: LedgerEntryWire): LedgerTxn {
+  return {
+    id: w.id,
+    // `type` arrives via LedgerType.display(), which returns the UI's exact tokens — a cast is right.
+    type: w.type as LedgerType,
+    party: w.party,
+    ref: w.ref,
+    date: w.date ? monthDay(w.date) : '',
+    amount: toCedis(w.amount),
+  }
+}
+
+export function toLedgerPage(w: LedgerPageWire): LedgerPage {
+  return { items: w.items.map(toLedgerEntry), page: w.page, size: w.size, total: w.total }
+}
+
+export interface PendingPayoutWire {
+  id: string
+  artist: string
+  amount: MoneyWire
+  method: string
+  status: string
+}
+
+export function toPendingPayout(w: PendingPayoutWire): PendingPayout {
+  return {
+    id: w.id,
+    artist: w.artist,
+    amount: toCedis(w.amount),
+    method: w.method,
+    status: w.status as PendingPayout['status'],
+  }
+}
+
+export interface DisputeTimelineWire { id: string; text: string; time: string | null }
+export interface DisputeDetailWire {
+  id: string
+  kind: string
+  subject: string
+  detail: string
+  amount: MoneyWire | null
+  status: string
+  opened: string | null
+  timeline: DisputeTimelineWire[]
+}
+export interface DisputeDetail {
+  id: string
+  kind: string
+  subject: string
+  detail: string
+  amount?: number
+  status: 'open' | 'resolved'
+  /**
+   * The raw, un-folded wire status (`open|refunded|rejected|escalated`). `status` above folds
+   * `escalated` into `open` for the two-state pill; callers that need to tell an escalated
+   * dispute apart from a plain open one (e.g. to detect a refund/reject no-op, or to hide actions
+   * the server will refuse) must check THIS field instead.
+   */
+  wireStatus: string
+  opened?: string
+  timeline: TimelineEntry[]
+}
+
+/**
+ * The wire carries four statuses (`open|refunded|rejected|escalated`); this screen shows two.
+ * `escalated` maps to `open` on purpose — an escalated dispute is still open work, and this
+ * matches the existing behaviour where Escalate does not resolve the dispute. Unknown values
+ * fall back to `open` so a new backend status never reads as resolved.
+ */
+export function toDisputeStatus(wire: string): 'open' | 'resolved' {
+  return wire === 'refunded' || wire === 'rejected' ? 'resolved' : 'open'
+}
+
+export function toDisputeDetail(w: DisputeDetailWire, now?: number): DisputeDetail {
+  return {
+    id: w.id,
+    kind: w.kind,
+    subject: w.subject,
+    detail: w.detail,
+    amount: w.amount == null ? undefined : toCedis(w.amount),
+    status: toDisputeStatus(w.status),
+    wireStatus: w.status,
+    opened: w.opened ? monthDay(w.opened) : undefined,
+    timeline: w.timeline.map(
+      (t): TimelineEntry => ({ id: t.id, text: t.text, time: t.time ? relativeTimeAgo(t.time, now) : '' }),
+    ),
   }
 }

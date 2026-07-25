@@ -21,6 +21,29 @@ export function usePaged<T>(items: T[], size = 8): Paged<T> {
   return { page: safePage, setPage, pageCount, pageItems: items.slice(start, start + size), total: items.length, size }
 }
 
+/**
+ * The server-driven twin of {@link usePaged}: the endpoint already sliced the page, so `items` IS
+ * the page and `pageCount` comes from the server's `total`. Returns the same {@link Paged} shape,
+ * so `Pagination` renders it without any change. The caller owns `page` state (and resets it to 1
+ * when its filters change).
+ */
+export function useServerPaged<T>({
+  items,
+  total,
+  page,
+  setPage,
+  size,
+}: {
+  items: T[]
+  total: number
+  page: number
+  setPage: (p: number) => void
+  size: number
+}): Paged<T> {
+  const pageCount = Math.max(1, Math.ceil(total / size))
+  return { page, setPage, pageCount, pageItems: items, total, size }
+}
+
 /** At most this many numbered page buttons render at once; beyond that the range windows around the current page. */
 const MAX_NUMBERED_PAGES = 7
 

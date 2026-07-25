@@ -1,10 +1,13 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useMemo, useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ArrowLeft, Search, Download } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
-import { getLedger, type LedgerTxn, type LedgerType } from '../lib/admin-data'
-import { usePaged, Pagination } from '../components/admin/pagination'
+import { useQuery } from '@tanstack/react-query'
+import type { LedgerTxn, LedgerType } from '../lib/admin-data'
+import { ledgerQuery, LEDGER_PAGE_SIZE } from '../lib/api/queries/admin-finance'
+import { useServerPaged, Pagination } from '../components/admin/pagination'
+import { AdminLoadError } from '../components/admin/load-error'
 
 export const Route = createFileRoute('/admin/finance/ledger')({
   component: AdminLedger,
@@ -17,14 +20,26 @@ const TYPES: (LedgerType | 'all')[] = ['all', 'Sale', 'Royalty', 'Tip', 'Payout'
 
 function AdminLedger() {
   const { toast } = useToast()
-  const all = useMemo(() => getLedger(), [])
   const [type, setType] = useState<LedgerType | 'all'>('all')
   const [query, setQuery] = useState('')
+  const [debouncedQ, setDebouncedQ] = useState('')
+  const [page, setPage] = useState(1)
 
-  const q = query.trim().toLowerCase()
-  const rows = all.filter((t) => (type === 'all' || t.type === type) && (!q || `${t.party} ${t.ref}`.toLowerCase().includes(q)))
+  // Search is a server param, so debounce it: one request per pause, not per keystroke.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      setDebouncedQ(query.trim())
+      setPage(1)
+    }, 300)
+    return () => clearTimeout(t)
+  }, [query])
+
+  const { data, isError, isLoading, refetch } = useQuery(ledgerQuery(type, debouncedQ, page))
+  const rows: LedgerTxn[] = data?.items ?? []
+  // "Net in view" is the net of the rows on screen: with server paging the client holds one page,
+  // and the endpoint's `total` is a count, not a sum.
   const net = rows.reduce((s, t) => s + t.amount, 0)
-  const paged = usePaged(rows)
+  const paged = useServerPaged({ items: rows, total: data?.total ?? 0, page, setPage, size: LEDGER_PAGE_SIZE })
 
   return (
     <div className="flex flex-col gap-6">
@@ -46,7 +61,7 @@ function AdminLedger() {
       <div className="flex items-center justify-between gap-3 flex-wrap">
         <div className="flex items-center gap-2 flex-wrap">
           {TYPES.map((t) => (
-            <button key={t} onClick={() => setType(t)}
+            <button key={t} onClick={() => { setType(t); setPage(1) }}
               className={cn('h-9 px-4 rounded-full text-sm font-bold transition-colors',
                 type === t ? 'bg-beatz-green/15 text-beatz-green' : 'bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-300 hover:bg-gray-200 dark:hover:bg-white/15')}>
               {t === 'all' ? 'All' : t}
@@ -70,7 +85,11 @@ function AdminLedger() {
               <span className="w-32 shrink-0">Ref</span>
               <span className="w-28 text-right shrink-0">Amount</span>
             </div>
-            {rows.length === 0 ? (
+            {isError ? (
+              <AdminLoadError label="Couldn't load the ledger." onRetry={() => refetch()} />
+            ) : isLoading ? (
+              <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</div>
+            ) : rows.length === 0 ? (
               <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">No matching entries.</div>
             ) : paged.pageItems.map((t) => <LedgerRow key={t.id} txn={t} />)}
           </div>

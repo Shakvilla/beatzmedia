@@ -71,3 +71,28 @@ export function monthYear(iso: string): string {
   if (!Number.isFinite(ms)) return ''
   return new Intl.DateTimeFormat('en-US', { month: 'short', year: 'numeric' }).format(new Date(ms))
 }
+
+/**
+ * Formats an ISO-8601 timestamp as the admin screens' short date label, e.g. `"Apr 22"`.
+ * Returns `''` for an unparseable value so a bad timestamp never renders "Invalid Date".
+ * (`monthYear` above yields `"Apr 2026"`; the finance ledger and dispute screens want day precision.)
+ */
+export function monthDay(iso: string): string {
+  const ms = Date.parse(iso)
+  if (!Number.isFinite(ms)) return ''
+  return new Date(ms).toLocaleDateString('en-US', { month: 'short', day: '2-digit', timeZone: 'UTC' })
+}
+
+/**
+ * Normalizes a wire money value to a plain number of cedis.
+ *
+ * The finance endpoints serve money in TWO shapes: the overview and ledger send a bare
+ * `BigDecimal` (a plain JSON number of cedis), while the disputes and payouts endpoints send the
+ * `MoneyView` envelope `{ amount, currency }`. Normalizing here lets each screen keep its own
+ * existing display helper unchanged. Missing values become 0 rather than NaN.
+ */
+export function toCedis(wire: number | { amount: number; currency?: string } | null | undefined): number {
+  if (wire == null) return 0
+  const value = typeof wire === 'number' ? wire : wire.amount
+  return Number.isFinite(value) ? value : 0
+}
