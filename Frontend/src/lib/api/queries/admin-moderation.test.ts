@@ -42,6 +42,7 @@ describe('admin-moderation queries', () => {
     const [url, opts] = f.mock.calls[0]
     expect(url).toBe('/v1/admin/moderation/m1/remove')
     expect(opts.method).toBe('POST')
+    expect(opts.body).toBeUndefined()
   })
 
   it('apiEscalateCase POSTs to /escalate', async () => {
