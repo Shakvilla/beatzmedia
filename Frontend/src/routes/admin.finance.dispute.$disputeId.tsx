@@ -20,7 +20,7 @@ function DisputeDetail() {
   const { disputeId } = Route.useParams()
   const { toast } = useToast()
   const queryClient = useQueryClient()
-  const { data, isLoading, isError, error, refetch } = useQuery(disputeQuery(disputeId))
+  const { data, isError, error, refetch } = useQuery(disputeQuery(disputeId))
   const [refundOpen, setRefundOpen] = useState(false)
   const [submitting, setSubmitting] = useState(false)
   const inFlight = useRef(false)
@@ -41,7 +41,7 @@ function DisputeDetail() {
 
   const d = data
   if (!d) {
-    return <div className="py-24 text-center text-sm text-gray-400 dark:text-gray-500">{isLoading ? 'Loading…' : ''}</div>
+    return <div className="py-24 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</div>
   }
 
   const status = d.status
@@ -49,16 +49,22 @@ function DisputeDetail() {
     if (inFlight.current) return
     inFlight.current = true
     setSubmitting(true)
+    let ok = false
     try {
       await fn()
+      ok = true
+    } catch {
+      toast(errMsg, 'error')
+    } finally {
       await queryClient.invalidateQueries({ queryKey: ['admin', 'finance'] })
-      toast(okMsg, tone)
-    } catch { toast(errMsg, 'error') }
-    finally { inFlight.current = false; setSubmitting(false) }
+      if (ok) toast(okMsg, tone)
+      inFlight.current = false
+      setSubmitting(false)
+    }
   }
   const reject = () => runAction(() => apiRejectDispute(d.id, 'Dispute rejected · evidence sufficient'), 'Dispute rejected · evidence sufficient', 'Could not reject the dispute')
   const escalate = () => runAction(() => apiEscalateDispute(d.id), 'Escalated to senior finance', 'Could not escalate the dispute', 'info')
-  const refund = () => runAction(() => apiRefundDispute(d.id, `Refunded ${cedis(d.amount ?? 0)} · dispute closed`), `Refunded ${cedis(d.amount ?? 0)} · dispute closed`, 'Could not issue the refund')
+  const refund = () => runAction(() => apiRefundDispute(d.id, 'Dispute closed · full refund'), `Refunded ${cedis(d.amount ?? 0)} · dispute closed`, 'Could not issue the refund')
 
   return (
     <div className="flex flex-col gap-8">
@@ -77,8 +83,8 @@ function DisputeDetail() {
           {status === 'open' && (
             <div className="flex items-center gap-2">
               <button onClick={() => setRefundOpen(true)} disabled={submitting} className="h-10 px-4 rounded-full bg-beatz-green text-black text-sm font-bold flex items-center gap-2 hover:scale-105 transition-transform disabled:opacity-40 disabled:hover:scale-100"><RotateCcw size={15} /> Refund</button>
-              <button onClick={reject} disabled={submitting} className="h-10 px-4 rounded-full bg-gray-100 dark:bg-white/10 text-beatz-dark-bg dark:text-white text-sm font-bold flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors disabled:opacity-40"><ShieldX size={15} /> Reject</button>
-              <button onClick={escalate} disabled={submitting} className="h-10 px-4 rounded-full bg-gray-100 dark:bg-white/10 text-beatz-dark-bg dark:text-white text-sm font-bold flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors disabled:opacity-40"><ArrowUpCircle size={15} /> Escalate</button>
+              <button onClick={reject} disabled={submitting} className="h-10 px-4 rounded-full bg-gray-100 dark:bg-white/10 text-beatz-dark-bg dark:text-white text-sm font-bold flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors disabled:opacity-40 disabled:hover:bg-gray-100 dark:disabled:hover:bg-white/10"><ShieldX size={15} /> Reject</button>
+              <button onClick={escalate} disabled={submitting} className="h-10 px-4 rounded-full bg-gray-100 dark:bg-white/10 text-beatz-dark-bg dark:text-white text-sm font-bold flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors disabled:opacity-40 disabled:hover:bg-gray-100 dark:disabled:hover:bg-white/10"><ArrowUpCircle size={15} /> Escalate</button>
             </div>
           )}
         </div>
