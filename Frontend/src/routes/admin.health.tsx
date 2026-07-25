@@ -14,7 +14,7 @@ const CARD = 'rounded-2xl bg-white dark:bg-beatz-dark-surface border border-gray
 
 function AdminHealth() {
   const { data, isLoading, isError, refetch } = useQuery(healthQuery())
-  const normal = data?.status !== 'degraded'
+  const normal = data ? data.status !== 'degraded' : null
   const metrics = data?.metrics ?? []
   const incidents = data?.incidents ?? []
   const listeners = data?.listeners ?? []
@@ -25,9 +25,9 @@ function AdminHealth() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <h1 className="text-display text-beatz-dark-bg dark:text-white">System health</h1>
         <span className={cn('inline-flex items-center gap-2 h-9 px-4 rounded-full text-sm font-bold',
-          normal ? 'bg-beatz-green/15 text-beatz-green' : 'bg-[#f6c644]/20 text-[#b8881f] dark:text-[#f6c644]')}>
-          <span className={cn('w-2 h-2 rounded-full', normal ? 'bg-beatz-green' : 'bg-[#f6c644]')} />
-          {normal ? 'All systems normal' : 'Degraded'}
+          normal === true ? 'bg-beatz-green/15 text-beatz-green' : normal === false ? 'bg-[#f6c644]/20 text-[#b8881f] dark:text-[#f6c644]' : 'bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-300')}>
+          <span className={cn('w-2 h-2 rounded-full', normal === true ? 'bg-beatz-green' : normal === false ? 'bg-[#f6c644]' : 'bg-gray-400 dark:bg-white/30')} />
+          {normal === true ? 'All systems normal' : normal === false ? 'Degraded' : isError ? 'Status unavailable' : 'Checking…'}
         </span>
       </div>
 
