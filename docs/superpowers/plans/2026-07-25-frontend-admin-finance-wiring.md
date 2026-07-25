@@ -878,14 +878,16 @@ Replace the component's state block (the `base` / `k` / `payouts` / `send` / `ru
     const ready = payouts.filter((p) => p.status === 'ready')
     if (ready.length === 0) { toast('No ready payouts to run', 'info'); return }
     try {
-      await apiRunWeeklyPayouts()
+      const { count } = await apiRunWeeklyPayouts()
       await refresh()
-      toast(`Weekly payout run · ${ready.length} artists paid`, 'success')
+      toast(`Weekly payout run · ${count} artists paid`, 'success')
     } catch { toast('Could not run the weekly payout', 'error') }
   }
 ```
 
 Notes: the client-side KYC pre-check is kept so the exact existing error toast still fires; the server's 409 is the real guard. `refresh()` uses the `['admin','finance']` prefix so both the overview and the payout list refetch after a money action.
+
+**The toast must report the server's `count`, never `ready.length`.** The weekly run skips KYC-unverified creators and isolates per-withdrawal failures, so the number actually paid can be lower than the number of `ready` rows on screen — reporting the client's guess would overstate money paid. `ready.length` is still used for the pre-flight "nothing to run" check, which is fine.
 
 - [ ] **Step 2: Point the JSX at the new variables and add the error states**
 
