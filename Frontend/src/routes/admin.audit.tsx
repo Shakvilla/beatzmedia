@@ -8,6 +8,7 @@ import type { AuditEntry, AuditType } from '../lib/admin-data'
 import { auditQuery, AUDIT_PAGE_SIZE } from '../lib/api/queries/admin-overview'
 import { useServerPaged, Pagination } from '../components/admin/pagination'
 import { AdminLoadError } from '../components/admin/load-error'
+import { ApiError } from '../lib/api/errors'
 
 export const Route = createFileRoute('/admin/audit')({
   component: AdminAudit,
@@ -41,7 +42,7 @@ function AdminAudit() {
     return () => clearTimeout(t)
   }, [query])
 
-  const { data, isLoading, isError, refetch } = useQuery(auditQuery(type, debouncedQ, page))
+  const { data, isLoading, isError, error, refetch } = useQuery(auditQuery(type, debouncedQ, page))
   const rows: AuditEntry[] = data?.items ?? []
   const paged = useServerPaged({ items: rows, total: data?.total ?? 0, page, setPage, size: AUDIT_PAGE_SIZE })
 
@@ -76,7 +77,11 @@ function AdminAudit() {
 
       <section className={cn(CARD, 'p-2 sm:p-4')}>
         {isError ? (
-          <AdminLoadError label="Couldn't load the audit log." onRetry={() => refetch()} />
+          error instanceof ApiError && error.status === 403 ? (
+            <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">You don't have access to the audit log.</div>
+          ) : (
+            <AdminLoadError label="Couldn't load the audit log." onRetry={() => refetch()} />
+          )
         ) : isLoading ? (
           <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</div>
         ) : rows.length === 0 ? (

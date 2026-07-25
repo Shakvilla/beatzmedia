@@ -51,9 +51,11 @@ function AdminHealth() {
             <section className={cn(CARD, 'flex flex-col gap-5 min-w-0')}>
               <h2 className="text-lg font-bold text-beatz-dark-bg dark:text-white">Concurrent listeners (24h)</h2>
               <ListenersChart series={listeners} />
-              <div className="flex items-center justify-between text-[11px] font-mono uppercase tracking-wider text-gray-400 dark:text-gray-500">
-                <span>00:00</span><span>12:00</span><span>Now</span>
-              </div>
+              {listeners.length >= 2 && (
+                <div className="flex items-center justify-between text-[11px] font-mono uppercase tracking-wider text-gray-400 dark:text-gray-500">
+                  <span>00:00</span><span>12:00</span><span>Now</span>
+                </div>
+              )}
             </section>
 
             <section className={cn(CARD, 'flex flex-col gap-2')}>
