@@ -1,7 +1,9 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useMemo } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { cn } from '../utils/cn'
-import { getHealth, type HealthMetric, type Incident } from '../lib/admin-data'
+import type { HealthMetric, Incident } from '../lib/admin-data'
+import { healthQuery } from '../lib/api/queries/admin-overview'
+import { AdminLoadError } from '../components/admin/load-error'
 
 export const Route = createFileRoute('/admin/health')({
   component: AdminHealth,
@@ -11,8 +13,11 @@ const LABEL = 'text-[11px] font-bold uppercase tracking-[0.15em] text-gray-500 d
 const CARD = 'rounded-2xl bg-white dark:bg-beatz-dark-surface border border-gray-200 dark:border-transparent p-6 shadow-sm dark:shadow-none'
 
 function AdminHealth() {
-  const data = useMemo(() => getHealth(), [])
-  const normal = data.status === 'normal'
+  const { data, isLoading, isError, refetch } = useQuery(healthQuery())
+  const normal = data?.status !== 'degraded'
+  const metrics = data?.metrics ?? []
+  const incidents = data?.incidents ?? []
+  const listeners = data?.listeners ?? []
 
   return (
     <div className="flex flex-col gap-8">
@@ -26,26 +31,42 @@ function AdminHealth() {
         </span>
       </div>
 
-      {/* Metrics */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        {data.metrics.map((m) => <Metric key={m.label} metric={m} />)}
-      </div>
+      {isError ? (
+        <AdminLoadError label="Couldn't load system health." onRetry={() => refetch()} />
+      ) : isLoading ? (
+        <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</div>
+      ) : (
+        <>
+          {/* Metrics */}
+          {metrics.length === 0 ? (
+            <p className="text-sm text-gray-400 dark:text-gray-500">No service metrics yet.</p>
+          ) : (
+            <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+              {metrics.map((m) => <Metric key={m.label} metric={m} />)}
+            </div>
+          )}
 
-      {/* Chart + incidents */}
-      <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-6 items-start">
-        <section className={cn(CARD, 'flex flex-col gap-5 min-w-0')}>
-          <h2 className="text-lg font-bold text-beatz-dark-bg dark:text-white">Concurrent listeners (24h)</h2>
-          <ListenersChart series={data.listeners} />
-          <div className="flex items-center justify-between text-[11px] font-mono uppercase tracking-wider text-gray-400 dark:text-gray-500">
-            <span>00:00</span><span>12:00</span><span>Now</span>
+          {/* Chart + incidents */}
+          <div className="grid grid-cols-1 lg:grid-cols-[1.6fr_1fr] gap-6 items-start">
+            <section className={cn(CARD, 'flex flex-col gap-5 min-w-0')}>
+              <h2 className="text-lg font-bold text-beatz-dark-bg dark:text-white">Concurrent listeners (24h)</h2>
+              <ListenersChart series={listeners} />
+              <div className="flex items-center justify-between text-[11px] font-mono uppercase tracking-wider text-gray-400 dark:text-gray-500">
+                <span>00:00</span><span>12:00</span><span>Now</span>
+              </div>
+            </section>
+
+            <section className={cn(CARD, 'flex flex-col gap-2')}>
+              <h2 className="text-lg font-bold text-beatz-dark-bg dark:text-white mb-2">Recent incidents</h2>
+              {incidents.length === 0 ? (
+                <p className="py-6 text-sm text-gray-400 dark:text-gray-500">No incidents recorded.</p>
+              ) : (
+                incidents.map((i) => <IncidentRow key={i.id} incident={i} />)
+              )}
+            </section>
           </div>
-        </section>
-
-        <section className={cn(CARD, 'flex flex-col gap-2')}>
-          <h2 className="text-lg font-bold text-beatz-dark-bg dark:text-white mb-2">Recent incidents</h2>
-          {data.incidents.map((i) => <IncidentRow key={i.id} incident={i} />)}
-        </section>
-      </div>
+        </>
+      )}
     </div>
   )
 }
@@ -61,6 +82,9 @@ function Metric({ metric: m }: { metric: HealthMetric }) {
 }
 
 function ListenersChart({ series }: { series: number[] }) {
+  if (series.length < 2) {
+    return <div className="w-full h-56 flex items-center justify-center text-sm text-gray-400 dark:text-gray-500">No listener telemetry yet.</div>
+  }
   const w = 600, h = 220, padTop = 12, padBot = 12
   const max = Math.max(...series), min = Math.min(...series)
   const span = max - min || 1
