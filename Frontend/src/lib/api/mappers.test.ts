@@ -22,6 +22,10 @@ import {
   toModerationCase,
   toModerationQueue,
   toFinanceOverview,
+  toLedgerPage,
+  toPendingPayout,
+  toDisputeStatus,
+  toDisputeDetail,
   type StoreItemWire,
   type EventWire,
   type TicketTierWire,
@@ -33,6 +37,8 @@ import {
   type CatalogDetailWire,
   type ModerationQueueWire,
   type FinanceOverviewWire,
+  type LedgerPageWire,
+  type DisputeDetailWire,
 } from './mappers'
 
 describe('toArtist', () => {
@@ -786,5 +792,54 @@ describe('finance overview mapper', () => {
     const f = toFinanceOverview(wire)
     expect(f.providerMix).toEqual([{ name: 'MTN', value: 62 }, { name: 'Voda', value: 24 }])
     expect(f.disputes[0]).toEqual({ id: 'd1', kind: 'Refund request', subject: '@ama_b', detail: 'Album not delivered', amount: 18.99, opened: 'Apr 22' })
+  })
+})
+
+describe('ledger mappers', () => {
+  it('maps a page: signed amounts, short dates, display-token types, and the server total', () => {
+    const wire: LedgerPageWire = {
+      items: [
+        { id: 'l1', date: '2026-05-02T08:00:00Z', type: 'Sale', party: 'Black Sherif', ref: 'BZ-1', amount: 2.5 },
+        { id: 'l2', date: null, type: 'Payout', party: 'DJ Kojo', ref: 'BZ-2', amount: -42180 },
+      ],
+      page: 2, size: 8, total: 137,
+    }
+    const p = toLedgerPage(wire)
+    expect(p.total).toBe(137)
+    expect(p.page).toBe(2)
+    expect(p.items[0]).toEqual({ id: 'l1', date: 'May 02', type: 'Sale', party: 'Black Sherif', ref: 'BZ-1', amount: 2.5 })
+    expect(p.items[1].amount).toBe(-42180)
+    expect(p.items[1].date).toBe('')
+  })
+})
+
+describe('pending payout mapper', () => {
+  it('unwraps the MoneyView envelope (this endpoint differs from the overview)', () => {
+    const p = toPendingPayout({ id: 'p1', artist: 'Fido', amount: { amount: 9400.5, currency: 'GHS' }, method: 'MoMo · MTN', status: 'kyc_pending' })
+    expect(p).toEqual({ id: 'p1', artist: 'Fido', amount: 9400.5, method: 'MoMo · MTN', status: 'kyc_pending' })
+  })
+})
+
+describe('dispute detail mapper', () => {
+  it('maps the four wire statuses onto the UI two, with escalated still open', () => {
+    expect(toDisputeStatus('open')).toBe('open')
+    expect(toDisputeStatus('escalated')).toBe('open')
+    expect(toDisputeStatus('refunded')).toBe('resolved')
+    expect(toDisputeStatus('rejected')).toBe('resolved')
+    expect(toDisputeStatus('something-new')).toBe('open')
+  })
+
+  it('unwraps MoneyView, shortens opened, and renders timeline times as relative', () => {
+    const wire: DisputeDetailWire = {
+      id: 'd1', kind: 'Refund request', subject: '@ama_b', detail: 'Album not delivered',
+      amount: { amount: 18.99, currency: 'GHS' }, status: 'open', opened: '2026-04-22T10:00:00Z',
+      timeline: [{ id: 't1', text: 'Dispute opened by fan', time: '2026-04-22T10:00:00Z' }],
+    }
+    const d = toDisputeDetail(wire, Date.parse('2026-04-25T10:00:00Z'))
+    expect(d.kind).toBe('Refund request')
+    expect(d.amount).toBe(18.99)
+    expect(d.opened).toBe('Apr 22')
+    expect(d.status).toBe('open')
+    expect(d.timeline).toEqual([{ id: 't1', text: 'Dispute opened by fan', time: '3d ago' }])
   })
 })
