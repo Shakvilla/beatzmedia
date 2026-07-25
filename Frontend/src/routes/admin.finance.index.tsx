@@ -1,9 +1,12 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useMemo, useState } from 'react'
+import { useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowUp, Download, Check } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
-import { getFinance, type PendingPayout, type ProviderMix, type Dispute } from '../lib/admin-data'
+import type { PendingPayout, ProviderMix, Dispute } from '../lib/admin-data'
+import { financeOverviewQuery, pendingPayoutsQuery, apiSendPayout, apiRunWeeklyPayouts } from '../lib/api/queries/admin-finance'
+import { AdminLoadError } from '../components/admin/load-error'
 
 export const Route = createFileRoute('/admin/finance/')({
   component: AdminFinance,
@@ -18,22 +21,43 @@ const full = (n: number) => `₵${n.toLocaleString('en-US')}`
 function AdminFinance() {
   const { toast } = useToast()
   const navigate = useNavigate()
-  const base = useMemo(() => getFinance(), [])
-  const k = base.kpis
-  const [payouts, setPayouts] = useState<(PendingPayout & { sent?: boolean })[]>(() => base.pendingPayouts)
+  const queryClient = useQueryClient()
+  const overview = useQuery(financeOverviewQuery())
+  const payoutsQ = useQuery(pendingPayoutsQuery())
+  const [submitting, setSubmitting] = useState(false)
 
-  const send = (id: string) => {
+  const k = overview.data?.kpis ?? {
+    gmvMtd: 0, gmvDelta: 0, platformFee: 0, feeTakePct: 0, payoutsDue: 0, payoutsArtists: 0, momoFloat: 0,
+  }
+  const payouts: (PendingPayout & { sent?: boolean })[] = payoutsQ.data ?? []
+  const providerMix = overview.data?.providerMix ?? []
+  const disputes = overview.data?.disputes ?? []
+
+  const refresh = () => queryClient.invalidateQueries({ queryKey: ['admin', 'finance'] })
+
+  const send = async (id: string) => {
     const p = payouts.find((x) => x.id === id)
     if (!p) return
     if (p.status === 'kyc_pending') { toast(`Resolve KYC for ${p.artist} before paying`, 'error'); return }
-    setPayouts((list) => list.map((x) => (x.id === id ? { ...x, sent: true } : x)))
-    toast(`Sent ${full(p.amount)} to ${p.artist}`, 'success')
+    setSubmitting(true)
+    try {
+      await apiSendPayout(id)
+      await refresh()
+      toast(`Sent ${full(p.amount)} to ${p.artist}`, 'success')
+    } catch { toast(`Could not send payout to ${p.artist}`, 'error') }
+    finally { setSubmitting(false) }
   }
-  const runWeekly = () => {
-    const ready = payouts.filter((p) => p.status === 'ready' && !p.sent)
+
+  const runWeekly = async () => {
+    const ready = payouts.filter((p) => p.status === 'ready')
     if (ready.length === 0) { toast('No ready payouts to run', 'info'); return }
-    setPayouts((list) => list.map((p) => (p.status === 'ready' ? { ...p, sent: true } : p)))
-    toast(`Weekly payout run · ${ready.length} artists paid`, 'success')
+    setSubmitting(true)
+    try {
+      const { count } = await apiRunWeeklyPayouts()
+      await refresh()
+      toast(`Weekly payout run · ${count} artists paid`, 'success')
+    } catch { toast('Could not run the weekly payout', 'error') }
+    finally { setSubmitting(false) }
   }
 
   return (
@@ -45,7 +69,7 @@ function AdminFinance() {
           <button onClick={() => navigate({ to: '/admin/finance/ledger' })} className="h-11 px-4 rounded-full bg-gray-100 dark:bg-white/10 text-beatz-dark-bg dark:text-white text-sm font-bold flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors">
             <Download size={16} /> View ledger
           </button>
-          <button onClick={runWeekly} className="h-11 px-5 rounded-full bg-beatz-green text-black text-sm font-bold hover:scale-105 transition-transform shadow-lg shadow-beatz-green/20">
+          <button onClick={runWeekly} disabled={submitting} className="h-11 px-5 rounded-full bg-beatz-green text-black text-sm font-bold hover:scale-105 transition-transform shadow-lg shadow-beatz-green/20 disabled:opacity-40 disabled:hover:scale-100">
             Run weekly payout
           </button>
         </div>
@@ -72,7 +96,15 @@ function AdminFinance() {
                 <span className="w-24 text-center shrink-0">Status</span>
                 <span className="w-16 text-right shrink-0">Action</span>
               </div>
-              {payouts.map((p) => <PayoutRow key={p.id} payout={p} onSend={() => send(p.id)} />)}
+              {payoutsQ.isError ? (
+                <AdminLoadError label="Couldn't load pending payouts." onRetry={() => payoutsQ.refetch()} />
+              ) : payoutsQ.isLoading ? (
+                <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</div>
+              ) : payouts.length === 0 ? (
+                <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">No pending payouts.</div>
+              ) : (
+                payouts.map((p) => <PayoutRow key={p.id} payout={p} onSend={() => send(p.id)} disabled={submitting} />)
+              )}
             </div>
           </div>
         </section>
@@ -81,12 +113,12 @@ function AdminFinance() {
         <div className="flex flex-col gap-6">
           <section className={cn(CARD, 'flex flex-col gap-5')}>
             <h2 className="text-lg font-bold text-beatz-dark-bg dark:text-white">MoMo provider mix (24h)</h2>
-            <ProviderBars mix={base.providerMix} />
+            <ProviderBars mix={providerMix} />
           </section>
 
           <section className={cn(CARD, 'flex flex-col gap-3')}>
-            <h2 className="text-lg font-bold text-beatz-dark-bg dark:text-white">Disputes · {base.disputes.length} open</h2>
-            {base.disputes.map((d) => <DisputeRow key={d.id} dispute={d} onOpen={() => navigate({ to: '/admin/finance/dispute/$disputeId', params: { disputeId: d.id } })} />)}
+            <h2 className="text-lg font-bold text-beatz-dark-bg dark:text-white">Disputes · {disputes.length} open</h2>
+            {disputes.map((d) => <DisputeRow key={d.id} dispute={d} onOpen={() => navigate({ to: '/admin/finance/dispute/$disputeId', params: { disputeId: d.id } })} />)}
           </section>
         </div>
       </div>
@@ -108,7 +140,7 @@ function Kpi({ label, value, delta, sub, accent }: { label: string; value: strin
   )
 }
 
-function PayoutRow({ payout: p, onSend }: { payout: PendingPayout & { sent?: boolean }; onSend: () => void }) {
+function PayoutRow({ payout: p, onSend, disabled }: { payout: PendingPayout & { sent?: boolean }; onSend: () => void; disabled?: boolean }) {
   const kyc = p.status === 'kyc_pending'
   return (
     <div className={cn('flex items-center gap-4 px-2 py-3.5 border-b border-dashed border-gray-200 dark:border-white/5 last:border-0 transition-opacity', p.sent && 'opacity-50')}>
@@ -124,7 +156,7 @@ function PayoutRow({ payout: p, onSend }: { payout: PendingPayout & { sent?: boo
       </span>
       <span className="w-16 flex justify-end shrink-0">
         {!p.sent && (
-          <button onClick={onSend} className={cn('h-8 px-3 rounded-full text-xs font-bold transition-colors', kyc ? 'text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5' : 'text-beatz-green hover:bg-beatz-green/10')}>
+          <button onClick={onSend} disabled={disabled} className={cn('h-8 px-3 rounded-full text-xs font-bold transition-colors disabled:opacity-40', kyc ? 'text-gray-400 hover:bg-gray-100 dark:hover:bg-white/5' : 'text-beatz-green hover:bg-beatz-green/10')}>
             Send
           </button>
         )}
