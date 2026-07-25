@@ -70,14 +70,22 @@ describe('admin-finance reads', () => {
 })
 
 describe('admin-finance mutations', () => {
-  it('apiRefundDispute POSTs a reason, no amount (full refund), WITH an Idempotency-Key', async () => {
+  it('apiRefundDispute POSTs a reason, no amount (full refund), WITH an Idempotency-Key, and resolves the authoritative view', async () => {
     const f = mockFetch(200, disputeWire); vi.stubGlobal('fetch', f)
-    await apiRefundDispute('d1', 'Refunded · dispute closed')
+    const result = await apiRefundDispute('d1', 'Refunded · dispute closed')
     const [url, opts] = f.mock.calls[0]
     expect(url).toBe('/v1/admin/finance/disputes/d1/refund')
     expect(opts.method).toBe('POST')
     expect(JSON.parse(opts.body)).toEqual({ reason: 'Refunded · dispute closed' })
     expect(opts.headers['Idempotency-Key']).toBeTruthy()
+    expect(result.wireStatus).toBe('open')
+  })
+
+  it('apiRefundDispute resolves with wireStatus reflecting a server no-op (HTTP 200, dispute still escalated) so the caller can detect no money moved', async () => {
+    const f = mockFetch(200, { ...disputeWire, status: 'escalated' }); vi.stubGlobal('fetch', f)
+    const result = await apiRefundDispute('d1', 'Dispute closed · full refund')
+    expect(result.wireStatus).toBe('escalated')
+    expect(result.status).toBe('open')
   })
 
   it('apiRejectDispute POSTs a reason and needs no Idempotency-Key', async () => {
@@ -121,7 +129,7 @@ describe('admin-finance mutations', () => {
     ['apiRunWeeklyPayouts', () => apiRunWeeklyPayouts()],
     ['apiRefundDispute', () => apiRefundDispute('d1', 'reason')],
   ] as const)('%s generates a DIFFERENT Idempotency-Key per call', async (_name, call) => {
-    const f = mockFetch(200, {}); vi.stubGlobal('fetch', f)
+    const f = mockFetch(200, disputeWire); vi.stubGlobal('fetch', f)
     await call()
     await call()
     expect(f.mock.calls[0][1].headers['Idempotency-Key']).not.toBe(f.mock.calls[1][1].headers['Idempotency-Key'])

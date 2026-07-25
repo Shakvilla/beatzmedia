@@ -840,6 +840,17 @@ describe('dispute detail mapper', () => {
     expect(d.amount).toBe(18.99)
     expect(d.opened).toBe('Apr 22')
     expect(d.status).toBe('open')
+    expect(d.wireStatus).toBe('open')
     expect(d.timeline).toEqual([{ id: 't1', text: 'Dispute opened by fan', time: '3d ago' }])
+  })
+
+  it('carries the raw wireStatus through even though the folded status hides it (escalated)', () => {
+    const wire: DisputeDetailWire = {
+      id: 'd2', kind: 'Chargeback', subject: '@kwesi', detail: 'Card dispute',
+      amount: { amount: 40, currency: 'GHS' }, status: 'escalated', opened: null, timeline: [],
+    }
+    const d = toDisputeDetail(wire)
+    expect(d.wireStatus).toBe('escalated')
+    expect(d.status).toBe('open')
   })
 })

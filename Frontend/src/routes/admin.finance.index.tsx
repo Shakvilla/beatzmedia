@@ -81,12 +81,14 @@ function AdminFinance() {
       {/* KPIs */}
       {overview.isError ? (
         <AdminLoadError label="Couldn't load finance figures." onRetry={() => overview.refetch()} />
+      ) : overview.isLoading ? (
+        <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</div>
       ) : (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
           <Kpi label="GMV (MTD)" value={compactCedis(k.gmvMtd)} delta={k.gmvDelta} accent />
           <Kpi label="Platform fee" value={compactCedis(k.platformFee)} sub={`${k.feeTakePct}% take`} />
           <Kpi label="Artist payouts due" value={compactCedis(k.payoutsDue)} sub={`${k.payoutsArtists.toLocaleString()} artists`} />
-          <Kpi label="MoMo float" value={compactCedis(k.momoFloat)} sub="settled daily" />
+          <Kpi label="MoMo float" value="—" sub="not yet available" />
         </div>
       )}
 
@@ -118,15 +120,19 @@ function AdminFinance() {
 
         {/* Provider mix + disputes */}
         <div className="flex flex-col gap-6">
-          <section className={cn(CARD, 'flex flex-col gap-5')}>
-            <h2 className="text-lg font-bold text-beatz-dark-bg dark:text-white">MoMo provider mix (24h)</h2>
-            <ProviderBars mix={providerMix} />
-          </section>
+          {!overview.isError && (
+            <>
+              <section className={cn(CARD, 'flex flex-col gap-5')}>
+                <h2 className="text-lg font-bold text-beatz-dark-bg dark:text-white">MoMo provider mix (24h)</h2>
+                <ProviderBars mix={providerMix} />
+              </section>
 
-          <section className={cn(CARD, 'flex flex-col gap-3')}>
-            <h2 className="text-lg font-bold text-beatz-dark-bg dark:text-white">Disputes · {disputes.length} open</h2>
-            {disputes.map((d) => <DisputeRow key={d.id} dispute={d} onOpen={() => navigate({ to: '/admin/finance/dispute/$disputeId', params: { disputeId: d.id } })} />)}
-          </section>
+              <section className={cn(CARD, 'flex flex-col gap-3')}>
+                <h2 className="text-lg font-bold text-beatz-dark-bg dark:text-white">Disputes · {disputes.length} open</h2>
+                {disputes.map((d) => <DisputeRow key={d.id} dispute={d} onOpen={() => navigate({ to: '/admin/finance/dispute/$disputeId', params: { disputeId: d.id } })} />)}
+              </section>
+            </>
+          )}
         </div>
       </div>
     </div>
@@ -173,6 +179,9 @@ function PayoutRow({ payout: p, onSend, disabled }: { payout: PendingPayout & { 
 }
 
 function ProviderBars({ mix }: { mix: ProviderMix[] }) {
+  if (mix.length === 0) {
+    return <div className="py-8 text-center text-sm text-gray-400 dark:text-gray-500">No provider data yet.</div>
+  }
   const max = Math.max(...mix.map((m) => m.value))
   return (
     <div className="flex flex-col gap-2">

@@ -3,6 +3,7 @@ import { apiFetch } from '../client'
 import {
   toFinanceOverview, toLedgerPage, toPendingPayout, toDisputeDetail,
   type FinanceOverviewWire, type LedgerPageWire, type PendingPayoutWire, type DisputeDetailWire,
+  type DisputeDetail,
 } from '../mappers'
 
 /** Rows per ledger page — matches the shared paginator's default so the control looks unchanged. */
@@ -52,15 +53,18 @@ export function pendingPayoutsQuery() {
 
 /**
  * `POST /v1/admin/finance/disputes/:id/refund` — a money POST, so an `Idempotency-Key` is REQUIRED
- * (a blank one is a 400). `amount` is omitted, which the backend treats as a FULL refund; the
- * confirm-only modal collects no partial amount.
+ * (a blank one is a 400). `amount` is omitted, which the backend treats as a FULL refund.
+ *
+ * Returns the authoritative post-action view. The server treats a refund on a non-open dispute as a
+ * BENIGN NO-OP with HTTP 200 (not an error), so "did not throw" does NOT mean money moved — the
+ * caller MUST check the returned `status`.
  */
-export function apiRefundDispute(id: string, reason: string): Promise<void> {
-  return apiFetch<unknown>(`/admin/finance/disputes/${encodeURIComponent(id)}/refund`, {
+export function apiRefundDispute(id: string, reason: string): Promise<DisputeDetail> {
+  return apiFetch<DisputeDetailWire>(`/admin/finance/disputes/${encodeURIComponent(id)}/refund`, {
     method: 'POST',
     body: { reason },
     idempotencyKey: crypto.randomUUID(),
-  }).then(() => undefined)
+  }).then((w) => toDisputeDetail(w))
 }
 
 /** `POST /v1/admin/finance/disputes/:id/reject` — `reason` is required (non-blank). */

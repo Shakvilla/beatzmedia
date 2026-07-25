@@ -1070,6 +1070,13 @@ export interface DisputeDetail {
   detail: string
   amount?: number
   status: 'open' | 'resolved'
+  /**
+   * The raw, un-folded wire status (`open|refunded|rejected|escalated`). `status` above folds
+   * `escalated` into `open` for the two-state pill; callers that need to tell an escalated
+   * dispute apart from a plain open one (e.g. to detect a refund/reject no-op, or to hide actions
+   * the server will refuse) must check THIS field instead.
+   */
+  wireStatus: string
   opened?: string
   timeline: TimelineEntry[]
 }
@@ -1092,6 +1099,7 @@ export function toDisputeDetail(w: DisputeDetailWire, now?: number): DisputeDeta
     detail: w.detail,
     amount: w.amount == null ? undefined : toCedis(w.amount),
     status: toDisputeStatus(w.status),
+    wireStatus: w.status,
     opened: w.opened ? monthDay(w.opened) : undefined,
     timeline: w.timeline.map(
       (t): TimelineEntry => ({ id: t.id, text: t.text, time: t.time ? relativeTimeAgo(t.time, now) : '' }),

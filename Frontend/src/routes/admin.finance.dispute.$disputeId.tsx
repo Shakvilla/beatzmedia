@@ -45,6 +45,7 @@ function DisputeDetail() {
   }
 
   const status = d.status
+  const escalated = d.wireStatus === 'escalated'
   const runAction = async (fn: () => Promise<void>, okMsg: string, errMsg: string, tone: 'success' | 'info' = 'success') => {
     if (inFlight.current) return
     inFlight.current = true
@@ -64,7 +65,25 @@ function DisputeDetail() {
   }
   const reject = () => runAction(() => apiRejectDispute(d.id, 'Dispute rejected · evidence sufficient'), 'Dispute rejected · evidence sufficient', 'Could not reject the dispute')
   const escalate = () => runAction(() => apiEscalateDispute(d.id), 'Escalated to senior finance', 'Could not escalate the dispute', 'info')
-  const refund = () => runAction(() => apiRefundDispute(d.id, 'Dispute closed · full refund'), `Refunded ${cedis(d.amount ?? 0)} · dispute closed`, 'Could not issue the refund')
+  const refund = async () => {
+    if (inFlight.current) return
+    inFlight.current = true
+    setSubmitting(true)
+    try {
+      const result = await apiRefundDispute(d.id, 'Dispute closed · full refund')
+      if (result.wireStatus === 'refunded') {
+        toast(`Refunded ${cedis(d.amount ?? 0)} · dispute closed`, 'success')
+      } else {
+        toast('Refund not applied — this dispute is no longer open', 'error')
+      }
+    } catch {
+      toast('Could not issue the refund', 'error')
+    } finally {
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'finance'] })
+      inFlight.current = false
+      setSubmitting(false)
+    }
+  }
 
   return (
     <div className="flex flex-col gap-8">
@@ -76,14 +95,18 @@ function DisputeDetail() {
           <div className="flex flex-col gap-1.5">
             <div className="flex items-center gap-2 flex-wrap">
               <h1 className="text-3xl font-bold tracking-tight text-beatz-dark-bg dark:text-white">{d.kind}</h1>
-              <span className={cn('px-2.5 py-1 rounded-full text-[10px] font-bold', status === 'resolved' ? 'bg-beatz-green/15 text-beatz-green' : 'bg-beatz-red/15 text-beatz-red')}>{status}</span>
+              <span className={cn('px-2.5 py-1 rounded-full text-[10px] font-bold', status === 'resolved' ? 'bg-beatz-green/15 text-beatz-green' : escalated ? 'bg-[#f6c644]/20 text-[#b8881f] dark:text-[#f6c644]' : 'bg-beatz-red/15 text-beatz-red')}>{escalated ? 'escalated' : status}</span>
             </div>
             <span className="text-sm text-gray-500 dark:text-gray-300">{d.subject} · {d.detail}{d.opened ? ` · opened ${d.opened}` : ''}</span>
           </div>
           {status === 'open' && (
             <div className="flex items-center gap-2">
-              <button onClick={() => setRefundOpen(true)} disabled={submitting} className="h-10 px-4 rounded-full bg-beatz-green text-black text-sm font-bold flex items-center gap-2 hover:scale-105 transition-transform disabled:opacity-40 disabled:hover:scale-100"><RotateCcw size={15} /> Refund</button>
-              <button onClick={reject} disabled={submitting} className="h-10 px-4 rounded-full bg-gray-100 dark:bg-white/10 text-beatz-dark-bg dark:text-white text-sm font-bold flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors disabled:opacity-40 disabled:hover:bg-gray-100 dark:disabled:hover:bg-white/10"><ShieldX size={15} /> Reject</button>
+              {!escalated && (
+                <>
+                  <button onClick={() => setRefundOpen(true)} disabled={submitting} className="h-10 px-4 rounded-full bg-beatz-green text-black text-sm font-bold flex items-center gap-2 hover:scale-105 transition-transform disabled:opacity-40 disabled:hover:scale-100"><RotateCcw size={15} /> Refund</button>
+                  <button onClick={reject} disabled={submitting} className="h-10 px-4 rounded-full bg-gray-100 dark:bg-white/10 text-beatz-dark-bg dark:text-white text-sm font-bold flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors disabled:opacity-40 disabled:hover:bg-gray-100 dark:disabled:hover:bg-white/10"><ShieldX size={15} /> Reject</button>
+                </>
+              )}
               <button onClick={escalate} disabled={submitting} className="h-10 px-4 rounded-full bg-gray-100 dark:bg-white/10 text-beatz-dark-bg dark:text-white text-sm font-bold flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors disabled:opacity-40 disabled:hover:bg-gray-100 dark:disabled:hover:bg-white/10"><ArrowUpCircle size={15} /> Escalate</button>
             </div>
           )}
