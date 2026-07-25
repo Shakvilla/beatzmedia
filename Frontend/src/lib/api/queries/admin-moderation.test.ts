@@ -15,13 +15,27 @@ function mockFetch(status: number, json: unknown) {
 afterEach(() => vi.restoreAllMocks())
 
 describe('admin-moderation queries', () => {
-  it('moderationQuery hits /v1/admin/moderation and maps items + summary', async () => {
+  it('moderationQuery with no filters hits /v1/admin/moderation with only size=100 and maps items + summary', async () => {
     const f = mockFetch(200, queueWire); vi.stubGlobal('fetch', f)
     const result = await moderationQuery().queryFn!({} as never)
-    expect(f).toHaveBeenCalledWith('/v1/admin/moderation', expect.objectContaining({ method: 'GET' }))
+    expect(f).toHaveBeenCalledWith('/v1/admin/moderation?size=100', expect.objectContaining({ method: 'GET' }))
     expect(result.items[0].item).toBe('X')
     expect(result.summary).toEqual({ open: 1, sla: 6, escalated: 0 })
-    expect(moderationQuery().queryKey).toEqual(['admin', 'moderation', 'queue'])
+    expect(moderationQuery().queryKey).toEqual(['admin', 'moderation', 'queue', 'all', 'all'])
+  })
+
+  it('moderationQuery(status) sends status server-side', async () => {
+    const f = mockFetch(200, queueWire); vi.stubGlobal('fetch', f)
+    await moderationQuery('open').queryFn!({} as never)
+    expect(f).toHaveBeenCalledWith('/v1/admin/moderation?size=100&status=open', expect.objectContaining({ method: 'GET' }))
+    expect(moderationQuery('open').queryKey).toEqual(['admin', 'moderation', 'queue', 'open', 'all'])
+  })
+
+  it('moderationQuery(status, type) sends both status and type server-side', async () => {
+    const f = mockFetch(200, queueWire); vi.stubGlobal('fetch', f)
+    await moderationQuery('in_review', 'Copyright').queryFn!({} as never)
+    expect(f).toHaveBeenCalledWith('/v1/admin/moderation?size=100&status=in_review&type=Copyright', expect.objectContaining({ method: 'GET' }))
+    expect(moderationQuery('in_review', 'Copyright').queryKey).toEqual(['admin', 'moderation', 'queue', 'in_review', 'Copyright'])
   })
 
   it('apiReviewCase POSTs to /review', async () => {

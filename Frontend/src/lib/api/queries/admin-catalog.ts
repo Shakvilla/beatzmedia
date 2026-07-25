@@ -2,11 +2,18 @@ import { queryOptions } from '@tanstack/react-query'
 import { apiFetch } from '../client'
 import { toCatalogList, toCatalogDetail, type PagedCatalogWire, type CatalogDetailWire } from '../mappers'
 
-/** `GET /v1/admin/catalog` — the full catalog list plus filter-chip counts. */
-export function catalogQuery() {
+/**
+ * `GET /v1/admin/catalog` — the catalog list plus GLOBAL filter-chip counts (the counts are
+ * intentionally unfiltered; only the rows are filtered). `status` is sent server-side so the
+ * visible tab actually contains that status's releases; free-text search stays client-side over
+ * the fetched page. Known follow-up: no true server-side pagination or deep search beyond `size`.
+ */
+export function catalogQuery(status: 'pending' | 'published' | 'takedown' | 'all' = 'all') {
+  const params = new URLSearchParams({ size: '100' })
+  if (status !== 'all') params.set('status', status)
   return queryOptions({
-    queryKey: ['admin', 'catalog', 'list'],
-    queryFn: async () => toCatalogList(await apiFetch<PagedCatalogWire>('/admin/catalog')),
+    queryKey: ['admin', 'catalog', 'list', status],
+    queryFn: async () => toCatalogList(await apiFetch<PagedCatalogWire>(`/admin/catalog?${params}`)),
   })
 }
 

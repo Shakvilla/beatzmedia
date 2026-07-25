@@ -6,8 +6,9 @@ import { cn } from '../utils/cn'
 import { Modal } from '../components/ui/modal'
 import { useToast } from '../components/ui/toast-provider'
 import { type CatalogStatus } from '../lib/admin-data'
-import { catalogItemQuery, catalogQuery, apiApproveCatalog, apiFlagCatalog, apiTakedownCatalog } from '../lib/api/queries/admin-catalog'
+import { catalogItemQuery, apiApproveCatalog, apiFlagCatalog, apiTakedownCatalog } from '../lib/api/queries/admin-catalog'
 import { AdminLoadError } from '../components/admin/load-error'
+import { ApiError } from '../lib/api/errors'
 
 export const Route = createFileRoute('/admin/catalog/$itemId')({
   component: AdminCatalogDetail,
@@ -25,10 +26,18 @@ function AdminCatalogDetail() {
   const { itemId } = Route.useParams()
   const { toast } = useToast()
   const queryClient = useQueryClient()
-  const { data, isLoading, isError, refetch } = useQuery(catalogItemQuery(itemId))
+  const { data, isError, error, refetch } = useQuery(catalogItemQuery(itemId))
   const [takedownOpen, setTakedownOpen] = useState(false)
 
   if (isError) {
+    if (error instanceof ApiError && error.status === 404) {
+      return (
+        <div className="flex flex-col items-center justify-center text-center gap-4 py-24">
+          <p className="text-sm text-gray-500 dark:text-gray-300">Release not found.</p>
+          <Link to="/admin/catalog" className="h-10 px-5 rounded-full bg-beatz-green text-black font-bold text-sm flex items-center">Back to catalog</Link>
+        </div>
+      )
+    }
     return (
       <div className="py-24">
         <AdminLoadError label="Couldn't load this release." onRetry={() => refetch()} />
@@ -38,26 +47,22 @@ function AdminCatalogDetail() {
 
   const item = data
   if (!item) {
-    return isLoading ? (
+    return (
       <div className="py-24 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</div>
-    ) : (
-      <div className="flex flex-col items-center justify-center text-center gap-4 py-24">
-        <p className="text-sm text-gray-500 dark:text-gray-300">Release not found.</p>
-        <Link to="/admin/catalog" className="h-10 px-5 rounded-full bg-beatz-green text-black font-bold text-sm flex items-center">Back to catalog</Link>
-      </div>
     )
   }
 
   const invalidate = async () => {
     await queryClient.invalidateQueries({ queryKey: catalogItemQuery(itemId).queryKey })
-    await queryClient.invalidateQueries({ queryKey: catalogQuery().queryKey })
+    await queryClient.invalidateQueries({ queryKey: ['admin', 'catalog'] })
   }
+  const invalidateModeration = () => queryClient.invalidateQueries({ queryKey: ['admin', 'moderation'] })
   const runAction = async (fn: () => Promise<void>, okMsg: string, errMsg: string) => {
     try { await fn(); await invalidate(); toast(okMsg, 'success') }
     catch { toast(errMsg, 'error') }
   }
   const approve = () => runAction(() => apiApproveCatalog(item.id), 'Approved & published', 'Could not approve release')
-  const flag = () => runAction(() => apiFlagCatalog(item.id), 'Flagged for review', 'Could not flag release')
+  const flag = () => runAction(async () => { await apiFlagCatalog(item.id); await invalidateModeration() }, 'Flagged for review', 'Could not flag release')
   const takedown = (reason: string) => runAction(() => apiTakedownCatalog(item.id, reason), `Taken down · ${reason}`, 'Could not take down release')
 
   const reviewable = item.status === 'pending' || item.status === 'flagged'
@@ -97,7 +102,7 @@ function AdminCatalogDetail() {
                 <span className="w-5 text-sm font-mono text-gray-400 dark:text-gray-500 shrink-0">{t.position}</span>
                 <button onClick={() => toast(`Previewing “${t.title}”`, 'info')} className="w-7 h-7 rounded-full bg-beatz-green/10 text-beatz-green flex items-center justify-center shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"><Play size={12} fill="currentColor" /></button>
                 <span className="flex-1 text-sm font-bold text-beatz-dark-bg dark:text-white truncate">{t.title}</span>
-                <span className="text-xs font-mono text-gray-400 dark:text-gray-500 shrink-0">{t.isrc}</span>
+                <span className="text-xs font-mono text-gray-400 dark:text-gray-500 shrink-0">{t.isrc ?? '—'}</span>
                 <span className="w-12 text-right text-sm font-mono text-gray-500 dark:text-gray-300 shrink-0">{t.duration}</span>
               </div>
             ))}
@@ -108,7 +113,7 @@ function AdminCatalogDetail() {
         <div className="flex flex-col gap-6">
           <section className={cn(CARD, 'flex flex-col gap-3')}>
             <h2 className="text-lg font-bold text-beatz-dark-bg dark:text-white">Metadata</h2>
-            <Meta label="UPC" value={item.upc} />
+            <Meta label="UPC" value={item.upc ?? '—'} />
             <Meta label="Primary genre" value="Hiplife / Drill" />
             <Meta label="Label" value={item.artist === 'Various' ? 'Beatzclik Compilations' : 'Independent'} />
             <Meta label="Tracks" value={`${item.tracks.length}`} last />
@@ -117,7 +122,7 @@ function AdminCatalogDetail() {
           <section className={cn(CARD, 'flex flex-col gap-3')}>
             <h2 className="text-lg font-bold text-beatz-dark-bg dark:text-white">Rights & splits</h2>
             {item.splits.map((s) => (
-              <div key={s.name} className="flex items-center gap-3 py-1.5">
+              <div key={`${s.name}-${s.role}`} className="flex items-center gap-3 py-1.5">
                 <div className="flex flex-col flex-1 min-w-0">
                   <span className="text-sm font-bold text-beatz-dark-bg dark:text-white truncate">{s.name}</span>
                   <span className="text-xs text-gray-500 dark:text-gray-400">{s.role}</span>

@@ -25,12 +25,11 @@ const STATUS_TABS: { key: ModStatus | 'all'; label: string }[] = [
 function AdminModeration() {
   const { toast } = useToast()
   const queryClient = useQueryClient()
-  const { data, isError, refetch } = useQuery(moderationQuery())
-  const items = data?.items ?? []
-  const summary = data?.summary ?? { open: 0, sla: 0, escalated: 0 }
-
   const [status, setStatus] = useState<ModStatus | 'all'>('open')
   const [type, setType] = useState<ModReason | 'all'>('all')
+  const { data, isLoading, isError, refetch } = useQuery(moderationQuery(status, type))
+  const items = data?.items ?? []
+  const summary = data?.summary ?? { open: 0, sla: 0, escalated: 0 }
 
   const rows = useMemo(
     () => items.filter((i) => (status === 'all' || i.status === status) && (type === 'all' || i.reason === type)),
@@ -38,7 +37,7 @@ function AdminModeration() {
   )
   const paged = usePaged(rows)
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: moderationQuery().queryKey })
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['admin', 'moderation'] })
   const runAction = async (fn: () => Promise<void>, okMsg: string, errMsg: string, tone: 'success' | 'info' = 'success') => {
     try { await fn(); await invalidate(); toast(okMsg, tone) }
     catch { toast(errMsg, 'error') }
@@ -89,6 +88,8 @@ function AdminModeration() {
 
             {isError ? (
               <AdminLoadError label="Couldn't load the moderation queue." onRetry={() => refetch()} />
+            ) : isLoading ? (
+              <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</div>
             ) : rows.length === 0 ? (
               <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">Nothing in this queue.</div>
             ) : (

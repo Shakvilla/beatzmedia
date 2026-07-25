@@ -30,11 +30,11 @@ function AdminCatalog() {
   const { toast } = useToast()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { data, isError, refetch } = useQuery(catalogQuery())
+  const [filter, setFilter] = useState<FilterKey>('pending')
+  const { data, isLoading, isError, refetch } = useQuery(catalogQuery(filter))
   const items = data?.items ?? []
   const counts = data?.counts ?? { pending: 0, published: 0, takedown: 0 }
 
-  const [filter, setFilter] = useState<FilterKey>('pending')
   const [query, setQuery] = useState('')
   const [selected, setSelected] = useState<Set<string>>(new Set())
 
@@ -52,18 +52,19 @@ function AdminCatalog() {
   )
   const paged = usePaged(rows)
 
-  const invalidate = () => queryClient.invalidateQueries({ queryKey: catalogQuery().queryKey })
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: ['admin', 'catalog'] })
+  const invalidateModeration = () => queryClient.invalidateQueries({ queryKey: ['admin', 'moderation'] })
 
   const handleApprove = async (c: CatalogItem) => {
     try { await apiApproveCatalog(c.id); await invalidate(); toast(`“${c.title}” approved`, 'success') }
     catch { toast('Could not approve release', 'error') }
   }
   const handleFlag = async (c: CatalogItem) => {
-    try { await apiFlagCatalog(c.id); await invalidate(); toast(`“${c.title}” flagged`, 'info') }
+    try { await apiFlagCatalog(c.id); await invalidate(); await invalidateModeration(); toast(`“${c.title}” flagged`, 'info') }
     catch { toast('Could not flag release', 'error') }
   }
   const handleTakedown = async (c: CatalogItem) => {
-    try { await apiTakedownCatalog(c.id, 'Taken down from catalog list'); await invalidate(); toast(`“${c.title}” taken down`, 'success') }
+    try { await apiTakedownCatalog(c.id, 'Taken down by moderator (quick action from catalog list)'); await invalidate(); toast(`“${c.title}” taken down`, 'success') }
     catch { toast('Could not take down release', 'error') }
   }
 
@@ -147,6 +148,8 @@ function AdminCatalog() {
 
             {isError ? (
               <AdminLoadError label="Couldn't load catalog." onRetry={() => refetch()} />
+            ) : isLoading ? (
+              <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</div>
             ) : rows.length === 0 ? (
               <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">Nothing here.</div>
             ) : (

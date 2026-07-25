@@ -780,7 +780,7 @@ export interface CatalogTrackWire {
   position: number
   trackId: string
   title: string
-  isrc: string
+  isrc: string | null
   durationSec: number
   priceMinor: number
 }
@@ -793,7 +793,7 @@ export interface CatalogDetailWire {
   artist: string
   type: string
   status: string
-  upc: string
+  upc: string | null
   tracklist: CatalogTrackWire[]
   splits: CatalogSplitWire[]
   actionLog: CatalogActionLogWire[]
@@ -801,7 +801,7 @@ export interface CatalogDetailWire {
 
 export interface CatalogCounts { pending: number; published: number; takedown: number }
 export interface CatalogList { items: CatalogItem[]; counts: CatalogCounts }
-export interface CatalogDetailTrack { position: number; title: string; isrc: string; duration: string }
+export interface CatalogDetailTrack { position: number; title: string; isrc: string | null; duration: string }
 export interface CatalogSplit { name: string; role: string; pct: number }
 export interface CatalogLogEntry { id: string; action: string; time: string }
 export interface CatalogDetail {
@@ -811,7 +811,7 @@ export interface CatalogDetail {
   artist: string
   type: CatalogType
   status: CatalogStatus
-  upc: string
+  upc: string | null
   tracks: CatalogDetailTrack[]
   splits: CatalogSplit[]
   log: CatalogLogEntry[]
@@ -838,13 +838,28 @@ export function toCatalogStatus(wire: string): CatalogStatus {
   }
 }
 
+/**
+ * Backend serves the lowercase `ReleaseType` enum name (`single|ep|album|mixtape`); the admin UI
+ * renders title-case. Note `'Compilation'` is never produced — the backend has no `compilation`
+ * release type (same situation as `'flagged'` in toCatalogStatus).
+ */
+export function toCatalogType(wire: string): CatalogType {
+  switch (wire) {
+    case 'single': return 'Single'
+    case 'ep': return 'EP'
+    case 'album': return 'Album'
+    case 'mixtape': return 'Mixtape'
+    default: return 'Single'
+  }
+}
+
 export function toCatalogItem(w: CatalogItemWire): CatalogItem {
   return {
     id: w.id,
     title: w.title,
     note: w.note ?? undefined,
     artist: w.artist,
-    type: w.type as CatalogType,
+    type: toCatalogType(w.type),
     tracks: w.tracks,
     status: toCatalogStatus(w.status),
   }
@@ -858,16 +873,26 @@ export function toCatalogList(w: PagedCatalogWire): CatalogList {
 }
 
 export function toCatalogDetail(w: CatalogDetailWire, now?: number): CatalogDetail {
+  const seenSplits = new Set<string>()
+  const splits = w.splits
+    .filter((s) => {
+      const k = `${s.name}|${s.role}|${s.percent}`
+      if (seenSplits.has(k)) return false
+      seenSplits.add(k)
+      return true
+    })
+    .map((s) => ({ name: s.name, role: s.role, pct: s.percent }))
+
   return {
     id: w.id,
     title: w.title,
     note: w.note ?? undefined,
     artist: w.artist,
-    type: w.type as CatalogType,
+    type: toCatalogType(w.type),
     status: toCatalogStatus(w.status),
-    upc: w.upc,
-    tracks: w.tracklist.map((t) => ({ position: t.position, title: t.title, isrc: t.isrc, duration: formatDuration(t.durationSec) })),
-    splits: w.splits.map((s) => ({ name: s.name, role: s.role, pct: s.percent })),
+    upc: w.upc ?? null,
+    tracks: w.tracklist.map((t) => ({ position: t.position, title: t.title, isrc: t.isrc ?? null, duration: formatDuration(t.durationSec) })),
+    splits,
     log: w.actionLog.map((l) => ({ id: l.id, action: l.action, time: relativeTimeAgo(l.time, now) })),
   }
 }

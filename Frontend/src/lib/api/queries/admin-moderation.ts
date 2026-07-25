@@ -2,11 +2,20 @@ import { queryOptions } from '@tanstack/react-query'
 import { apiFetch } from '../client'
 import { toModerationQueue, type ModerationQueueWire } from '../mappers'
 
-/** `GET /v1/admin/moderation` — the moderation queue plus header summary. */
-export function moderationQuery() {
+/**
+ * `GET /v1/admin/moderation` — the moderation queue plus header summary. `status` and `type` are
+ * both discrete tabs/chips (no free-text involved), so both are sent server-side.
+ */
+export function moderationQuery(
+  status: 'open' | 'in_review' | 'resolved' | 'all' = 'all',
+  type: string = 'all',
+) {
+  const params = new URLSearchParams({ size: '100' })
+  if (status !== 'all') params.set('status', status)
+  if (type !== 'all') params.set('type', type)
   return queryOptions({
-    queryKey: ['admin', 'moderation', 'queue'],
-    queryFn: async () => toModerationQueue(await apiFetch<ModerationQueueWire>('/admin/moderation')),
+    queryKey: ['admin', 'moderation', 'queue', status, type],
+    queryFn: async () => toModerationQueue(await apiFetch<ModerationQueueWire>(`/admin/moderation?${params}`)),
   })
 }
 

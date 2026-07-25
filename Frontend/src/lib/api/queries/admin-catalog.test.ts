@@ -2,11 +2,11 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import { catalogQuery, catalogItemQuery, apiApproveCatalog, apiFlagCatalog, apiTakedownCatalog } from './admin-catalog'
 
 const pagedWire = {
-  items: [{ id: 'c1', title: 'Iron Boy', note: null, artist: 'Black Sherif', type: 'Album', tracks: 14, status: 'pending' }],
+  items: [{ id: 'c1', title: 'Iron Boy', note: null, artist: 'Black Sherif', type: 'album', tracks: 14, status: 'pending' }],
   page: 1, size: 100, total: 1, counts: { pending: 1, published: 0, takedown: 0 },
 }
 const detailWire = {
-  id: 'c1', title: 'Iron Boy', note: null, artist: 'Black Sherif', type: 'Album', status: 'pending', upc: 'BZ1',
+  id: 'c1', title: 'Iron Boy', note: null, artist: 'Black Sherif', type: 'album', status: 'pending', upc: 'BZ1',
   tracklist: [], splits: [], actionLog: [],
 }
 function mockFetch(status: number, json: unknown) {
@@ -19,13 +19,28 @@ function mockFetch(status: number, json: unknown) {
 afterEach(() => vi.restoreAllMocks())
 
 describe('admin-catalog queries', () => {
-  it('catalogQuery hits /v1/admin/catalog and maps items + counts', async () => {
+  it('catalogQuery with no status hits /v1/admin/catalog with only size=100 and maps items + counts', async () => {
     const f = mockFetch(200, pagedWire); vi.stubGlobal('fetch', f)
     const result = await catalogQuery().queryFn!({} as never)
-    expect(f).toHaveBeenCalledWith('/v1/admin/catalog', expect.objectContaining({ method: 'GET' }))
+    expect(f).toHaveBeenCalledWith('/v1/admin/catalog?size=100', expect.objectContaining({ method: 'GET' }))
     expect(result.items[0].title).toBe('Iron Boy')
     expect(result.counts.pending).toBe(1)
-    expect(catalogQuery().queryKey).toEqual(['admin', 'catalog', 'list'])
+    expect(catalogQuery().queryKey).toEqual(['admin', 'catalog', 'list', 'all'])
+  })
+
+  it('catalogQuery("pending") sends status=pending server-side', async () => {
+    const f = mockFetch(200, pagedWire); vi.stubGlobal('fetch', f)
+    await catalogQuery('pending').queryFn!({} as never)
+    expect(f).toHaveBeenCalledWith('/v1/admin/catalog?size=100&status=pending', expect.objectContaining({ method: 'GET' }))
+    expect(catalogQuery('pending').queryKey).toEqual(['admin', 'catalog', 'list', 'pending'])
+  })
+
+  it('catalogQuery("published") and catalogQuery("takedown") send their own status', async () => {
+    const f = mockFetch(200, pagedWire); vi.stubGlobal('fetch', f)
+    await catalogQuery('published').queryFn!({} as never)
+    expect(f).toHaveBeenCalledWith('/v1/admin/catalog?size=100&status=published', expect.objectContaining({ method: 'GET' }))
+    await catalogQuery('takedown').queryFn!({} as never)
+    expect(f).toHaveBeenCalledWith('/v1/admin/catalog?size=100&status=takedown', expect.objectContaining({ method: 'GET' }))
   })
 
   it('catalogItemQuery hits /v1/admin/catalog/:id and keys by id', async () => {
