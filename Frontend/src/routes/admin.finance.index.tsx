@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowUp, Download, Check } from 'lucide-react'
 import { cn } from '../utils/cn'
@@ -25,6 +25,7 @@ function AdminFinance() {
   const overview = useQuery(financeOverviewQuery())
   const payoutsQ = useQuery(pendingPayoutsQuery())
   const [submitting, setSubmitting] = useState(false)
+  const inFlight = useRef(false)
 
   const k = overview.data?.kpis ?? {
     gmvMtd: 0, gmvDelta: 0, platformFee: 0, feeTakePct: 0, payoutsDue: 0, payoutsArtists: 0, momoFloat: 0,
@@ -39,25 +40,27 @@ function AdminFinance() {
     const p = payouts.find((x) => x.id === id)
     if (!p) return
     if (p.status === 'kyc_pending') { toast(`Resolve KYC for ${p.artist} before paying`, 'error'); return }
+    if (inFlight.current) return
+    inFlight.current = true
     setSubmitting(true)
     try {
       await apiSendPayout(id)
-      await refresh()
       toast(`Sent ${full(p.amount)} to ${p.artist}`, 'success')
     } catch { toast(`Could not send payout to ${p.artist}`, 'error') }
-    finally { setSubmitting(false) }
+    finally { await refresh(); inFlight.current = false; setSubmitting(false) }
   }
 
   const runWeekly = async () => {
     const ready = payouts.filter((p) => p.status === 'ready')
     if (ready.length === 0) { toast('No ready payouts to run', 'info'); return }
+    if (inFlight.current) return
+    inFlight.current = true
     setSubmitting(true)
     try {
       const { count } = await apiRunWeeklyPayouts()
-      await refresh()
       toast(`Weekly payout run · ${count} artists paid`, 'success')
     } catch { toast('Could not run the weekly payout', 'error') }
-    finally { setSubmitting(false) }
+    finally { await refresh(); inFlight.current = false; setSubmitting(false) }
   }
 
   return (
@@ -76,12 +79,16 @@ function AdminFinance() {
       </div>
 
       {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Kpi label="GMV (MTD)" value={compactCedis(k.gmvMtd)} delta={k.gmvDelta} accent />
-        <Kpi label="Platform fee" value={compactCedis(k.platformFee)} sub={`${k.feeTakePct}% take`} />
-        <Kpi label="Artist payouts due" value={compactCedis(k.payoutsDue)} sub={`${k.payoutsArtists.toLocaleString()} artists`} />
-        <Kpi label="MoMo float" value={compactCedis(k.momoFloat)} sub="settled daily" />
-      </div>
+      {overview.isError ? (
+        <AdminLoadError label="Couldn't load finance figures." onRetry={() => overview.refetch()} />
+      ) : (
+        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+          <Kpi label="GMV (MTD)" value={compactCedis(k.gmvMtd)} delta={k.gmvDelta} accent />
+          <Kpi label="Platform fee" value={compactCedis(k.platformFee)} sub={`${k.feeTakePct}% take`} />
+          <Kpi label="Artist payouts due" value={compactCedis(k.payoutsDue)} sub={`${k.payoutsArtists.toLocaleString()} artists`} />
+          <Kpi label="MoMo float" value={compactCedis(k.momoFloat)} sub="settled daily" />
+        </div>
+      )}
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-6 items-start">
         {/* Pending payouts */}
