@@ -51,6 +51,15 @@ describe('admin-catalog queries', () => {
     expect(JSON.parse(opts.body)).toEqual({ note: 'dupe' })
   })
 
+  it('apiFlagCatalog sends no body when note omitted', async () => {
+    const f = mockFetch(200, detailWire); vi.stubGlobal('fetch', f)
+    await apiFlagCatalog('c1')
+    const [url, opts] = f.mock.calls[0]
+    expect(url).toBe('/v1/admin/catalog/c1/flag')
+    expect(opts.method).toBe('POST')
+    expect(opts.body).toBeUndefined()
+  })
+
   it('apiTakedownCatalog POSTs reason to /takedown', async () => {
     const f = mockFetch(200, detailWire); vi.stubGlobal('fetch', f)
     await apiTakedownCatalog('c1', 'Copyright claim')
