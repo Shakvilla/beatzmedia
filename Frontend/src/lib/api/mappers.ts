@@ -35,8 +35,8 @@ import type {
 import type { StudioProfile, StudioSettings, StudioRelease, StudioPodcastShow, StudioEpisode, EpisodeStatus } from '../studio-data'
 import type { UploadedTrack } from '../../features/studio/release-draft-context'
 import type { Payouts, PayoutMethod, PayoutTxn, PayoutType, PayoutStatus, MethodKind } from '../studio-payouts'
-import type { AdminUserRow, UserRole, UserStatus, UserActionLog } from '../admin-data'
-import { relativeTimeAgo, monthYear } from '../format'
+import type { AdminUserRow, UserRole, UserStatus, UserActionLog, CatalogItem, CatalogStatus, CatalogType } from '../admin-data'
+import { relativeTimeAgo, monthYear, formatDuration } from '../format'
 
 export interface ArtistWire {
   id: string
@@ -756,4 +756,97 @@ export function toUserActionLog(w: UserActionLogWire, now?: number): UserActionL
 
 export function toUserDetail(w: UserDetailWire, now?: number): AdminUserDetailData {
   return { summary: toAdminUserRow(w.summary, now), actionLog: w.actionLog.map((l) => toUserActionLog(l, now)) }
+}
+
+// ── Admin catalog (AdminCatalogResource) ──────────────────────────────────────
+export interface CatalogItemWire {
+  id: string
+  title: string
+  note: string | null
+  artist: string
+  type: string
+  tracks: number
+  status: string
+}
+export interface CatalogCountsWire { pending: number; published: number; takedown: number }
+export interface PagedCatalogWire {
+  items: CatalogItemWire[]
+  page: number
+  size: number
+  total: number
+  counts: CatalogCountsWire
+}
+export interface CatalogTrackWire {
+  position: number
+  trackId: string
+  title: string
+  isrc: string
+  durationSec: number
+  priceMinor: number
+}
+export interface CatalogSplitWire { trackId: string; name: string; role: string; percent: number; confirmation: string }
+export interface CatalogActionLogWire { id: string; action: string; by: string; time: string }
+export interface CatalogDetailWire {
+  id: string
+  title: string
+  note: string | null
+  artist: string
+  type: string
+  status: string
+  upc: string
+  tracklist: CatalogTrackWire[]
+  splits: CatalogSplitWire[]
+  actionLog: CatalogActionLogWire[]
+}
+
+export interface CatalogCounts { pending: number; published: number; takedown: number }
+export interface CatalogList { items: CatalogItem[]; counts: CatalogCounts }
+export interface CatalogDetailTrack { position: number; title: string; isrc: string; duration: string }
+export interface CatalogSplit { name: string; role: string; pct: number }
+export interface CatalogLogEntry { id: string; action: string; time: string }
+export interface CatalogDetail {
+  id: string
+  title: string
+  note?: string
+  artist: string
+  type: CatalogType
+  status: CatalogStatus
+  upc: string
+  tracks: CatalogDetailTrack[]
+  splits: CatalogSplit[]
+  log: CatalogLogEntry[]
+}
+
+export function toCatalogItem(w: CatalogItemWire): CatalogItem {
+  return {
+    id: w.id,
+    title: w.title,
+    note: w.note ?? undefined,
+    artist: w.artist,
+    type: w.type as CatalogType,
+    tracks: w.tracks,
+    status: w.status as CatalogStatus,
+  }
+}
+
+export function toCatalogList(w: PagedCatalogWire): CatalogList {
+  return {
+    items: w.items.map(toCatalogItem),
+    counts: { pending: w.counts.pending, published: w.counts.published, takedown: w.counts.takedown },
+  }
+}
+
+export function toCatalogDetail(w: CatalogDetailWire, now?: number): CatalogDetail {
+  return {
+    id: w.id,
+    title: w.title,
+    note: w.note ?? undefined,
+    artist: w.artist,
+    type: w.type as CatalogType,
+    status: w.status as CatalogStatus,
+    upc: w.upc,
+    tracks: w.tracklist.map((t) => ({ position: t.position, title: t.title, isrc: t.isrc, duration: formatDuration(t.durationSec) })),
+    splits: w.splits.map((s) => ({ name: s.name, role: s.role, pct: s.percent })),
+    log: w.actionLog.map((l) => ({ id: l.id, action: l.action, time: relativeTimeAgo(l.time, now) })),
+  }
 }

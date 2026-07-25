@@ -14,6 +14,9 @@ import {
   toAdminUserRow,
   toUsersList,
   toUserDetail,
+  toCatalogItem,
+  toCatalogList,
+  toCatalogDetail,
   type StoreItemWire,
   type EventWire,
   type TicketTierWire,
@@ -21,6 +24,8 @@ import {
   type PodcastEpisodeWire,
   type PagedUsersWire,
   type UserDetailWire,
+  type PagedCatalogWire,
+  type CatalogDetailWire,
 } from './mappers'
 
 describe('toArtist', () => {
@@ -612,5 +617,39 @@ describe('admin users mappers', () => {
     expect(d).not.toHaveProperty('activity')
     expect(d).not.toHaveProperty('orders')
     expect(d).not.toHaveProperty('devices')
+  })
+})
+
+describe('admin catalog mappers', () => {
+  const rowWire = { id: 'c1', title: 'Iron Boy', note: 'submitted 2h ago', artist: 'Black Sherif', type: 'Album', tracks: 14, status: 'pending' }
+
+  it('toCatalogItem maps 1:1 with narrowed unions and null note → undefined', () => {
+    expect(toCatalogItem(rowWire)).toEqual({
+      id: 'c1', title: 'Iron Boy', note: 'submitted 2h ago', artist: 'Black Sherif', type: 'Album', tracks: 14, status: 'pending',
+    })
+    expect(toCatalogItem({ ...rowWire, note: null }).note).toBeUndefined()
+  })
+
+  it('toCatalogList maps items + the three counts', () => {
+    const wire: PagedCatalogWire = { items: [rowWire], page: 1, size: 100, total: 1, counts: { pending: 24, published: 18396, takedown: 8 } }
+    const list = toCatalogList(wire)
+    expect(list.items).toHaveLength(1)
+    expect(list.items[0].title).toBe('Iron Boy')
+    expect(list.counts).toEqual({ pending: 24, published: 18396, takedown: 8 })
+  })
+
+  it('toCatalogDetail formats duration + relative log time and projects splits', () => {
+    const wire: CatalogDetailWire = {
+      id: 'c1', title: 'Iron Boy', note: null, artist: 'Black Sherif', type: 'Album', status: 'pending', upc: 'BZ900123',
+      tracklist: [{ position: 1, trackId: 't1', title: 'Intro', isrc: 'GHA-26-1001', durationSec: 132, priceMinor: 500 }],
+      splits: [{ trackId: 't1', name: 'Black Sherif', role: 'Primary artist', percent: 70, confirmation: 'confirmed' }],
+      actionLog: [{ id: 'l1', action: 'Submitted', by: 'system', time: '2026-07-24T10:00:00Z' }],
+    }
+    const d = toCatalogDetail(wire, 1721815200000) // now = 2024-07-24T10:00:00Z fixed; only checks it's a string
+    expect(d.upc).toBe('BZ900123')
+    expect(d.tracks).toEqual([{ position: 1, title: 'Intro', isrc: 'GHA-26-1001', duration: '2:12' }])
+    expect(d.splits).toEqual([{ name: 'Black Sherif', role: 'Primary artist', pct: 70 }])
+    expect(d.log[0].action).toBe('Submitted')
+    expect(typeof d.log[0].time).toBe('string')
   })
 })
