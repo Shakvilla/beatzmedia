@@ -1,4 +1,4 @@
-import { queryOptions } from '@tanstack/react-query'
+import { keepPreviousData, queryOptions } from '@tanstack/react-query'
 import { apiFetch } from '../client'
 import { toCatalogList, toCatalogDetail, type PagedCatalogWire, type CatalogDetailWire } from '../mappers'
 
@@ -14,6 +14,7 @@ export function catalogQuery(status: 'pending' | 'published' | 'takedown' | 'all
   return queryOptions({
     queryKey: ['admin', 'catalog', 'list', status],
     queryFn: async () => toCatalogList(await apiFetch<PagedCatalogWire>(`/admin/catalog?${params}`)),
+    placeholderData: keepPreviousData,
   })
 }
 

@@ -1,6 +1,7 @@
-import { queryOptions } from '@tanstack/react-query'
+import { keepPreviousData, queryOptions } from '@tanstack/react-query'
 import { apiFetch } from '../client'
 import { toModerationQueue, type ModerationQueueWire } from '../mappers'
+import type { ModReason } from '../../admin-data'
 
 /**
  * `GET /v1/admin/moderation` — the moderation queue plus header summary. `status` and `type` are
@@ -8,7 +9,7 @@ import { toModerationQueue, type ModerationQueueWire } from '../mappers'
  */
 export function moderationQuery(
   status: 'open' | 'in_review' | 'resolved' | 'all' = 'all',
-  type: string = 'all',
+  type: ModReason | 'all' = 'all',
 ) {
   const params = new URLSearchParams({ size: '100' })
   if (status !== 'all') params.set('status', status)
@@ -16,6 +17,7 @@ export function moderationQuery(
   return queryOptions({
     queryKey: ['admin', 'moderation', 'queue', status, type],
     queryFn: async () => toModerationQueue(await apiFetch<ModerationQueueWire>(`/admin/moderation?${params}`)),
+    placeholderData: keepPreviousData,
   })
 }
 

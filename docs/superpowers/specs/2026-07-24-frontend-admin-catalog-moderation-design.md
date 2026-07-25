@@ -65,11 +65,11 @@ Table over `getModerationQueue(): ModerationItem[]` with a header summary.
 Same idiom as the merged studio/Users slices; `apiFetch` (`lib/api/client.ts`) prepends `/v1` and needs no change.
 
 - **New `Frontend/src/lib/api/queries/admin-catalog.ts`:**
-  - `catalogQuery()` → `GET /admin/catalog` → `toCatalogList` (items + counts). Client-side filtering/search stays in the route (matches the mock; preserves the "flagged folds into pending" bucket). Key `['admin','catalog','list']`.
+  - `catalogQuery(status)` → `GET /admin/catalog?size=100&status=` (`status` omitted when `'all'`) → `toCatalogList` (items + counts). The status tab is now sent server-side; client-side free-text search stays in the route, and the client-side status filter remains as a harmless safety net over the already-filtered page. Key `['admin','catalog','list', status]`.
   - `catalogItemQuery(id)` → `GET /admin/catalog/{id}` → `toCatalogDetail`. Key `['admin','catalog','detail', id]`.
   - `apiApproveCatalog(id)` / `apiFlagCatalog(id, note?)` / `apiTakedownCatalog(id, reason)` → the POSTs, `Promise<void>`, invalidated by the routes.
 - **New `Frontend/src/lib/api/queries/admin-moderation.ts`:**
-  - `moderationQuery()` → `GET /admin/moderation` → `toModerationQueue` (items + summary). Key `['admin','moderation','queue']`. Client-side status/type filtering stays in the route.
+  - `moderationQuery(status, type)` → `GET /admin/moderation?size=100&status=&type=` (each omitted when `'all'`) → `toModerationQueue` (items + summary). Both the status tab and the reason-type chip are sent server-side. Key `['admin','moderation','queue', status, type]`.
   - `apiReviewCase(id)` / `apiApproveCase(id)` / `apiRemoveCase(id, reason?)` / `apiEscalateCase(id)` / `apiDismissCase(id)` → `Promise<void>`.
 - **Mappers (`lib/api/mappers.ts`):**
   - `toCatalogItem` (1:1, narrow `type`/`status` unions), `toCatalogList` (items + counts + a computed `all` total for the chip).
@@ -81,7 +81,7 @@ Same idiom as the merged studio/Users slices; `apiFetch` (`lib/api/client.ts`) p
 
 ## Out of scope / Category B (unchanged)
 
-- Server-side `?status=&q=&type=` filtering/pagination — routes filter the full list client-side today; kept.
+- Free-text `q` search is still client-side over the fetched page (no server-side search endpoint), and there is still no true server-side pagination — the fetch is capped at `size=100` (the backend's `PageRequest.MAX_SIZE`), so a catalog or moderation queue larger than that is not fully reachable from these screens yet. (`status` and moderation's `type`, however, ARE now sent server-side — see Architecture above.)
 - Catalog list header summary (`CATALOG_SUMMARY`) — no endpoint; stays mock.
 - Catalog detail track **Preview/Play** — no endpoint; stays a toast.
 - Catalog **Reinstate** — endpoint exists but no button; not added (no visual change).
@@ -89,11 +89,12 @@ Same idiom as the merged studio/Users slices; `apiFetch` (`lib/api/client.ts`) p
 - Track **price** — served (`priceMinor`) but never rendered by the mock; not surfaced.
 - Moderation **Remove** reason — the UI collects none; send `apiRemoveCase(id)` with no reason (backend `reason` is optional).
 - Editorial (`admin.editorial`) — entirely deferred to its own slice.
+- The "Rights & splits" panel is per-release but the backend serves splits per-track (`SplitDto.trackId`), so `toCatalogDetail` dedupes them by `name|role|percent`. When a release's tracks genuinely carry different percentages for the same collaborator, the merged list keeps both rows and can sum past 100%. A true per-track rights view is out of scope for this slice.
 
 ## Testing & gate
 
 - Co-located Vitest: `admin-catalog.test.ts` and `admin-moderation.test.ts` (query URLs + keys; mutation URLs + bodies), plus mapper cases in `mappers.test.ts` (union narrowing; `duration`/`age`/`actionLog time` formatting; counts/summary projection).
-- No visual change: JSX/classes/copy preserved; only the data source + the wired actions change.
+- No visual change: JSX/classes/copy preserved; only the data source + the wired actions change. Two deliberate, small additions: `upc`/`isrc` are always `null` from the backend today (Category B), so the detail renders an em-dash placeholder rather than a fabricated value; and both list routes gained a "Loading…" branch (previously they flashed their empty state on first paint before any data existed).
 - Mapper outputs match `admin-data.ts` types exactly (`CatalogItem`, `CatalogStatus`, `CatalogType`, `ModerationItem`, `ModStatus`, `ModSeverity`, `ModReason`).
 - Distinct `AdminLoadError` affordance on query failure (the admin-wide standard from #165).
 - Gate (from `Frontend/`, Node 22 via nvm): `npm run build` (`tsc -b`) + `npx vitest run` green; no NEW lint errors. Live QA signed in as an admin: list loads with live counts; approve/flag/takedown/bulk persist; detail loads real tracklist/splits/log; takedown-with-reason persists; moderation review/approve/remove/escalate/dismiss persist; a forced query failure shows `AdminLoadError`. One PR: `feat/frontend-admin-catalog-moderation`.

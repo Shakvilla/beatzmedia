@@ -840,8 +840,9 @@ export function toCatalogStatus(wire: string): CatalogStatus {
 
 /**
  * Backend serves the lowercase `ReleaseType` enum name (`single|ep|album|mixtape`); the admin UI
- * renders title-case. Note `'Compilation'` is never produced — the backend has no `compilation`
- * release type (same situation as `'flagged'` in toCatalogStatus).
+ * renders title-case. The `'Compilation'` fallback is a deliberate diagnostic sentinel: the backend
+ * has no `compilation` release type, so if this ever renders in the UI it means an unrecognised
+ * `ReleaseType` value reached the mapper (as opposed to silently mislabelling it, e.g. as a Single).
  */
 export function toCatalogType(wire: string): CatalogType {
   switch (wire) {
@@ -849,7 +850,7 @@ export function toCatalogType(wire: string): CatalogType {
     case 'ep': return 'EP'
     case 'album': return 'Album'
     case 'mixtape': return 'Mixtape'
-    default: return 'Single'
+    default: return 'Compilation'
   }
 }
 

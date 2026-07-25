@@ -53,7 +53,6 @@ function AdminCatalogDetail() {
   }
 
   const invalidate = async () => {
-    await queryClient.invalidateQueries({ queryKey: catalogItemQuery(itemId).queryKey })
     await queryClient.invalidateQueries({ queryKey: ['admin', 'catalog'] })
   }
   const invalidateModeration = () => queryClient.invalidateQueries({ queryKey: ['admin', 'moderation'] })
@@ -122,7 +121,7 @@ function AdminCatalogDetail() {
           <section className={cn(CARD, 'flex flex-col gap-3')}>
             <h2 className="text-lg font-bold text-beatz-dark-bg dark:text-white">Rights & splits</h2>
             {item.splits.map((s) => (
-              <div key={`${s.name}-${s.role}`} className="flex items-center gap-3 py-1.5">
+              <div key={`${s.name}-${s.role}-${s.pct}`} className="flex items-center gap-3 py-1.5">
                 <div className="flex flex-col flex-1 min-w-0">
                   <span className="text-sm font-bold text-beatz-dark-bg dark:text-white truncate">{s.name}</span>
                   <span className="text-xs text-gray-500 dark:text-gray-400">{s.role}</span>

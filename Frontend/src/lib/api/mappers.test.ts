@@ -662,8 +662,8 @@ describe('toCatalogType', () => {
     expect(toCatalogType('mixtape')).toBe('Mixtape')
   })
 
-  it('falls back to Single for an unknown wire value', () => {
-    expect(toCatalogType('some-future-type')).toBe('Single')
+  it('falls back to Compilation (diagnostic sentinel) for an unknown wire value', () => {
+    expect(toCatalogType('some-future-type')).toBe('Compilation')
   })
 })
 
