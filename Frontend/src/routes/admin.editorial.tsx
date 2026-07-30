@@ -44,14 +44,15 @@ function AdminEditorial() {
     inFlight.current = true
     setSaving(true)
     try {
-      await apiSaveFeatured(next)
+      const saved = await apiSaveFeatured(next)
+      queryClient.setQueryData(['admin', 'editorial', 'featured'], saved)
       if (okMsg) toast(okMsg, 'success')
     } catch {
       toast('Could not save the featured order', 'error')
     } finally {
-      await queryClient.invalidateQueries({ queryKey: ['admin', 'editorial', 'featured'] })
       inFlight.current = false
       setSaving(false)
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'editorial', 'featured'] })
     }
   }
 
@@ -89,7 +90,7 @@ function AdminEditorial() {
           <div className="flex flex-col">
             {featuredQ.isError ? (
               <AdminLoadError label="Couldn't load featured slots." onRetry={() => featuredQ.refetch()} />
-            ) : featuredQ.isLoading ? (
+            ) : featuredQ.isPending ? (
               <div className="py-8 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</div>
             ) : (
               <>
@@ -110,7 +111,7 @@ function AdminEditorial() {
           <div className="flex flex-col">
             {pushQ.isError ? (
               <AdminLoadError label="Couldn't load the push schedule." onRetry={() => pushQ.refetch()} />
-            ) : pushQ.isLoading ? (
+            ) : pushQ.isPending ? (
               <div className="py-8 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</div>
             ) : (pushQ.data ?? []).length === 0 ? (
               <div className="py-8 text-center text-sm text-gray-400 dark:text-gray-500">Nothing scheduled.</div>
@@ -129,10 +130,10 @@ function AdminEditorial() {
         <h2 className="text-lg font-bold text-beatz-dark-bg dark:text-white">Curated playlists</h2>
         {playlistsQ.isError ? (
           <AdminLoadError label="Couldn't load curated playlists." onRetry={() => playlistsQ.refetch()} />
-        ) : playlistsQ.isLoading ? (
-          <div className="py-8 text-sm text-gray-400 dark:text-gray-500">Loading…</div>
+        ) : playlistsQ.isPending ? (
+          <div className="py-8 text-sm text-center text-gray-400 dark:text-gray-500">Loading…</div>
         ) : (playlistsQ.data ?? []).length === 0 ? (
-          <p className="py-8 text-sm text-gray-400 dark:text-gray-500">No curated playlists yet.</p>
+          <p className="py-8 text-sm text-center text-gray-400 dark:text-gray-500">No curated playlists yet.</p>
         ) : (
           <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
             {(playlistsQ.data ?? []).map((p) => <PlaylistCard key={p.id} playlist={p} onOpen={() => toast(`Open “${p.name}”`, 'info')} />)}

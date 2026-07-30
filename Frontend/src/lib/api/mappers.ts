@@ -1108,7 +1108,7 @@ export function toDisputeDetail(w: DisputeDetailWire, now?: number): DisputeDeta
 }
 
 // ── Admin editorial (AdminEditorialResource) ──────────────────────────────────
-export interface FeaturedSlotWire { id: string; title: string; note: string; sponsored: boolean }
+export interface FeaturedSlotWire { id: string; title: string; note: string | null; sponsored: boolean }
 export interface PushItemWire {
   id: string
   day: string
@@ -1123,7 +1123,7 @@ export interface CuratedPlaylistWire { id: string; name: string }
 export interface FeaturedSlotRequestBody { id: string; title: string; note: string; sponsored: boolean }
 
 export function toFeaturedSlot(w: FeaturedSlotWire): FeaturedSlot {
-  return { id: w.id, title: w.title, note: w.note, sponsored: w.sponsored }
+  return { id: w.id, title: w.title, note: w.note ?? '', sponsored: w.sponsored }
 }
 
 /**

@@ -866,6 +866,10 @@ describe('editorial mappers', () => {
     expect(toFeaturedSlot({ id: 'f2', title: 'MTN Presents', note: 'Paid placement', sponsored: true }).sponsored).toBe(true)
   })
 
+  it('maps a null note to an empty string (the column is nullable)', () => {
+    expect(toFeaturedSlot({ id: 'f3', title: 'C', note: null, sponsored: false }).note).toBe('')
+  })
+
   it('toPushItem renames the wire timeLabel to the UI time field', () => {
     expect(toPushItem({ id: 'p1', day: 'Fri', timeLabel: '6PM', title: 'New drops', audience: 'All fans', scheduledAt: null }))
       .toEqual({ id: 'p1', day: 'Fri', time: '6PM', title: 'New drops', audience: 'All fans' })
