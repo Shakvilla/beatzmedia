@@ -49,6 +49,8 @@ import {
   toAuditPage,
   type AdminOverviewWire,
   type AuditPageWire,
+  toSupportTicket,
+  toSupportMessage,
 } from './mappers'
 
 describe('toArtist', () => {
@@ -949,5 +951,24 @@ describe('audit mappers', () => {
       id: 'a1', actor: 'Admin · Yaa', action: 'Suspended account',
       target: 'AdminMember:acc-123', type: 'user', time: '2h ago',
     })
+  })
+})
+const NOW = Date.parse('2026-07-22T12:00:00Z')
+
+describe('toSupportMessage', () => {
+  it('maps fields + relative time', () => {
+    expect(toSupportMessage({ id: 'm1', from: 'agent', author: 'Yaa', text: 'hi',
+      time: '2026-07-22T10:00:00Z' }, NOW)).toEqual({ id: 'm1', from: 'agent', author: 'Yaa', text: 'hi', time: '2h ago' })
+  })
+})
+
+describe('toSupportTicket', () => {
+  it('maps fields, relative age, nested messages', () => {
+    const t = toSupportTicket({ id: 't1', subject: 'Payout', requester: 'Black Sherif', channel: 'email',
+      priority: 'high', status: 'open', age: '2026-07-22T10:00:00Z',
+      messages: [{ id: 'm1', from: 'user', author: 'BS', text: 'q', time: '2026-07-22T11:59:40Z' }] }, NOW)
+    expect(t).toEqual({ id: 't1', subject: 'Payout', requester: 'Black Sherif', channel: 'email',
+      priority: 'high', status: 'open', age: '2h',
+      messages: [{ id: 'm1', from: 'user', author: 'BS', text: 'q', time: 'just now' }] })
   })
 })

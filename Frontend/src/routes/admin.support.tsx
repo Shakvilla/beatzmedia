@@ -1,9 +1,12 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Search, Send, Check, UserPlus } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
-import { getSupportTickets, type SupportTicket, type SupportMessage, type TicketStatus, type TicketPriority } from '../lib/admin-data'
+import type { TicketStatus, TicketPriority } from '../lib/admin-data'
+import { supportTicketsQuery, apiReplyToTicket, apiAssignTicket, apiResolveTicket } from '../lib/api/queries/admin-support'
+import { useAuth } from '../features/auth/auth-context'
 
 export const Route = createFileRoute('/admin/support')({
   component: AdminSupport,
@@ -20,11 +23,14 @@ const FILTERS: { key: TicketStatus | 'all'; label: string }[] = [
 
 function AdminSupport() {
   const { toast } = useToast()
-  const [tickets, setTickets] = useState<SupportTicket[]>(() => getSupportTickets())
+  const queryClient = useQueryClient()
+  const { account } = useAuth()
+  const { data: tickets = [] } = useQuery(supportTicketsQuery())
   const [filter, setFilter] = useState<TicketStatus | 'all'>('open')
   const [query, setQuery] = useState('')
-  const [activeId, setActiveId] = useState<string>(() => getSupportTickets()[0]?.id ?? '')
+  const [activeId, setActiveId] = useState<string>('')
   const [reply, setReply] = useState('')
+  const [submitting, setSubmitting] = useState(false)
 
   const q = query.trim().toLowerCase()
   const list = useMemo(
@@ -33,14 +39,34 @@ function AdminSupport() {
   )
   const active = tickets.find((t) => t.id === activeId) ?? list[0]
 
-  const send = () => {
-    if (!reply.trim() || !active) return
-    const msg: SupportMessage = { id: `m-${Date.now()}`, from: 'agent', author: 'Yaa (Support)', text: reply.trim(), time: 'just now' }
-    setTickets((ts) => ts.map((t) => (t.id === active.id ? { ...t, messages: [...t.messages, msg], status: 'pending' } : t)))
-    setReply('')
-    toast('Reply sent', 'success')
+  const invalidate = () => queryClient.invalidateQueries({ queryKey: supportTicketsQuery().queryKey })
+
+  const send = async () => {
+    if (!reply.trim() || !active || submitting) return
+    setActiveId(active.id)
+    setSubmitting(true)
+    try {
+      await apiReplyToTicket(active.id, reply.trim())
+      setReply('')
+      await invalidate()
+      toast('Reply sent', 'success')
+    } catch (e) { toast(e instanceof Error ? e.message : 'Could not send reply', 'error') }
+    finally { setSubmitting(false) }
   }
-  const setStatus = (status: TicketStatus, msg: string) => { if (!active) return; setTickets((ts) => ts.map((t) => (t.id === active.id ? { ...t, status } : t))); toast(msg, 'success') }
+  const assign = async () => {
+    if (!active || !account) return
+    setActiveId(active.id)
+    try { await apiAssignTicket(active.id, account.id); await invalidate(); toast('Assigned to you', 'success') }
+    catch (e) { toast(e instanceof Error ? e.message : 'Could not assign', 'error') }
+  }
+  const resolve = async () => {
+    if (!active || submitting) return
+    setActiveId(active.id)
+    setSubmitting(true)
+    try { await apiResolveTicket(active.id); await invalidate(); toast('Ticket resolved', 'success') }
+    catch (e) { toast(e instanceof Error ? e.message : 'Could not resolve', 'error') }
+    finally { setSubmitting(false) }
+  }
 
   return (
     <div className="flex flex-col gap-6">
@@ -94,8 +120,8 @@ function AdminSupport() {
                   <span className="text-xs text-gray-500 dark:text-gray-400">{active.requester} · {active.channel}</span>
                 </div>
                 <div className="flex items-center gap-2">
-                  <button onClick={() => toast('Assigned to you', 'success')} className="h-9 px-3.5 rounded-full bg-gray-100 dark:bg-white/10 text-beatz-dark-bg dark:text-white text-xs font-bold flex items-center gap-1.5 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors"><UserPlus size={14} /> Assign</button>
-                  {active.status !== 'resolved' && <button onClick={() => setStatus('resolved', 'Ticket resolved')} className="h-9 px-3.5 rounded-full bg-beatz-green/10 text-beatz-green text-xs font-bold flex items-center gap-1.5 hover:bg-beatz-green/20 transition-colors"><Check size={14} /> Resolve</button>}
+                  <button onClick={assign} className="h-9 px-3.5 rounded-full bg-gray-100 dark:bg-white/10 text-beatz-dark-bg dark:text-white text-xs font-bold flex items-center gap-1.5 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors"><UserPlus size={14} /> Assign</button>
+                  {active.status !== 'resolved' && <button onClick={resolve} disabled={submitting} className="h-9 px-3.5 rounded-full bg-beatz-green/10 text-beatz-green text-xs font-bold flex items-center gap-1.5 hover:bg-beatz-green/20 transition-colors"><Check size={14} /> Resolve</button>}
                 </div>
               </div>
 
@@ -112,7 +138,7 @@ function AdminSupport() {
                 <textarea value={reply} onChange={(e) => setReply(e.target.value)} rows={1} placeholder="Write a reply…"
                   onKeyDown={(e) => { if (e.key === 'Enter' && (e.metaKey || e.ctrlKey)) send() }}
                   className="flex-1 max-h-28 rounded-xl bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 px-4 py-2.5 text-sm text-beatz-dark-bg dark:text-white placeholder:text-gray-400 focus:outline-none focus:border-beatz-green/60 resize-none" />
-                <button onClick={send} disabled={!reply.trim()} aria-label="Send" className="w-11 h-11 rounded-full bg-beatz-green text-black flex items-center justify-center shrink-0 hover:scale-105 transition-transform disabled:opacity-40 disabled:hover:scale-100"><Send size={18} /></button>
+                <button onClick={send} disabled={!reply.trim() || submitting} aria-label="Send" className="w-11 h-11 rounded-full bg-beatz-green text-black flex items-center justify-center shrink-0 hover:scale-105 transition-transform disabled:opacity-40 disabled:hover:scale-100"><Send size={18} /></button>
               </div>
             </>
           )}
