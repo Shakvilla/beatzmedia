@@ -1,9 +1,12 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useMemo, useState } from 'react'
+import { useRef, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, MoreHorizontal, ArrowUp, ArrowDown, Trash2, Bell, Disc3, Music2 } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
-import { getEditorial, type FeaturedSlot, type PushItem, type CuratedPlaylist } from '../lib/admin-data'
+import type { FeaturedSlot, PushItem, CuratedPlaylist } from '../lib/admin-data'
+import { featuredQuery, pushScheduleQuery, curatedPlaylistsQuery, apiSaveFeatured } from '../lib/api/queries/admin-editorial'
+import { AdminLoadError } from '../components/admin/load-error'
 
 export const Route = createFileRoute('/admin/editorial')({
   component: AdminEditorial,
@@ -19,18 +22,50 @@ function coverGradient(seed: string): string {
 
 function AdminEditorial() {
   const { toast } = useToast()
-  const base = useMemo(() => getEditorial(), [])
-  const [featured, setFeatured] = useState<FeaturedSlot[]>(base.featured)
+  const queryClient = useQueryClient()
+  const featuredQ = useQuery(featuredQuery())
+  const pushQ = useQuery(pushScheduleQuery())
+  const playlistsQ = useQuery(curatedPlaylistsQuery())
+  const [saving, setSaving] = useState(false)
+  const inFlight = useRef(false)
 
-  const move = (id: string, dir: -1 | 1) => setFeatured((list) => {
-    const i = list.findIndex((s) => s.id === id)
+  const featured = featuredQ.data ?? []
+
+  /**
+   * `PUT /featured` replaces the whole list, so every edit sends the complete array in display
+   * order. On failure we invalidate rather than keeping the local edit, so the UI snaps back to
+   * the server's truth instead of showing a change that never landed.
+   */
+  const saveOrder = async (next: FeaturedSlot[], okMsg?: string) => {
+    // A ref, not the `saving` state: a state read inside this closure is stale for a second call
+    // in the same render, and on a WHOLE-LIST replace two racing PUTs can land out of order and
+    // resurrect a slot the user just removed.
+    if (inFlight.current) return
+    inFlight.current = true
+    setSaving(true)
+    try {
+      const saved = await apiSaveFeatured(next)
+      queryClient.setQueryData(['admin', 'editorial', 'featured'], saved)
+      if (okMsg) toast(okMsg, 'success')
+    } catch {
+      toast('Could not save the featured order', 'error')
+    } finally {
+      inFlight.current = false
+      setSaving(false)
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'editorial', 'featured'] })
+    }
+  }
+
+  const move = (id: string, dir: -1 | 1) => {
+    const i = featured.findIndex((s) => s.id === id)
     const j = i + dir
-    if (i === -1 || j < 0 || j >= list.length) return list
-    const next = [...list]
+    if (i === -1 || j < 0 || j >= featured.length) return
+    const next = [...featured]
     ;[next[i], next[j]] = [next[j], next[i]]
-    return next
-  })
-  const remove = (id: string) => { setFeatured((list) => list.filter((s) => s.id !== id)); toast('Removed from featured', 'success') }
+    void saveOrder(next)
+  }
+
+  const remove = (id: string) => void saveOrder(featured.filter((s) => s.id !== id), 'Removed from featured')
 
   return (
     <div className="flex flex-col gap-8">
@@ -53,11 +88,20 @@ function AdminEditorial() {
             <span className="text-xs text-gray-400 dark:text-gray-500">Drag to reorder · live in 2h</span>
           </div>
           <div className="flex flex-col">
-            {featured.map((s, i) => (
-              <FeaturedRow key={s.id} slot={s} index={i} isFirst={i === 0} isLast={i === featured.length - 1}
-                onMove={(d) => move(s.id, d)} onRemove={() => remove(s.id)} onReplace={() => toast(`Replace “${s.title}”`, 'info')} />
-            ))}
-            {featured.length === 0 && <div className="py-8 text-center text-sm text-gray-400 dark:text-gray-500">No featured slots.</div>}
+            {featuredQ.isError ? (
+              <AdminLoadError label="Couldn't load featured slots." onRetry={() => featuredQ.refetch()} />
+            ) : featuredQ.isPending ? (
+              <div className="py-8 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</div>
+            ) : (
+              <>
+                {featured.map((s, i) => (
+                  <FeaturedRow key={s.id} slot={s} index={i} isFirst={i === 0} isLast={i === featured.length - 1}
+                    disabled={saving}
+                    onMove={(d) => move(s.id, d)} onRemove={() => remove(s.id)} onReplace={() => toast(`Replace “${s.title}”`, 'info')} />
+                ))}
+                {featured.length === 0 && <div className="py-8 text-center text-sm text-gray-400 dark:text-gray-500">No featured slots.</div>}
+              </>
+            )}
           </div>
         </section>
 
@@ -65,7 +109,15 @@ function AdminEditorial() {
         <section className={cn(CARD, 'flex flex-col gap-4')}>
           <h2 className="text-lg font-bold text-beatz-dark-bg dark:text-white">Push schedule · this week</h2>
           <div className="flex flex-col">
-            {base.pushSchedule.map((p) => <PushRow key={p.id} push={p} />)}
+            {pushQ.isError ? (
+              <AdminLoadError label="Couldn't load the push schedule." onRetry={() => pushQ.refetch()} />
+            ) : pushQ.isPending ? (
+              <div className="py-8 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</div>
+            ) : (pushQ.data ?? []).length === 0 ? (
+              <div className="py-8 text-center text-sm text-gray-400 dark:text-gray-500">Nothing scheduled.</div>
+            ) : (
+              (pushQ.data ?? []).map((p) => <PushRow key={p.id} push={p} />)
+            )}
           </div>
           <button onClick={() => toast('Schedule a new push notification', 'info')} className="self-start h-9 px-4 rounded-full bg-beatz-green/10 text-beatz-green text-sm font-bold flex items-center gap-2 hover:bg-beatz-green/20 transition-colors">
             <Plus size={15} /> Schedule push
@@ -76,16 +128,24 @@ function AdminEditorial() {
       {/* Curated playlists */}
       <section className="flex flex-col gap-4">
         <h2 className="text-lg font-bold text-beatz-dark-bg dark:text-white">Curated playlists</h2>
-        <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
-          {base.playlists.map((p) => <PlaylistCard key={p.id} playlist={p} onOpen={() => toast(`Open “${p.name}”`, 'info')} />)}
-        </div>
+        {playlistsQ.isError ? (
+          <AdminLoadError label="Couldn't load curated playlists." onRetry={() => playlistsQ.refetch()} />
+        ) : playlistsQ.isPending ? (
+          <div className="py-8 text-sm text-center text-gray-400 dark:text-gray-500">Loading…</div>
+        ) : (playlistsQ.data ?? []).length === 0 ? (
+          <p className="py-8 text-sm text-center text-gray-400 dark:text-gray-500">No curated playlists yet.</p>
+        ) : (
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-4">
+            {(playlistsQ.data ?? []).map((p) => <PlaylistCard key={p.id} playlist={p} onOpen={() => toast(`Open “${p.name}”`, 'info')} />)}
+          </div>
+        )}
       </section>
     </div>
   )
 }
 
-function FeaturedRow({ slot: s, index, isFirst, isLast, onMove, onRemove, onReplace }: {
-  slot: FeaturedSlot; index: number; isFirst: boolean; isLast: boolean
+function FeaturedRow({ slot: s, index, isFirst, isLast, disabled, onMove, onRemove, onReplace }: {
+  slot: FeaturedSlot; index: number; isFirst: boolean; isLast: boolean; disabled?: boolean
   onMove: (d: -1 | 1) => void; onRemove: () => void; onReplace: () => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
@@ -107,10 +167,10 @@ function FeaturedRow({ slot: s, index, isFirst, isLast, onMove, onRemove, onRepl
           <>
             <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
             <div className="absolute right-0 top-9 z-50 w-40 py-1 rounded-xl bg-white dark:bg-beatz-dark-surface-2 border border-gray-200 dark:border-white/10 shadow-xl">
-              <MenuItem icon={ArrowUp} label="Move up" disabled={isFirst} onClick={() => { onMove(-1); setMenuOpen(false) }} />
-              <MenuItem icon={ArrowDown} label="Move down" disabled={isLast} onClick={() => { onMove(1); setMenuOpen(false) }} />
+              <MenuItem icon={ArrowUp} label="Move up" disabled={isFirst || disabled} onClick={() => { onMove(-1); setMenuOpen(false) }} />
+              <MenuItem icon={ArrowDown} label="Move down" disabled={isLast || disabled} onClick={() => { onMove(1); setMenuOpen(false) }} />
               <MenuItem icon={Music2} label="Replace" onClick={() => { onReplace(); setMenuOpen(false) }} />
-              <MenuItem icon={Trash2} label="Remove" danger onClick={() => { onRemove(); setMenuOpen(false) }} />
+              <MenuItem icon={Trash2} label="Remove" danger disabled={disabled} onClick={() => { onRemove(); setMenuOpen(false) }} />
             </div>
           </>
         )}

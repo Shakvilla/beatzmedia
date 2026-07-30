@@ -35,7 +35,7 @@ import type {
 import type { StudioProfile, StudioSettings, StudioRelease, StudioPodcastShow, StudioEpisode, EpisodeStatus } from '../studio-data'
 import type { UploadedTrack } from '../../features/studio/release-draft-context'
 import type { Payouts, PayoutMethod, PayoutTxn, PayoutType, PayoutStatus, MethodKind } from '../studio-payouts'
-import type { AdminUserRow, UserRole, UserStatus, UserActionLog, CatalogItem, CatalogStatus, CatalogType, ModerationItem, ModReason, ModSeverity, ModStatus, Finance, PendingPayout, ProviderMix, Dispute, LedgerTxn, LedgerType, TimelineEntry } from '../admin-data'
+import type { AdminUserRow, UserRole, UserStatus, UserActionLog, CatalogItem, CatalogStatus, CatalogType, ModerationItem, ModReason, ModSeverity, ModStatus, Finance, PendingPayout, ProviderMix, Dispute, LedgerTxn, LedgerType, TimelineEntry, FeaturedSlot, PushItem, CuratedPlaylist } from '../admin-data'
 import { relativeTimeAgo, monthYear, formatDuration, relativeTime, toCedis, monthDay } from '../format'
 
 export interface ArtistWire {
@@ -1105,4 +1105,40 @@ export function toDisputeDetail(w: DisputeDetailWire, now?: number): DisputeDeta
       (t): TimelineEntry => ({ id: t.id, text: t.text, time: t.time ? relativeTimeAgo(t.time, now) : '' }),
     ),
   }
+}
+
+// ── Admin editorial (AdminEditorialResource) ──────────────────────────────────
+export interface FeaturedSlotWire { id: string; title: string; note: string | null; sponsored: boolean }
+export interface PushItemWire {
+  id: string
+  day: string
+  timeLabel: string
+  title: string
+  audience: string
+  scheduledAt: string | null
+}
+export interface CuratedPlaylistWire { id: string; name: string }
+
+/** The `PUT /featured` body element — `title` is @NotBlank server-side and ids must be unique. */
+export interface FeaturedSlotRequestBody { id: string; title: string; note: string; sponsored: boolean }
+
+export function toFeaturedSlot(w: FeaturedSlotWire): FeaturedSlot {
+  return { id: w.id, title: w.title, note: w.note ?? '', sponsored: w.sponsored }
+}
+
+/**
+ * The wire calls the cosmetic label `timeLabel`; the UI's `PushItem` calls it `time`.
+ * `scheduledAt` is served but deliberately not surfaced — the row renders the label only.
+ */
+export function toPushItem(w: PushItemWire): PushItem {
+  return { id: w.id, day: w.day, time: w.timeLabel, title: w.title, audience: w.audience }
+}
+
+export function toCuratedPlaylist(w: CuratedPlaylistWire): CuratedPlaylist {
+  return { id: w.id, name: w.name }
+}
+
+/** Shapes one slot for the full-replace PUT. `sponsored` is optional on the UI type but required on the wire. */
+export function toFeaturedSlotRequest(s: FeaturedSlot): FeaturedSlotRequestBody {
+  return { id: s.id, title: s.title, note: s.note, sponsored: s.sponsored ?? false }
 }
