@@ -24,7 +24,7 @@ function AdminUsers() {
   const { toast } = useToast()
   const navigate = useNavigate()
   const queryClient = useQueryClient()
-  const { data, isError, isLoading, refetch } = useQuery(usersQuery())
+  const { data, isError, isPending, refetch } = useQuery(usersQuery())
   const users = data?.users ?? []
   const counts = data?.counts ?? { all: 0, fans: 0, artists: 0, verified: 0, suspended: 0 }
 
@@ -132,7 +132,7 @@ function AdminUsers() {
 
             {isError ? (
               <AdminLoadError label="Couldn't load users." onRetry={() => refetch()} />
-            ) : isLoading ? (
+            ) : isPending ? (
               <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</div>
             ) : rows.length === 0 ? (
               <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">No matching users.</div>

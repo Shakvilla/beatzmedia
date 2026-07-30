@@ -27,7 +27,7 @@ function AdminModeration() {
   const queryClient = useQueryClient()
   const [status, setStatus] = useState<ModStatus | 'all'>('open')
   const [type, setType] = useState<ModReason | 'all'>('all')
-  const { data, isLoading, isError, refetch } = useQuery(moderationQuery(status, type))
+  const { data, isPending, isError, refetch } = useQuery(moderationQuery(status, type))
   const items = data?.items ?? []
   const summary = data?.summary ?? { open: 0, sla: 0, escalated: 0 }
 
@@ -88,7 +88,7 @@ function AdminModeration() {
 
             {isError ? (
               <AdminLoadError label="Couldn't load the moderation queue." onRetry={() => refetch()} />
-            ) : isLoading ? (
+            ) : isPending ? (
               <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</div>
             ) : rows.length === 0 ? (
               <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">Nothing in this queue.</div>
