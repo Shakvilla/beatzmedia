@@ -35,7 +35,7 @@ import type {
 import type { StudioProfile, StudioSettings, StudioRelease, StudioPodcastShow, StudioEpisode, EpisodeStatus } from '../studio-data'
 import type { UploadedTrack } from '../../features/studio/release-draft-context'
 import type { Payouts, PayoutMethod, PayoutTxn, PayoutType, PayoutStatus, MethodKind } from '../studio-payouts'
-import type { AdminUserRow, UserRole, UserStatus, UserActionLog, CatalogItem, CatalogStatus, CatalogType, ModerationItem, ModReason, ModSeverity, ModStatus, Finance, PendingPayout, ProviderMix, Dispute, LedgerTxn, LedgerType, TimelineEntry, FeaturedSlot, PushItem, CuratedPlaylist, AdminOverview, AttentionItem, RevenueArtist, PayMethod, Health, HealthMetric, Incident, AuditEntry, AuditType } from '../admin-data'
+import type { AdminUserRow, UserRole, UserStatus, UserActionLog, CatalogItem, CatalogStatus, CatalogType, ModerationItem, ModReason, ModSeverity, ModStatus, Finance, PendingPayout, ProviderMix, Dispute, LedgerTxn, LedgerType, TimelineEntry, FeaturedSlot, PushItem, CuratedPlaylist, AdminOverview, AttentionItem, RevenueArtist, PayMethod, Health, HealthMetric, Incident, AuditEntry, AuditType, SupportTicket, SupportMessage, TicketStatus, TicketPriority } from '../admin-data'
 import { relativeTimeAgo, monthYear, formatDuration, relativeTime, toCedis, monthDay } from '../format'
 
 export interface ArtistWire {
@@ -1240,4 +1240,21 @@ export function toAuditEntry(w: AuditEntryWire, now?: number): AuditEntry {
 
 export function toAuditPage(w: AuditPageWire, now?: number): AuditPage {
   return { items: w.items.map((e) => toAuditEntry(e, now)), page: w.page, size: w.size, total: w.total }
+}
+// ── Admin support ─────────────────────────────────────────────────
+export interface SupportMessageWire { id: string; from: string; author: string; text: string; time: string }
+export function toSupportMessage(w: SupportMessageWire, now?: number): SupportMessage {
+  return { id: w.id, from: w.from as 'user' | 'agent', author: w.author, text: w.text, time: relativeTimeAgo(w.time, now) }
+}
+
+export interface SupportTicketWire {
+  id: string; subject: string; requester: string; channel: string
+  priority: string; status: string; age: string; messages: SupportMessageWire[]
+}
+export function toSupportTicket(w: SupportTicketWire, now?: number): SupportTicket {
+  return {
+    id: w.id, subject: w.subject, requester: w.requester, channel: w.channel,
+    priority: w.priority as TicketPriority, status: w.status as TicketStatus,
+    age: relativeTime(w.age, now), messages: w.messages.map((m) => toSupportMessage(m, now)),
+  }
 }
