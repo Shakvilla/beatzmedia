@@ -26,6 +26,10 @@ import {
   toPendingPayout,
   toDisputeStatus,
   toDisputeDetail,
+  toFeaturedSlot,
+  toPushItem,
+  toCuratedPlaylist,
+  toFeaturedSlotRequest,
   type StoreItemWire,
   type EventWire,
   type TicketTierWire,
@@ -852,5 +856,29 @@ describe('dispute detail mapper', () => {
     const d = toDisputeDetail(wire)
     expect(d.wireStatus).toBe('escalated')
     expect(d.status).toBe('open')
+  })
+})
+
+describe('editorial mappers', () => {
+  it('toFeaturedSlot maps 1:1 including the sponsored flag', () => {
+    expect(toFeaturedSlot({ id: 'f1', title: 'Made in Ghana', note: 'Editorial pick', sponsored: false }))
+      .toEqual({ id: 'f1', title: 'Made in Ghana', note: 'Editorial pick', sponsored: false })
+    expect(toFeaturedSlot({ id: 'f2', title: 'MTN Presents', note: 'Paid placement', sponsored: true }).sponsored).toBe(true)
+  })
+
+  it('toPushItem renames the wire timeLabel to the UI time field', () => {
+    expect(toPushItem({ id: 'p1', day: 'Fri', timeLabel: '6PM', title: 'New drops', audience: 'All fans', scheduledAt: null }))
+      .toEqual({ id: 'p1', day: 'Fri', time: '6PM', title: 'New drops', audience: 'All fans' })
+  })
+
+  it('toCuratedPlaylist maps 1:1', () => {
+    expect(toCuratedPlaylist({ id: 'pl1', name: 'Hiplife Throwback' })).toEqual({ id: 'pl1', name: 'Hiplife Throwback' })
+  })
+
+  it('toFeaturedSlotRequest shapes a slot for the PUT body, defaulting sponsored to false', () => {
+    expect(toFeaturedSlotRequest({ id: 'f1', title: 'A', note: 'n', sponsored: true }))
+      .toEqual({ id: 'f1', title: 'A', note: 'n', sponsored: true })
+    // the mock type makes `sponsored` optional; the wire needs a real boolean
+    expect(toFeaturedSlotRequest({ id: 'f2', title: 'B', note: '' }).sponsored).toBe(false)
   })
 })
