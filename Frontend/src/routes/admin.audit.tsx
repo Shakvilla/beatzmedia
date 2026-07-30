@@ -42,7 +42,7 @@ function AdminAudit() {
     return () => clearTimeout(t)
   }, [query])
 
-  const { data, isLoading, isError, error, refetch } = useQuery(auditQuery(type, debouncedQ, page))
+  const { data, isPending, isError, error, refetch } = useQuery(auditQuery(type, debouncedQ, page))
   const rows: AuditEntry[] = data?.items ?? []
   const paged = useServerPaged({ items: rows, total: data?.total ?? 0, page, setPage, size: AUDIT_PAGE_SIZE })
 
@@ -82,7 +82,7 @@ function AdminAudit() {
           ) : (
             <AdminLoadError label="Couldn't load the audit log." onRetry={() => refetch()} />
           )
-        ) : isLoading ? (
+        ) : isPending ? (
           <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</div>
         ) : rows.length === 0 ? (
           <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">No matching entries.</div>
