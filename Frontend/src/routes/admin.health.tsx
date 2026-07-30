@@ -13,7 +13,7 @@ const LABEL = 'text-[11px] font-bold uppercase tracking-[0.15em] text-gray-500 d
 const CARD = 'rounded-2xl bg-white dark:bg-beatz-dark-surface border border-gray-200 dark:border-transparent p-6 shadow-sm dark:shadow-none'
 
 function AdminHealth() {
-  const { data, isLoading, isError, refetch } = useQuery(healthQuery())
+  const { data, isPending, isError, refetch } = useQuery(healthQuery())
   const normal = data ? data.status !== 'degraded' : null
   const metrics = data?.metrics ?? []
   const incidents = data?.incidents ?? []
@@ -33,7 +33,7 @@ function AdminHealth() {
 
       {isError ? (
         <AdminLoadError label="Couldn't load system health." onRetry={() => refetch()} />
-      ) : isLoading ? (
+      ) : isPending ? (
         <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</div>
       ) : (
         <>

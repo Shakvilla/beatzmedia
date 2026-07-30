@@ -24,7 +24,7 @@ function AdminUserDetail() {
   const { userId } = Route.useParams()
   const { toast } = useToast()
   const queryClient = useQueryClient()
-  const { data, isLoading, isError, refetch } = useQuery(userDetailQuery(userId))
+  const { data, isPending, isError, refetch } = useQuery(userDetailQuery(userId))
   const detail = useMemo(() => getUserDetail(), [])
 
   const [suspendOpen, setSuspendOpen] = useState(false)
@@ -42,7 +42,7 @@ function AdminUserDetail() {
   const log = data?.actionLog ?? []
 
   if (!user) {
-    return isLoading ? (
+    return isPending ? (
       <div className="py-24 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</div>
     ) : (
       <div className="flex flex-col items-center justify-center text-center gap-4 py-24">
