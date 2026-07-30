@@ -31,7 +31,7 @@ function AdminCatalog() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const [filter, setFilter] = useState<FilterKey>('pending')
-  const { data, isLoading, isError, refetch } = useQuery(catalogQuery(filter))
+  const { data, isPending, isError, refetch } = useQuery(catalogQuery(filter))
   const items = data?.items ?? []
   const counts = data?.counts ?? { pending: 0, published: 0, takedown: 0 }
 
@@ -148,7 +148,7 @@ function AdminCatalog() {
 
             {isError ? (
               <AdminLoadError label="Couldn't load catalog." onRetry={() => refetch()} />
-            ) : isLoading ? (
+            ) : isPending ? (
               <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</div>
             ) : rows.length === 0 ? (
               <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">Nothing here.</div>

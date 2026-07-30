@@ -34,7 +34,7 @@ function AdminLedger() {
     return () => clearTimeout(t)
   }, [query])
 
-  const { data, isError, isLoading, refetch } = useQuery(ledgerQuery(type, debouncedQ, page))
+  const { data, isError, isPending, refetch } = useQuery(ledgerQuery(type, debouncedQ, page))
   const rows: LedgerTxn[] = data?.items ?? []
   // "Net in view" is the net of the rows on screen: with server paging the client holds one page,
   // and the endpoint's `total` is a count, not a sum.
@@ -87,7 +87,7 @@ function AdminLedger() {
             </div>
             {isError ? (
               <AdminLoadError label="Couldn't load the ledger." onRetry={() => refetch()} />
-            ) : isLoading ? (
+            ) : isPending ? (
               <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</div>
             ) : rows.length === 0 ? (
               <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">No matching entries.</div>

@@ -81,7 +81,7 @@ function AdminFinance() {
       {/* KPIs */}
       {overview.isError ? (
         <AdminLoadError label="Couldn't load finance figures." onRetry={() => overview.refetch()} />
-      ) : overview.isLoading ? (
+      ) : overview.isPending ? (
         <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</div>
       ) : (
         <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
@@ -107,7 +107,7 @@ function AdminFinance() {
               </div>
               {payoutsQ.isError ? (
                 <AdminLoadError label="Couldn't load pending payouts." onRetry={() => payoutsQ.refetch()} />
-              ) : payoutsQ.isLoading ? (
+              ) : payoutsQ.isPending ? (
                 <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</div>
               ) : payouts.length === 0 ? (
                 <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">No pending payouts.</div>
