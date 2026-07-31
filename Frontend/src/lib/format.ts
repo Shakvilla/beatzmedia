@@ -96,3 +96,21 @@ export function toCedis(wire: number | { amount: number; currency?: string } | n
   const value = typeof wire === 'number' ? wire : wire.amount
   return Number.isFinite(value) ? value : 0
 }
+
+/**
+ * Renders a compliance request's due date the way the screen has always read it — `"in 12 days"`,
+ * `"due today"`, `"overdue 1 day"` — from the nullable ISO instant the API actually sends.
+ * A completed request shows `"completed"` whatever its date; a missing or unparseable date shows
+ * an em dash rather than a fabricated interval.
+ */
+export function dueLabel(iso: string | null, status: string, now: number = Date.now()): string {
+  if (status === 'completed') return 'completed'
+  if (!iso) return '—'
+  const ms = Date.parse(iso)
+  if (!Number.isFinite(ms)) return '—'
+  const days = Math.round((ms - now) / 86_400_000)
+  if (days === 0) return 'due today'
+  if (days > 0) return `in ${days} day${days === 1 ? '' : 's'}`
+  const over = Math.abs(days)
+  return `overdue ${over} day${over === 1 ? '' : 's'}`
+}
