@@ -1,9 +1,13 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useState } from 'react'
+import { useState, useRef } from 'react'
 import { MoreHorizontal, Ban, Check, Eye } from 'lucide-react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
-import { getRiskSignals, RISK_KPIS, type RiskSignal, type RiskLevel } from '../lib/admin-data'
+import type { RiskSignal, RiskLevel } from '../lib/admin-data'
+import { riskBoardQuery, apiReviewSignal, apiClearSignal, apiBanSignal } from '../lib/api/queries/admin-trust'
+import { AdminLoadError } from '../components/admin/load-error'
+import { Modal } from '../components/ui/modal'
 import { usePaged, Pagination } from '../components/admin/pagination'
 
 export const Route = createFileRoute('/admin/trust')({
@@ -15,13 +19,33 @@ const CARD = 'rounded-2xl bg-white dark:bg-beatz-dark-surface border border-gray
 
 function AdminTrust() {
   const { toast } = useToast()
-  const [signals, setSignals] = useState<RiskSignal[]>(() => getRiskSignals())
+  const queryClient = useQueryClient()
+  const { data, isError, isPending, refetch } = useQuery(riskBoardQuery())
+  const signals = data?.signals ?? []
+  const kpis = data?.kpis ?? { chargebackRate: '0%', suspiciousSignups: 0, fraudFlags: 0, botStreams: '0%' }
   const paged = usePaged(signals)
 
-  const setStatus = (id: string, status: RiskSignal['status'], msg: string) => {
-    setSignals((list) => list.map((s) => (s.id === id ? { ...s, status } : s)))
-    toast(msg, 'success')
+  const [banTarget, setBanTarget] = useState<RiskSignal | null>(null)
+  const [submitting, setSubmitting] = useState(false)
+  const inFlight = useRef(false)
+
+  const runAction = async (fn: () => Promise<void>, okMsg: string, errMsg: string, tone: 'success' | 'info' = 'success') => {
+    if (inFlight.current) return
+    inFlight.current = true
+    setSubmitting(true)
+    let ok = false
+    try { await fn(); ok = true } catch { toast(errMsg, 'error') }
+    finally {
+      inFlight.current = false
+      setSubmitting(false)
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'risk'] })
+      if (ok) toast(okMsg, tone)
+    }
   }
+
+  const review = (s: RiskSignal) => runAction(() => apiReviewSignal(s.id), `Reviewing ${s.subject}`, 'Could not record the review', 'info')
+  const clear = (s: RiskSignal) => runAction(() => apiClearSignal(s.id), `${s.subject} cleared`, 'Could not clear the signal')
+  const ban = (s: RiskSignal, reason: string) => runAction(() => apiBanSignal(s.id, reason), `${s.subject} banned`, 'Could not ban the subject')
 
   return (
     <div className="flex flex-col gap-8">
@@ -32,10 +56,10 @@ function AdminTrust() {
 
       {/* KPIs */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Kpi label="Chargeback rate" value={RISK_KPIS.chargebackRate} sub="last 30d" />
-        <Kpi label="Suspicious signups" value={RISK_KPIS.suspiciousSignups.toString()} sub="last 24h" warn />
-        <Kpi label="Open fraud flags" value={RISK_KPIS.fraudFlags.toString()} sub="need review" warn />
-        <Kpi label="Bot streams" value={RISK_KPIS.botStreams} sub="of total plays" />
+        <Kpi label="Chargeback rate" value={kpis.chargebackRate} sub="last 30d" />
+        <Kpi label="Suspicious signups" value={kpis.suspiciousSignups.toLocaleString()} sub="last 24h" warn />
+        <Kpi label="Open fraud flags" value={kpis.fraudFlags.toLocaleString()} sub="need review" warn />
+        <Kpi label="Bot streams" value={kpis.botStreams} sub="of total plays" />
       </div>
 
       {/* Signals */}
@@ -51,17 +75,28 @@ function AdminTrust() {
               <span className="w-16 shrink-0">Age</span>
               <span className="w-28 text-right shrink-0">Action</span>
             </div>
-            {paged.pageItems.map((s) => (
-              <SignalRow key={s.id} signal={s}
-                onReview={() => toast(`Reviewing ${s.subject}`, 'info')}
-                onBan={() => setStatus(s.id, 'banned', `${s.subject} banned`)}
-                onClear={() => setStatus(s.id, 'cleared', `${s.subject} cleared`)}
-              />
-            ))}
+            {isError ? (
+              <AdminLoadError label="Couldn't load risk signals." onRetry={() => refetch()} />
+            ) : isPending ? (
+              <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</div>
+            ) : signals.length === 0 ? (
+              <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">No risk signals.</div>
+            ) : (
+              paged.pageItems.map((s) => (
+                <SignalRow key={s.id} signal={s} disabled={submitting}
+                  onReview={() => review(s)}
+                  onBan={() => setBanTarget(s)}
+                  onClear={() => clear(s)}
+                />
+              ))
+            )}
           </div>
         </div>
         <Pagination paged={paged} />
       </section>
+
+      <BanModal signal={banTarget} onClose={() => setBanTarget(null)}
+        onConfirm={(reason) => { const s = banTarget; setBanTarget(null); if (s) ban(s, reason) }} />
     </div>
   )
 }
@@ -81,7 +116,7 @@ function LevelPill({ level }: { level: RiskLevel }) {
   return <span className={cn('px-2.5 py-1 rounded-full text-[10px] font-bold', cls)}>{level}</span>
 }
 
-function SignalRow({ signal: s, onReview, onBan, onClear }: { signal: RiskSignal; onReview: () => void; onBan: () => void; onClear: () => void }) {
+function SignalRow({ signal: s, disabled, onReview, onBan, onClear }: { signal: RiskSignal; disabled?: boolean; onReview: () => void; onBan: () => void; onClear: () => void }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const closed = s.status !== 'open'
   return (
@@ -103,9 +138,9 @@ function SignalRow({ signal: s, onReview, onBan, onClear }: { signal: RiskSignal
                 <>
                   <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
                   <div className="absolute right-0 top-9 z-50 w-40 py-1 rounded-xl bg-white dark:bg-beatz-dark-surface-2 border border-gray-200 dark:border-white/10 shadow-xl">
-                    <MenuItem icon={Eye} label="Investigate" onClick={() => { onReview(); setMenuOpen(false) }} />
-                    <MenuItem icon={Check} label="Clear" onClick={() => { onClear(); setMenuOpen(false) }} />
-                    <MenuItem icon={Ban} label="Ban subject" danger onClick={() => { onBan(); setMenuOpen(false) }} />
+                    <MenuItem icon={Eye} label="Investigate" disabled={disabled} onClick={() => { onReview(); setMenuOpen(false) }} />
+                    <MenuItem icon={Check} label="Clear" disabled={disabled} onClick={() => { onClear(); setMenuOpen(false) }} />
+                    <MenuItem icon={Ban} label="Ban subject" danger disabled={disabled} onClick={() => { onBan(); setMenuOpen(false) }} />
                   </div>
                 </>
               )}
@@ -117,10 +152,34 @@ function SignalRow({ signal: s, onReview, onBan, onClear }: { signal: RiskSignal
   )
 }
 
-function MenuItem({ icon: Icon, label, onClick, danger }: { icon: typeof Eye; label: string; onClick: () => void; danger?: boolean }) {
+function MenuItem({ icon: Icon, label, onClick, disabled, danger }: { icon: typeof Eye; label: string; onClick: () => void; disabled?: boolean; danger?: boolean }) {
   return (
-    <button onClick={onClick} className={cn('w-full flex items-center gap-2.5 px-3 py-2 text-sm font-medium transition-colors', danger ? 'text-beatz-red hover:bg-beatz-red/10' : 'text-beatz-dark-bg dark:text-white hover:bg-gray-100 dark:hover:bg-white/5')}>
+    <button onClick={onClick} disabled={disabled}
+      className={cn('w-full flex items-center gap-2.5 px-3 py-2 text-sm font-medium transition-colors',
+        disabled ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed' : danger ? 'text-beatz-red hover:bg-beatz-red/10' : 'text-beatz-dark-bg dark:text-white hover:bg-gray-100 dark:hover:bg-white/5')}>
       <Icon size={15} /> {label}
     </button>
+  )
+}
+
+function BanModal({ signal, onClose, onConfirm }: { signal: RiskSignal | null; onClose: () => void; onConfirm: (reason: string) => void }) {
+  const [reason, setReason] = useState('')
+  const REASONS = ['Payment fraud', 'Chargeback abuse', 'Bot activity', 'Impersonation', 'Other']
+  return (
+    <Modal isOpen={signal !== null} onClose={onClose} title={`Ban ${signal?.subject ?? ''}`}>
+      <div className="flex flex-col gap-5">
+        <p className="text-sm text-white/70">The subject loses access immediately and the account is banned. A reason is required and is recorded in the audit trail.</p>
+        <div className="flex flex-wrap gap-2">
+          {REASONS.map((r) => (
+            <button key={r} onClick={() => setReason(r)} className={cn('h-9 px-3.5 rounded-full text-xs font-bold border transition-colors', reason === r ? 'border-beatz-red bg-beatz-red/10 text-beatz-red' : 'border-white/10 text-white/70 hover:border-white/20')}>{r}</button>
+          ))}
+        </div>
+        <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Add a note…" className="w-full h-11 rounded-xl bg-white/5 border border-white/10 px-4 text-white placeholder:text-white/20 focus:outline-none focus:border-beatz-red/60" />
+        <div className="flex items-center gap-3">
+          <button onClick={onClose} className="flex-1 h-12 rounded-full bg-white/10 text-white font-bold hover:bg-white/15 transition-colors">Cancel</button>
+          <button onClick={() => reason.trim() && onConfirm(reason.trim())} disabled={!reason.trim()} className="flex-1 h-12 rounded-full bg-beatz-red text-white font-bold hover:bg-beatz-red-light transition-colors disabled:opacity-40">Ban</button>
+        </div>
+      </div>
+    </Modal>
   )
 }
