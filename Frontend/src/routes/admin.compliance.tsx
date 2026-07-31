@@ -1,9 +1,12 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { MoreHorizontal, Play, Check, Download, FileText, ShieldX, FileSpreadsheet, Trash2, type LucideIcon } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
-import { getCompliance, type ComplianceRequest, type ComplianceType, type ComplianceStatus } from '../lib/admin-data'
+import type { ComplianceRequest, ComplianceType, ComplianceStatus } from '../lib/admin-data'
+import { complianceQuery, apiStartRequest, apiCompleteRequest, apiExportRequest, apiNoticeRequest } from '../lib/api/queries/admin-compliance'
+import { AdminLoadError } from '../components/admin/load-error'
 import { usePaged, Pagination } from '../components/admin/pagination'
 
 export const Route = createFileRoute('/admin/compliance')({
@@ -24,7 +27,31 @@ const inFilter = (c: ComplianceRequest, f: FilterKey) => f === 'all' ? true : f 
 
 function AdminCompliance() {
   const { toast } = useToast()
-  const [items, setItems] = useState<ComplianceRequest[]>(() => getCompliance())
+  const queryClient = useQueryClient()
+  const { data, isError, isPending, refetch } = useQuery(complianceQuery())
+  const items = data ?? []
+  const [submitting, setSubmitting] = useState(false)
+  const inFlight = useRef(false)
+
+  const runAction = async (fn: () => Promise<void>, okMsg: string, errMsg: string, tone: 'success' | 'info' = 'success') => {
+    if (inFlight.current) return
+    inFlight.current = true
+    setSubmitting(true)
+    let ok = false
+    try { await fn(); ok = true } catch { toast(errMsg, 'error') }
+    finally {
+      inFlight.current = false
+      setSubmitting(false)
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'compliance'] })
+      if (ok) toast(okMsg, tone)
+    }
+  }
+
+  const start = (id: string) => runAction(() => apiStartRequest(id), 'Request started', 'Could not start the request')
+  const complete = (id: string) => runAction(() => apiCompleteRequest(id), 'Request completed', 'Could not complete the request')
+  const download = (id: string) => runAction(() => apiExportRequest(id), "Export queued — downloads aren't available yet", 'Could not queue the export', 'info')
+  const notice = (id: string) => runAction(() => apiNoticeRequest(id), 'Notice recorded', 'Could not record the notice', 'info')
+
   const [filter, setFilter] = useState<FilterKey>('all')
 
   const rows = useMemo(() => items.filter((c) => inFilter(c, filter)), [items, filter])
@@ -32,13 +59,14 @@ function AdminCompliance() {
   const open = items.filter((c) => c.status !== 'completed').length
   const overdue = items.filter((c) => c.status === 'overdue').length
 
-  const setStatus = (id: string, status: ComplianceStatus, msg: string) => { setItems((l) => l.map((c) => (c.id === id ? { ...c, status } : c))); toast(msg, 'success') }
-
   return (
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
         <h1 className="text-display text-beatz-dark-bg dark:text-white">Compliance</h1>
-        <span className="text-sm text-gray-500 dark:text-gray-300">{open} open · <span className={overdue > 0 ? 'text-beatz-red font-bold' : ''}>{overdue} overdue</span> · DSAR, takedowns &amp; tax</span>
+        <span className="text-sm text-gray-500 dark:text-gray-300">
+          {data && <>{open} open · <span className={overdue > 0 ? 'text-beatz-red font-bold' : ''}>{overdue} overdue</span> · </>}
+          DSAR, takedowns &amp; tax
+        </span>
       </div>
 
       <div className="flex items-center gap-2 flex-wrap">
@@ -61,14 +89,22 @@ function AdminCompliance() {
               <span className="w-28 shrink-0">Status</span>
               <span className="w-32 text-right shrink-0">Action</span>
             </div>
-            {paged.pageItems.map((c) => (
-              <ComplianceRow key={c.id} req={c}
-                onStart={() => setStatus(c.id, 'in_progress', 'Request started')}
-                onComplete={() => setStatus(c.id, 'completed', 'Request completed')}
-                onDownload={() => toast('Preparing data export', 'success')}
-                onNotice={() => toast('Generating takedown notice', 'success')}
-              />
-            ))}
+            {isError ? (
+              <AdminLoadError label="Couldn't load compliance requests." onRetry={() => refetch()} />
+            ) : isPending ? (
+              <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</div>
+            ) : rows.length === 0 ? (
+              <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">No compliance requests.</div>
+            ) : (
+              paged.pageItems.map((c) => (
+                <ComplianceRow key={c.id} req={c} disabled={submitting}
+                  onStart={() => start(c.id)}
+                  onComplete={() => complete(c.id)}
+                  onDownload={() => download(c.id)}
+                  onNotice={() => notice(c.id)}
+                />
+              ))
+            )}
           </div>
         </div>
         <Pagination paged={paged} />
@@ -87,8 +123,8 @@ function StatusPill({ status }: { status: ComplianceStatus }) {
   return <span className={cn('px-2.5 py-1 rounded-full text-[10px] font-bold', map)}>{status === 'in_progress' ? 'in progress' : status}</span>
 }
 
-function ComplianceRow({ req: c, onStart, onComplete, onDownload, onNotice }: {
-  req: ComplianceRequest; onStart: () => void; onComplete: () => void; onDownload: () => void; onNotice: () => void
+function ComplianceRow({ req: c, disabled, onStart, onComplete, onDownload, onNotice }: {
+  req: ComplianceRequest; disabled?: boolean; onStart: () => void; onComplete: () => void; onDownload: () => void; onNotice: () => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const meta = TYPE_META[c.type]
@@ -108,18 +144,18 @@ function ComplianceRow({ req: c, onStart, onComplete, onDownload, onNotice }: {
       <span className="w-28 shrink-0"><StatusPill status={c.status} /></span>
       <div className="w-32 shrink-0 flex items-center justify-end gap-1">
         {!done && (c.status === 'new'
-          ? <button onClick={onStart} className="h-8 px-3 rounded-full text-beatz-green text-xs font-bold hover:bg-beatz-green/10 transition-colors">Start</button>
-          : <button onClick={onComplete} className="h-8 px-3 rounded-full text-beatz-green text-xs font-bold hover:bg-beatz-green/10 transition-colors">Complete</button>)}
+          ? <button onClick={onStart} disabled={disabled} className="h-8 px-3 rounded-full text-beatz-green text-xs font-bold hover:bg-beatz-green/10 transition-colors">Start</button>
+          : <button onClick={onComplete} disabled={disabled} className="h-8 px-3 rounded-full text-beatz-green text-xs font-bold hover:bg-beatz-green/10 transition-colors">Complete</button>)}
         <div className="relative">
           <button onClick={() => setMenuOpen((o) => !o)} aria-label="Actions" className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-beatz-dark-bg dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"><MoreHorizontal size={18} /></button>
           {menuOpen && (
             <>
               <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
               <div className="absolute right-0 top-9 z-50 w-48 py-1 rounded-xl bg-white dark:bg-beatz-dark-surface-2 border border-gray-200 dark:border-white/10 shadow-xl">
-                {c.status === 'new' && <MenuItem icon={Play} label="Start processing" onClick={() => { onStart(); setMenuOpen(false) }} />}
-                {c.type === 'DSAR-export' && <MenuItem icon={Download} label="Download data" onClick={() => { onDownload(); setMenuOpen(false) }} />}
-                {c.type === 'Takedown' && <MenuItem icon={FileText} label="Generate notice" onClick={() => { onNotice(); setMenuOpen(false) }} />}
-                {!done && <MenuItem icon={Check} label="Mark completed" onClick={() => { onComplete(); setMenuOpen(false) }} />}
+                {c.status === 'new' && <MenuItem icon={Play} label="Start processing" disabled={disabled} onClick={() => { onStart(); setMenuOpen(false) }} />}
+                {c.type === 'DSAR-export' && <MenuItem icon={Download} label="Download data" disabled={disabled} onClick={() => { onDownload(); setMenuOpen(false) }} />}
+                {c.type === 'Takedown' && <MenuItem icon={FileText} label="Generate notice" disabled={disabled} onClick={() => { onNotice(); setMenuOpen(false) }} />}
+                {!done && <MenuItem icon={Check} label="Mark completed" disabled={disabled} onClick={() => { onComplete(); setMenuOpen(false) }} />}
               </div>
             </>
           )}
@@ -129,9 +165,9 @@ function ComplianceRow({ req: c, onStart, onComplete, onDownload, onNotice }: {
   )
 }
 
-function MenuItem({ icon: Icon, label, onClick }: { icon: LucideIcon; label: string; onClick: () => void }) {
+function MenuItem({ icon: Icon, label, onClick, disabled }: { icon: LucideIcon; label: string; onClick: () => void; disabled?: boolean }) {
   return (
-    <button onClick={onClick} className="w-full flex items-center gap-2.5 px-3 py-2 text-sm font-medium text-beatz-dark-bg dark:text-white hover:bg-gray-100 dark:hover:bg-white/5 transition-colors">
+    <button onClick={onClick} disabled={disabled} className="w-full flex items-center gap-2.5 px-3 py-2 text-sm font-medium text-beatz-dark-bg dark:text-white hover:bg-gray-100 dark:hover:bg-white/5 transition-colors">
       <Icon size={15} /> {label}
     </button>
   )

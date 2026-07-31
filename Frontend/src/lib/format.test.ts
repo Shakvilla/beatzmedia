@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { relativeTime, relativeTimeAgo, monthYear, monthDay, toCedis } from './format'
+import { relativeTime, relativeTimeAgo, monthYear, monthDay, toCedis, dueLabel } from './format'
 
 describe('relativeTime', () => {
   const now = Date.parse('2025-01-01T12:00:00Z')
@@ -48,5 +48,32 @@ describe('toCedis', () => {
   it('treats null/undefined as 0 so money never renders NaN', () => {
     expect(toCedis(null)).toBe(0)
     expect(toCedis(undefined)).toBe(0)
+  })
+})
+
+describe('dueLabel', () => {
+  const NOW = Date.parse('2026-07-31T12:00:00Z')
+
+  it('reads "completed" for a completed request regardless of the date', () => {
+    expect(dueLabel('2026-07-01T12:00:00Z', 'completed', NOW)).toBe('completed')
+  })
+
+  it('counts days forward for a future due date', () => {
+    expect(dueLabel('2026-08-12T12:00:00Z', 'new', NOW)).toBe('in 12 days')
+    expect(dueLabel('2026-08-01T12:00:00Z', 'new', NOW)).toBe('in 1 day')
+  })
+
+  it('says due today when it lands inside the current day', () => {
+    expect(dueLabel('2026-07-31T18:00:00Z', 'new', NOW)).toBe('due today')
+  })
+
+  it('counts days back for an overdue date, singular at one', () => {
+    expect(dueLabel('2026-07-30T12:00:00Z', 'overdue', NOW)).toBe('overdue 1 day')
+    expect(dueLabel('2026-07-25T12:00:00Z', 'overdue', NOW)).toBe('overdue 6 days')
+  })
+
+  it('returns an em dash when there is no due date, rather than inventing one', () => {
+    expect(dueLabel(null, 'new', NOW)).toBe('—')
+    expect(dueLabel('not-a-date', 'new', NOW)).toBe('—')
   })
 })

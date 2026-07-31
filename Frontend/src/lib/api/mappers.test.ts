@@ -51,6 +51,15 @@ import {
   type AuditPageWire,
   toSupportTicket,
   toSupportMessage,
+  toRiskSignal,
+  toRiskBoard,
+  toComplianceRequest,
+  toPlatformSettings,
+  toSettingsRequest,
+  type RiskSignalWire,
+  type RiskBoardWire,
+  type ComplianceRequestWire,
+  type PlatformSettingsWire,
 } from './mappers'
 
 describe('toArtist', () => {
@@ -970,5 +979,79 @@ describe('toSupportTicket', () => {
     expect(t).toEqual({ id: 't1', subject: 'Payout', requester: 'Black Sherif', channel: 'email',
       priority: 'high', status: 'open', age: '2h',
       messages: [{ id: 'm1', from: 'user', author: 'BS', text: 'q', time: 'just now' }] })
+  })
+})
+
+describe('trust mappers', () => {
+  it('maps a signal, narrowing unions and rendering the ISO time as relative', () => {
+    const wire: RiskSignalWire = { id: 'r1', subject: '@kwabz', type: 'Chargeback', detail: 'Card · ₵180', level: 'high', time: '2026-07-31T10:00:00Z', status: 'open' }
+    const s = toRiskSignal(wire, Date.parse('2026-07-31T12:00:00Z'))
+    expect(s).toEqual({ id: 'r1', subject: '@kwabz', type: 'Chargeback', detail: 'Card · ₵180', level: 'high', time: '2h ago', status: 'open' })
+  })
+
+  it('falls back safely for an unrecognised level or status rather than trusting the wire', () => {
+    const wire: RiskSignalWire = { id: 'r2', subject: 'x', type: 't', detail: 'd', level: 'nonsense', time: null, status: 'nonsense' }
+    const s = toRiskSignal(wire)
+    expect(s.level).toBe('low')      // least-alarming level, never invents "high"
+    expect(s.status).toBe('open')    // never reads as resolved
+    expect(s.time).toBe('')
+  })
+
+  it('maps the board, carrying the honest-zero KPIs through untouched', () => {
+    const wire: RiskBoardWire = { kpis: { chargebackRate: '0%', suspiciousSignups: 0, fraudFlags: 3, botStreams: '0%' }, signals: [] }
+    const b = toRiskBoard(wire)
+    expect(b.kpis).toEqual({ chargebackRate: '0%', suspiciousSignups: 0, fraudFlags: 3, botStreams: '0%' })
+    expect(b.signals).toEqual([])
+  })
+})
+
+describe('compliance mapper', () => {
+  it('renders the due instant as prose and narrows the unions', () => {
+    const wire: ComplianceRequestWire = { id: 'c1', type: 'DSAR-export', subject: '@ama_b', detail: 'Data export', due: '2026-08-12T12:00:00Z', status: 'new' }
+    const c = toComplianceRequest(wire, Date.parse('2026-07-31T12:00:00Z'))
+    expect(c).toEqual({ id: 'c1', type: 'DSAR-export', subject: '@ama_b', detail: 'Data export', due: 'in 12 days', status: 'new' })
+  })
+
+  it('shows an em dash for a null due date instead of inventing one', () => {
+    const wire: ComplianceRequestWire = { id: 'c2', type: 'Tax', subject: 's', detail: 'd', due: null, status: 'new' }
+    expect(toComplianceRequest(wire).due).toBe('—')
+  })
+
+  it('derives overdue from the due date since the backend never sets that status', () => {
+    const wire: ComplianceRequestWire = { id: 'c3', type: 'Takedown', subject: 's', detail: 'd', due: '2026-07-25T12:00:00Z', status: 'new' }
+    const c = toComplianceRequest(wire, Date.parse('2026-07-31T12:00:00Z'))
+    expect(c.status).toBe('overdue')
+    expect(c.due).toBe('overdue 6 days')
+  })
+
+  it('leaves a completed request completed even when its due date is in the past', () => {
+    const wire: ComplianceRequestWire = { id: 'c4', type: 'Takedown', subject: 's', detail: 'd', due: '2026-07-25T12:00:00Z', status: 'completed' }
+    const c = toComplianceRequest(wire, Date.parse('2026-07-31T12:00:00Z'))
+    expect(c.status).toBe('completed')
+    expect(c.due).toBe('completed')
+  })
+})
+
+describe('platform settings mappers', () => {
+  const wire: PlatformSettingsWire = {
+    platformFeePct: 30, payoutDay: 'Friday', payoutMinimum: 10, defaultCurrency: 'GHS', maintenanceMode: false,
+    providers: { momo: true, vodafone: true, airteltigo: true, card: true, bank: true },
+    flags: { artistSignups: true, podcasts: true, events: false, tipping: true, fanMessaging: false },
+  }
+
+  it('passes the integer percent and bare-cedis minimum straight through', () => {
+    const s = toPlatformSettings(wire)
+    expect(s.platformFeePct).toBe(30)   // integer percent, not a fraction
+    expect(s.payoutMinimum).toBe(10)    // bare cedis; the server owns the minor-unit conversion
+    expect(s.flags.events).toBe(false)
+  })
+
+  it('toSettingsRequest sends the COMPLETE object (the PUT is a full replace, not a patch)', () => {
+    const body = toSettingsRequest(toPlatformSettings(wire))
+    expect(Object.keys(body).sort()).toEqual(
+      ['defaultCurrency', 'flags', 'maintenanceMode', 'payoutDay', 'payoutMinimum', 'platformFeePct', 'providers'].sort(),
+    )
+    expect(body.providers).toEqual(wire.providers)
+    expect(body.flags).toEqual(wire.flags)
   })
 })
