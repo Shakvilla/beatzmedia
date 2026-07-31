@@ -1016,6 +1016,20 @@ describe('compliance mapper', () => {
     const wire: ComplianceRequestWire = { id: 'c2', type: 'Tax', subject: 's', detail: 'd', due: null, status: 'new' }
     expect(toComplianceRequest(wire).due).toBe('—')
   })
+
+  it('derives overdue from the due date since the backend never sets that status', () => {
+    const wire: ComplianceRequestWire = { id: 'c3', type: 'Takedown', subject: 's', detail: 'd', due: '2026-07-25T12:00:00Z', status: 'new' }
+    const c = toComplianceRequest(wire, Date.parse('2026-07-31T12:00:00Z'))
+    expect(c.status).toBe('overdue')
+    expect(c.due).toBe('overdue 6 days')
+  })
+
+  it('leaves a completed request completed even when its due date is in the past', () => {
+    const wire: ComplianceRequestWire = { id: 'c4', type: 'Takedown', subject: 's', detail: 'd', due: '2026-07-25T12:00:00Z', status: 'completed' }
+    const c = toComplianceRequest(wire, Date.parse('2026-07-31T12:00:00Z'))
+    expect(c.status).toBe('completed')
+    expect(c.due).toBe('completed')
+  })
 })
 
 describe('platform settings mappers', () => {

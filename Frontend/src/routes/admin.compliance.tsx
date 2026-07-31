@@ -33,7 +33,7 @@ function AdminCompliance() {
   const [submitting, setSubmitting] = useState(false)
   const inFlight = useRef(false)
 
-  const runAction = async (fn: () => Promise<void>, okMsg: string, errMsg: string) => {
+  const runAction = async (fn: () => Promise<void>, okMsg: string, errMsg: string, tone: 'success' | 'info' = 'success') => {
     if (inFlight.current) return
     inFlight.current = true
     setSubmitting(true)
@@ -43,14 +43,14 @@ function AdminCompliance() {
       inFlight.current = false
       setSubmitting(false)
       await queryClient.invalidateQueries({ queryKey: ['admin', 'compliance'] })
-      if (ok) toast(okMsg, 'success')
+      if (ok) toast(okMsg, tone)
     }
   }
 
   const start = (id: string) => runAction(() => apiStartRequest(id), 'Request started', 'Could not start the request')
   const complete = (id: string) => runAction(() => apiCompleteRequest(id), 'Request completed', 'Could not complete the request')
-  const download = (id: string) => runAction(() => apiExportRequest(id), 'Preparing data export', 'Could not queue the export')
-  const notice = (id: string) => runAction(() => apiNoticeRequest(id), 'Generating takedown notice', 'Could not record the notice')
+  const download = (id: string) => runAction(() => apiExportRequest(id), "Export queued — downloads aren't available yet", 'Could not queue the export', 'info')
+  const notice = (id: string) => runAction(() => apiNoticeRequest(id), 'Notice recorded', 'Could not record the notice', 'info')
 
   const [filter, setFilter] = useState<FilterKey>('all')
 
@@ -63,7 +63,10 @@ function AdminCompliance() {
     <div className="flex flex-col gap-6">
       <div className="flex flex-col gap-1">
         <h1 className="text-display text-beatz-dark-bg dark:text-white">Compliance</h1>
-        <span className="text-sm text-gray-500 dark:text-gray-300">{open} open · <span className={overdue > 0 ? 'text-beatz-red font-bold' : ''}>{overdue} overdue</span> · DSAR, takedowns &amp; tax</span>
+        <span className="text-sm text-gray-500 dark:text-gray-300">
+          {data && <>{open} open · <span className={overdue > 0 ? 'text-beatz-red font-bold' : ''}>{overdue} overdue</span> · </>}
+          DSAR, takedowns &amp; tax
+        </span>
       </div>
 
       <div className="flex items-center gap-2 flex-wrap">

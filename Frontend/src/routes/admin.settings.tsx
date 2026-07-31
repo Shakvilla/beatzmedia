@@ -6,6 +6,7 @@ import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
 import { Toggle } from '../components/ui/toggle'
 import { AdminLoadError } from '../components/admin/load-error'
+import { ApiError } from '../lib/api/errors'
 import { platformSettingsQuery, apiSaveSettings } from '../lib/api/queries/admin-settings'
 import { getAdminTeam, ADMIN_ROLES, type PlatformSettings, type AdminMember, type AdminRole } from '../lib/admin-data'
 
@@ -42,12 +43,15 @@ function AdminSettings() {
     inFlight.current = true
     setSaving(true)
     let ok = false
-    try { await apiSaveSettings(s); ok = true } catch { toast('Could not save platform settings', 'error') }
+    try { await apiSaveSettings(s); ok = true }
+    catch (e) { toast(e instanceof ApiError && e.message ? e.message : 'Could not save platform settings', 'error') }
     finally {
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] })
       inFlight.current = false
       setSaving(false)
-      await queryClient.invalidateQueries({ queryKey: ['admin', 'settings'] })
-      setDraft(null)   // fall back to the refetched server copy, so the form shows what was really saved
+      // Only fall back to the refetched server copy on success — on failure, keep the draft so the
+      // admin can see what was rejected and retry, instead of it silently vanishing.
+      if (ok) setDraft(null)
       if (ok) toast('Platform settings saved', 'success')
     }
   }
@@ -57,7 +61,7 @@ function AdminSettings() {
     if (!email) return
     setTeam((t) => [...t, { id: `a-${Date.now()}`, name: email.split('@')[0], email, role: inviteRole, lastActive: 'invited' }])
     setInviteEmail('')
-    toast(`Invited ${email} as ${inviteRole}`, 'success')
+    toast(`Invite noted locally — admin team management has no backend yet`, 'info')
   }
   const changeRole = (id: string, role: AdminRole) => setTeam((t) => t.map((m) => (m.id === id ? { ...m, role } : m)))
   const removeMember = (id: string) => setTeam((t) => t.filter((m) => m.id !== id))
@@ -82,7 +86,7 @@ function AdminSettings() {
           <Section title="Platform" desc="Core commerce and availability settings.">
             <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
               <Field label="Platform fee (%)">
-                <input type="number" className={cn(INPUT, 'w-full')} value={s.platformFeePct} onChange={(e) => setS((p) => ({ ...p, platformFeePct: Number(e.target.value) || 0 }))} />
+                <input type="number" min={0} max={100} step={1} className={cn(INPUT, 'w-full')} value={s.platformFeePct} onChange={(e) => setS((p) => ({ ...p, platformFeePct: Math.min(100, Math.max(0, Math.round(Number(e.target.value) || 0))) }))} />
               </Field>
               <Field label="Payout day">
                 <select className={cn(INPUT, 'w-full appearance-none cursor-pointer')} value={s.payoutDay} onChange={(e) => setS((p) => ({ ...p, payoutDay: e.target.value }))}>
@@ -90,7 +94,7 @@ function AdminSettings() {
                 </select>
               </Field>
               <Field label="Minimum payout (₵)">
-                <input type="number" className={cn(INPUT, 'w-full')} value={s.payoutMinimum} onChange={(e) => setS((p) => ({ ...p, payoutMinimum: Number(e.target.value) || 0 }))} />
+                <input type="number" min={0} step={0.01} className={cn(INPUT, 'w-full')} value={s.payoutMinimum} onChange={(e) => setS((p) => ({ ...p, payoutMinimum: Math.max(0, Number(e.target.value) || 0) }))} />
               </Field>
               <Field label="Default currency">
                 <input className={cn(INPUT, 'w-full opacity-60 cursor-not-allowed')} value={s.defaultCurrency} disabled />

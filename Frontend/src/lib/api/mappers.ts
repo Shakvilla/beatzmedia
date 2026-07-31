@@ -1322,13 +1322,17 @@ const COMPLIANCE_STATUSES: ComplianceStatus[] = ['new', 'in_progress', 'complete
 
 export function toComplianceRequest(w: ComplianceRequestWire, now?: number): ComplianceRequest {
   const status = (COMPLIANCE_STATUSES as string[]).includes(w.status) ? (w.status as ComplianceStatus) : 'new'
+  // The backend never sets `overdue`; it is derived from the due date, exactly as dueLabel does.
+  // Deriving it here keeps the status pill, the Due column and the header count consistent.
+  const past = w.due ? Date.parse(w.due) < (now ?? Date.now()) : false
+  const effective: ComplianceStatus = status === 'new' && past ? 'overdue' : status
   return {
     id: w.id,
     type: (COMPLIANCE_TYPES as string[]).includes(w.type) ? (w.type as ComplianceType) : 'Tax',
     subject: w.subject,
     detail: w.detail,
-    due: dueLabel(w.due, status, now),
-    status,
+    due: dueLabel(w.due, effective, now),
+    status: effective,
   }
 }
 

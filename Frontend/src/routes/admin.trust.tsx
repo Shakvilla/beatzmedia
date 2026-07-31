@@ -22,7 +22,6 @@ function AdminTrust() {
   const queryClient = useQueryClient()
   const { data, isError, isPending, refetch } = useQuery(riskBoardQuery())
   const signals = data?.signals ?? []
-  const kpis = data?.kpis ?? { chargebackRate: '0%', suspiciousSignups: 0, fraudFlags: 0, botStreams: '0%' }
   const paged = usePaged(signals)
 
   const [banTarget, setBanTarget] = useState<RiskSignal | null>(null)
@@ -54,49 +53,55 @@ function AdminTrust() {
         <span className="text-sm text-gray-500 dark:text-gray-300">Fraud, abuse and risk signals across the platform</span>
       </div>
 
-      {/* KPIs */}
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Kpi label="Chargeback rate" value={kpis.chargebackRate} sub="last 30d" />
-        <Kpi label="Suspicious signups" value={kpis.suspiciousSignups.toLocaleString()} sub="last 24h" warn />
-        <Kpi label="Open fraud flags" value={kpis.fraudFlags.toLocaleString()} sub="need review" warn />
-        <Kpi label="Bot streams" value={kpis.botStreams} sub="of total plays" />
-      </div>
-
-      {/* Signals */}
-      <section className={cn(CARD, 'flex flex-col gap-4')}>
-        <h2 className="text-lg font-bold text-beatz-dark-bg dark:text-white">Risk signals</h2>
-        <div className="overflow-x-auto">
-          <div className="min-w-[760px]">
-            <div className="flex items-center gap-4 px-2 pb-2 border-b border-gray-200 dark:border-white/10 text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-gray-500">
-              <span className="w-40 shrink-0">Subject</span>
-              <span className="w-36 shrink-0">Type</span>
-              <span className="flex-1">Detail</span>
-              <span className="w-16 shrink-0">Risk</span>
-              <span className="w-16 shrink-0">Age</span>
-              <span className="w-28 text-right shrink-0">Action</span>
-            </div>
-            {isError ? (
-              <AdminLoadError label="Couldn't load risk signals." onRetry={() => refetch()} />
-            ) : isPending ? (
-              <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</div>
-            ) : signals.length === 0 ? (
-              <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">No risk signals.</div>
-            ) : (
-              paged.pageItems.map((s) => (
-                <SignalRow key={s.id} signal={s} disabled={submitting}
-                  onReview={() => review(s)}
-                  onBan={() => setBanTarget(s)}
-                  onClear={() => clear(s)}
-                />
-              ))
-            )}
+      {isError ? (
+        <AdminLoadError label="Couldn't load risk signals." onRetry={() => refetch()} />
+      ) : isPending || !data ? (
+        <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">Loading…</div>
+      ) : (
+        <>
+          {/* KPIs */}
+          <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+            <Kpi label="Chargeback rate" value="—" sub="not measured yet" />
+            <Kpi label="Suspicious signups" value="—" sub="not measured yet" warn />
+            <Kpi label="Open fraud flags" value={data.kpis.fraudFlags.toLocaleString()} sub="need review" warn />
+            <Kpi label="Bot streams" value="—" sub="not measured yet" />
           </div>
-        </div>
-        <Pagination paged={paged} />
-      </section>
 
-      <BanModal signal={banTarget} onClose={() => setBanTarget(null)}
-        onConfirm={(reason) => { const s = banTarget; setBanTarget(null); if (s) ban(s, reason) }} />
+          {/* Signals */}
+          <section className={cn(CARD, 'flex flex-col gap-4')}>
+            <h2 className="text-lg font-bold text-beatz-dark-bg dark:text-white">Risk signals</h2>
+            <div className="overflow-x-auto">
+              <div className="min-w-[760px]">
+                <div className="flex items-center gap-4 px-2 pb-2 border-b border-gray-200 dark:border-white/10 text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-gray-500">
+                  <span className="w-40 shrink-0">Subject</span>
+                  <span className="w-36 shrink-0">Type</span>
+                  <span className="flex-1">Detail</span>
+                  <span className="w-16 shrink-0">Risk</span>
+                  <span className="w-16 shrink-0">Age</span>
+                  <span className="w-28 text-right shrink-0">Action</span>
+                </div>
+                {signals.length === 0 ? (
+                  <div className="py-12 text-center text-sm text-gray-400 dark:text-gray-500">No risk signals.</div>
+                ) : (
+                  paged.pageItems.map((s) => (
+                    <SignalRow key={s.id} signal={s} disabled={submitting}
+                      onReview={() => review(s)}
+                      onBan={() => setBanTarget(s)}
+                      onClear={() => clear(s)}
+                    />
+                  ))
+                )}
+              </div>
+            </div>
+            <Pagination paged={paged} />
+          </section>
+        </>
+      )}
+
+      {banTarget && (
+        <BanModal signal={banTarget} submitting={submitting} onClose={() => setBanTarget(null)}
+          onConfirm={(reason) => { const s = banTarget; setBanTarget(null); if (s) ban(s, reason) }} />
+      )}
     </div>
   )
 }
@@ -131,7 +136,7 @@ function SignalRow({ signal: s, disabled, onReview, onBan, onClear }: { signal: 
           <span className={cn('text-[10px] font-bold uppercase tracking-wider', s.status === 'banned' ? 'text-beatz-red' : 'text-beatz-green')}>{s.status}</span>
         ) : (
           <>
-            <button onClick={onReview} className="h-8 px-3 rounded-full text-beatz-green text-xs font-bold hover:bg-beatz-green/10 transition-colors">Review</button>
+            <button onClick={onReview} disabled={disabled} className="h-8 px-3 rounded-full text-beatz-green text-xs font-bold hover:bg-beatz-green/10 transition-colors">Review</button>
             <div className="relative">
               <button onClick={() => setMenuOpen((o) => !o)} aria-label="Actions" className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-beatz-dark-bg dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"><MoreHorizontal size={18} /></button>
               {menuOpen && (
@@ -162,7 +167,7 @@ function MenuItem({ icon: Icon, label, onClick, disabled, danger }: { icon: type
   )
 }
 
-function BanModal({ signal, onClose, onConfirm }: { signal: RiskSignal | null; onClose: () => void; onConfirm: (reason: string) => void }) {
+function BanModal({ signal, submitting, onClose, onConfirm }: { signal: RiskSignal | null; submitting?: boolean; onClose: () => void; onConfirm: (reason: string) => void }) {
   const [reason, setReason] = useState('')
   const REASONS = ['Payment fraud', 'Chargeback abuse', 'Bot activity', 'Impersonation', 'Other']
   return (
@@ -177,7 +182,7 @@ function BanModal({ signal, onClose, onConfirm }: { signal: RiskSignal | null; o
         <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Add a note…" className="w-full h-11 rounded-xl bg-white/5 border border-white/10 px-4 text-white placeholder:text-white/20 focus:outline-none focus:border-beatz-red/60" />
         <div className="flex items-center gap-3">
           <button onClick={onClose} className="flex-1 h-12 rounded-full bg-white/10 text-white font-bold hover:bg-white/15 transition-colors">Cancel</button>
-          <button onClick={() => reason.trim() && onConfirm(reason.trim())} disabled={!reason.trim()} className="flex-1 h-12 rounded-full bg-beatz-red text-white font-bold hover:bg-beatz-red-light transition-colors disabled:opacity-40">Ban</button>
+          <button onClick={() => reason.trim() && onConfirm(reason.trim())} disabled={!reason.trim() || submitting} className="flex-1 h-12 rounded-full bg-beatz-red text-white font-bold hover:bg-beatz-red-light transition-colors disabled:opacity-40">Ban</button>
         </div>
       </div>
     </Modal>
