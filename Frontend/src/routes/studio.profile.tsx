@@ -1,14 +1,15 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMemo, useRef, useState } from 'react'
-import { useSuspenseQuery, useQueryClient } from '@tanstack/react-query'
+import { useQuery, useSuspenseQuery, useQueryClient } from '@tanstack/react-query'
 import {
   ImagePlus, X, Plus, Trash2, BadgeCheck, Camera, AtSign, Play, Globe,
   Music2, Mail, Check, MapPin,
 } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
-import { studioArtist, type StudioProfile, type StudioShow } from '../lib/studio-data'
-import { getArtistTracks } from '../lib/mock-data'
+import { type StudioProfile, type StudioShow } from '../lib/studio-data'
+import { useCreatorIdentity, initialsOf } from '../features/studio/use-creator-identity'
+import { artistTracksQuery } from '../lib/api/queries/catalog'
 import { studioProfileQuery, apiSaveStudioProfile } from '../lib/api/queries/studio'
 import { ApiError } from '../lib/api/errors'
 
@@ -28,7 +29,12 @@ function ProfileComponent() {
   const navigate = useNavigate()
   const queryClient = useQueryClient()
   const { data: storeProfile } = useSuspenseQuery(studioProfileQuery())
-  const trackOptions = useMemo(() => getArtistTracks(studioArtist.id), [])
+  const creator = useCreatorIdentity()
+  // The creator's own published tracks, for the "featured track" picker.
+  const { data: trackOptions = [] } = useQuery({
+    ...artistTracksQuery(creator.id ?? ''),
+    enabled: creator.id !== null,
+  })
 
   const [p, setP] = useState<StudioProfile>(storeProfile)
   const [tagDraft, setTagDraft] = useState('')
@@ -94,7 +100,7 @@ function ProfileComponent() {
             </button>
           )}
           <button
-            onClick={() => navigate({ to: '/artist/$artistId', params: { artistId: studioArtist.id } })}
+            onClick={() => { if (creator.id) navigate({ to: '/artist/$artistId', params: { artistId: creator.id } }) }}
             className="h-11 px-5 rounded-full bg-gray-100 dark:bg-white/10 text-beatz-dark-bg dark:text-white font-bold text-sm hover:bg-gray-200 dark:hover:bg-white/15 transition-colors"
           >
             Preview page
@@ -121,7 +127,7 @@ function ProfileComponent() {
         </div>
         <div className="absolute -bottom-8 left-6 flex items-end gap-4">
           <button onClick={() => avatarRef.current?.click()} className="w-28 h-28 rounded-full overflow-hidden border-4 border-beatz-light-bg dark:border-beatz-dark-bg bg-beatz-light-surface-2 dark:bg-beatz-dark-surface-2 flex items-center justify-center shrink-0 group relative">
-            {p.avatar ? <img src={p.avatar} alt="Avatar" className="w-full h-full object-cover" /> : <span className="text-2xl font-bold text-gray-500 dark:text-gray-300">{studioArtist.initials}</span>}
+            {p.avatar ? <img src={p.avatar} alt="Avatar" className="w-full h-full object-cover" /> : <span className="text-2xl font-bold text-gray-500 dark:text-gray-300">{initialsOf(p.displayName)}</span>}
             <span className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"><ImagePlus size={20} className="text-white" /></span>
           </button>
           <button onClick={() => avatarRef.current?.click()} className="mb-2 h-9 px-4 rounded-full bg-gray-100 dark:bg-white/10 text-beatz-dark-bg dark:text-white text-xs font-bold hover:bg-gray-200 dark:hover:bg-white/15 transition-colors">
@@ -215,7 +221,7 @@ function ProfileComponent() {
         {/* Right: completeness + live preview */}
         <div className="flex flex-col gap-6 lg:sticky lg:top-2 self-start">
           <Completeness profile={p} />
-          <LivePreview profile={p} featuredTitle={trackOptions.find((t) => t.id === p.featuredTrackId)?.title} />
+          <LivePreview profile={p} featuredTitle={trackOptions.find((t) => t.id === p.featuredTrackId)?.title} verified={creator.verified} />
         </div>
       </div>
     </div>
@@ -281,7 +287,7 @@ function Completeness({ profile: p }: { profile: StudioProfile }) {
   )
 }
 
-function LivePreview({ profile: p, featuredTitle }: { profile: StudioProfile; featuredTitle?: string }) {
+function LivePreview({ profile: p, featuredTitle, verified }: { profile: StudioProfile; featuredTitle?: string; verified: boolean }) {
   const links: { icon: typeof Globe; value: string }[] = [
     { icon: Camera, value: p.links.instagram }, { icon: AtSign, value: p.links.twitter },
     { icon: Play, value: p.links.youtube }, { icon: Globe, value: p.links.website },
@@ -294,14 +300,14 @@ function LivePreview({ profile: p, featuredTitle }: { profile: StudioProfile; fe
       <div className="relative h-24 bg-beatz-light-surface-2 dark:bg-white/5">
         {p.banner && <img src={p.banner} alt="" className="w-full h-full object-cover" />}
         <div className="absolute -bottom-7 left-5 w-16 h-16 rounded-full overflow-hidden border-4 border-white dark:border-beatz-dark-surface bg-beatz-light-surface-2 dark:bg-beatz-dark-surface-2 flex items-center justify-center">
-          {p.avatar ? <img src={p.avatar} alt="" className="w-full h-full object-cover" /> : <span className="text-sm font-bold text-gray-500 dark:text-gray-300">{studioArtist.initials}</span>}
+          {p.avatar ? <img src={p.avatar} alt="" className="w-full h-full object-cover" /> : <span className="text-sm font-bold text-gray-500 dark:text-gray-300">{initialsOf(p.displayName)}</span>}
         </div>
       </div>
       <div className="px-5 pt-9 pb-5 flex flex-col gap-3">
         <div className="flex flex-col gap-0.5">
           <span className="flex items-center gap-1.5 text-lg font-bold text-beatz-dark-bg dark:text-white">
             {p.displayName || 'Your name'}
-            {studioArtist.verified && <BadgeCheck size={16} className="text-beatz-green" />}
+            {verified && <BadgeCheck size={16} className="text-beatz-green" />}
           </span>
           <span className="flex items-center gap-2 text-xs text-gray-500 dark:text-gray-400">
             {p.username || '@username'}{p.hometown && <><span>·</span><MapPin size={11} />{p.hometown}</>}

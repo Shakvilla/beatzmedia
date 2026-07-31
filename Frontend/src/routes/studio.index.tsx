@@ -7,7 +7,7 @@ import {
 import { cn } from '../utils/cn'
 import { getAnalytics, getAudience, formatCompact } from '../lib/studio-analytics'
 import { getPayouts, type PayoutTxn } from '../lib/studio-payouts'
-import { studioArtist } from '../lib/studio-data'
+import { useCreatorIdentity } from '../features/studio/use-creator-identity'
 import { studioProfileQuery, studioSettingsQuery, studioReleasesQuery } from '../lib/api/queries/studio'
 import { payoutsQuery } from '../lib/api/queries/payouts'
 
@@ -41,7 +41,8 @@ function OverviewComponent() {
   const { data: profile } = useSuspenseQuery(studioProfileQuery())
   const { data: settings } = useSuspenseQuery(studioSettingsQuery())
   const { data: releases } = useSuspenseQuery(studioReleasesQuery())
-  const firstName = (profile.displayName.trim() || studioArtist.name).split(' ')[0]
+  const creator = useCreatorIdentity()
+  const firstName = creator.name.split(' ')[0]
 
   const inReview = releases.find((r) => r.status === 'in_review')
   const drafts = releases.filter((r) => r.status === 'draft')
@@ -61,8 +62,8 @@ function OverviewComponent() {
         <div className="flex flex-col gap-1">
           <h1 className="text-display text-beatz-dark-bg dark:text-white">{greeting()}, {firstName}</h1>
           <span className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-300">
-            Here's how {profile.displayName.trim() || studioArtist.name} is doing this month
-            {studioArtist.verified && <span className="flex items-center gap-1 text-beatz-green font-bold"><BadgeCheck size={14} /> Verified</span>}
+            Here's how {creator.name} is doing this month
+            {creator.verified && <span className="flex items-center gap-1 text-beatz-green font-bold"><BadgeCheck size={14} /> Verified</span>}
           </span>
         </div>
         <Link to="/studio/release/new/details" className="h-11 px-5 rounded-full bg-beatz-green text-black font-bold text-sm flex items-center gap-2 hover:scale-105 transition-transform shadow-lg shadow-beatz-green/20">

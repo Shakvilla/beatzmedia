@@ -4,7 +4,8 @@ import { MoreHorizontal, Trash2, Mail, Plus } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
 import { useReleaseDraft, type SplitEntry } from '../features/studio/release-draft-context'
-import { CREATOR_REVENUE_SHARE, studioArtist } from '../lib/studio-data'
+import { CREATOR_REVENUE_SHARE } from '../lib/studio-data'
+import { useCreatorIdentity } from '../features/studio/use-creator-identity'
 
 export const Route = createFileRoute('/studio/release/new/splits')({
   component: SplitsStep,
@@ -17,12 +18,13 @@ const genId = () => `${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
 
 function SplitsStep() {
   const { draft, setTrackSplits, applySplitsToAll } = useReleaseDraft()
+  const creator = useCreatorIdentity()
   const { toast } = useToast()
   const tracks = draft.tracks
 
   const selfEntry = (percent: number): SplitEntry => ({
     id: genId(),
-    name: draft.primaryArtist.trim() || studioArtist.name,
+    name: draft.primaryArtist.trim() || creator.name,
     email: 'me',
     role: 'Performer · Writer',
     percent,
