@@ -35,8 +35,8 @@ import type {
 import type { StudioProfile, StudioSettings, StudioRelease, StudioPodcastShow, StudioEpisode, EpisodeStatus } from '../studio-data'
 import type { UploadedTrack } from '../../features/studio/release-draft-context'
 import type { Payouts, PayoutMethod, PayoutTxn, PayoutType, PayoutStatus, MethodKind } from '../studio-payouts'
-import type { AdminUserRow, UserRole, UserStatus, UserActionLog, CatalogItem, CatalogStatus, CatalogType, ModerationItem, ModReason, ModSeverity, ModStatus, Finance, PendingPayout, ProviderMix, Dispute, LedgerTxn, LedgerType, TimelineEntry, FeaturedSlot, PushItem, CuratedPlaylist, AdminOverview, AttentionItem, RevenueArtist, PayMethod, Health, HealthMetric, Incident, AuditEntry, AuditType, SupportTicket, SupportMessage, TicketStatus, TicketPriority } from '../admin-data'
-import { relativeTimeAgo, monthYear, formatDuration, relativeTime, toCedis, monthDay } from '../format'
+import type { AdminUserRow, UserRole, UserStatus, UserActionLog, CatalogItem, CatalogStatus, CatalogType, ModerationItem, ModReason, ModSeverity, ModStatus, Finance, PendingPayout, ProviderMix, Dispute, LedgerTxn, LedgerType, TimelineEntry, FeaturedSlot, PushItem, CuratedPlaylist, AdminOverview, AttentionItem, RevenueArtist, PayMethod, Health, HealthMetric, Incident, AuditEntry, AuditType, SupportTicket, SupportMessage, TicketStatus, TicketPriority, RiskSignal, RiskLevel, RiskStatus, ComplianceRequest, ComplianceType, ComplianceStatus, PlatformSettings } from '../admin-data'
+import { relativeTimeAgo, monthYear, formatDuration, relativeTime, toCedis, monthDay, dueLabel } from '../format'
 
 export interface ArtistWire {
   id: string
@@ -1256,5 +1256,121 @@ export function toSupportTicket(w: SupportTicketWire, now?: number): SupportTick
     id: w.id, subject: w.subject, requester: w.requester, channel: w.channel,
     priority: w.priority as TicketPriority, status: w.status as TicketStatus,
     age: relativeTime(w.age, now), messages: w.messages.map((m) => toSupportMessage(m, now)),
+  }
+}
+
+// ── Admin trust & safety (AdminRiskResource) ──────────────────────────────────
+export interface RiskSignalWire {
+  id: string
+  subject: string
+  type: string
+  detail: string
+  level: string
+  time: string | null
+  status: string
+}
+export interface RiskKpisWire {
+  chargebackRate: string
+  suspiciousSignups: number
+  fraudFlags: number
+  botStreams: string
+}
+export interface RiskBoardWire { kpis: RiskKpisWire; signals: RiskSignalWire[] }
+export interface RiskBoard { kpis: RiskKpisWire; signals: RiskSignal[] }
+
+const RISK_LEVELS: RiskLevel[] = ['high', 'med', 'low']
+const RISK_STATUSES: RiskStatus[] = ['open', 'cleared', 'banned']
+
+/**
+ * An unrecognised level falls back to `low` and an unrecognised status to `open` — the UI colours
+ * rows by both, so a new wire value must never render as a louder alarm than it is, nor as
+ * already-resolved work.
+ */
+export function toRiskSignal(w: RiskSignalWire, now?: number): RiskSignal {
+  return {
+    id: w.id,
+    subject: w.subject,
+    type: w.type,
+    detail: w.detail,
+    level: (RISK_LEVELS as string[]).includes(w.level) ? (w.level as RiskLevel) : 'low',
+    time: w.time ? relativeTimeAgo(w.time, now) : '',
+    status: (RISK_STATUSES as string[]).includes(w.status) ? (w.status as RiskStatus) : 'open',
+  }
+}
+
+/**
+ * `kpis` passes through as served. Only `fraudFlags` is real; `chargebackRate`,
+ * `suspiciousSignups` and `botStreams` are documented Category-B zeros with no fraud-analytics
+ * subsystem behind them, so they are shown as the honest zeros they are.
+ */
+export function toRiskBoard(w: RiskBoardWire, now?: number): RiskBoard {
+  return { kpis: w.kpis, signals: w.signals.map((s) => toRiskSignal(s, now)) }
+}
+
+// ── Admin compliance (AdminComplianceResource) ────────────────────────────────
+export interface ComplianceRequestWire {
+  id: string
+  type: string
+  subject: string
+  detail: string
+  due: string | null
+  status: string
+}
+
+const COMPLIANCE_TYPES: ComplianceType[] = ['DSAR-export', 'DSAR-delete', 'Takedown', 'Tax']
+const COMPLIANCE_STATUSES: ComplianceStatus[] = ['new', 'in_progress', 'completed', 'overdue']
+
+export function toComplianceRequest(w: ComplianceRequestWire, now?: number): ComplianceRequest {
+  const status = (COMPLIANCE_STATUSES as string[]).includes(w.status) ? (w.status as ComplianceStatus) : 'new'
+  return {
+    id: w.id,
+    type: (COMPLIANCE_TYPES as string[]).includes(w.type) ? (w.type as ComplianceType) : 'Tax',
+    subject: w.subject,
+    detail: w.detail,
+    due: dueLabel(w.due, status, now),
+    status,
+  }
+}
+
+// ── Admin platform settings (AdminSettingsResource) ───────────────────────────
+export interface PlatformSettingsWire {
+  platformFeePct: number
+  payoutDay: string
+  payoutMinimum: number
+  defaultCurrency: string
+  maintenanceMode: boolean
+  providers: { momo: boolean; vodafone: boolean; airteltigo: boolean; card: boolean; bank: boolean }
+  flags: { artistSignups: boolean; podcasts: boolean; events: boolean; tipping: boolean; fanMessaging: boolean }
+}
+
+/**
+ * `platformFeePct` is an integer percent and `payoutMinimum` is bare cedis — the server owns the
+ * minor-unit conversion, so nothing here multiplies or divides by 100.
+ */
+export function toPlatformSettings(w: PlatformSettingsWire): PlatformSettings {
+  return {
+    platformFeePct: w.platformFeePct,
+    payoutDay: w.payoutDay,
+    payoutMinimum: w.payoutMinimum,
+    defaultCurrency: w.defaultCurrency,
+    maintenanceMode: w.maintenanceMode,
+    providers: { ...w.providers },
+    flags: { ...w.flags },
+  }
+}
+
+/**
+ * The `PUT` is a FULL REPLACE: every field, including the nested `providers` and `flags` objects,
+ * is required server-side and a partial body is rejected as a 422 rather than merged.
+ */
+export function toSettingsRequest(s: PlatformSettings): PlatformSettingsWire {
+  return {
+    platformFeePct: s.platformFeePct,
+    payoutDay: s.payoutDay,
+    payoutMinimum: s.payoutMinimum,
+    defaultCurrency: s.defaultCurrency,
+    maintenanceMode: s.maintenanceMode,
+    providers: { ...s.providers },
+    flags: { ...s.flags },
   }
 }
