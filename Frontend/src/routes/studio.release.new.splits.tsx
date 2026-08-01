@@ -1,5 +1,5 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
-import { useEffect, useState } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import { MoreHorizontal, Trash2, Mail, Plus } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
@@ -22,9 +22,16 @@ function SplitsStep() {
   const { toast } = useToast()
   const tracks = draft.tracks
 
+  /**
+   * The name we auto-fill for the creator's own row. `creator.name` resolves in two steps —
+   * the account name first, then the studio profile's displayName once that query settles —
+   * so this can change after the first render.
+   */
+  const autoName = draft.primaryArtist.trim() || creator.name
+
   const selfEntry = (percent: number): SplitEntry => ({
     id: genId(),
-    name: draft.primaryArtist.trim() || creator.name,
+    name: autoName,
     email: 'me',
     role: 'Performer · Writer',
     percent,
@@ -42,12 +49,40 @@ function SplitsStep() {
   }, [tracks, selectedId, allMode])
 
   // Seed any track that has no splits yet with the artist at 100%.
+  // Waits for a resolved name: seeding while identity is still loading would write the
+  // account name — or an empty string — onto a royalty-split row and leave it there.
   useEffect(() => {
+    if (!autoName) return
     for (const t of tracks) {
       if (!draft.splits[t.id]) setTrackSplits(t.id, [selfEntry(100)])
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [tracks, draft.splits])
+  }, [tracks, draft.splits, autoName])
+
+  /**
+   * Reconcile already-seeded self rows when the auto name changes — which it does when the
+   * profile displayName arrives after the account name, or when the creator edits the
+   * primary-artist field. Only rows still holding the PREVIOUS auto value are rewritten, so
+   * a name the creator typed themselves is never clobbered.
+   */
+  const prevAutoName = useRef(autoName)
+  useEffect(() => {
+    const before = prevAutoName.current
+    if (before === autoName) return
+    prevAutoName.current = autoName
+    if (!autoName) return
+    for (const t of tracks) {
+      const entries = draft.splits[t.id]
+      if (!entries?.some((e) => e.confirmation === 'self' && (e.name === before || !e.name.trim()))) continue
+      setTrackSplits(
+        t.id,
+        entries.map((e) =>
+          e.confirmation === 'self' && (e.name === before || !e.name.trim()) ? { ...e, name: autoName } : e,
+        ),
+      )
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [autoName, tracks, draft.splits])
 
   if (tracks.length === 0) {
     return (
