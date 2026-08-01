@@ -120,15 +120,19 @@ Legend: ✅ works · ⚠️ renders but shows invented data · ❌ claims succes
 
 ## The pattern worth naming
 
-Counting the ❌ rows: **26 controls report success for work that never happened.** They are not
-failures the user can see — each one shows a green confirmation. Unpublish says the release is
-down while it is still live; Deactivate says the profile is off while it is on; Tip says money
-was sent when none moved.
+Counting only the controls that **report success for work that never happened** — 6 fan
+actions, 10 Studio actions, 4 Admin actions — the total is **20**. (Not every ❌ in the tables
+above belongs to this group: the Studio overview and Health rows are fabricated *data*, and the
+cross-cutting rows are identity and session defects.)
+
+They are not failures the user can see — each one shows a green confirmation. Unpublish says the
+release is down while it is still live; Deactivate says the profile is off while it is on; Tip
+said money was sent when none moved.
 
 A user cannot distinguish these from working features. That is the single most important
 thing for the team to address, and the cheapest interim fix is honest copy: switch the
 `'success'` toasts to `'info'` with "not available yet", exactly as was done for the three
-admin stubs in PR #177.
+admin stubs in PR #177. **Both tip controls have since been corrected this way** — see I-14.
 
 ---
 

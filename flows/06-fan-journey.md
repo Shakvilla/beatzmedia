@@ -234,8 +234,10 @@ chose ₵5, and hit **Send ₵5 with MoMo**. I got a warm green confirmation:
 > *Thank you! ₵5 tipped to Burna Boy via MoMo 💚*
 
 **No request was made. No money moved. Burna Boy will never know.** I instrumented the network
-during the click and recorded zero calls. The same applies to "Support the show" on podcasts.
-→ [I-14](ISSUES.md#i-14)
+during the click and recorded zero calls. The same applied to "Support the show" on podcasts.
+
+*Since fixed:* both now say "Tipping isn't available yet — no payment was made." The feature
+itself remains blocked on the two contract gaps described in [I-14](ISSUES.md#i-14).
 
 ---
 
@@ -269,8 +271,11 @@ not, and that is what makes the fabricated states dangerous rather than merely b
 1. **Track pages** — one missing lyrics file should not 404 an entire song
    ([I-20](ISSUES.md#i-20)). This is the highest ratio of damage to effort in the whole list.
 2. **Audio** — the product does not currently play music ([I-12](ISSUES.md#i-12)).
-3. **Tipping** — stop claiming money moved; the backend is already built and unused
-   ([I-14](ISSUES.md#i-14)).
+3. **Tipping** — the toast no longer claims money moved (fixed), but the feature is still
+   unavailable. `POST /v1/payments/tips` and `POST /v1/podcasts/:id/tip` exist, yet neither is
+   callable from the app yet: they need a provider `paymentToken` the client cannot obtain, and
+   the artist path also needs a creator **account** id that artist pages do not carry. Both are
+   contract gaps to close before wiring ([I-14](ISSUES.md#i-14)).
 4. **Ownership** — use the `free` state that already exists, so the app stops telling fans
    they own things they have not bought ([I-13](ISSUES.md#i-13)).
 5. **Checkout** — give a stranded payment somewhere to go ([I-2](ISSUES.md#i-2)).
