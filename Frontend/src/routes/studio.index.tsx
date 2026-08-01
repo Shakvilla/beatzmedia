@@ -15,14 +15,10 @@ import { payoutsQuery } from '../lib/api/queries/payouts'
 const OVERVIEW_RANGE = '28d' as const
 
 export const Route = createFileRoute('/studio/')({
-  loader: ({ context: { queryClient } }) => Promise.all([
-    queryClient.ensureQueryData(studioProfileQuery()),
-    queryClient.ensureQueryData(studioSettingsQuery()),
-    queryClient.ensureQueryData(studioReleasesQuery()),
-    queryClient.ensureQueryData(studioAnalyticsQuery(OVERVIEW_RANGE)),
-    queryClient.ensureQueryData(studioAudienceQuery(OVERVIEW_RANGE)),
-    queryClient.ensureQueryData(payoutsQuery()),
-  ]),
+  // No loader prefetch here on purpose. This route matches for a signed-in FAN too — the
+  // /studio layout only swaps in the ArtistGate at render time — so any /v1/studio/* call
+  // made from a loader 403s for fans and takes the whole route down with it before the gate
+  // can render. The component's useSuspenseQuery calls run only once the gate has passed.
   component: OverviewComponent,
 })
 
