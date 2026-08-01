@@ -1,5 +1,6 @@
 import { queryOptions } from '@tanstack/react-query'
 import { apiFetch } from '../client'
+import { ApiError } from '../errors'
 import {
   toArtist,
   toTrack,
@@ -106,10 +107,23 @@ export function trackQuery(id: string) {
   })
 }
 
+/**
+ * Lyrics are OPTIONAL content: most tracks have none, and the API answers 404 for those.
+ * A 404 therefore resolves to an empty list rather than rejecting — otherwise the track
+ * route's loader (which awaits this) fails and renders "Track not found" for a track that
+ * loaded perfectly well. Every other error still propagates.
+ */
 export function lyricsQuery(id: string) {
   return queryOptions({
     queryKey: ['track', id, 'lyrics'],
-    queryFn: async () => toLyricLines(await apiFetch<LyricsWire>(`/tracks/${id}/lyrics`)),
+    queryFn: async () => {
+      try {
+        return toLyricLines(await apiFetch<LyricsWire>(`/tracks/${id}/lyrics`))
+      } catch (err) {
+        if (err instanceof ApiError && err.status === 404) return []
+        throw err
+      }
+    },
   })
 }
 

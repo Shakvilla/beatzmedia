@@ -203,18 +203,25 @@ function TrackPageComponent() {
         {/* Lyrics + credits / info */}
         <div className="grid grid-cols-1 lg:grid-cols-3 gap-10">
           <div className="lg:col-span-2 flex flex-col gap-10">
-            {/* Lyrics preview */}
+            {/* Lyrics preview — most tracks have none, so say so rather than
+                showing an empty block with a "show full lyrics" link to nothing. */}
             <section className="flex flex-col gap-4">
               <div className="flex items-center justify-between border-b border-gray-200 dark:border-white/5 pb-3">
                 <h2 className="text-title text-beatz-dark-bg dark:text-white">Lyrics</h2>
-                <button onClick={openLyrics} className="text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-gray-300 hover:text-beatz-green transition-colors">Lyrics mode</button>
+                {lyricLines.length > 0 && (
+                  <button onClick={openLyrics} className="text-xs font-bold uppercase tracking-widest text-gray-500 dark:text-gray-300 hover:text-beatz-green transition-colors">Lyrics mode</button>
+                )}
               </div>
-              <button onClick={openLyrics} className="flex flex-col items-start gap-2 text-left relative">
-                {lyricLines.map((line, i) => (
-                  <span key={i} className={cn('text-xl font-bold', i >= 3 ? 'text-gray-400 dark:text-gray-500' : 'text-beatz-dark-bg dark:text-white')}>{line.text}</span>
-                ))}
-                <span className="mt-2 text-sm font-bold text-beatz-green">Show full lyrics →</span>
-              </button>
+              {lyricLines.length === 0 ? (
+                <span className="text-sm text-gray-400 dark:text-gray-500">No lyrics available for this track yet.</span>
+              ) : (
+                <button onClick={openLyrics} className="flex flex-col items-start gap-2 text-left relative">
+                  {lyricLines.map((line, i) => (
+                    <span key={i} className={cn('text-xl font-bold', i >= 3 ? 'text-gray-400 dark:text-gray-500' : 'text-beatz-dark-bg dark:text-white')}>{line.text}</span>
+                  ))}
+                  <span className="mt-2 text-sm font-bold text-beatz-green">Show full lyrics →</span>
+                </button>
+              )}
             </section>
 
             {/* Credits */}
