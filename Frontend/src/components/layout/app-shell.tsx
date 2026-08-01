@@ -20,8 +20,16 @@ export function AppShell() {
   // initial session hydration (GET /v1/me) before deciding — otherwise a valid,
   // already-logged-in session briefly bounces to /login on every page load.
   useEffect(() => {
-    if (!isLoading && !isAuthenticated && !onAuthRoute) navigate({ to: '/login' })
-  }, [isLoading, isAuthenticated, onAuthRoute, navigate])
+    if (!isLoading && !isAuthenticated && !onAuthRoute) {
+      // Carry where they were so login can send them back, and flag that this was an
+      // expiry rather than a deliberate sign-out. Access tokens are short-lived with no
+      // refresh (OQ-3), so this fires during normal use — silently dumping someone on
+      // /login with no explanation and no way back is the part that isn't acceptable.
+      // location.search is a parsed object in TanStack Router; href is the string form.
+      const from = location.href
+      navigate({ to: '/login', search: { redirect: from, expired: true }, replace: true })
+    }
+  }, [isLoading, isAuthenticated, onAuthRoute, navigate, location.href])
 
   if (isLoading) return null
   if (!isAuthenticated && !onAuthRoute) return null
