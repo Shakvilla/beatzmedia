@@ -280,9 +280,15 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // `isError: true` across a query-key switch when the new key resolves from cache (e.g. B
   // errors, fan plays C, fan returns to B within gcTime) — without it, a same-value
   // true→true transition across that round trip would never re-run this effect (I2).
+  // `errorUpdatedAt` covers the retry path itself (I5): `refetch()` on an already-errored
+  // query keeps `status: 'error'` throughout, so a refetch that fails AGAIN is an
+  // isError true→true transition too — without this, pressing play on a track that is still
+  // broken would clear `unavailable`, flip `isPlaying` true, and then never learn the retry
+  // failed, landing on the exact "unavailable: true, isPlaying: true" contradiction I5 exists
+  // to prevent. `errorUpdatedAt` changes on every settled failure, including a repeat one.
   useEffect(() => {
     if (streamQuery.isError) dispatch({ type: 'STREAM_ERROR' })
-  }, [streamQuery.isError, currentTrack?.id])
+  }, [streamQuery.isError, currentTrack?.id, streamQuery.errorUpdatedAt])
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
   // Which track's audio is currently loaded into the element — lets the load effect tell
@@ -319,6 +325,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       loadedTrackIdRef.current = null
       return
     }
+    // A refetch that lands a byte-identical URL (e.g. refetchOnReconnect, still default-on)
+    // must not force a rebuffer gap for nothing — only actually reload when the source changed.
+    if (el.src === stream.audioUrl) return
     const sameTrack = loadedTrackIdRef.current === currentTrack?.id
     resumeAtRef.current = sameTrack ? el.currentTime : null
     el.src = stream.audioUrl
@@ -403,6 +412,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       toggleShuffle: () => dispatch({ type: 'TOGGLE_SHUFFLE' }),
       cycleRepeat: () => dispatch({ type: 'CYCLE_REPEAT' }),
     }),
+    // Both `.isError` (read for `unavailable`) and `.refetch` (called from `togglePlay`) are
+    // accessed from `streamQuery` here; eslint-plugin-react-hooks wants the parent object as
+    // the dependency in that shape rather than the two member expressions separately, so this
+    // depends on `streamQuery` as a whole. (Its identity isn't stable across every render in
+    // v5, so this doesn't buy referential memoization — the point is declaring the data
+    // dependency correctly, not eliminating recomputation.)
     [state, currentTrack, isPreview, stream, streamQuery],
   )
 
