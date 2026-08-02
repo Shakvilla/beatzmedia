@@ -39,22 +39,39 @@ function ProgressTrack({
   )
 }
 
-// TODO(Task 6): player-context no longer exports a client-side preview-length constant —
-// the server-signed preview stream's own length is what limits playback (INV-3). This
-// local fallback only keeps the scrub bar from seeking past the old approximate preview
-// window until Task 6 rewires this file against the real <audio> element.
-const PREVIEW_SCRUB_CAP_SECONDS = 30
-
 export function PlayerBar() {
-  const { currentTrack, isPlaying, progress, volume, shuffle, repeat, isPreview, previewHitLimit, togglePlay, next, prev, seek, setVolume, toggleQueue, toggleShuffle, cycleRepeat } = usePlayer()
+  const {
+    currentTrack,
+    isPlaying,
+    progress,
+    volume,
+    shuffle,
+    repeat,
+    isPreview,
+    previewSeconds,
+    previewHitLimit,
+    unavailable,
+    duration,
+    togglePlay,
+    next,
+    prev,
+    seek,
+    setVolume,
+    toggleQueue,
+    toggleShuffle,
+    cycleRepeat,
+  } = usePlayer()
   const { addItem } = useCart()
   const { toast } = useToast()
-  const progressRatio = currentTrack?.duration ? Math.min(1, progress / currentTrack.duration) : 0
-  /** Cap scrubbing to the preview window for unowned for-sale tracks. */
+  // The element's duration is authoritative once metadata loads; catalogue metadata is a
+  // fallback and can disagree (and does, for a 30s preview of a 3-minute track).
+  const effectiveDuration = duration ?? currentTrack?.duration ?? 0
+  const progressRatio = !unavailable && effectiveDuration ? Math.min(1, progress / effectiveDuration) : 0
+  /** Cap scrubbing to the preview window when the server signed a clipped stream. */
   const seekCap = (ratio: number) => {
     if (!currentTrack) return
-    const target = ratio * currentTrack.duration
-    seek(isPreview ? Math.min(target, PREVIEW_SCRUB_CAP_SECONDS) : target)
+    const target = ratio * effectiveDuration
+    seek(previewSeconds != null ? Math.min(target, previewSeconds) : target)
   }
 
   const buyCurrent = () => {
@@ -115,7 +132,12 @@ export function PlayerBar() {
 
       {/* Mobile transport — compact, on the right */}
       <div className="flex md:hidden items-center gap-1 shrink-0">
-        <button onClick={togglePlay} aria-label={isPlaying ? "Pause" : "Play"} className="w-10 h-10 flex items-center justify-center text-beatz-dark-bg dark:text-white">
+        <button
+          onClick={togglePlay}
+          disabled={unavailable}
+          aria-label={isPlaying ? "Pause" : "Play"}
+          className="w-10 h-10 flex items-center justify-center text-beatz-dark-bg dark:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+        >
           {isPlaying ? <Pause size={26} fill="currentColor" /> : <Play size={26} fill="currentColor" className="ml-0.5" />}
         </button>
         <button onClick={next} aria-label="Next" className="w-9 h-9 flex items-center justify-center text-gray-500 dark:text-gray-300">
@@ -140,8 +162,9 @@ export function PlayerBar() {
           </button>
           <button
             onClick={togglePlay}
+            disabled={unavailable}
             aria-label={isPlaying ? "Pause" : "Play"}
-            className="w-10 h-10 bg-black dark:bg-white rounded-full flex items-center justify-center hover:scale-105 transition-transform cursor-pointer"
+            className="w-10 h-10 bg-black dark:bg-white rounded-full flex items-center justify-center hover:scale-105 transition-transform cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
           >
             {isPlaying ? (
               <Pause className="text-white dark:text-black" size={20} fill="currentColor" />
@@ -163,15 +186,28 @@ export function PlayerBar() {
           </Tooltip>
         </div>
         <div className="w-full max-w-md flex items-center gap-3">
-          <span className="text-[10px] text-gray-400 font-mono">{formatDuration(progress)}</span>
-          <ProgressTrack
-            className="flex-1"
-            value={progress}
-            max={currentTrack?.duration ?? 0}
-            onScrub={seekCap}
-          />
-          <span className="text-[10px] text-gray-400 font-mono">{formatDuration(currentTrack?.duration ?? 0)}</span>
+          {unavailable ? (
+            <span className="text-xs text-gray-400 dark:text-gray-500">
+              Not available to play right now
+            </span>
+          ) : (
+            <>
+              <span className="text-[10px] text-gray-400 font-mono">{formatDuration(progress)}</span>
+              <ProgressTrack
+                className="flex-1"
+                value={progress}
+                max={effectiveDuration}
+                onScrub={seekCap}
+              />
+              <span className="text-[10px] text-gray-400 font-mono">{formatDuration(effectiveDuration)}</span>
+            </>
+          )}
         </div>
+        {previewHitLimit && (
+          <span className="text-xs font-bold text-[#f6c644]">
+            Preview ended — buy this track to hear it all
+          </span>
+        )}
       </div>
 
       <div className="hidden md:flex items-center justify-end gap-5 w-1/3">
