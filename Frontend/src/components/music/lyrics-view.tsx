@@ -5,6 +5,7 @@ import { usePlayer } from '../../features/player/player-context'
 import { useToast } from '../ui/toast-provider'
 import { getLyrics, activeLyricIndex } from '../../lib/lyrics-data'
 import { formatDuration } from '../../lib/format'
+import { PREVIEW_ENDED_MESSAGE } from '../layout/player-bar'
 
 interface LyricsViewProps {
   onClose?: () => void
@@ -12,7 +13,7 @@ interface LyricsViewProps {
 }
 
 export function LyricsView({ onClose, showCloseButton = true }: LyricsViewProps) {
-  const { currentTrack, isPlaying, progress, togglePlay, next, prev, seek, unavailable, duration, previewSeconds } = usePlayer()
+  const { currentTrack, isPlaying, progress, togglePlay, next, prev, seek, unavailable, duration, previewSeconds, previewHitLimit } = usePlayer()
   const { toast } = useToast()
   const activeRef = useRef<HTMLButtonElement>(null)
 
@@ -95,7 +96,7 @@ export function LyricsView({ onClose, showCloseButton = true }: LyricsViewProps)
               <button
                 key={idx}
                 ref={isActive ? activeRef : undefined}
-                onClick={() => seek(line.time)}
+                onClick={() => seek(previewSeconds != null ? Math.min(line.time, previewSeconds) : line.time)}
                 className={cn(
                   'text-left font-bold origin-left transition-all duration-500',
                   isActive
@@ -144,6 +145,11 @@ export function LyricsView({ onClose, showCloseButton = true }: LyricsViewProps)
               <div className="h-full bg-beatz-green transition-[width] duration-200" style={{ width: `${ratio * 100}%` }} />
             </div>
             <span className="text-[10px] font-mono text-white/60 w-10 text-right">{formatDuration(effectiveDuration)}</span>
+          </div>
+        )}
+        {previewHitLimit && (
+          <div className="flex items-center justify-center mt-2">
+            <span className="text-xs font-bold text-[#f6c644]">{PREVIEW_ENDED_MESSAGE}</span>
           </div>
         )}
 
