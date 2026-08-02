@@ -6,7 +6,6 @@ import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.List;
-import java.util.stream.Stream;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -25,13 +24,12 @@ import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 /**
  * ffmpeg/ffprobe-based implementation of {@link AudioTranscoderPort}. Invokes ffprobe and ffmpeg
  * via {@link ProcessBuilder} (shell-out). Downloads the original from S3/MinIO to a temp file,
- * transcodes to HLS + 30s preview, uploads segments back, cleans up temp files.
+ * transcodes to a single AAC/M4A full rendition and a single AAC/M4A ≤30s preview rendition,
+ * uploads each back, cleans up temp files.
  * ADD §5.2 / ADR (WU-MED-1 §2).
  */
 @ApplicationScoped
 public class FfmpegAudioTranscoderAdapter implements AudioTranscoderPort {
-
-  private static final String HLS_SEGMENT_DURATION = "6";
 
   private final S3Client s3Client;
   private final ObjectStorePort objectStore;
@@ -63,49 +61,39 @@ public class FfmpegAudioTranscoderAdapter implements AudioTranscoderPort {
   }
 
   @Override
-  public ObjectKey transcodeHls(ObjectKey original, MediaAssetId id) {
-    Path tmpInput = null;
-    Path tmpDir = null;
-    try {
-      tmpInput = downloadToTemp(original, "hls-", ".audio");
-      tmpDir = Files.createTempDirectory("hls-out-" + id.value());
-      Path playlistPath = tmpDir.resolve("playlist.m3u8");
-
-      runFfmpegHls(tmpInput, tmpDir, playlistPath, null);
-
-      String hlsKeyPrefix = "delivery/" + id.value() + "/hls/";
-      uploadHlsDir(tmpDir, id, hlsKeyPrefix);
-
-      return new ObjectKey(deliveryBucketOf(original), hlsKeyPrefix + "playlist.m3u8");
-    } catch (IOException | InterruptedException e) {
-      Thread.currentThread().interrupt();
-      throw new IllegalStateException("ffmpeg HLS transcode failed for " + id.value(), e);
-    } finally {
-      deleteDirSilently(tmpDir);
-      deleteSilently(tmpInput);
-    }
+  public ObjectKey transcodeFull(ObjectKey original, MediaAssetId id) {
+    return transcodeToM4a(original, id, null, "full.m4a", "full-");
   }
 
   @Override
-  public ObjectKey clipPreviewHls(ObjectKey original, MediaAssetId id, int previewSeconds) {
+  public ObjectKey clipPreview(ObjectKey original, MediaAssetId id, int previewSeconds) {
+    return transcodeToM4a(original, id, previewSeconds, "preview.m4a", "preview-");
+  }
+
+  /**
+   * Shared path for both renditions: download the original, run ffmpeg to one AAC/M4A file,
+   * upload it, return its key. {@code durationLimit} non-null clips the output (preview).
+   */
+  private ObjectKey transcodeToM4a(
+      ObjectKey original, MediaAssetId id, Integer durationLimit, String filename, String tmpPrefix) {
     Path tmpInput = null;
-    Path tmpDir = null;
+    Path tmpOutput = null;
     try {
-      tmpInput = downloadToTemp(original, "preview-", ".audio");
-      tmpDir = Files.createTempDirectory("preview-out-" + id.value());
-      Path playlistPath = tmpDir.resolve("preview.m3u8");
+      tmpInput = downloadToTemp(original, tmpPrefix, ".audio");
+      tmpOutput = Files.createTempFile(tmpPrefix + id.value(), ".m4a");
 
-      runFfmpegHls(tmpInput, tmpDir, playlistPath, previewSeconds);
+      runFfmpegM4a(tmpInput, tmpOutput, durationLimit);
 
-      String previewKeyPrefix = "delivery/" + id.value() + "/preview/";
-      uploadHlsDir(tmpDir, id, previewKeyPrefix);
-
-      return new ObjectKey(deliveryBucketOf(original), previewKeyPrefix + "preview.m3u8");
+      String relKey = "delivery/" + id.value() + "/" + filename;
+      try (InputStream in = Files.newInputStream(tmpOutput)) {
+        objectStore.putDelivery(id, relKey, in, "audio/mp4");
+      }
+      return new ObjectKey(deliveryBucketOf(original), relKey);
     } catch (IOException | InterruptedException e) {
       Thread.currentThread().interrupt();
-      throw new IllegalStateException("ffmpeg preview clip failed for " + id.value(), e);
+      throw new IllegalStateException("ffmpeg transcode failed for " + id.value(), e);
     } finally {
-      deleteDirSilently(tmpDir);
+      deleteSilently(tmpOutput);
       deleteSilently(tmpInput);
     }
   }
@@ -142,8 +130,7 @@ public class FfmpegAudioTranscoderAdapter implements AudioTranscoderPort {
     return (int) Math.round(durationSecs);
   }
 
-  private void runFfmpegHls(
-      Path inputFile, Path outputDir, Path playlistFile, Integer durationLimit)
+  private void runFfmpegM4a(Path inputFile, Path outputFile, Integer durationLimit)
       throws IOException, InterruptedException {
     List<String> cmd = new ArrayList<>();
     cmd.add("ffmpeg");
@@ -152,36 +139,17 @@ public class FfmpegAudioTranscoderAdapter implements AudioTranscoderPort {
     if (durationLimit != null) {
       cmd.add("-t"); cmd.add(String.valueOf(durationLimit));
     }
+    cmd.add("-vn");                              // audio only — drop any cover-art video stream
     cmd.add("-c:a"); cmd.add("aac");
     cmd.add("-b:a"); cmd.add("128k");
-    cmd.add("-hls_time"); cmd.add(HLS_SEGMENT_DURATION);
-    cmd.add("-hls_list_size"); cmd.add("0");
-    cmd.add("-hls_segment_filename"); cmd.add(outputDir.toAbsolutePath() + "/segment%03d.ts");
-    cmd.add("-hls_flags"); cmd.add("independent_segments");
-    cmd.add(playlistFile.toAbsolutePath().toString());
+    cmd.add("-movflags"); cmd.add("+faststart"); // moov atom first: playable before fully downloaded
+    cmd.add(outputFile.toAbsolutePath().toString());
 
-    Process proc = new ProcessBuilder(cmd)
-        .redirectErrorStream(true)
-        .start();
+    Process proc = new ProcessBuilder(cmd).redirectErrorStream(true).start();
     String output = new String(proc.getInputStream().readAllBytes()).trim();
     int exit = proc.waitFor();
     if (exit != 0) {
       throw new IllegalStateException("ffmpeg exited with " + exit + ": " + output);
-    }
-  }
-
-  private void uploadHlsDir(Path dir, MediaAssetId id, String keyPrefix) throws IOException {
-    try (Stream<Path> files = Files.list(dir)) {
-      for (Path file : (Iterable<Path>) files::iterator) {
-        if (Files.isRegularFile(file)) {
-          String filename = file.getFileName().toString();
-          String relKey = keyPrefix + filename;
-          String contentType = filename.endsWith(".m3u8") ? "application/x-mpegURL" : "video/mp2t";
-          try (InputStream in = Files.newInputStream(file)) {
-            objectStore.putDelivery(id, relKey, in, contentType);
-          }
-        }
-      }
     }
   }
 
@@ -197,18 +165,6 @@ public class FfmpegAudioTranscoderAdapter implements AudioTranscoderPort {
       } catch (IOException ignored) {
         // best-effort cleanup
       }
-    }
-  }
-
-  private void deleteDirSilently(Path dir) {
-    if (dir == null) return;
-    try (Stream<Path> walk = Files.walk(dir)) {
-      walk.sorted(java.util.Comparator.reverseOrder())
-          .forEach(p -> {
-            try { Files.deleteIfExists(p); } catch (IOException ignored) { }
-          });
-    } catch (IOException ignored) {
-      // best-effort cleanup
     }
   }
 }
