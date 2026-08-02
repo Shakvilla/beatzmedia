@@ -141,7 +141,7 @@ services:
     restart: unless-stopped
 
   transcoder:
-    # Audio -> HLS + 30s preview clip, out of the request path (PRD §10).
+    # Audio -> full.m4a + a server-clipped preview.m4a, out of the request path (PRD §10).
     image: jrottenberg/ffmpeg:6-ubuntu
     entrypoint: ["sleep", "infinity"]   # invoked by app/worker; or run as a polling worker
     volumes:
@@ -260,7 +260,7 @@ two required buckets. You almost never configure it by hand — pick one of the 
 | S3 API endpoint | `http://localhost:9000` (published), `http://objectstore:9000` (inside Compose) |
 | Web console | `http://localhost:9001` |
 | Root user / password | `minioadmin` / `minioadmin` |
-| Buckets (must exist) | `beatz-media-originals` (private masters), `beatz-media-delivery` (HLS/preview/art) |
+| Buckets (must exist) | `beatz-media-originals` (private masters), `beatz-media-delivery` (full/preview audio + art) |
 | Access style | **path-style** (required for MinIO; set in `S3ClientProducer` + `quarkus.s3.path-style-access=true`) |
 | Region | `us-east-1` (SDK requires one; MinIO ignores it) |
 | Data volume | `miniodata` (survives `down`, wiped by `down -v`) |
@@ -473,7 +473,7 @@ From PRD §5.2. **Secret?** marks values that must never be committed and must c
 | `BEATZ_S3_ACCESS_KEY` | S3 access key | `minioadmin` | **yes** | IAM key in prod |
 | `BEATZ_S3_SECRET_KEY` | S3 secret key | `minioadmin` | **yes** | IAM secret in prod |
 | `BEATZ_S3_BUCKET_ORIGINALS` | Private originals bucket | `beatz-media-originals` | no | per-env bucket name |
-| `BEATZ_S3_BUCKET_DELIVERY` | Delivery (HLS) bucket | `beatz-media-delivery` | no | per-env bucket name |
+| `BEATZ_S3_BUCKET_DELIVERY` | Delivery bucket | `beatz-media-delivery` | no | per-env bucket name |
 | `BEATZ_SIGNED_URL_TTL_SECONDS` | Signed URL lifetime | `300` | no | tune per env |
 | `BEATZ_PREVIEW_SECONDS` | Preview clip length | `30` | no | INV-3 |
 | `BEATZ_JWT_PRIVATE_KEY` | JWT signing key (PEM/PKCS8) | dev key | **yes** | unique per env, rotate |
@@ -659,7 +659,7 @@ Principles:
 **Object store**
 - S3 with **versioning enabled** and **cross-region/replication** for the delivery and originals
   buckets. Originals are the irreplaceable masters — protect with versioning + lifecycle + replication.
-- Lifecycle: keep originals indefinitely; HLS renditions are regenerable from originals if lost.
+- Lifecycle: keep originals indefinitely; delivery renditions are regenerable from originals if lost.
 
 **DR posture**
 - All durable state is Postgres + S3; the app is stateless and re-deployable from a GHCR image, so DR
@@ -680,7 +680,7 @@ Per PRD §10 (scalability within a monolith):
   and optional Redis (rate-limit buckets / cache). These scale independently of app instances.
 - **Postgres scaling:** vertical first; add **read replicas** for heavy read paths (catalog, search)
   behind a read-only datasource if needed. Money/ownership writes stay on the primary.
-- **Transcoding out of the request path:** audio→HLS + 30s preview runs as a worker/queue, never
+- **Transcoding out of the request path:** audio→full.m4a + preview.m4a runs as a worker/queue, never
   blocking an HTTP request. Scale transcoder workers separately from the API.
 - **Analytics from rollups,** not raw events (PRD §10), so read load is bounded.
 - **Availability target 99.9%** for read/stream paths; payments degrade gracefully (queue + reconcile)
@@ -733,11 +733,11 @@ curl https://<host>/q/health/ready
 ```bash
 # 1. Provision/restore Postgres to a point in time (managed PITR), or:
 pg_restore --clean --if-exists -d "$QUARKUS_DATASOURCE_JDBC_URL" latest.dump
-# 2. Confirm S3 buckets present + versioned (originals are the source of truth; HLS regenerable).
+# 2. Confirm S3 buckets present + versioned (originals are the source of truth; delivery renditions regenerable).
 # 3. Redeploy the matching app image digest for that data version:
 deploy ghcr.io/beatzclik/beatzmedia@sha256:<digest-for-data-version>
 # 4. Verify: /q/health/ready UP; run smoke; reconcile ledger vs provider records.
-# 5. If HLS renditions were lost, re-trigger transcode from originals (out-of-band worker).
+# 5. If delivery renditions were lost, re-trigger transcode from originals (out-of-band worker).
 ```
 
 ---
