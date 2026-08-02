@@ -50,6 +50,12 @@ describe('ENDED', () => {
     expect(next.isPlaying).toBe(false)
     expect(next.currentIndex).toBe(0)
   })
+
+  it('clears unavailable on the track it advances to — a failed track must not poison the next one', () => {
+    const next = reducer(playing({ unavailable: true }), { type: 'ENDED', preview: false })
+    expect(next.currentIndex).toBe(1)
+    expect(next.unavailable).toBe(false)
+  })
 })
 
 describe('STREAM_ERROR', () => {

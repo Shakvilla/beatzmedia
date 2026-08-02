@@ -131,12 +131,16 @@ export function reducer(state: PlayerState, action: PlayerAction): PlayerState {
       return { ...state, isPlaying: false }
     case 'NEXT': {
       // Manual skip always advances (shuffle/repeat-all aware); repeat-one is ignored here.
+      // `unavailable`/`duration` are stream facts about the *current* track, so they're only
+      // reset when we actually land on a different track — not just because we stopped or
+      // rewound the same one. (Mirrors the rule PREV uses below.)
       const ni = advanceIndex(state)
-      if (ni === null) return { ...state, progress: 0, isPlaying: false, previewHitLimit: false, unavailable: false, duration: null }
+      if (ni === null) return { ...state, progress: 0, isPlaying: false, previewHitLimit: false }
       return { ...state, currentIndex: ni, progress: 0, previewHitLimit: false, unavailable: false, duration: null }
     }
     case 'PREV': {
       // Restart the track if we're more than 3s in, otherwise go to previous.
+      // Same rule as NEXT: only clear unavailable/duration when the track actually changes.
       if (state.progress > 3 || state.queue.length === 0) return { ...state, progress: 0, previewHitLimit: false }
       if (state.currentIndex === 0) {
         if (state.repeat === 'all') return { ...state, currentIndex: state.queue.length - 1, progress: 0, previewHitLimit: false, unavailable: false, duration: null }
@@ -164,7 +168,9 @@ export function reducer(state: PlayerState, action: PlayerAction): PlayerState {
       if (state.repeat === 'one') return { ...state, progress: 0 }
       const ni = advanceIndex(state)
       if (ni === null) return { ...state, isPlaying: false }
-      return { ...state, currentIndex: ni, progress: 0, duration: null }
+      // A new track starts clean: a stream failure on the track that just ended must not
+      // poison the next one.
+      return { ...state, currentIndex: ni, progress: 0, duration: null, unavailable: false }
     }
 
     case 'STREAM_ERROR':
