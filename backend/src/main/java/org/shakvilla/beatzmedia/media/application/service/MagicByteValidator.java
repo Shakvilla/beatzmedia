@@ -22,6 +22,13 @@ public class MagicByteValidator {
   // FLAC: "fLaC" at offset 0
   private static final byte[] FLAC_MAGIC = {0x66, 0x4C, 0x61, 0x43}; // "fLaC"
 
+  // MP3 has two shapes in the wild and we must admit both (ADR-35):
+  //   1. An ID3v2 tag prepended to the audio — "ID3" at offset 0. This is the common case for
+  //      anything tagged by a DAW, iTunes, or a distributor.
+  //   2. A bare MPEG audio frame, when the file carries no ID3v2 tag (ID3v1 lives in the LAST
+  //      128 bytes, so a header probe cannot see it — hence the frame-sync check below).
+  private static final byte[] ID3_MAGIC = {0x49, 0x44, 0x33}; // "ID3"
+
   // PNG: 8-byte magic
   private static final byte[] PNG_MAGIC = {
     (byte) 0x89, 0x50, 0x4E, 0x47, 0x0D, 0x0A, 0x1A, 0x0A
@@ -37,12 +44,12 @@ public class MagicByteValidator {
    *
    * @param header at least 12 bytes from the start of the file
    * @return the detected {@link AudioFormat}
-   * @throws UnsupportedFormatException if the magic bytes do not match WAV or FLAC
+   * @throws UnsupportedFormatException if the magic bytes match none of WAV, FLAC or MP3
    */
   public AudioFormat detectAudioFormat(byte[] header) {
     if (header == null || header.length < PROBE_BYTES) {
       throw new UnsupportedFormatException(
-          "File too short to detect format; expected WAV or FLAC audio");
+          "File too short to detect format; expected WAV, FLAC or MP3 audio");
     }
     if (matchesAt(header, 0, WAV_RIFF) && matchesAt(header, 8, WAV_WAVE)) {
       return AudioFormat.WAV;
@@ -50,8 +57,35 @@ public class MagicByteValidator {
     if (matchesAt(header, 0, FLAC_MAGIC)) {
       return AudioFormat.FLAC;
     }
+    // Checked last: the frame-sync pattern is only 11 bits, so it is the loosest signature here
+    // and must never get the chance to shadow a container with a real magic number.
+    if (matchesAt(header, 0, ID3_MAGIC) || isMpegFrameSync(header)) {
+      return AudioFormat.MP3;
+    }
     throw new UnsupportedFormatException(
-        "Unsupported audio format — only WAV and FLAC are accepted");
+        "Unsupported audio format — only WAV, FLAC and MP3 are accepted");
+  }
+
+  /**
+   * True when the first two bytes are a valid MPEG audio frame header.
+   *
+   * <p>The sync word is 11 set bits: all of byte 0, then the top three of byte 1. That alone
+   * matches roughly one in 2048 random byte pairs, so the version and layer fields are validated
+   * too — both have a bit pattern the spec marks *reserved*, and a file using either is not real
+   * MPEG audio. Rejecting those cuts most of the false positives an unqualified sync check would
+   * let through.
+   */
+  private static boolean isMpegFrameSync(byte[] header) {
+    if ((header[0] & 0xFF) != 0xFF) {
+      return false;
+    }
+    int b1 = header[1] & 0xFF;
+    if ((b1 & 0xE0) != 0xE0) {
+      return false; // top three bits of byte 1 complete the 11-bit sync word
+    }
+    int version = (b1 >> 3) & 0x03;
+    int layer = (b1 >> 1) & 0x03;
+    return version != 0x01 && layer != 0x00; // 01 / 00 are the reserved encodings
   }
 
   /**

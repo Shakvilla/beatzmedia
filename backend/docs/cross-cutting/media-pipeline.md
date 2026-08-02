@@ -34,7 +34,7 @@ behind two object-storage buckets.
 
 ```mermaid
 flowchart TD
-  U[Multipart part<br/>WAV/FLAC or PNG/JPG] --> V{Validate}
+  U[Multipart part<br/>WAV/FLAC/MP3 or PNG/JPG] --> V{Validate}
   V -->|magic bytes wrong| RJ1[422 UNSUPPORTED_FORMAT]
   V -->|over size limit| RJ2[413]
   V -->|virus positive| RJ3[422 FILE_REJECTED<br/>purge original]
@@ -63,8 +63,12 @@ flowchart TD
    `MediaService.uploadOriginal`. The part is streamed straight to object storage (not buffered whole
    in heap). Returns a `MediaHandle` synchronously while transcode runs async.
 2. **Validation** — *magic-byte* sniffing (not the declared `Content-Type`): `MagicByteValidator`
-   admits **only** `WAV` (RIFF/WAVE) and `FLAC` (`fLaC`) for audio, `PNG`/`JPG` for artwork. An MP3
-   or M4A upload is rejected `422 UNSUPPORTED_FORMAT`. Size guard via
+   admits `WAV` (RIFF/WAVE), `FLAC` (`fLaC`) and `MP3` for audio, and `PNG`/`JPG` for artwork.
+   M4A/AAC uploads are still rejected `422 UNSUPPORTED_FORMAT`. MP3 is matched by an `ID3` tag at
+   offset 0 **or** a validated MPEG frame sync — the sync branch also rejects the reserved version
+   (`01`) and layer (`00`) bit patterns, since a bare 11-bit sync matches ~1 in 2048 arbitrary byte
+   pairs, and it is checked last so it can never shadow a container with a real magic number
+   (ADR-35). Size guard via
    `quarkus.http.limits.max-body-size`. Virus scan on
    the stored bytes (ClamAV-style adapter). Failures use the stable codes in §8.
 3. **Store original** — private bucket only. Originals are **never** signed for client read.
@@ -108,7 +112,7 @@ nothing reads it by name outside the mapper.)
 Transcode runs in the Compose `transcoder` service (`jrottenberg/ffmpeg`, or in-app `ffmpeg`),
 **driven by the async job** — never on the request thread.
 
-**Accepted in:** `WAV`, `FLAC` (lossless masters only — `MagicByteValidator`). **Produced out:** one
+**Accepted in:** `WAV`, `FLAC` (lossless masters) and `MP3` (ADR-35 — accepted, flagged lossy, wizard warns). **Produced out:** one
 AAC-LC object per variant, in an MP4 container (`audio/mp4`).
 
 **One object per variant — not an HLS ladder (ADR-34).** An HLS playlist references its segments by

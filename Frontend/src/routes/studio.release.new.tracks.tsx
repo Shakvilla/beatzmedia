@@ -14,6 +14,37 @@ export const Route = createFileRoute('/studio/release/new/tracks')({
 
 const LABEL = 'text-[11px] font-bold uppercase tracking-[0.15em] text-gray-500 dark:text-gray-400'
 
+/**
+ * Advisory shown when any queued track came from an already-lossy source (ADR-35).
+ *
+ * Deliberately NOT blocking: MP3 is accepted, and an artist who only has an MP3 should still be
+ * able to release. It exists so an artist who *does* have the master knows to use it — fans buy
+ * these tracks outright, and re-encoding an MP3 to the AAC delivery rendition is a second lossy
+ * generation they would be paying to own.
+ */
+export function LossySourceNotice({ tracks }: { tracks: UploadedTrack[] }) {
+  const lossy = tracks.filter((t) => t.lossy)
+  if (lossy.length === 0) return null
+  return (
+    <div
+      role="status"
+      className="flex items-start gap-3 rounded-xl border border-amber-300/70 bg-amber-50 px-4 py-3 dark:border-amber-400/25 dark:bg-amber-400/10"
+    >
+      <AlertTriangle size={16} className="mt-0.5 shrink-0 text-amber-600 dark:text-amber-400" />
+      <div className="text-xs leading-relaxed text-amber-900 dark:text-amber-200">
+        <span className="font-bold">
+          {lossy.length === 1
+            ? `“${lossy[0].title}” is an MP3.`
+            : `${lossy.length} tracks are MP3s.`}
+        </span>{' '}
+        We'll still publish {lossy.length === 1 ? 'it' : 'them'}, but MP3 is already compressed —
+        re-encoding for streaming loses a little more quality each time. If you have the original
+        WAV or FLAC, upload that instead and your buyers get the better master.
+      </div>
+    </div>
+  )
+}
+
 function clock(seconds: number): string {
   if (!seconds) return '—'
   const m = Math.floor(seconds / 60)
@@ -119,7 +150,7 @@ function SingleUpload({
           >
             <Upload size={30} className="text-beatz-green" />
             <span className="text-lg font-bold text-beatz-dark-bg dark:text-white">Drop your track here</span>
-            <span className="text-xs text-gray-400 dark:text-gray-500">One audio file · WAV or FLAC · up to 200 MB</span>
+            <span className="text-xs text-gray-400 dark:text-gray-500">One audio file · WAV, FLAC or MP3 · up to 200 MB</span>
           </button>
         ) : (
           <div className="flex flex-col gap-4">
@@ -146,6 +177,8 @@ function SingleUpload({
             </button>
           </div>
         )}
+
+        <LossySourceNotice tracks={draft.tracks} />
       </div>
 
       {/* Cover + price */}
@@ -241,8 +274,10 @@ function AlbumUpload({
       >
         <Upload size={20} className="text-beatz-green" />
         <span className="text-base font-bold text-beatz-green">Drop multiple tracks here</span>
-        <span className="text-xs text-gray-400 dark:text-gray-500">or click to browse · WAV / FLAC · drag to reorder</span>
+        <span className="text-xs text-gray-400 dark:text-gray-500">or click to browse · WAV / FLAC / MP3 · drag to reorder</span>
       </button>
+
+      <LossySourceNotice tracks={tracks} />
 
       {/* Toolbar */}
       <div className="flex items-center justify-between gap-3 flex-wrap">

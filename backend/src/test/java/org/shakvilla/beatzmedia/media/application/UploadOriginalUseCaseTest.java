@@ -91,18 +91,30 @@ class UploadOriginalUseCaseTest {
     assertEquals(1, transcodeJobPort.getSubmitted().size());
   }
 
-  // ---- Reject cases ----
-
+  /**
+   * ADR-35 inverted this case: an MP3 upload used to be rejected 422. It is now admitted, and the
+   * whole use case — not just the validator — has to carry it through: a row is persisted and a
+   * transcode job is enqueued exactly as for a lossless master. The quality trade-off is handled
+   * by disclosure in the wizard, never by refusing the upload here.
+   */
   @Test
-  void mp3_upload_rejected_422_unsupported_format() {
+  void mp3_upload_is_accepted_and_enqueues_transcode() {
     byte[] mp3Bytes = mp3Bytes();
     UploadCommand cmd = new UploadCommand(
         new OwnerRef("catalog", "track-mp3"),
         MediaKind.AUDIO, "track.mp3", "audio/mpeg",
         mp3Bytes.length, new ByteArrayInputStream(mp3Bytes), "hash-mp3");
-    assertThrows(UnsupportedFormatException.class, () -> service.uploadOriginal(cmd));
-    assertEquals(0, repository.size()); // no row persisted
+
+    MediaHandle handle = service.uploadOriginal(cmd);
+
+    assertNotNull(handle.assetId());
+    assertEquals(MediaKind.AUDIO, handle.kind());
+    assertEquals(MediaStatus.UPLOADING, handle.status());
+    assertEquals(1, repository.size());
+    assertEquals(1, transcodeJobPort.getSubmitted().size());
   }
+
+  // ---- Reject cases ----
 
   @Test
   void exe_upload_rejected_422_unsupported_format() {
