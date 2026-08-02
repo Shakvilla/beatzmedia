@@ -8,6 +8,9 @@ import { formatDuration, formatPrice } from "../../lib/format"
 import { cn } from "../../utils/cn"
 import { Tooltip } from "../ui/tooltip"
 
+/** Single source of truth for the preview-ended copy — shown as both a toast and inline text. */
+export const PREVIEW_ENDED_MESSAGE = "Preview ended — buy this track to hear it all"
+
 /** Click-to-seek / click-to-set bar. `value` and `max` are in the same unit. */
 function ProgressTrack({
   value,
@@ -89,7 +92,7 @@ export function PlayerBar() {
 
   // Nudge the listener to buy when a preview runs out.
   useEffect(() => {
-    if (previewHitLimit) toast('Preview ended — buy to keep listening', 'info')
+    if (previewHitLimit) toast(PREVIEW_ENDED_MESSAGE, 'info')
   }, [previewHitLimit, toast])
 
   return (
@@ -131,18 +134,25 @@ export function PlayerBar() {
       </div>
 
       {/* Mobile transport — compact, on the right */}
-      <div className="flex md:hidden items-center gap-1 shrink-0">
-        <button
-          onClick={togglePlay}
-          disabled={unavailable}
-          aria-label={isPlaying ? "Pause" : "Play"}
-          className="w-10 h-10 flex items-center justify-center text-beatz-dark-bg dark:text-white disabled:opacity-40 disabled:cursor-not-allowed"
-        >
-          {isPlaying ? <Pause size={26} fill="currentColor" /> : <Play size={26} fill="currentColor" className="ml-0.5" />}
-        </button>
-        <button onClick={next} aria-label="Next" className="w-9 h-9 flex items-center justify-center text-gray-500 dark:text-gray-300">
-          <SkipForward size={20} fill="currentColor" />
-        </button>
+      <div className="flex md:hidden flex-col items-end gap-0.5 shrink-0">
+        <div className="flex items-center gap-1">
+          <button
+            onClick={togglePlay}
+            disabled={unavailable}
+            aria-label={isPlaying ? "Pause" : "Play"}
+            className="w-10 h-10 flex items-center justify-center text-beatz-dark-bg dark:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {isPlaying ? <Pause size={26} fill="currentColor" /> : <Play size={26} fill="currentColor" className="ml-0.5" />}
+          </button>
+          <button onClick={next} aria-label="Next" className="w-9 h-9 flex items-center justify-center text-gray-500 dark:text-gray-300">
+            <SkipForward size={20} fill="currentColor" />
+          </button>
+        </div>
+        {unavailable && (
+          <span className="text-[10px] text-gray-400 dark:text-gray-500 pr-1">
+            Not available to play right now
+          </span>
+        )}
       </div>
 
       {/* Desktop transport + seek */}
@@ -205,7 +215,7 @@ export function PlayerBar() {
         </div>
         {previewHitLimit && (
           <span className="text-xs font-bold text-[#f6c644]">
-            Preview ended — buy this track to hear it all
+            {PREVIEW_ENDED_MESSAGE}
           </span>
         )}
       </div>

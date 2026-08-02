@@ -12,7 +12,7 @@ interface LyricsViewProps {
 }
 
 export function LyricsView({ onClose, showCloseButton = true }: LyricsViewProps) {
-  const { currentTrack, isPlaying, progress, togglePlay, next, prev, seek } = usePlayer()
+  const { currentTrack, isPlaying, progress, togglePlay, next, prev, seek, unavailable, duration, previewSeconds } = usePlayer()
   const { toast } = useToast()
   const activeRef = useRef<HTMLButtonElement>(null)
 
@@ -38,7 +38,10 @@ export function LyricsView({ onClose, showCloseButton = true }: LyricsViewProps)
     )
   }
 
-  const ratio = currentTrack.duration ? Math.min(1, progress / currentTrack.duration) : 0
+  // The element's duration is authoritative once metadata loads; catalogue metadata is a
+  // fallback and can disagree (and does, for a 30s preview of a 3-minute track).
+  const effectiveDuration = duration ?? currentTrack.duration ?? 0
+  const ratio = !unavailable && effectiveDuration ? Math.min(1, progress / effectiveDuration) : 0
 
   return (
     <div className="relative w-full h-full min-h-screen overflow-hidden flex flex-col animate-in fade-in duration-500 text-white">
@@ -123,27 +126,35 @@ export function LyricsView({ onClose, showCloseButton = true }: LyricsViewProps)
         </div>
 
         {/* Seek */}
-        <div className="flex items-center gap-3">
-          <span className="text-[10px] font-mono text-white/60 w-10">{formatDuration(progress)}</span>
-          <div
-            className="flex-1 h-1.5 bg-white/15 rounded-full overflow-hidden cursor-pointer group"
-            onClick={(e) => {
-              const rect = e.currentTarget.getBoundingClientRect()
-              seek(((e.clientX - rect.left) / rect.width) * currentTrack.duration)
-            }}
-          >
-            <div className="h-full bg-beatz-green transition-[width] duration-200" style={{ width: `${ratio * 100}%` }} />
+        {unavailable ? (
+          <div className="flex items-center justify-center">
+            <span className="text-xs text-white/50">Not available to play right now</span>
           </div>
-          <span className="text-[10px] font-mono text-white/60 w-10 text-right">{formatDuration(currentTrack.duration)}</span>
-        </div>
+        ) : (
+          <div className="flex items-center gap-3">
+            <span className="text-[10px] font-mono text-white/60 w-10">{formatDuration(progress)}</span>
+            <div
+              className="flex-1 h-1.5 bg-white/15 rounded-full overflow-hidden cursor-pointer group"
+              onClick={(e) => {
+                const rect = e.currentTarget.getBoundingClientRect()
+                const target = ((e.clientX - rect.left) / rect.width) * effectiveDuration
+                seek(previewSeconds != null ? Math.min(target, previewSeconds) : target)
+              }}
+            >
+              <div className="h-full bg-beatz-green transition-[width] duration-200" style={{ width: `${ratio * 100}%` }} />
+            </div>
+            <span className="text-[10px] font-mono text-white/60 w-10 text-right">{formatDuration(effectiveDuration)}</span>
+          </div>
+        )}
 
         {/* Controls */}
         <div className="flex items-center justify-center gap-8 mt-4">
           <button onClick={prev} aria-label="Previous" className="text-white/70 hover:text-white transition-colors"><SkipBack size={26} fill="currentColor" /></button>
           <button
             onClick={togglePlay}
+            disabled={unavailable}
             aria-label={isPlaying ? 'Pause' : 'Play'}
-            className="w-14 h-14 rounded-full bg-white text-black flex items-center justify-center hover:scale-105 transition-transform"
+            className="w-14 h-14 rounded-full bg-white text-black flex items-center justify-center hover:scale-105 transition-transform disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
           >
             {isPlaying ? <Pause size={26} fill="currentColor" /> : <Play size={26} fill="currentColor" className="ml-0.5" />}
           </button>
