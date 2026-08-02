@@ -61,7 +61,7 @@ class MediaAssetStateMachineTest {
     ObjectKey prev = new ObjectKey("delivery", "delivery/001/preview/preview.m3u8");
     asset.markReady(hls, prev, 213);
     assertEquals(MediaStatus.READY, asset.getStatus());
-    assertEquals(hls, asset.getHlsKey());
+    assertEquals(hls, asset.getFullKey());
     assertEquals(prev, asset.getPreviewKey());
     assertEquals(213, asset.getDurationSec());
   }

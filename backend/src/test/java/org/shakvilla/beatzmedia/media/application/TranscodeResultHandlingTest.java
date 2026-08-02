@@ -85,7 +85,7 @@ class TranscodeResultHandlingTest {
     MediaAsset saved = repository.findById(id).orElseThrow();
     assertEquals(MediaStatus.READY, saved.getStatus());
     assertEquals(183, saved.getDurationSec());
-    assertEquals(hls, saved.getHlsKey());
+    assertEquals(hls, saved.getFullKey());
     assertEquals(preview, saved.getPreviewKey());
     assertEquals(1, mediaReadyEvent.getFired().size());
     assertEquals(id, mediaReadyEvent.getFired().get(0).assetId());

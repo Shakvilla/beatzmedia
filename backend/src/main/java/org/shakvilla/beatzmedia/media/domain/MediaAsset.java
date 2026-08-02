@@ -15,7 +15,7 @@ public class MediaAsset {
   private MediaStatus status;
   private int durationSec;
   private final ObjectKey originalKey;
-  private ObjectKey hlsKey;
+  private ObjectKey fullKey;
   private ObjectKey previewKey;
   private final Instant createdAt;
   private final String contentHash;
@@ -28,7 +28,7 @@ public class MediaAsset {
       MediaStatus status,
       int durationSec,
       ObjectKey originalKey,
-      ObjectKey hlsKey,
+      ObjectKey fullKey,
       ObjectKey previewKey,
       Instant createdAt,
       String contentHash) {
@@ -38,7 +38,7 @@ public class MediaAsset {
     this.status = status;
     this.durationSec = durationSec;
     this.originalKey = originalKey;
-    this.hlsKey = hlsKey;
+    this.fullKey = fullKey;
     this.previewKey = previewKey;
     this.createdAt = createdAt;
     this.contentHash = contentHash;
@@ -78,17 +78,17 @@ public class MediaAsset {
   }
 
   /**
-   * Move to READY after both hls + preview keys are written. Enforces the invariant that READY is
+   * Move to READY after both full + preview keys are written. Enforces the invariant that READY is
    * only reached when both delivery renditions exist (for AUDIO). ADD §3 / DoD §12.
    */
-  public void markReady(ObjectKey hlsKey, ObjectKey previewKey, int durationSec) {
+  public void markReady(ObjectKey fullKey, ObjectKey previewKey, int durationSec) {
     if (kind == MediaKind.AUDIO) {
-      if (hlsKey == null || previewKey == null) {
+      if (fullKey == null || previewKey == null) {
         throw new IllegalArgumentException(
-            "AUDIO asset requires both hlsKey and previewKey to reach READY");
+            "AUDIO asset requires both fullKey and previewKey to reach READY");
       }
     }
-    this.hlsKey = hlsKey;
+    this.fullKey = fullKey;
     this.previewKey = previewKey;
     this.durationSec = durationSec;
     this.status = MediaStatus.READY;
@@ -111,17 +111,17 @@ public class MediaAsset {
   /**
    * INV-3 enforcement: resolve which {@link ObjectKey} to presign for a given
    * {@link DeliveryVariant}. FULL is only returned when the caller has explicitly asserted
-   * ownership (variant == FULL). There is NO code path that returns hlsKey for variant == PREVIEW.
+   * ownership (variant == FULL). There is NO code path that returns fullKey for variant == PREVIEW.
    */
   public ObjectKey resolveDeliveryKey(DeliveryVariant variant) {
     if (status != MediaStatus.READY) {
       throw new IllegalStateException("Asset is not READY: " + id.value() + " status=" + status);
     }
     if (variant == DeliveryVariant.FULL) {
-      if (hlsKey == null) {
-        throw new IllegalStateException("hlsKey is null for asset " + id.value());
+      if (fullKey == null) {
+        throw new IllegalStateException("fullKey is null for asset " + id.value());
       }
-      return hlsKey;
+      return fullKey;
     }
     // PREVIEW: always return the preview key (30s clip)
     if (previewKey == null) {
@@ -156,8 +156,8 @@ public class MediaAsset {
     return originalKey;
   }
 
-  public ObjectKey getHlsKey() {
-    return hlsKey;
+  public ObjectKey getFullKey() {
+    return fullKey;
   }
 
   public ObjectKey getPreviewKey() {

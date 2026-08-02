@@ -22,8 +22,8 @@ public interface MediaService {
   /** Probe duration (whole seconds) via ffprobe. */
   int probeDuration(MediaAssetId assetId);
 
-  /** Enqueue async HLS transcode for the given asset. */
-  void transcodeToHls(MediaAssetId assetId);
+  /** Enqueue async transcode to the delivery rendition for the given asset. */
+  void transcodeToDelivery(MediaAssetId assetId);
 
   /** Enqueue async 30s preview clip generation (INV-3). */
   void generatePreviewClip(MediaAssetId assetId);

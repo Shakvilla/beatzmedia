@@ -122,10 +122,10 @@ class MediaDeliveryIT {
   @Test
   void presign_delivery_url_is_fetchable() throws Exception {
     MediaAssetId id = new MediaAssetId("it-asset-002");
-    byte[] content = "HLS playlist content".getBytes();
+    byte[] content = "full rendition bytes".getBytes();
 
     // Store a delivery file
-    String relKey = "delivery/" + id.value() + "/hls/playlist.m3u8";
+    String relKey = "delivery/" + id.value() + "/full.m4a";
     adapter.putDelivery(id, relKey, new ByteArrayInputStream(content), "application/x-mpegURL");
 
     ObjectKey deliveryKey = new ObjectKey(BUCKET_DELIVERY, relKey);
@@ -148,16 +148,16 @@ class MediaDeliveryIT {
         HttpResponse.BodyHandlers.ofString());
 
     assertEquals(200, response.statusCode(), "Presigned URL must return HTTP 200");
-    assertEquals("HLS playlist content", response.body());
+    assertEquals("full rendition bytes", response.body());
   }
 
   /** LLFR-MEDIA-01.3 — PREVIEW presigned URL targets the preview key. */
   @Test
   void preview_presign_targets_preview_key() throws Exception {
     MediaAssetId id = new MediaAssetId("it-asset-003");
-    byte[] content = "preview playlist".getBytes();
+    byte[] content = "preview rendition bytes".getBytes();
 
-    String relKey = "delivery/" + id.value() + "/preview/preview.m3u8";
+    String relKey = "delivery/" + id.value() + "/preview.m4a";
     adapter.putDelivery(id, relKey, new ByteArrayInputStream(content), "application/x-mpegURL");
 
     ObjectKey previewKey = new ObjectKey(BUCKET_DELIVERY, relKey);
@@ -172,7 +172,7 @@ class MediaDeliveryIT {
         HttpRequest.newBuilder(URI.create(signed.url())).GET().build(),
         HttpResponse.BodyHandlers.ofString());
     assertEquals(200, response.statusCode());
-    assertEquals("preview playlist", response.body());
+    assertEquals("preview rendition bytes", response.body());
   }
 
   // ---- Helpers ----

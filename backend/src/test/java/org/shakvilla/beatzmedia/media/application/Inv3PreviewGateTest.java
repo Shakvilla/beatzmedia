@@ -60,7 +60,7 @@ class Inv3PreviewGateTest {
   private MediaAssetId seedReadyAudioAsset() {
     MediaAssetId id = new MediaAssetId("asset-inv3-001");
     ObjectKey originalKey = new ObjectKey("test-originals", "originals/audio/asset-inv3-001");
-    ObjectKey hlsKey = new ObjectKey("test-delivery", "delivery/asset-inv3-001/hls/playlist.m3u8");
+    ObjectKey fullKey = new ObjectKey("test-delivery", "delivery/asset-inv3-001/hls/playlist.m3u8");
     ObjectKey previewKey =
         new ObjectKey("test-delivery", "delivery/asset-inv3-001/preview/preview.m3u8");
     MediaAsset asset = new MediaAsset(
@@ -70,7 +70,7 @@ class Inv3PreviewGateTest {
         MediaStatus.READY,
         185,
         originalKey,
-        hlsKey,
+        fullKey,
         previewKey,
         Instant.parse("2026-01-01T00:00:00Z"),
         "hash-seed");
@@ -102,7 +102,7 @@ class Inv3PreviewGateTest {
    * target the HLS key. This is the only path that may produce the full key.
    */
   @Test
-  void full_variant_with_ownership_asserted_returns_hls_key_url() {
+  void full_variant_with_ownership_asserted_returns_full_key_url() {
     MediaAssetId id = seedReadyAudioAsset();
 
     SignedUrl signed = service.issueSignedUrl(id, DeliveryVariant.FULL, Duration.ofSeconds(300));
@@ -112,11 +112,11 @@ class Inv3PreviewGateTest {
         DeliveryVariant.FULL,
         signed.variant(),
         "Variant in SignedUrl must be FULL");
-    assertFakeUrlContainsHlsKey(signed.url());
+    assertFakeUrlContainsFullKey(signed.url());
   }
 
   /**
-   * INV-3: There is NO code path that presigns hls_key without an asserted ownership decision.
+   * INV-3: There is NO code path that presigns fullKey without an asserted ownership decision.
    * Specifically: passing PREVIEW must NEVER produce the full HLS URL.
    * Symmetrically: passing FULL must NOT produce the preview URL.
    */
@@ -158,7 +158,7 @@ class Inv3PreviewGateTest {
     }
   }
 
-  private void assertFakeUrlContainsHlsKey(String url) {
+  private void assertFakeUrlContainsFullKey(String url) {
     if (!url.contains("hls")) {
       throw new AssertionError(
           "Expected URL to reference HLS rendition but got: " + url);

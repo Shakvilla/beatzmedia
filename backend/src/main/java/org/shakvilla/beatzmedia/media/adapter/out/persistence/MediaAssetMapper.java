@@ -23,7 +23,7 @@ class MediaAssetMapper {
     e.status = domain.getStatus().name();
     e.durationSec = domain.getDurationSec();
     e.originalKey = domain.getOriginalKey().toStorageString();
-    e.hlsKey = domain.getHlsKey() != null ? domain.getHlsKey().toStorageString() : null;
+    e.fullKey = domain.getFullKey() != null ? domain.getFullKey().toStorageString() : null;
     e.previewKey = domain.getPreviewKey() != null ? domain.getPreviewKey().toStorageString() : null;
     e.createdAt = domain.getCreatedAt();
     e.contentHash = domain.getContentHash();
@@ -38,7 +38,7 @@ class MediaAssetMapper {
         MediaStatus.valueOf(e.status),
         e.durationSec != null ? e.durationSec : 0,
         ObjectKey.fromStorageString(e.originalKey),
-        e.hlsKey != null ? ObjectKey.fromStorageString(e.hlsKey) : null,
+        e.fullKey != null ? ObjectKey.fromStorageString(e.fullKey) : null,
         e.previewKey != null ? ObjectKey.fromStorageString(e.previewKey) : null,
         e.createdAt,
         e.contentHash);

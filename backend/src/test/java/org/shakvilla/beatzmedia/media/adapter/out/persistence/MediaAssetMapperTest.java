@@ -40,7 +40,7 @@ class MediaAssetMapperTest {
     assertEquals(0, entity.durationSec);
     assertEquals(
         "beatz-media-originals|originals/audio/map-001", entity.originalKey);
-    assertNull(entity.hlsKey);
+    assertNull(entity.fullKey);
     assertNull(entity.previewKey);
     assertEquals("sha256-hash-abc", entity.contentHash);
     assertEquals(NOW, entity.createdAt);
@@ -51,7 +51,7 @@ class MediaAssetMapperTest {
     assertEquals(domain.getKind(), restored.getKind());
     assertEquals(domain.getStatus(), restored.getStatus());
     assertEquals(domain.getDurationSec(), restored.getDurationSec());
-    assertNull(restored.getHlsKey());
+    assertNull(restored.getFullKey());
     assertNull(restored.getPreviewKey());
     assertEquals("sha256-hash-abc", restored.getContentHash());
   }
@@ -74,14 +74,14 @@ class MediaAssetMapperTest {
     assertEquals("READY", entity.status);
     assertEquals(185, entity.durationSec);
     assertEquals(
-        "beatz-media-delivery|delivery/map-002/hls/playlist.m3u8", entity.hlsKey);
+        "beatz-media-delivery|delivery/map-002/hls/playlist.m3u8", entity.fullKey);
     assertEquals(
         "beatz-media-delivery|delivery/map-002/preview/preview.m3u8", entity.previewKey);
 
     MediaAsset restored = MediaAssetMapper.toDomain(entity);
     assertEquals(MediaStatus.READY, restored.getStatus());
     assertEquals(185, restored.getDurationSec());
-    assertEquals("delivery/map-002/hls/playlist.m3u8", restored.getHlsKey().key());
+    assertEquals("delivery/map-002/hls/playlist.m3u8", restored.getFullKey().key());
     assertEquals("delivery/map-002/preview/preview.m3u8", restored.getPreviewKey().key());
   }
 
@@ -94,7 +94,7 @@ class MediaAssetMapperTest {
     entity.status = "TRANSCODING";
     entity.durationSec = null;
     entity.originalKey = "beatz-media-originals|originals/artwork/map-003";
-    entity.hlsKey = null;
+    entity.fullKey = null;
     entity.previewKey = null;
     entity.createdAt = NOW;
     entity.contentHash = "hash-null";
@@ -103,7 +103,7 @@ class MediaAssetMapperTest {
     assertEquals(MediaKind.ARTWORK, domain.getKind());
     assertEquals(MediaStatus.TRANSCODING, domain.getStatus());
     assertEquals(0, domain.getDurationSec()); // null → 0
-    assertNull(domain.getHlsKey());
+    assertNull(domain.getFullKey());
     assertNull(domain.getPreviewKey());
   }
 }

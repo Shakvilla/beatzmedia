@@ -94,14 +94,14 @@ class PlaybackFlowIT {
     em.createNativeQuery(
             "INSERT INTO media_asset (id, owner_ref, kind, status, duration_sec, original_key,"
                 + " hls_key, preview_key, content_hash, created_at)"
-                + " VALUES (:id, :ownerRef, 'AUDIO', 'READY', 180, :originalKey, :hlsKey,"
+                + " VALUES (:id, :ownerRef, 'AUDIO', 'READY', 180, :originalKey, :fullKey,"
                 + " :previewKey, :hash, now())"
                 + " ON CONFLICT (id) DO NOTHING")
         .setParameter("id", assetId)
         .setParameter("ownerRef", "catalog:" + trackId)
         .setParameter(
             "originalKey", "beatz-media-originals|originals/audio/" + assetId)
-        .setParameter("hlsKey", "beatz-media-delivery|delivery/" + assetId + "/hls/playlist.m3u8")
+        .setParameter("fullKey", "beatz-media-delivery|delivery/" + assetId + "/hls/playlist.m3u8")
         .setParameter(
             "previewKey", "beatz-media-delivery|delivery/" + assetId + "/preview/preview.m3u8")
         .setParameter("hash", "hash-" + assetId)
