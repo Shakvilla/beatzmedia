@@ -42,7 +42,7 @@ export interface PlayerState {
   previewHitLimit: boolean
   /** True when the current track has no playable stream. Never animate progress in this state. */
   unavailable: boolean
-  /** Real duration from the audio element once known; falls back to catalogue metadata. */
+  /** Real duration reported by the audio element once its metadata has loaded; null until then. */
   duration: number | null
 }
 
@@ -125,11 +125,22 @@ export function reducer(state: PlayerState, action: PlayerAction): PlayerState {
       }
     case 'TOGGLE_PLAY': {
       // Pressing play after a preview ended restarts the preview from the top.
-      if (!state.isPlaying && state.previewHitLimit) return { ...state, isPlaying: true, progress: 0, previewHitLimit: false }
-      return { ...state, isPlaying: !state.isPlaying }
+      if (!state.isPlaying && state.previewHitLimit) {
+        return { ...state, isPlaying: true, progress: 0, previewHitLimit: false, unavailable: false }
+      }
+      const isPlaying = !state.isPlaying
+      // An explicit press of play is a retry: it must not stay stuck behind a stale
+      // `unavailable` from an earlier failure (I5). The provider pairs this with a refetch.
+      return { ...state, isPlaying, ...(isPlaying ? { unavailable: false } : {}) }
     }
     case 'PLAY':
-      return { ...state, isPlaying: true, ...(state.previewHitLimit ? { progress: 0, previewHitLimit: false } : {}) }
+      // Same retry contract as TOGGLE_PLAY above: explicit play clears a stale `unavailable`.
+      return {
+        ...state,
+        isPlaying: true,
+        unavailable: false,
+        ...(state.previewHitLimit ? { progress: 0, previewHitLimit: false } : {}),
+      }
     case 'PAUSE':
       return { ...state, isPlaying: false }
     case 'NEXT': {
@@ -209,10 +220,40 @@ interface PlayerContextValue extends PlayerState {
   clearQueue: () => void
   toggleShuffle: () => void
   cycleRepeat: () => void
-  /** Current track is a for-sale track the user doesn't own (preview-limited). */
+  /** Current track is preview-limited — determined server-side by a clipped stream, never
+   *  inferred from `ownership` (which the catalogue can misreport, see I-13). */
   isPreview: boolean
   /** Length of the signed preview, when the server clipped one. Null for full streams. */
   previewSeconds: number | null
+}
+
+export type AudioErrorRecovery = 'recover' | 'fail'
+
+/**
+ * Decide whether an `<audio>` element error is a lapsed signed URL we can silently recover
+ * from (refetch a fresh one and resume) or a genuine playback failure that must surface as
+ * "unavailable" instead. Pure and DOM-free on purpose: this is the highest-risk branch in the
+ * file (it's what stands between "URL merely expired" and "never animate over silence"), so it
+ * needs to be testable without an audio element.
+ *
+ * - `alreadyRecovered` bounds the loop under clock skew or a persistently broken asset: once one
+ *   recovery attempt has been made for the current track without a clean `loadedmetadata` in
+ *   between, further errors fail outright instead of refetch-looping forever.
+ * - `isPlaying` gates recovery to the mid-track case. An expiry error while paused has no
+ *   listener waiting on it — but it must still be recoverable via an explicit retry, not stuck
+ *   forever (see the `unavailable`-clearing retry path on TOGGLE_PLAY/PLAY).
+ */
+export function decideAudioErrorRecovery(
+  expiresAt: string | null,
+  now: number,
+  isPlaying: boolean,
+  alreadyRecovered: boolean,
+): AudioErrorRecovery {
+  if (alreadyRecovered) return 'fail'
+  if (!isPlaying) return 'fail'
+  if (expiresAt == null) return 'fail'
+  if (Date.parse(expiresAt) > now) return 'fail'
+  return 'recover'
 }
 
 const PlayerContext = createContext<PlayerContextValue | null>(null)
@@ -235,34 +276,75 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const isPreview = isPreviewStream
 
   // A 503 MEDIA_UNAVAILABLE (no READY asset) must surface as "unavailable", never as a
-  // progress bar moving over silence.
+  // progress bar moving over silence. `currentTrack?.id` is also a dep because TanStack keeps
+  // `isError: true` across a query-key switch when the new key resolves from cache (e.g. B
+  // errors, fan plays C, fan returns to B within gcTime) — without it, a same-value
+  // true→true transition across that round trip would never re-run this effect (I2).
   useEffect(() => {
     if (streamQuery.isError) dispatch({ type: 'STREAM_ERROR' })
-  }, [streamQuery.isError])
+  }, [streamQuery.isError, currentTrack?.id])
 
   const audioRef = useRef<HTMLAudioElement | null>(null)
-  // Position to restore after a mid-track URL refresh.
+  // Which track's audio is currently loaded into the element — lets the load effect tell
+  // "different track" (must restart at 0) apart from "same track, freshly signed URL" (must
+  // not restart).
+  const loadedTrackIdRef = useRef<string | null>(null)
+  // Position to restore after a same-track src swap (focus refetch, background staleTime:0
+  // refetch, or the expiry recovery below).
   const resumeAtRef = useRef<number | null>(null)
+  // Single-shot guard on the expiry-recovery refetch (see decideAudioErrorRecovery / I3):
+  // bounds it to one attempt per track between successful loads, so clock skew or a
+  // persistently broken asset can't turn it into an infinite error→refetch→error loop.
+  const recoveredRef = useRef(false)
 
-  // Load the source whenever the signed URL changes.
+  // A track change invalidates any in-flight resume position and re-arms the recovery guard
+  // for the new track (I1, I3).
+  useEffect(() => {
+    resumeAtRef.current = null
+    recoveredRef.current = false
+  }, [currentTrack?.id])
+
+  // Load the source whenever the signed URL changes. Keyed on the track id, not the URL
+  // string: a re-signed URL for the SAME track (focus refetch, background refetch, expiry
+  // recovery) must resume in place, not restart from 0 (C2). No stream at all — no current
+  // track, or the fetch for a new track hasn't resolved yet — must stop and detach rather than
+  // leave a previous track's audio playing under the new track's UI (C1).
   useEffect(() => {
     const el = audioRef.current
-    if (!el || !stream) return
+    if (!el) return
+    if (!stream) {
+      el.pause()
+      el.removeAttribute('src')
+      el.load()
+      loadedTrackIdRef.current = null
+      return
+    }
+    const sameTrack = loadedTrackIdRef.current === currentTrack?.id
+    resumeAtRef.current = sameTrack ? el.currentTime : null
     el.src = stream.audioUrl
     el.load()
-  }, [stream?.audioUrl])
+    loadedTrackIdRef.current = currentTrack?.id ?? null
+  }, [stream, currentTrack?.id])
 
-  // Mirror play/pause intent onto the element, catching the autoplay rejection.
+  // Mirror play/pause intent onto the element. `el.pause()` runs unconditionally when there's
+  // nothing to play (no stream yet, or intent is paused) — it must NOT be gated behind
+  // `if (!stream) return`, or a track switch to a track with no stream leaves the previous
+  // track's audio playing under the new track's "unavailable" UI (C1).
   useEffect(() => {
     const el = audioRef.current
-    if (!el || !stream) return
-    if (state.isPlaying) {
-      // play() rejects without a user gesture. If it does, stop claiming to play.
-      el.play().catch(() => dispatch({ type: 'PAUSE' }))
+    if (!el) return
+    if (state.isPlaying && stream) {
+      // play() rejects both for a genuine autoplay block and when a subsequent load()
+      // interrupts this call (AbortError). Only the former means "stop claiming to play" —
+      // an aborted play is about to be superseded by a new load, not a failure to react to.
+      el.play().catch((err: unknown) => {
+        if (err instanceof DOMException && err.name === 'AbortError') return
+        dispatch({ type: 'PAUSE' })
+      })
     } else {
       el.pause()
     }
-  }, [state.isPlaying, stream?.audioUrl])
+  }, [state.isPlaying, stream])
 
   // Mirror volume.
   useEffect(() => {
@@ -272,9 +354,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const handleAudioError = () => {
     const el = audioRef.current
-    const expired = stream?.expiresAt != null && Date.parse(stream.expiresAt) <= Date.now()
-    if (expired && el && state.isPlaying) {
-      // The URL lapsed, not the audio. Remember the spot and get a fresh one.
+    const decision = decideAudioErrorRecovery(
+      stream?.expiresAt ?? null,
+      Date.now(),
+      state.isPlaying,
+      recoveredRef.current,
+    )
+    if (decision === 'recover' && el) {
+      // The URL lapsed, not the audio. Remember the spot, arm the single-shot guard, and get
+      // a fresh one.
+      recoveredRef.current = true
       resumeAtRef.current = el.currentTime
       void streamQuery.refetch()
       return
@@ -293,7 +382,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       playTrack: (track) => dispatch({ type: 'PLAY_TRACK', track }),
       playQueue: (tracks, startIndex = 0) =>
         dispatch({ type: 'PLAY_QUEUE', tracks, startIndex }),
-      togglePlay: () => dispatch({ type: 'TOGGLE_PLAY' }),
+      togglePlay: () => {
+        // An explicit press of play is a retry path: if we're stuck behind a stale
+        // `unavailable` (including one from a paused expiry error that decideAudioErrorRecovery
+        // declined to auto-recover, I5), re-fetch the stream instead of staying stuck forever.
+        if (!state.isPlaying && state.unavailable) void streamQuery.refetch()
+        dispatch({ type: 'TOGGLE_PLAY' })
+      },
       next: () => dispatch({ type: 'NEXT' }),
       prev: () => dispatch({ type: 'PREV' }),
       seek: (seconds: number) => {
@@ -308,7 +403,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       toggleShuffle: () => dispatch({ type: 'TOGGLE_SHUFFLE' }),
       cycleRepeat: () => dispatch({ type: 'CYCLE_REPEAT' }),
     }),
-    [state, currentTrack, isPreview, stream, streamQuery.isError, isPreviewStream],
+    [state, currentTrack, isPreview, stream, streamQuery],
   )
 
   return (
@@ -319,7 +414,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         preload="metadata"
         onTimeUpdate={(e) => dispatch({ type: 'SET_PROGRESS', seconds: e.currentTarget.currentTime })}
         onLoadedMetadata={(e) => {
-          dispatch({ type: 'SET_DURATION', seconds: e.currentTarget.duration })
+          const duration = e.currentTarget.duration
+          // A duration of Infinity/NaN (unresolved metadata, some live/streamed formats) is not
+          // a real duration — don't let the UI render a bogus scrub bar length from it.
+          if (Number.isFinite(duration)) dispatch({ type: 'SET_DURATION', seconds: duration })
+          // A clean load clears the single-shot recovery guard so a later, unrelated failure
+          // still gets one recovery attempt of its own (I3).
+          recoveredRef.current = false
           const resumeAt = resumeAtRef.current
           if (resumeAt != null) {
             e.currentTarget.currentTime = resumeAt

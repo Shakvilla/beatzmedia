@@ -34,5 +34,9 @@ export function trackStreamQuery(trackId: string) {
     // Signed URLs are short-lived; never serve a cached one that may already be dead.
     staleTime: 0,
     gcTime: 60_000,
+    // A focus refetch would mint a fresh signature for the same track and force the player to
+    // reload the element — audibly restarting playback. Mid-track URL refresh is handled
+    // explicitly by the player (expiry recovery), not by an implicit background refetch.
+    refetchOnWindowFocus: false,
   })
 }

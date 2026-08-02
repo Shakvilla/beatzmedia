@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { reducer, initialState, type PlayerState } from './player-context'
+import { reducer, initialState, decideAudioErrorRecovery, type PlayerState } from './player-context'
 import type { Track } from '../../types'
 
 const track = (id: string, duration = 180): Track =>
@@ -70,5 +70,60 @@ describe('PLAY_TRACK', () => {
   it('clears a previous unavailable state', () => {
     const next = reducer(playing({ unavailable: true }), { type: 'PLAY_TRACK', track: track('t3') })
     expect(next.unavailable).toBe(false)
+  })
+})
+
+describe('TOGGLE_PLAY / PLAY as a retry path (I5)', () => {
+  it('TOGGLE_PLAY into playing clears a stale unavailable', () => {
+    const next = reducer({ ...initialState, isPlaying: false, unavailable: true }, { type: 'TOGGLE_PLAY' })
+    expect(next.isPlaying).toBe(true)
+    expect(next.unavailable).toBe(false)
+  })
+
+  it('TOGGLE_PLAY into pausing does NOT touch unavailable', () => {
+    const next = reducer({ ...initialState, isPlaying: true, unavailable: true }, { type: 'TOGGLE_PLAY' })
+    expect(next.isPlaying).toBe(false)
+    expect(next.unavailable).toBe(true)
+  })
+
+  it('TOGGLE_PLAY after a preview cap also clears a stale unavailable', () => {
+    const next = reducer(
+      { ...initialState, isPlaying: false, previewHitLimit: true, unavailable: true },
+      { type: 'TOGGLE_PLAY' },
+    )
+    expect(next.isPlaying).toBe(true)
+    expect(next.unavailable).toBe(false)
+  })
+
+  it('PLAY clears a stale unavailable', () => {
+    const next = reducer({ ...initialState, isPlaying: false, unavailable: true }, { type: 'PLAY' })
+    expect(next.isPlaying).toBe(true)
+    expect(next.unavailable).toBe(false)
+  })
+})
+
+describe('decideAudioErrorRecovery', () => {
+  const now = Date.parse('2026-08-01T12:00:00Z')
+  const past = '2026-08-01T11:59:00Z' // expired one minute ago
+  const future = '2026-08-01T12:05:00Z' // still valid for 5 more minutes
+
+  it('recovers when the signed URL has actually expired and the track is playing', () => {
+    expect(decideAudioErrorRecovery(past, now, true, false)).toBe('recover')
+  })
+
+  it('fails when the URL has not expired yet — a genuine playback error, not a lapsed URL', () => {
+    expect(decideAudioErrorRecovery(future, now, true, false)).toBe('fail')
+  })
+
+  it('fails when there is no expiresAt to reason about', () => {
+    expect(decideAudioErrorRecovery(null, now, true, false)).toBe('fail')
+  })
+
+  it('fails when paused — I5: a paused expiry error is not silently auto-recovered, it must surface so the explicit-play retry path can take over', () => {
+    expect(decideAudioErrorRecovery(past, now, false, false)).toBe('fail')
+  })
+
+  it('fails when a recovery attempt was already made — I3: bounds the refetch loop under clock skew or a persistently broken asset', () => {
+    expect(decideAudioErrorRecovery(past, now, true, true)).toBe('fail')
   })
 })
