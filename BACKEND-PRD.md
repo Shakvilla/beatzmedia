@@ -285,7 +285,8 @@ Single deployable, internally partitioned into modules per bounded context. Sugg
 - **Media storage/streaming:** S3-compatible object store (MinIO locally). Originals in a private
   bucket; transcoded single-file AAC/M4A renditions in a delivery bucket fronted by signed, time-boxed
   URLs (one presigned object per variant — not HLS, whose segment references would be unsigned against
-  the private delivery bucket). The preview rendition is a **30s server-clipped** asset; full
+  the private delivery bucket). The preview rendition is a **server-clipped** asset of `beatz.preview-seconds`
+  (default 30s); full
   renditions are served only to owners.
 
 ### 4.4 Cross-module communication

@@ -45,9 +45,9 @@ class MediaAssetStateMachineTest {
   void cannot_retranscode_ready_asset() {
     MediaAsset asset = newUploadingAudioAsset();
     asset.startTranscoding();
-    ObjectKey hls = new ObjectKey("delivery", "delivery/id/hls/playlist.m3u8");
-    ObjectKey prev = new ObjectKey("delivery", "delivery/id/preview/preview.m3u8");
-    asset.markReady(hls, prev, 180);
+    ObjectKey full = new ObjectKey("delivery", "delivery/id/full.m4a");
+    ObjectKey prev = new ObjectKey("delivery", "delivery/id/preview.m4a");
+    asset.markReady(full, prev, 180);
     assertThrows(IllegalStateException.class, asset::startTranscoding);
   }
 
@@ -57,22 +57,22 @@ class MediaAssetStateMachineTest {
   void transcoding_to_ready_sets_keys_and_duration() {
     MediaAsset asset = newUploadingAudioAsset();
     asset.startTranscoding();
-    ObjectKey hls = new ObjectKey("delivery", "delivery/001/hls/playlist.m3u8");
-    ObjectKey prev = new ObjectKey("delivery", "delivery/001/preview/preview.m3u8");
-    asset.markReady(hls, prev, 213);
+    ObjectKey full = new ObjectKey("delivery", "delivery/001/full.m4a");
+    ObjectKey prev = new ObjectKey("delivery", "delivery/001/preview.m4a");
+    asset.markReady(full, prev, 213);
     assertEquals(MediaStatus.READY, asset.getStatus());
-    assertEquals(hls, asset.getFullKey());
+    assertEquals(full, asset.getFullKey());
     assertEquals(prev, asset.getPreviewKey());
     assertEquals(213, asset.getDurationSec());
   }
 
   @Test
-  void audio_ready_requires_both_hls_and_preview_keys() {
+  void audio_ready_requires_both_full_and_preview_keys() {
     MediaAsset asset = newUploadingAudioAsset();
     asset.startTranscoding();
-    ObjectKey hls = new ObjectKey("delivery", "key");
-    assertThrows(IllegalArgumentException.class, () -> asset.markReady(hls, null, 10));
-    assertThrows(IllegalArgumentException.class, () -> asset.markReady(null, hls, 10));
+    ObjectKey full = new ObjectKey("delivery", "key");
+    assertThrows(IllegalArgumentException.class, () -> asset.markReady(full, null, 10));
+    assertThrows(IllegalArgumentException.class, () -> asset.markReady(null, full, 10));
   }
 
   // ---- → ERROR ----

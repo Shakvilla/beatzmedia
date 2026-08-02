@@ -77,15 +77,15 @@ class TranscodeResultHandlingTest {
   @Test
   void successful_transcode_marks_ready_and_fires_event() {
     MediaAssetId id = seedTranscodingAsset();
-    ObjectKey hls = new ObjectKey("delivery", "delivery/transcode-001/hls/playlist.m3u8");
-    ObjectKey preview = new ObjectKey("delivery", "delivery/transcode-001/preview/preview.m3u8");
+    ObjectKey full = new ObjectKey("delivery", "delivery/transcode-001/full.m4a");
+    ObjectKey preview = new ObjectKey("delivery", "delivery/transcode-001/preview.m4a");
 
-    service.handleTranscodeResult(new TranscodeResult(id, hls, preview, 183, true, null));
+    service.handleTranscodeResult(new TranscodeResult(id, full, preview, 183, true, null));
 
     MediaAsset saved = repository.findById(id).orElseThrow();
     assertEquals(MediaStatus.READY, saved.getStatus());
     assertEquals(183, saved.getDurationSec());
-    assertEquals(hls, saved.getFullKey());
+    assertEquals(full, saved.getFullKey());
     assertEquals(preview, saved.getPreviewKey());
     assertEquals(1, mediaReadyEvent.getFired().size());
     assertEquals(id, mediaReadyEvent.getFired().get(0).assetId());
@@ -126,10 +126,10 @@ class TranscodeResultHandlingTest {
         svcHolder[0].markTranscoding(job.assetId());
         stateLog.add(testRepo.findById(job.assetId()).orElseThrow().getStatus());
         // Now "transcode" succeeds
-        ObjectKey hls = new ObjectKey("test-delivery", "delivery/" + job.assetId().value() + "/hls/playlist.m3u8");
-        ObjectKey preview = new ObjectKey("test-delivery", "delivery/" + job.assetId().value() + "/preview/preview.m3u8");
+        ObjectKey full = new ObjectKey("test-delivery", "delivery/" + job.assetId().value() + "/full.m4a");
+        ObjectKey preview = new ObjectKey("test-delivery", "delivery/" + job.assetId().value() + "/preview.m4a");
         svcHolder[0].handleTranscodeResult(
-            new TranscodeResult(job.assetId(), hls, preview, 42, true, null));
+            new TranscodeResult(job.assetId(), full, preview, 42, true, null));
         stateLog.add(testRepo.findById(job.assetId()).orElseThrow().getStatus());
       }
     };

@@ -14,9 +14,9 @@ ownership, **server-side**, and **records plays** for the plays counter and roya
 owns exactly one table, `play_event` (write-optimized; rolled up by `analytics`). It explicitly does
 **not** own catalog data (it reads tracks via `CatalogReader`), ownership grants (it reads via
 `OwnershipReader` from commerce/library), media renditions or signed-URL minting (it delegates to
-`MediaService`), or analytics rollups. It serves the **Fan** surface (global player, 30s preview
+`MediaService`), or analytics rollups. It serves the **Fan** surface (global player, preview
 gate). Covered HLFR: **HLFR-PLAYBACK-01** (ownership-aware streaming), satisfying LLFR-PLAYBACK-01.1
-(get stream URL) and LLFR-PLAYBACK-01.2 (record a play), enforcing **INV-3** (non-owner preview ≤ 30s)
+(get stream URL) and LLFR-PLAYBACK-01.2 (record a play), enforcing **INV-3** (non-owner gets the server-clipped preview)
 server-side (PRD §9.3 R8).
 
 ## 2. Context & dependencies (C4 component view)
@@ -326,7 +326,7 @@ ownership").
 - **Unit (domain/use case with fakes):** `GetStreamUrl` decision matrix with fake `CatalogReader` /
   `OwnershipReader` / `MediaService` / `Clock`; `RecordPlay` de-dup logic.
 - **Integration (Testcontainers Postgres + MinIO, REST-assured):** `/stream` issues a working signed
-  URL; the preview asset is ≤ 30s; `/play` inserts a `play_event` and emits `PlayRecorded`.
+  URL; the preview asset is ≤ `beatz.preview-seconds`; `/play` inserts a `play_event` and emits `PlayRecorded`.
 - **Contract:** `StreamUrlResponse` / `RecordPlayRequest` validate against `API-CONTRACT.md` §4 and
   frontend types (`previewSeconds` optional, present only when gated).
 
@@ -346,10 +346,10 @@ Coverage ≥ the gate in `sdlc/testing-strategy.md`.
 ## 12. Definition of done (module-specific)
 
 Global DoD (PRD §8 / conventions §11) plus:
-- **Preview never serves full audio**: in `PREVIEW` mode the signed URL resolves to the 30s clipped
-  rendition only; a contract/integration test asserts the served asset duration ≤ 30s and that no
+- **Preview never serves full audio**: in `PREVIEW` mode the signed URL resolves to the server-clipped
+  rendition only; a contract/integration test asserts the served asset duration ≤ the configured preview length and that no
   full-rendition URL is reachable for a non-owner.
-- `previewSeconds` is present **iff** the decision is `PREVIEW` (= 30); absent for `FULL`.
+- `previewSeconds` is present **iff** the decision is `PREVIEW` (= `beatz.preview-seconds`); absent for `FULL`.
 - `expiresAt` honours `BEATZ_SIGNED_URL_TTL_SECONDS`; no hard-coded TTL or preview length.
 - `play_event` writes are de-duplicated per (account, track) window; `PlayRecorded` emitted only on
   counted plays; ArchUnit (hexagonal dependency rule) green.
