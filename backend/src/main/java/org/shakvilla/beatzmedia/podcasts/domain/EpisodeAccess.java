@@ -20,9 +20,6 @@ package org.shakvilla.beatzmedia.podcasts.domain;
  */
 public record EpisodeAccess(boolean accessible, boolean previewOnly, int previewSec) {
 
-  /** Default preview length (seconds) absent a {@code PlatformSettings} override. */
-  public static final int DEFAULT_PREVIEW_SEC = 30;
-
   /**
    * Compute the access decision for an episode.
    *

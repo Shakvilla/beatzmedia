@@ -101,9 +101,9 @@ class PlaybackFlowIT {
         .setParameter("ownerRef", "catalog:" + trackId)
         .setParameter(
             "originalKey", "beatz-media-originals|originals/audio/" + assetId)
-        .setParameter("fullKey", "beatz-media-delivery|delivery/" + assetId + "/hls/playlist.m3u8")
+        .setParameter("fullKey", "beatz-media-delivery|delivery/" + assetId + "/full.m4a")
         .setParameter(
-            "previewKey", "beatz-media-delivery|delivery/" + assetId + "/preview/preview.m3u8")
+            "previewKey", "beatz-media-delivery|delivery/" + assetId + "/preview.m4a")
         .setParameter("hash", "hash-" + assetId)
         .executeUpdate();
   }
@@ -191,7 +191,7 @@ class PlaybackFlowIT {
         .then()
         .statusCode(200)
         .body("audioUrl", containsString("variant=FULL"))
-        .body("audioUrl", containsString("hls"))
+        .body("audioUrl", containsString("full.m4a"))
         .body("previewSeconds", equalTo(null))
         .body("expiresAt", notNullValue());
   }
@@ -208,8 +208,8 @@ class PlaybackFlowIT {
         .then()
         .statusCode(200)
         .body("audioUrl", containsString("variant=PREVIEW"))
-        .body("audioUrl", containsString("preview"))
-        .body("audioUrl", not(containsString("hls")))
+        .body("audioUrl", containsString("preview.m4a"))
+        .body("audioUrl", not(containsString("full.m4a")))
         .body("previewSeconds", equalTo(30))
         .body("expiresAt", notNullValue());
   }

@@ -88,9 +88,9 @@ class PlaybackContractTest {
         .setParameter("id", assetId)
         .setParameter("ownerRef", "catalog:" + trackId)
         .setParameter("originalKey", "beatz-media-originals|originals/audio/" + assetId)
-        .setParameter("fullKey", "beatz-media-delivery|delivery/" + assetId + "/hls/playlist.m3u8")
+        .setParameter("fullKey", "beatz-media-delivery|delivery/" + assetId + "/full.m4a")
         .setParameter(
-            "previewKey", "beatz-media-delivery|delivery/" + assetId + "/preview/preview.m3u8")
+            "previewKey", "beatz-media-delivery|delivery/" + assetId + "/preview.m4a")
         .setParameter("hash", "hash-" + assetId)
         .executeUpdate();
   }

@@ -96,17 +96,29 @@ class RealTranscodeIT {
     }
   }
 
+  /** Source material must be comfortably LONGER than the preview cap or the cap proves nothing. */
+  private static final int SOURCE_SECONDS = 45;
+
+  private static final int PREVIEW_SECONDS = 30;
+
+  /** ffmpeg's AAC encoder pads/primes by a frame or two; a second either way is not a defect. */
+  private static final int TOLERANCE_SECONDS = 2;
+
   /**
-   * LLFR-MEDIA-01.2 AC: Given a WAV upload, when transcode completes, then a full AAC/M4A
-   * rendition (delivery/{id}/full.m4a) and a ≤30s preview AAC/M4A rendition
-   * (delivery/{id}/preview.m4a) both exist.
+   * LLFR-MEDIA-01.2 AC / INV-3: Given a WAV upload, when transcode completes, then a full AAC/M4A
+   * rendition (delivery/{id}/full.m4a) and a ~30s preview AAC/M4A rendition
+   * (delivery/{id}/preview.m4a) both exist — and the preview really is CLIPPED.
+   *
+   * <p>The clip is the whole of INV-3's enforcement: a non-owner is handed a file that physically
+   * ends after the preview window, and the client deleted its own cap in reliance on that. So the
+   * source here is 45s, not 5s — against a 5s input a 30s cap is a no-op, and the test could not
+   * tell {@code -t 30} from no {@code -t} at all.
    */
   @Test
-  void transcode_wav_produces_full_and_preview_m4a() throws Exception {
+  void transcode_wav_produces_full_and_a_genuinely_clipped_preview() throws Exception {
     MediaAssetId id = new MediaAssetId("asset-transcode-1");
 
-    // Upload a real (minimal) WAV to originals
-    byte[] wav = minimalSilentWav(5); // 5-second silent WAV
+    byte[] wav = minimalSilentWav(SOURCE_SECONDS);
     ObjectKey originalKey = objectStore.putOriginal(
         org.shakvilla.beatzmedia.media.domain.MediaKind.AUDIO,
         id,
@@ -114,15 +126,26 @@ class RealTranscodeIT {
         "audio/wav",
         wav.length);
 
+    assertDurationNear(SOURCE_SECONDS, transcoder.probeDurationSec(originalKey), "original");
+
     ObjectKey fullKey = transcoder.transcodeFull(originalKey, id);
     assertNotNull(fullKey, "full key must not be null");
     assertTrue(fullKey.key().endsWith("/full.m4a"), "full rendition must be a single .m4a: " + fullKey.key());
     assertTrue(objectStore.exists(fullKey), "full rendition must exist in delivery bucket");
+    // The FULL rendition must NOT be clipped — it is what an owner gets.
+    assertDurationNear(SOURCE_SECONDS, transcoder.probeDurationSec(fullKey), "full rendition");
 
-    ObjectKey previewKey = transcoder.clipPreview(originalKey, id, 30);
+    ObjectKey previewKey = transcoder.clipPreview(originalKey, id, PREVIEW_SECONDS);
     assertNotNull(previewKey, "preview key must not be null");
     assertTrue(previewKey.key().endsWith("/preview.m4a"), "preview must be a single .m4a: " + previewKey.key());
     assertTrue(objectStore.exists(previewKey), "preview rendition must exist in delivery bucket");
+    assertDurationNear(PREVIEW_SECONDS, transcoder.probeDurationSec(previewKey), "preview rendition");
+  }
+
+  private static void assertDurationNear(int expectedSeconds, int actualSeconds, String what) {
+    assertTrue(
+        Math.abs(actualSeconds - expectedSeconds) <= TOLERANCE_SECONDS,
+        () -> what + " must be ~" + expectedSeconds + "s but ffprobe reported " + actualSeconds + "s");
   }
 
   // ---- Helpers ----

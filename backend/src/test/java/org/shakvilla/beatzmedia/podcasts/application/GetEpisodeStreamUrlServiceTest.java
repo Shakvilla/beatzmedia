@@ -45,6 +45,9 @@ class GetEpisodeStreamUrlServiceTest {
   private static final Instant PUBLISHED = Instant.parse("2026-06-01T00:00:00Z");
   private static final Instant PUBLIC_AT = Instant.parse("2026-06-10T00:00:00Z");
 
+  /** Mirrors the {@code beatz.preview-seconds} default; see the configured-value test below. */
+  private static final int PREVIEW_SECONDS = 30;
+
   FakePodcastRepository repository;
   FakeOwnershipReader ownership;
   FakeMediaService media;
@@ -106,7 +109,8 @@ class GetEpisodeStreamUrlServiceTest {
     ownership = new FakeOwnershipReader().markOwned(OWNER, PREMIUM_EPISODE).markOwned(OWNER, EARLY_ACCESS_EPISODE);
     media = new FakeMediaService();
     clock = FakeClock.at("2026-06-05T00:00:00Z"); // before PUBLIC_AT
-    service = new GetEpisodeStreamUrlService(repository, ownership, media, clock, 300L);
+    service =
+        new GetEpisodeStreamUrlService(repository, ownership, media, clock, 300L, PREVIEW_SECONDS);
   }
 
   // ---- INV-3: premium/for-sale + NOT owned -> PREVIEW only, previewSeconds = 30 ----
@@ -119,7 +123,7 @@ class GetEpisodeStreamUrlServiceTest {
     assertEquals(30, result.previewSeconds().get());
     assertTrue(result.audioUrl().contains("preview"), "URL must reference the preview rendition");
     assertFalse(
-        result.audioUrl().contains("hls/playlist"),
+        result.audioUrl().contains("full.m4a"),
         "non-owner of a premium episode must never receive a full-rendition URL");
   }
 
@@ -129,7 +133,20 @@ class GetEpisodeStreamUrlServiceTest {
 
     assertTrue(result.previewSeconds().isPresent());
     assertEquals(30, result.previewSeconds().get());
-    assertFalse(result.audioUrl().contains("hls/playlist"));
+    assertFalse(result.audioUrl().contains("full.m4a"));
+  }
+
+  @Test
+  void previewSeconds_comesFromConfiguration_notAHardCodedLiteral() {
+    // The clip the transcoder produces is `beatz.preview-seconds` long. If this service answered
+    // with a literal (or the domain's fallback constant) instead, raising that setting would
+    // report 30 against a 60s file — and the client trusts this number for its seek clamps.
+    GetEpisodeStreamUrlService configured =
+        new GetEpisodeStreamUrlService(repository, ownership, media, clock, 300L, 60);
+
+    StreamUrlResult result = configured.getStreamUrl(PREMIUM_EPISODE, Optional.of(NON_OWNER));
+
+    assertEquals(60, result.previewSeconds().orElseThrow());
   }
 
   // ---- owner of a premium episode -> FULL, no previewSeconds ----
@@ -139,7 +156,7 @@ class GetEpisodeStreamUrlServiceTest {
     StreamUrlResult result = service.getStreamUrl(PREMIUM_EPISODE, Optional.of(OWNER));
 
     assertTrue(result.previewSeconds().isEmpty(), "previewSeconds must be absent for FULL");
-    assertTrue(result.audioUrl().contains("hls/playlist"), "owner must receive the full rendition");
+    assertTrue(result.audioUrl().contains("full.m4a"), "owner must receive the full rendition");
   }
 
   // ---- free episode -> FULL regardless of caller ----
@@ -151,8 +168,8 @@ class GetEpisodeStreamUrlServiceTest {
 
     assertTrue(resultAnon.previewSeconds().isEmpty());
     assertTrue(resultAuth.previewSeconds().isEmpty());
-    assertTrue(resultAnon.audioUrl().contains("hls/playlist"));
-    assertTrue(resultAuth.audioUrl().contains("hls/playlist"));
+    assertTrue(resultAnon.audioUrl().contains("full.m4a"));
+    assertTrue(resultAuth.audioUrl().contains("full.m4a"));
   }
 
   // ---- early-access: locked (preview) before publicAt unless owned; free to everyone after ----
@@ -163,7 +180,7 @@ class GetEpisodeStreamUrlServiceTest {
 
     assertTrue(result.previewSeconds().isPresent());
     assertEquals(30, result.previewSeconds().get());
-    assertFalse(result.audioUrl().contains("hls/playlist"));
+    assertFalse(result.audioUrl().contains("full.m4a"));
   }
 
   @Test
@@ -171,7 +188,7 @@ class GetEpisodeStreamUrlServiceTest {
     StreamUrlResult result = service.getStreamUrl(EARLY_ACCESS_EPISODE, Optional.of(OWNER));
 
     assertTrue(result.previewSeconds().isEmpty());
-    assertTrue(result.audioUrl().contains("hls/playlist"));
+    assertTrue(result.audioUrl().contains("full.m4a"));
   }
 
   @Test
@@ -181,7 +198,7 @@ class GetEpisodeStreamUrlServiceTest {
     StreamUrlResult result = service.getStreamUrl(EARLY_ACCESS_EPISODE, Optional.of(NON_OWNER));
 
     assertTrue(result.previewSeconds().isEmpty());
-    assertTrue(result.audioUrl().contains("hls/playlist"));
+    assertTrue(result.audioUrl().contains("full.m4a"));
   }
 
   @Test
@@ -191,7 +208,7 @@ class GetEpisodeStreamUrlServiceTest {
     StreamUrlResult result = service.getStreamUrl(EARLY_ACCESS_EPISODE, Optional.empty());
 
     assertTrue(result.previewSeconds().isEmpty());
-    assertTrue(result.audioUrl().contains("hls/playlist"));
+    assertTrue(result.audioUrl().contains("full.m4a"));
   }
 
   // ---- unknown episode -> 404 mapped exception ----

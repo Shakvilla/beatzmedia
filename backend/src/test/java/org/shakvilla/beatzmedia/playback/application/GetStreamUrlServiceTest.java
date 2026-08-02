@@ -35,6 +35,9 @@ class GetStreamUrlServiceTest {
   private static final TrackId FOR_SALE_TRACK = new TrackId("track-for-sale");
   private static final TrackId FREE_TRACK = new TrackId("track-free");
 
+  /** Mirrors the {@code beatz.preview-seconds} default; see the configured-value test below. */
+  private static final int PREVIEW_SECONDS = 30;
+
   FakeCatalogReader catalog;
   FakeOwnershipReader ownership;
   FakeMediaService media;
@@ -48,7 +51,7 @@ class GetStreamUrlServiceTest {
             .seed(FREE_TRACK.value(), TrackOwnership.FREE);
     ownership = new FakeOwnershipReader().markOwned(OWNER, FOR_SALE_TRACK);
     media = new FakeMediaService();
-    service = new GetStreamUrlService(catalog, ownership, media, 300L);
+    service = new GetStreamUrlService(catalog, ownership, media, 300L, PREVIEW_SECONDS);
   }
 
   // ---- INV-3: for-sale + NOT owned -> PREVIEW only, previewSeconds = 30 ----
@@ -61,7 +64,7 @@ class GetStreamUrlServiceTest {
     assertEquals(30, result.previewSeconds().get());
     assertTrue(result.audioUrl().contains("preview"), "URL must reference the preview rendition");
     assertFalse(
-        result.audioUrl().contains("hls/playlist"),
+        result.audioUrl().contains("full.m4a"),
         "non-owner of a for-sale track must never receive a full-rendition URL");
   }
 
@@ -71,7 +74,19 @@ class GetStreamUrlServiceTest {
 
     assertTrue(result.previewSeconds().isPresent());
     assertEquals(30, result.previewSeconds().get());
-    assertFalse(result.audioUrl().contains("hls/playlist"));
+    assertFalse(result.audioUrl().contains("full.m4a"));
+  }
+
+  @Test
+  void previewSeconds_comesFromConfiguration_notAHardCodedLiteral() {
+    // The clip the transcoder produces is `beatz.preview-seconds` long. If this service answered
+    // with a literal instead, raising that setting would report 30 against a 60s file — and the
+    // client trusts this number for its seek clamps.
+    GetStreamUrlService configured = new GetStreamUrlService(catalog, ownership, media, 300L, 60);
+
+    StreamUrlResult result = configured.getStreamUrl(FOR_SALE_TRACK, Optional.of(NON_OWNER));
+
+    assertEquals(60, result.previewSeconds().orElseThrow());
   }
 
   // ---- owner of a for-sale track -> FULL, no previewSeconds ----
@@ -81,7 +96,7 @@ class GetStreamUrlServiceTest {
     StreamUrlResult result = service.getStreamUrl(FOR_SALE_TRACK, Optional.of(OWNER));
 
     assertTrue(result.previewSeconds().isEmpty(), "previewSeconds must be absent for FULL");
-    assertTrue(result.audioUrl().contains("hls/playlist"), "owner must receive the full rendition");
+    assertTrue(result.audioUrl().contains("full.m4a"), "owner must receive the full rendition");
   }
 
   // ---- free track -> FULL regardless of caller ----
@@ -93,8 +108,8 @@ class GetStreamUrlServiceTest {
 
     assertTrue(resultAnon.previewSeconds().isEmpty());
     assertTrue(resultAuth.previewSeconds().isEmpty());
-    assertTrue(resultAnon.audioUrl().contains("hls/playlist"));
-    assertTrue(resultAuth.audioUrl().contains("hls/playlist"));
+    assertTrue(resultAnon.audioUrl().contains("full.m4a"));
+    assertTrue(resultAuth.audioUrl().contains("full.m4a"));
   }
 
   // ---- unknown track -> 404 mapped exception ----

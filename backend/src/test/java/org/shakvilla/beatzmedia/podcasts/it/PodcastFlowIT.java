@@ -123,9 +123,9 @@ class PodcastFlowIT {
         .setParameter("id", assetId)
         .setParameter("ownerRef", "podcasts:" + episodeId)
         .setParameter("originalKey", "beatz-media-originals|originals/audio/" + assetId)
-        .setParameter("fullKey", "beatz-media-delivery|delivery/" + assetId + "/hls/playlist.m3u8")
+        .setParameter("fullKey", "beatz-media-delivery|delivery/" + assetId + "/full.m4a")
         .setParameter(
-            "previewKey", "beatz-media-delivery|delivery/" + assetId + "/preview/preview.m3u8")
+            "previewKey", "beatz-media-delivery|delivery/" + assetId + "/preview.m4a")
         .setParameter("hash", "hash-" + assetId)
         .executeUpdate();
   }
@@ -295,7 +295,7 @@ class PodcastFlowIT {
         .get("/v1/podcasts/episodes/" + premiumEpisodeId + "/stream")
         .then()
         .statusCode(200)
-        .body("audioUrl", containsString("hls"))
+        .body("audioUrl", containsString("full.m4a"))
         .body("previewSeconds", equalTo(null))
         .body("expiresAt", notNullValue());
   }
@@ -310,8 +310,8 @@ class PodcastFlowIT {
         .get("/v1/podcasts/episodes/" + premiumEpisodeId + "/stream")
         .then()
         .statusCode(200)
-        .body("audioUrl", containsString("preview"))
-        .body("audioUrl", not(containsString("hls")))
+        .body("audioUrl", containsString("preview.m4a"))
+        .body("audioUrl", not(containsString("full.m4a")))
         .body("previewSeconds", equalTo(30))
         .body("expiresAt", notNullValue());
   }
@@ -323,7 +323,7 @@ class PodcastFlowIT {
         .get("/v1/podcasts/episodes/" + premiumEpisodeId + "/stream")
         .then()
         .statusCode(200)
-        .body("audioUrl", containsString("preview"))
+        .body("audioUrl", containsString("preview.m4a"))
         .body("previewSeconds", equalTo(30));
   }
 
@@ -334,7 +334,7 @@ class PodcastFlowIT {
         .get("/v1/podcasts/episodes/" + freeEpisodeId + "/stream")
         .then()
         .statusCode(200)
-        .body("audioUrl", containsString("hls"))
+        .body("audioUrl", containsString("full.m4a"))
         .body("previewSeconds", equalTo(null));
   }
 
@@ -345,7 +345,7 @@ class PodcastFlowIT {
         .get("/v1/podcasts/episodes/" + earlyAccessEpisodeId + "/stream")
         .then()
         .statusCode(200)
-        .body("audioUrl", containsString("preview"))
+        .body("audioUrl", containsString("preview.m4a"))
         .body("previewSeconds", equalTo(30));
   }
 
