@@ -2,7 +2,9 @@ import { useEffect } from "react"
 import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, ListMusic, Shuffle, Repeat, Repeat1, Lock, ShoppingCart } from "lucide-react"
 import { Link } from "@tanstack/react-router"
 import { usePlayer } from "../../features/player/player-context"
-import { useCart } from "../../features/cart/cart-context"
+import { usePlaybackDisplay } from "../../features/player/use-playback-display"
+import { UnavailableNotice } from "../../features/player/components/unavailable-notice"
+import { useBuyTrack } from "../../features/cart/use-buy-track"
 import { useToast } from "../ui/toast-provider"
 import { formatDuration, formatPrice } from "../../lib/format"
 import { cn } from "../../utils/cn"
@@ -51,43 +53,21 @@ export function PlayerBar() {
     shuffle,
     repeat,
     isPreview,
-    previewSeconds,
     previewHitLimit,
-    unavailable,
-    duration,
     togglePlay,
     next,
     prev,
-    seek,
     setVolume,
     toggleQueue,
     toggleShuffle,
     cycleRepeat,
   } = usePlayer()
-  const { addItem } = useCart()
+  const { effectiveDuration, progressRatio, unavailable, seekToRatio } = usePlaybackDisplay()
+  const buyTrack = useBuyTrack()
   const { toast } = useToast()
-  // The element's duration is authoritative once metadata loads; catalogue metadata is a
-  // fallback and can disagree (and does, for a 30s preview of a 3-minute track).
-  const effectiveDuration = duration ?? currentTrack?.duration ?? 0
-  const progressRatio = !unavailable && effectiveDuration ? Math.min(1, progress / effectiveDuration) : 0
-  /** Cap scrubbing to the preview window when the server signed a clipped stream. */
-  const seekCap = (ratio: number) => {
-    if (!currentTrack) return
-    const target = ratio * effectiveDuration
-    seek(previewSeconds != null ? Math.min(target, previewSeconds) : target)
-  }
 
   const buyCurrent = () => {
-    if (!currentTrack) return
-    addItem({
-      id: `track:${currentTrack.id}`,
-      kind: 'track',
-      title: currentTrack.title,
-      subtitle: currentTrack.artistName,
-      image: currentTrack.image,
-      price: currentTrack.price ?? { amount: 0, currency: 'GHS' },
-    })
-    toast(`“${currentTrack.title}” added to cart`, 'success')
+    if (currentTrack) buyTrack(currentTrack)
   }
 
   // Nudge the listener to buy when a preview runs out.
@@ -148,11 +128,7 @@ export function PlayerBar() {
             <SkipForward size={20} fill="currentColor" />
           </button>
         </div>
-        {unavailable && (
-          <span className="text-[10px] text-gray-400 dark:text-gray-500 pr-1">
-            Not available to play right now
-          </span>
-        )}
+        {unavailable && <UnavailableNotice compact className="pr-1" />}
       </div>
 
       {/* Desktop transport + seek */}
@@ -197,9 +173,7 @@ export function PlayerBar() {
         </div>
         <div className="w-full max-w-md flex items-center gap-3">
           {unavailable ? (
-            <span className="text-xs text-gray-400 dark:text-gray-500">
-              Not available to play right now
-            </span>
+            <UnavailableNotice />
           ) : (
             <>
               <span className="text-[10px] text-gray-400 font-mono">{formatDuration(progress)}</span>
@@ -207,7 +181,7 @@ export function PlayerBar() {
                 className="flex-1"
                 value={progress}
                 max={effectiveDuration}
-                onScrub={seekCap}
+                onScrub={seekToRatio}
               />
               <span className="text-[10px] text-gray-400 font-mono">{formatDuration(effectiveDuration)}</span>
             </>

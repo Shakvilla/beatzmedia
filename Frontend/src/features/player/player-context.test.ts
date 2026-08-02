@@ -73,7 +73,24 @@ describe('PLAY_TRACK', () => {
   })
 })
 
-describe('TOGGLE_PLAY / PLAY as a retry path (I5)', () => {
+describe('hasStarted — the gate on signing a stream at all (I7)', () => {
+  it('is false until the fan asks for playback', () => {
+    expect(initialState.hasStarted).toBe(false)
+  })
+
+  it('is set by playing a queue, a track, or pressing play', () => {
+    expect(reducer(initialState, { type: 'PLAY_QUEUE', tracks: [track('t1')], startIndex: 0 }).hasStarted).toBe(true)
+    expect(reducer(initialState, { type: 'PLAY_TRACK', track: track('t1') }).hasStarted).toBe(true)
+    expect(reducer(initialState, { type: 'TOGGLE_PLAY' }).hasStarted).toBe(true)
+    expect(reducer(initialState, { type: 'PLAY' }).hasStarted).toBe(true)
+  })
+
+  it('is not set by an empty PLAY_QUEUE — there is nothing to sign a stream for', () => {
+    expect(reducer(initialState, { type: 'PLAY_QUEUE', tracks: [], startIndex: 0 }).hasStarted).toBe(false)
+  })
+})
+
+describe('TOGGLE_PLAY / PLAY clearing a stale unavailable (the retry path)', () => {
   it('TOGGLE_PLAY into playing clears a stale unavailable', () => {
     const next = reducer({ ...initialState, isPlaying: false, unavailable: true }, { type: 'TOGGLE_PLAY' })
     expect(next.isPlaying).toBe(true)

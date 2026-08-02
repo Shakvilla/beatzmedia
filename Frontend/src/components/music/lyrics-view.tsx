@@ -1,10 +1,13 @@
 import { useEffect, useRef } from 'react'
-import { ChevronDown, Share2, Play, Pause, SkipBack, SkipForward, Mic2 } from 'lucide-react'
+import { ChevronDown, Share2, Play, Pause, SkipBack, SkipForward, Mic2, ShoppingCart } from 'lucide-react'
 import { cn } from '../../utils/cn'
 import { usePlayer } from '../../features/player/player-context'
+import { usePlaybackDisplay } from '../../features/player/use-playback-display'
+import { UnavailableNotice } from '../../features/player/components/unavailable-notice'
+import { useBuyTrack } from '../../features/cart/use-buy-track'
 import { useToast } from '../ui/toast-provider'
 import { getLyrics, activeLyricIndex } from '../../lib/lyrics-data'
-import { formatDuration } from '../../lib/format'
+import { formatDuration, formatPrice } from '../../lib/format'
 import { PREVIEW_ENDED_MESSAGE } from '../layout/player-bar'
 
 interface LyricsViewProps {
@@ -13,7 +16,9 @@ interface LyricsViewProps {
 }
 
 export function LyricsView({ onClose, showCloseButton = true }: LyricsViewProps) {
-  const { currentTrack, isPlaying, progress, togglePlay, next, prev, seek, unavailable, duration, previewSeconds, previewHitLimit } = usePlayer()
+  const { currentTrack, isPlaying, progress, togglePlay, next, prev, isPreview, previewHitLimit } = usePlayer()
+  const { effectiveDuration, progressRatio, unavailable, seekToRatio, seekToSeconds } = usePlaybackDisplay()
+  const buyTrack = useBuyTrack()
   const { toast } = useToast()
   const activeRef = useRef<HTMLButtonElement>(null)
 
@@ -38,11 +43,6 @@ export function LyricsView({ onClose, showCloseButton = true }: LyricsViewProps)
       </div>
     )
   }
-
-  // The element's duration is authoritative once metadata loads; catalogue metadata is a
-  // fallback and can disagree (and does, for a 30s preview of a 3-minute track).
-  const effectiveDuration = duration ?? currentTrack.duration ?? 0
-  const ratio = !unavailable && effectiveDuration ? Math.min(1, progress / effectiveDuration) : 0
 
   return (
     <div className="relative w-full h-full min-h-screen overflow-hidden flex flex-col animate-in fade-in duration-500 text-white">
@@ -96,7 +96,7 @@ export function LyricsView({ onClose, showCloseButton = true }: LyricsViewProps)
               <button
                 key={idx}
                 ref={isActive ? activeRef : undefined}
-                onClick={() => seek(previewSeconds != null ? Math.min(line.time, previewSeconds) : line.time)}
+                onClick={() => seekToSeconds(line.time)}
                 className={cn(
                   'text-left font-bold origin-left transition-all duration-500',
                   isActive
@@ -129,7 +129,7 @@ export function LyricsView({ onClose, showCloseButton = true }: LyricsViewProps)
         {/* Seek */}
         {unavailable ? (
           <div className="flex items-center justify-center">
-            <span className="text-xs text-white/50">Not available to play right now</span>
+            <UnavailableNotice tone="dark" />
           </div>
         ) : (
           <div className="flex items-center gap-3">
@@ -138,18 +138,30 @@ export function LyricsView({ onClose, showCloseButton = true }: LyricsViewProps)
               className="flex-1 h-1.5 bg-white/15 rounded-full overflow-hidden cursor-pointer group"
               onClick={(e) => {
                 const rect = e.currentTarget.getBoundingClientRect()
-                const target = ((e.clientX - rect.left) / rect.width) * effectiveDuration
-                seek(previewSeconds != null ? Math.min(target, previewSeconds) : target)
+                seekToRatio((e.clientX - rect.left) / rect.width)
               }}
             >
-              <div className="h-full bg-beatz-green transition-[width] duration-200" style={{ width: `${ratio * 100}%` }} />
+              <div className="h-full bg-beatz-green transition-[width] duration-200" style={{ width: `${progressRatio * 100}%` }} />
             </div>
             <span className="text-[10px] font-mono text-white/60 w-10 text-right">{formatDuration(effectiveDuration)}</span>
           </div>
         )}
-        {previewHitLimit && (
-          <div className="flex items-center justify-center mt-2">
-            <span className="text-xs font-bold text-[#f6c644]">{PREVIEW_ENDED_MESSAGE}</span>
+        {(previewHitLimit || isPreview) && (
+          // This route is full-screen, so PlayerBar — and with it the only Buy button in the app
+          // chrome — is unmounted here. Telling the fan to buy without giving them anything to
+          // buy with is a dead end, so the control ships alongside the message (I8).
+          <div className="flex flex-wrap items-center justify-center gap-3 mt-2">
+            {previewHitLimit && (
+              <span className="text-xs font-bold text-[#f6c644]">{PREVIEW_ENDED_MESSAGE}</span>
+            )}
+            {isPreview && (
+              <button
+                onClick={() => buyTrack(currentTrack)}
+                className="h-8 px-3 rounded-full bg-beatz-green text-black text-xs font-bold flex items-center gap-1.5 hover:scale-105 transition-transform"
+              >
+                <ShoppingCart size={13} /> Buy{currentTrack.price ? ` • ${formatPrice(currentTrack.price)}` : ''}
+              </button>
+            )}
           </div>
         )}
 

@@ -44,6 +44,13 @@ export interface PlayerState {
   unavailable: boolean
   /** Real duration reported by the audio element once its metadata has loaded; null until then. */
   duration: number | null
+  /**
+   * True once the fan has actually asked for playback (played a track/queue, or pressed play).
+   * Until then there is no reason to sign a stream for the queue the app boots with — doing so
+   * makes a 503 for a track nobody chose paint "Not available to play right now" before the fan
+   * has interacted with anything (I7).
+   */
+  hasStarted: boolean
 }
 
 export type PlayerAction =
@@ -77,6 +84,7 @@ export const initialState: PlayerState = {
   previewHitLimit: false,
   unavailable: false,
   duration: null,
+  hasStarted: false,
 }
 
 function clampIndex(index: number, length: number): number {
@@ -107,10 +115,10 @@ export function reducer(state: PlayerState, action: PlayerAction): PlayerState {
       // If the track is already in the queue, jump to it; otherwise queue it next.
       const existing = state.queue.findIndex((t) => t.id === action.track.id)
       if (existing !== -1) {
-        return { ...state, currentIndex: existing, progress: 0, isPlaying: true, previewHitLimit: false, unavailable: false, duration: null }
+        return { ...state, currentIndex: existing, progress: 0, isPlaying: true, previewHitLimit: false, unavailable: false, duration: null, hasStarted: true }
       }
       const queue = [...state.queue, action.track]
-      return { ...state, queue, currentIndex: queue.length - 1, progress: 0, isPlaying: true, previewHitLimit: false, unavailable: false, duration: null }
+      return { ...state, queue, currentIndex: queue.length - 1, progress: 0, isPlaying: true, previewHitLimit: false, unavailable: false, duration: null, hasStarted: true }
     }
     case 'PLAY_QUEUE':
       return {
@@ -122,23 +130,28 @@ export function reducer(state: PlayerState, action: PlayerAction): PlayerState {
         previewHitLimit: false,
         unavailable: false,
         duration: null,
+        hasStarted: state.hasStarted || action.tracks.length > 0,
       }
     case 'TOGGLE_PLAY': {
       // Pressing play after a preview ended restarts the preview from the top.
       if (!state.isPlaying && state.previewHitLimit) {
-        return { ...state, isPlaying: true, progress: 0, previewHitLimit: false, unavailable: false }
+        return { ...state, isPlaying: true, progress: 0, previewHitLimit: false, unavailable: false, hasStarted: true }
       }
       const isPlaying = !state.isPlaying
-      // An explicit press of play is a retry: it must not stay stuck behind a stale
-      // `unavailable` from an earlier failure (I5). The provider pairs this with a refetch.
-      return { ...state, isPlaying, ...(isPlaying ? { unavailable: false } : {}) }
+      // Asking for playback clears a stale `unavailable` so a recovered stream isn't held back by
+      // an old failure. The *reachable* recovery path is `retry()` (see the context value) — this
+      // branch never refetches on its own, because every play control is disabled while
+      // `unavailable`.
+      return { ...state, isPlaying, ...(isPlaying ? { unavailable: false, hasStarted: true } : {}) }
     }
     case 'PLAY':
-      // Same retry contract as TOGGLE_PLAY above: explicit play clears a stale `unavailable`.
+      // Same contract as TOGGLE_PLAY above. This is also what `retry()` dispatches alongside its
+      // refetch, which is what makes clearing `unavailable` here meaningful rather than decorative.
       return {
         ...state,
         isPlaying: true,
         unavailable: false,
+        hasStarted: true,
         ...(state.previewHitLimit ? { progress: 0, previewHitLimit: false } : {}),
       }
     case 'PAUSE':
@@ -225,6 +238,15 @@ interface PlayerContextValue extends PlayerState {
   isPreview: boolean
   /** Length of the signed preview, when the server clipped one. Null for full streams. */
   previewSeconds: number | null
+  /**
+   * Re-sign the current track's stream and resume. This is the ONLY reachable way out of
+   * `unavailable`, because every play control is disabled in that state — surfaces that render
+   * the "not available" message must offer this as a "Try again" affordance, or the state is a
+   * dead end until the fan changes track.
+   */
+  retry: () => void
+  /** True while `retry()`'s refetch is in flight, so the affordance can say so and not re-fire. */
+  retrying: boolean
 }
 
 export type AudioErrorRecovery = 'recover' | 'fail'
@@ -240,8 +262,8 @@ export type AudioErrorRecovery = 'recover' | 'fail'
  *   recovery attempt has been made for the current track without a clean `loadedmetadata` in
  *   between, further errors fail outright instead of refetch-looping forever.
  * - `isPlaying` gates recovery to the mid-track case. An expiry error while paused has no
- *   listener waiting on it — but it must still be recoverable via an explicit retry, not stuck
- *   forever (see the `unavailable`-clearing retry path on TOGGLE_PLAY/PLAY).
+ *   listener waiting on it — but it must still be recoverable, which is what the context's
+ *   `retry()` (surfaced as a "Try again" control next to the unavailable message) is for.
  */
 export function decideAudioErrorRecovery(
   expiresAt: string | null,
@@ -263,9 +285,12 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
 
   const currentTrack = state.queue[state.currentIndex]
 
+  // Only sign a stream once the fan has actually asked for playback. The app boots with a queue
+  // nobody chose; fetching for it means every page load hits /v1/tracks/<default>/stream, and a
+  // 503 there paints "Not available to play right now" before the first interaction (I7).
   const streamQuery = useQuery({
     ...trackStreamQuery(currentTrack?.id ?? ''),
-    enabled: !!currentTrack,
+    enabled: !!currentTrack && state.hasStarted,
   })
   const stream = streamQuery.data ?? null
   // A preview stream is one the server clipped — it tells us so via previewSeconds.
@@ -380,24 +405,37 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
     dispatch({ type: 'STREAM_ERROR' })
   }
 
+  // `unavailable` is the union of "the reducer was told the stream failed" and "the query is
+  // currently in an error state" — the latter covers the window before the effect above has run.
+  const derivedUnavailable = state.unavailable || streamQuery.isError
+
   const value = useMemo<PlayerContextValue>(
     () => ({
       ...state,
       currentTrack,
       isPreview,
       previewSeconds: stream?.previewSeconds ?? null,
-      unavailable: state.unavailable || streamQuery.isError,
+      unavailable: derivedUnavailable,
+      // Launder `isPlaying` through the SAME derivation as `unavailable`, or the two contradict
+      // each other and every play-state surface (equalizer bars on track rows, pause icons,
+      // progress fills) asserts playback over silence. Concretely: pressing play again on an
+      // already-failed track sets isPlaying:true and clears state.unavailable, but the query key,
+      // `isError` and `errorUpdatedAt` are all unchanged, so the STREAM_ERROR effect cannot
+      // re-fire — without this the player claims to be playing, forever (C1).
+      isPlaying: state.isPlaying && !derivedUnavailable,
       duration: state.duration,
       playTrack: (track) => dispatch({ type: 'PLAY_TRACK', track }),
       playQueue: (tracks, startIndex = 0) =>
         dispatch({ type: 'PLAY_QUEUE', tracks, startIndex }),
-      togglePlay: () => {
-        // An explicit press of play is a retry path: if we're stuck behind a stale
-        // `unavailable` (including one from a paused expiry error that decideAudioErrorRecovery
-        // declined to auto-recover, I5), re-fetch the stream instead of staying stuck forever.
-        if (!state.isPlaying && state.unavailable) void streamQuery.refetch()
-        dispatch({ type: 'TOGGLE_PLAY' })
+      togglePlay: () => dispatch({ type: 'TOGGLE_PLAY' }),
+      retry: () => {
+        // The reachable way out of `unavailable`: re-sign the stream and ask to play again. A
+        // refetch that fails again bumps `errorUpdatedAt`, so the effect above re-dispatches
+        // STREAM_ERROR and we land back here honestly rather than on "playing" + silence.
+        void streamQuery.refetch()
+        dispatch({ type: 'PLAY' })
       },
+      retrying: streamQuery.isFetching,
       next: () => dispatch({ type: 'NEXT' }),
       prev: () => dispatch({ type: 'PREV' }),
       seek: (seconds: number) => {
@@ -412,13 +450,13 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       toggleShuffle: () => dispatch({ type: 'TOGGLE_SHUFFLE' }),
       cycleRepeat: () => dispatch({ type: 'CYCLE_REPEAT' }),
     }),
-    // Both `.isError` (read for `unavailable`) and `.refetch` (called from `togglePlay`) are
-    // accessed from `streamQuery` here; eslint-plugin-react-hooks wants the parent object as
-    // the dependency in that shape rather than the two member expressions separately, so this
-    // depends on `streamQuery` as a whole. (Its identity isn't stable across every render in
-    // v5, so this doesn't buy referential memoization — the point is declaring the data
-    // dependency correctly, not eliminating recomputation.)
-    [state, currentTrack, isPreview, stream, streamQuery],
+    // `.isFetching` and `.refetch` (both read by `retry`) are accessed from `streamQuery` here;
+    // eslint-plugin-react-hooks wants the parent object as the dependency in that shape rather
+    // than the member expressions separately, so this depends on `streamQuery` as a whole. (Its
+    // identity isn't stable across every render in v5, so this doesn't buy referential
+    // memoization — the point is declaring the data dependency correctly, not eliminating
+    // recomputation.)
+    [state, currentTrack, isPreview, stream, streamQuery, derivedUnavailable],
   )
 
   return (
