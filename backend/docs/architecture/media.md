@@ -11,15 +11,16 @@
 
 The `media` module is **shared infrastructure**: it owns the lifecycle of every binary asset on the
 platform — accepting audio/artwork uploads, validating format and safety, transcoding audio into a
-streamable HLS rendition plus a **server-clipped 30s preview** rendition, processing artwork into
-delivery variants, laying assets out in object storage, and issuing **signed, time-boxed delivery
-URLs**. It is the **server-side enforcement point for INV-3** (the preview gate): a non-owner can only
-ever receive a URL to the 30s preview rendition; the full HLS rendition is issued only when ownership
-is confirmed by the caller. The module **does not** own catalog/track/episode entities, ownership
-grants, or REST upload endpoints — those belong to `catalog`, `studio`, `commerce`/`playback`, which
-call this module's `MediaService` output port. It exposes **no public REST of its own**: uploads
-arrive through `catalog`/`studio` multipart endpoints, delivery through `playback`. It serves all four
-consuming surfaces (Fan playback, Studio uploads, Admin moderation reads, Catalog ingestion).
+**single AAC/M4A full rendition plus a server-clipped 30s AAC/M4A preview rendition**, processing
+artwork into delivery variants, laying assets out in object storage, and issuing **signed, time-boxed
+delivery URLs**. It is the **server-side enforcement point for INV-3** (the preview gate): a non-owner
+can only ever receive a URL to the 30s preview rendition; the full rendition is issued only when
+ownership is confirmed by the caller. The module **does not** own catalog/track/episode entities,
+ownership grants, or REST upload endpoints — those belong to `catalog`, `studio`,
+`commerce`/`playback`, which call this module's `MediaService` output port. It exposes **no public
+REST of its own**: uploads arrive through `catalog`/`studio` multipart endpoints, delivery through
+`playback`. It serves all four consuming surfaces (Fan playback, Studio uploads, Admin moderation
+reads, Catalog ingestion).
 **HLFRs covered:** HLFR-MEDIA-01 (LLFR-MEDIA-01.1 upload, 01.2 transcode, 01.3 signed delivery).
 
 ## 2. Context & dependencies (C4 component view)
@@ -49,7 +50,7 @@ flowchart LR
   APP -->|put original| OUTS
   APP -->|enqueue| JOB
   JOB -->|probe + transcode| OUTFF
-  JOB -->|put hls + preview| OUTS
+  JOB -->|put full.m4a + preview.m4a| OUTS
   APP -->|presign| OUTSIGN
   OUTS --> ORIG[(beatz-media-originals<br/>PRIVATE bucket)]
   OUTS --> DELV[(beatz-media-delivery<br/>bucket)]
@@ -67,7 +68,7 @@ Persistence (`media_asset`) is private to this module; consumers reference asset
 
 | Name | Kind | Key fields | Notes |
 |---|---|---|---|
-| `MediaAsset` | Aggregate root | `id`, `ownerRef`, `kind`, `status`, `durationSec`, `originalKey`, `hlsKey`, `previewKey` | One row per uploaded binary; lifecycle owner |
+| `MediaAsset` | Aggregate root | `id`, `ownerRef`, `kind`, `status`, `durationSec`, `originalKey`, `fullKey`, `previewKey` | One row per uploaded binary; lifecycle owner |
 | `OwnerRef` | Value object | `module`, `entityId` | Opaque back-reference to the catalog/studio entity (no cross-module FK) |
 | `ObjectKey` | Value object | `bucket`, `key` | Fully-qualified storage location |
 | `SignedUrl` | Value object | `url`, `variant`, `expiresAt` | Result of presigning; ISO-8601 `expiresAt` |
@@ -82,12 +83,14 @@ Persistence (`media_asset`) is private to this module; consumers reference asset
 
 **Invariants enforced here:**
 
-- **INV-3 (preview gate).** `issueSignedUrl(asset, variant)` may presign the `hlsKey` (FULL) **only**
+- **INV-3 (preview gate).** `issueSignedUrl(asset, variant)` may presign the `fullKey` (FULL) **only**
   when the caller asserts confirmed ownership; otherwise it presigns the `previewKey` (PREVIEW), a
   rendition physically clipped to `previewSeconds = 30`. There is **no code path** that returns the
-  full rendition without an ownership assertion. The 30s clip is the server-side enforcement; the
-  client timer is advisory (§9.3).
-- A `MediaAsset` reaches `READY` only after **both** `hlsKey` and `previewKey` (for `AUDIO`) are
+  full rendition without an ownership assertion. The 30s clip **is** the server-side enforcement — a
+  non-owner is signed an object that physically contains only ~30 seconds of audio, so there is no
+  full-length media for a client to over-play; the client-side countdown timer is advisory only
+  (§9.3).
+- A `MediaAsset` reaches `READY` only after **both** `fullKey` and `previewKey` (for `AUDIO`) are
   written; artwork reaches `READY` after its processed variant is written.
 - Format guard: only `AUDIO ∈ {WAV,FLAC}` and `ARTWORK ∈ {PNG,JPG}` are admitted (§9).
 
@@ -98,9 +101,20 @@ Two S3-compatible buckets (PRD §5: `beatz-media-originals` PRIVATE, `beatz-medi
 | Bucket | Prefix | Access | Contents |
 |---|---|---|---|
 | `beatz-media-originals` | `originals/{kind}/{assetId}` | **private**, never public, never signed for read by clients | raw uploaded WAV/FLAC/PNG/JPG |
-| `beatz-media-delivery` | `delivery/{assetId}/hls/` | signed read only | `playlist.m3u8` + `.ts` segments (full rendition) |
-| `beatz-media-delivery` | `delivery/{assetId}/preview/` | signed read only | `preview.m3u8` + ≤30s `.ts` segments |
+| `beatz-media-delivery` | `delivery/{assetId}/full.m4a` | signed read only | single AAC/M4A object, full rendition |
+| `beatz-media-delivery` | `delivery/{assetId}/preview.m4a` | signed read only | single AAC/M4A object, physically ≤30s |
 | `beatz-media-delivery` | `delivery/{assetId}/art/` | signed read only | processed artwork variants (e.g. `cover-1024.jpg`) |
+
+> **Why a single file per variant, not HLS (ADR, see `00-system-architecture.md` §9).** The original
+> design transcoded audio to an HLS playlist (`playlist.m3u8` + `.ts` segments). That design could
+> never have worked against this module's own delivery model: `issueSignedUrl` presigns exactly one
+> object, but an HLS playlist references its segments by **relative path**, and the delivery bucket is
+> private (`mc anonymous set none local/beatz-media-delivery`, `backend/docker-compose.yml`) — so every
+> segment fetch the player made after the presigned playlist request would be unsigned and 403. A
+> single presigned `.m4a` object has no unsigned sub-requests: the one signed URL *is* the whole
+> playable file. The catalogue is short buy-to-own tracks (not long-form adaptive-bitrate streaming),
+> so HLS's adaptive-bitrate benefit bought nothing here. **Do not reinstate HLS delivery** without
+> first solving the segment-signing problem.
 
 ```mermaid
 erDiagram
@@ -117,6 +131,9 @@ erDiagram
   }
 ```
 
+> **Note:** the ERD/DB column is still named `hls_key` (see §7) even though it now holds a single
+> `.m4a` object key, not an HLS playlist key. This is deliberate — see the column-naming note in §7.
+
 ## 4. Application layer (ports)
 
 ### 4.1 Input ports (use cases)
@@ -131,7 +148,7 @@ public interface UploadOriginalUseCase {
 }
 
 public interface TranscodeUseCase {
-    /** Enqueue async transcode of an AUDIO asset to HLS + 30s preview; flips TRANSCODING then READY. */
+    /** Enqueue async transcode of an AUDIO asset to full.m4a + 30s preview.m4a; flips TRANSCODING then READY. */
     void enqueueTranscode(MediaAssetId assetId);
 }
 
@@ -161,7 +178,7 @@ The single facade other modules consume, plus the ports `media` needs the outsid
 public interface MediaService {
     MediaHandle uploadOriginal(UploadCommand command);          // multipart part + metadata
     int probeDuration(MediaAssetId assetId);                    // whole seconds (ffprobe)
-    void transcodeToHls(MediaAssetId assetId);                  // enqueue full HLS rendition
+    void transcodeToDelivery(MediaAssetId assetId);              // enqueue full.m4a + preview.m4a
     void generatePreviewClip(MediaAssetId assetId);             // 30s preview rendition (INV-3)
     MediaHandle processArtwork(MediaAssetId assetId);           // validate + emit delivery variants
     SignedUrl issueSignedUrl(MediaAssetId assetId, DeliveryVariant variant, Duration ttl);
@@ -186,8 +203,8 @@ public interface UrlSignerPort {
 
 public interface AudioTranscoderPort {
     int probeDurationSec(ObjectKey original);                   // ffprobe
-    ObjectKey transcodeHls(ObjectKey original, MediaAssetId id);
-    ObjectKey clipPreviewHls(ObjectKey original, MediaAssetId id, int previewSeconds);
+    ObjectKey transcodeFull(ObjectKey original, MediaAssetId id);       // delivery/{id}/full.m4a
+    ObjectKey clipPreview(ObjectKey original, MediaAssetId id, int previewSeconds); // delivery/{id}/preview.m4a
 }
 
 public interface ArtworkProcessorPort {
@@ -208,7 +225,7 @@ public record UploadCommand(OwnerRef ownerRef, MediaKind kind, String filename,
                             String declaredContentType, long sizeBytes, InputStream body) {}
 public record MediaHandle(MediaAssetId assetId, MediaKind kind, int durationSec, MediaStatus status) {}
 public record TranscodeJob(MediaAssetId assetId, ObjectKey original, int previewSeconds) {}
-public record TranscodeResult(MediaAssetId assetId, ObjectKey hlsKey, ObjectKey previewKey,
+public record TranscodeResult(MediaAssetId assetId, ObjectKey fullKey, ObjectKey previewKey,
                               int durationSec, boolean ok, String errorCode) {}
 public record SignedUrl(String url, DeliveryVariant variant, Instant expiresAt) {}
 ```
@@ -239,7 +256,7 @@ the part to an `UploadCommand` and call `MediaService.uploadOriginal`. Delivery 
 ### 5.2 Outbound — persistence & integrations
 
 - **S3/MinIO adapter** (`ObjectStorePort`, `UrlSignerPort`): streams originals to the private bucket,
-  writes HLS/preview/art to the delivery bucket, presigns time-boxed GET URLs. Endpoint + creds from
+  writes full/preview/art objects to the delivery bucket, presigns time-boxed GET URLs. Endpoint + creds from
   `BEATZ_S3_*` env (PRD §5.2); buckets `BEATZ_S3_BUCKET_ORIGINALS`/`_DELIVERY` created by the Compose
   `createbuckets` init job (PRD §5.1). The 500 MB cap is enforced mid-PUT by a limiting input stream
   that throws `FileTooLargeException`; because the AWS SDK reads the body inside its own marshalling
@@ -265,8 +282,13 @@ the part to an `UploadCommand` and call `MediaService.uploadOriginal`. Delivery 
   exact mark/reset `IllegalStateException`), and `S3KnownLengthNonMarkableUploadIT` (real-MinIO
   byte-for-byte of a non-markable known-length body).
 - **ffmpeg transcoder adapter** (`AudioTranscoderPort`): probes duration (`ffprobe`), produces the full
-  HLS rendition and the 30s preview clip via the Compose `transcoder` service (`jrottenberg/ffmpeg`,
-  PRD §5.1). Long-running, off the request thread (async job).
+  rendition (`transcodeFull` → `delivery/{id}/full.m4a`) and the 30s preview clip (`clipPreview` →
+  `delivery/{id}/preview.m4a`) via the Compose `transcoder` service (`jrottenberg/ffmpeg`, PRD §5.1).
+  Both are single AAC/M4A objects: ffmpeg is invoked with `-c:a aac -b:a 128k -vn -movflags
+  +faststart` (`-vn` drops any embedded cover-art video stream; `+faststart` moves the `moov` atom to
+  the front of the file so playback can start before the whole object is downloaded); the preview
+  additionally passes `-t <previewSeconds>` to physically clip the output. See §3 for why this
+  replaced HLS. Long-running, off the request thread (async job).
 - **Artwork processor** (`ArtworkProcessorPort`): validates and emits delivery image variants.
 - **Mapping:** domain `MediaAsset` ↔ JPA entity in the persistence adapter; domain carries no ORM
   annotations. **Transaction boundary** = the use case (`@Transactional` on the application service);
@@ -295,8 +317,8 @@ CREATE TABLE media_asset (
     status        VARCHAR(16)  NOT NULL,               -- UPLOADING | TRANSCODING | READY | ERROR
     duration_sec  INTEGER,                             -- probed; NULL for artwork
     original_key  VARCHAR(255) NOT NULL,               -- originals/{kind}/{id}
-    hls_key       VARCHAR(255),                        -- delivery/{id}/hls/playlist.m3u8
-    preview_key   VARCHAR(255),                        -- delivery/{id}/preview/preview.m3u8
+    hls_key       VARCHAR(255),                        -- delivery/{id}/full.m4a (column name is historical, see note below)
+    preview_key   VARCHAR(255),                        -- delivery/{id}/preview.m4a
     content_hash  VARCHAR(64),                         -- SHA-256 of the original bytes; idempotency on (owner_ref, content_hash)
     created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
     CONSTRAINT chk_media_kind   CHECK (kind   IN ('AUDIO','ARTWORK')),
@@ -318,6 +340,13 @@ CREATE UNIQUE INDEX uidx_media_asset_owner_content
 > `(owner_ref, content_hash) WHERE content_hash IS NOT NULL`. It provides a database-level guard
 > against two concurrent identical uploads both inserting a row before either has committed. The
 > application tolerates a unique-violation on retry by returning the existing handle (idempotency).
+>
+> **Column-naming note (`hls_key` vs. `fullKey`).** The domain/entity field is named `fullKey`
+> (`MediaAssetEntity.fullKey`, `@Column(name = "hls_key")`), but the underlying DB column is still
+> named `hls_key` — a holdover from the original HLS design (see §3). It is deliberately **not**
+> renamed: renaming a merged column requires a migration for zero behavioural gain, and the mapping
+> is explicit and documented in `MediaAssetEntity`'s Javadoc. **This is not a bug** — do not "fix" the
+> mismatch without a reason beyond cosmetics.
 
 **Flyway list** (`src/main/resources/db/migration/`, forward-only):
 
@@ -349,11 +378,11 @@ sequenceDiagram
     Svc->>Job: submit(TranscodeJob{previewSeconds=30})
     Svc-->>Studio: MediaHandle(assetId, durationSec, UPLOADING)
     Job->>DB: status=TRANSCODING
-    Job->>FF: transcodeHls(original)
-    Job->>Store: put delivery/{id}/hls/
-    Job->>FF: clipPreviewHls(original, 30)
-    Job->>Store: put delivery/{id}/preview/
-    Job->>DB: set hls_key, preview_key, status=READY
+    Job->>FF: transcodeFull(original)
+    Job->>Store: put delivery/{id}/full.m4a
+    Job->>FF: clipPreview(original, 30)
+    Job->>Store: put delivery/{id}/preview.m4a
+    Job->>DB: set hls_key (fullKey), preview_key, status=READY
     Job-->>Studio: MediaReady event → track flips ready
   end
 ```
@@ -368,14 +397,14 @@ sequenceDiagram
   Play->>Play: resolve ownership (owned|free → full)
   alt owner or free track
     Play->>Svc: issueSignedUrl(assetId, FULL, ttl)
-    Svc->>Sign: presignGet(hls_key, ttl)
-    Sign-->>Play: SignedUrl(full hls, expiresAt)
+    Svc->>Sign: presignGet(full.m4a, ttl)
+    Sign-->>Play: SignedUrl(full, expiresAt)
   else non-owner of for-sale track
     Play->>Svc: issueSignedUrl(assetId, PREVIEW, ttl)
-    Svc->>Sign: presignGet(preview_key, ttl)  %% 30s rendition only
+    Svc->>Sign: presignGet(preview.m4a, ttl)  %% 30s rendition only
     Sign-->>Play: SignedUrl(preview, expiresAt)
   end
-  Note over Svc,Sign: media NEVER presigns hls_key without an asserted ownership decision
+  Note over Svc,Sign: media NEVER presigns the full rendition without an asserted ownership decision
 ```
 
 **Media status state machine:**
@@ -385,7 +414,7 @@ stateDiagram-v2
   [*] --> UPLOADING : original stored
   UPLOADING --> TRANSCODING : job submitted
   UPLOADING --> ERROR : probe/store failure
-  TRANSCODING --> READY : hls + preview written
+  TRANSCODING --> READY : full + preview written
   TRANSCODING --> ERROR : transcode failure
   ERROR --> TRANSCODING : retry enqueue
   READY --> [*]
@@ -398,8 +427,9 @@ stateDiagram-v2
 - **Safety / virus rejection.** A scan step (ClamAV-style adapter) on the stored original; positive →
   `422 FILE_REJECTED` and the original is purged. Both rejection codes are stable, assertable strings.
 - **INV-3 enforcement.** The 30s preview rendition is the physical enforcement point: non-owners
-  receive a signed URL to `preview_key` only. **No code path presigns `hls_key` without an asserted
-  ownership decision** — this is the module-specific DoD gate (§12).
+  receive a signed URL to `preview_key` (a single `.m4a` object that IS ~30 seconds of audio, not
+  merely referenced by a client-side timer) only. **No code path presigns `hls_key`/`fullKey` without
+  an asserted ownership decision** — this is the module-specific DoD gate (§12).
 - **Signed-URL TTL.** `BEATZ_SIGNED_URL_TTL_SECONDS` (PRD §5.2) sets the default `ttl`; every
   `SignedUrl` carries an `expiresAt` (ISO-8601). After `expiresAt` the object store rejects the GET.
 - **Idempotency.** `uploadOriginal` keyed on `(ownerRef, contentHash)`; `enqueueTranscode` keyed on
@@ -430,11 +460,11 @@ units (CAT-3, PLY-1, POD-1, STU-2) list WU-MED-1 as a dependency.
 **PRD §6.14 acceptance (Given/When/Then):**
 
 1. **Transcode (LLFR-MEDIA-01.2).** *Given* an uploaded WAV, *when* transcode completes, *then* a full
-   HLS rendition (`delivery/{id}/hls/`) and a **≤30s** preview rendition (`delivery/{id}/preview/`)
-   both exist and the owning track flips to `ready` (via `MediaReady`).
+   AAC/M4A rendition (`delivery/{id}/full.m4a`) and a **≤30s** preview AAC/M4A rendition
+   (`delivery/{id}/preview.m4a`) both exist and the owning track flips to `ready` (via `MediaReady`).
 2. **Signed delivery / INV-3 (LLFR-MEDIA-01.3).** *Given* a non-owner's PREVIEW signed URL, *then* it
    expires at `expiresAt` and **cannot** retrieve the full rendition (the URL targets `preview_key`
-   only; a request for the full HLS path is unsigned/unauthorized).
+   only; a request for the full `.m4a` path is unsigned/unauthorized).
 3. **Rejection.** *Given* a non-audio or oversize part, *then* `422 UNSUPPORTED_FORMAT` /
    `422 FILE_REJECTED` / `413` respectively, and no `media_asset` row reaches `READY`.
 
@@ -444,10 +474,10 @@ Coverage ≥ the gate in `sdlc/testing-strategy.md`.
 
 Global DoD (conventions §11 / PRD §8) **plus**:
 
-1. **Preview never serves full audio:** no code path presigns `hls_key` for a non-owner; INV-3 unit +
-   integration tests green.
-2. The full HLS and 30s preview renditions are both produced before a track/episode is marked `READY`;
-   the preview is **physically ≤ `previewSeconds` (30s)**, not merely client-trimmed.
+1. **Preview never serves full audio:** no code path presigns `hls_key`/`fullKey` for a non-owner;
+   INV-3 unit + integration tests green.
+2. The full and 30s preview AAC/M4A renditions are both produced before a track/episode is marked
+   `READY`; the preview is **physically ≤ `previewSeconds` (30s)**, not merely client-trimmed.
 3. Originals bucket is **private** — no object in `beatz-media-originals` is ever directly client-signed.
 4. Every issued delivery URL carries a finite TTL and `expiresAt`; expiry verified against MinIO.
 5. Format/safety rejections return the exact stable codes (`UNSUPPORTED_FORMAT`, `FILE_REJECTED`, 413).

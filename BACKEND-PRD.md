@@ -283,8 +283,10 @@ Single deployable, internally partitioned into modules per bounded context. Sugg
   provider callback/webhook → settle. **Idempotency keys** on every money mutation; ownership granted
   only on settlement; a reconciliation job compares provider records to the internal ledger.
 - **Media storage/streaming:** S3-compatible object store (MinIO locally). Originals in a private
-  bucket; transcoded HLS renditions in a delivery bucket fronted by signed, time-boxed URLs. The
-  preview rendition is a **30s server-clipped** asset; full renditions are served only to owners.
+  bucket; transcoded single-file AAC/M4A renditions in a delivery bucket fronted by signed, time-boxed
+  URLs (one presigned object per variant — not HLS, whose segment references would be unsigned against
+  the private delivery bucket). The preview rendition is a **30s server-clipped** asset; full
+  renditions are served only to owners.
 
 ### 4.4 Cross-module communication
 
@@ -316,7 +318,7 @@ or by carrying ids/denormalized snapshots in events. Key events: `AccountRegiste
 | `createbuckets` | `minio/mc` (init job) | Creates `beatz-media-originals`, `beatz-media-delivery` buckets & policies | — | one-shot |
 | `mail` | `axllent/mailpit` (or MailHog) | Captures outbound email locally | `1025` SMTP / `8025` UI | HTTP `8025` |
 | `sms` | local stub / Mailpit-style capture (see OQ-9) | Captures outbound SMS locally | `8026` | HTTP |
-| `transcoder` | `jrottenberg/ffmpeg` worker (or in-app `ffmpeg`) | Audio→HLS transcode + 30s preview clip | — | n/a |
+| `transcoder` | `jrottenberg/ffmpeg` worker (or in-app `ffmpeg`) | Audio→AAC/M4A transcode + 30s preview clip | — | n/a |
 | `cache` (optional) | `redis:7` | Rate-limit buckets / ephemeral cache | `6379` | `redis-cli ping` |
 
 `db`, `objectstore`, and `mail` start before `app` (Compose `depends_on` with `condition:
@@ -502,7 +504,7 @@ releases + 4-step wizard. *Rationale:* this is how catalog inventory is created.
   only for `draft`/`in_review` (409 `RELEASE_LIVE` otherwise). Auth: owning artist.
 - **LLFR-CATALOG-02.4 — Upload release track.** `POST /v1/studio/releases/:id/tracks` multipart audio
   (WAV/FLAC) → `201 UploadedTrack { id, name, duration, status: uploading|ready|error }`. Delegates to
-  `MediaService` (validate format/virus, probe duration, transcode → HLS + 30s preview). Rejects
+  `MediaService` (validate format/virus, probe duration, transcode → AAC/M4A + 30s preview). Rejects
   non-WAV/FLAC → 422 `UNSUPPORTED_FORMAT`; oversize → 413. Auth: owning artist. *AC:* **Given** a WAV
   upload **Then** the track returns with a probed `duration` and transitions to `ready` once
   transcoding completes (INV-7-adjacent).
@@ -535,8 +537,8 @@ server-side. *Actors:* Fan. *Surfaces:* global player, 30s preview gate. *Ration
 buy-to-own model (INV-3).
 
 - **LLFR-PLAYBACK-01.1 — Get stream URL.** `GET /v1/tracks/:id/stream` → `{ audioUrl,
-  previewSeconds?, expiresAt }`. Logic: resolve `ownership`; if `free` or owned → full HLS signed URL,
-  no `previewSeconds`; if `for-sale` and not owned → **preview** signed URL (points at the 30s clipped
+  previewSeconds?, expiresAt }`. Logic: resolve `ownership`; if `free` or owned → full signed URL (a
+  single AAC/M4A object), no `previewSeconds`; if `for-sale` and not owned → **preview** signed URL (points at the 30s clipped
   rendition) + `previewSeconds=30`. `expiresAt` = now + `BEATZ_SIGNED_URL_TTL_SECONDS`. Unknown track
   → 404. Auth: optional (anonymous gets preview for for-sale, full for free). *AC:* **Given** a
   for-sale track the caller does not own **When** GET stream **Then** the URL serves at most 30s and
@@ -1001,17 +1003,19 @@ pluggable to OpenSearch later).
 ### 6.14 Media pipeline (`media` — [PROPOSAL, shared infra])
 
 **HLFR-MEDIA-01 [PROPOSAL] — Upload, validate, transcode, deliver.** The system must accept audio/
-artwork uploads, validate format and safety, transcode audio to streamable HLS (plus a 30s preview
-clip), process artwork, lay assets out in object storage, and serve them via signed, expiring URLs —
-full only to owners, preview to others. *Output port:* `MediaService`. *Surfaces:* release/episode
-upload; playback delivery.
+artwork uploads, validate format and safety, transcode audio to a streamable single-file AAC/M4A
+rendition (plus a 30s preview clip), process artwork, lay assets out in object storage, and serve them
+via signed, expiring URLs — full only to owners, preview to others. *Output port:* `MediaService`.
+*Surfaces:* release/episode upload; playback delivery.
 - **LLFR-MEDIA-01.1 — Upload.** Multipart (and resumable for large files, OQ-10) to the private
   originals bucket; accept WAV/FLAC audio and PNG/JPG artwork; reject others (422 `UNSUPPORTED_FORMAT`),
   oversize (413), and virus-positive (422 `FILE_REJECTED`). Returns an asset handle + probed duration.
-- **LLFR-MEDIA-01.2 — Transcode.** Produce HLS renditions and a **30s preview** rendition (the
-  server-side enforcement of INV-3); store in the delivery bucket; mark the track/episode `ready`.
-  *AC:* **Given** an uploaded WAV **Then** a full HLS rendition and a ≤30s preview rendition exist and
-  the track flips to `ready`.
+- **LLFR-MEDIA-01.2 — Transcode.** Produce a full AAC/M4A rendition and a **30s preview** AAC/M4A
+  rendition (the server-side enforcement of INV-3); store in the delivery bucket; mark the
+  track/episode `ready`. Single object per variant (not HLS) — one presigned URL is directly playable,
+  since an HLS playlist's segment requests would be unsigned against the private delivery bucket.
+  *AC:* **Given** an uploaded WAV **Then** a full AAC/M4A rendition and a ≤30s preview rendition exist
+  and the track flips to `ready`.
 - **LLFR-MEDIA-01.3 — Signed delivery.** Issue time-boxed signed URLs (`expiresAt`) per
   LLFR-PLAYBACK-01.1; full rendition only when ownership is confirmed; preview rendition otherwise.
   *AC:* **Given** a non-owner's preview URL **Then** it expires at `expiresAt` and cannot retrieve the
@@ -1196,9 +1200,10 @@ guarantee eventual consistency between provider and ledger.
 
 ### 9.3 Media storage, transcoding & signed/expiring preview URLs
 
-Originals in a private bucket; HLS renditions + a **server-clipped 30s preview** rendition in a
-delivery bucket. `/tracks/:id/stream` returns a signed URL with `expiresAt`; the **preview limit is
-enforced server-side** by serving the 30s rendition to non-owners (the client timer is advisory). Full
+Originals in a private bucket; a single-file AAC/M4A full rendition + a **server-clipped 30s preview**
+AAC/M4A rendition in a delivery bucket (one presigned object per variant, not HLS — see media ADD §3
+for why). `/tracks/:id/stream` returns a signed URL with `expiresAt`; the **preview limit is enforced
+server-side** by serving the 30s rendition to non-owners (the client timer is advisory). Full
 renditions are issued only when ownership is confirmed. Uploads are format- and safety-validated; large
 uploads use resumable multipart (OQ-10).
 

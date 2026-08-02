@@ -126,7 +126,7 @@ class MediaDeliveryIT {
 
     // Store a delivery file
     String relKey = "delivery/" + id.value() + "/full.m4a";
-    adapter.putDelivery(id, relKey, new ByteArrayInputStream(content), "application/x-mpegURL");
+    adapter.putDelivery(id, relKey, new ByteArrayInputStream(content), "audio/mp4");
 
     ObjectKey deliveryKey = new ObjectKey(BUCKET_DELIVERY, relKey);
     assertTrue(adapter.exists(deliveryKey));
@@ -158,7 +158,7 @@ class MediaDeliveryIT {
     byte[] content = "preview rendition bytes".getBytes();
 
     String relKey = "delivery/" + id.value() + "/preview.m4a";
-    adapter.putDelivery(id, relKey, new ByteArrayInputStream(content), "application/x-mpegURL");
+    adapter.putDelivery(id, relKey, new ByteArrayInputStream(content), "audio/mp4");
 
     ObjectKey previewKey = new ObjectKey(BUCKET_DELIVERY, relKey);
     SignedUrl signed =
