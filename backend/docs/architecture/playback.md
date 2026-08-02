@@ -62,11 +62,15 @@ no cross-module FKs (`account_id`/`track_id` are opaque id references). It **pub
 persists no ownership state.
 
 **Enums (verbatim from frontend / PRD §3.2).** `ownership: 'free' | 'for-sale'` (from
-`Frontend/src/types`); `PREVIEW_SECONDS = 30` (from `player-context.tsx`).
+`Frontend/src/types`). The preview length is **not** a client constant: the frontend's
+`PREVIEW_SECONDS` was deleted (ADR-34) and the client now uses the `previewSeconds` the server
+reports.
 
 **Invariants.**
-- **INV-3** — for a `for-sale` track the caller does **not** own, the issued URL points at the **30s
-  server-clipped** rendition and the response carries `previewSeconds = 30`. Guard: `ownership ==
+- **INV-3** — for a `for-sale` track the caller does **not** own, the issued URL points at the
+  **server-clipped** rendition and the response carries `previewSeconds` = `beatz.preview-seconds`
+  (default 30), injected — never a literal, so the number always matches the file actually signed.
+  Guard: `ownership ==
   for-sale && !isOwned ⇒ mode = PREVIEW`; otherwise `mode = FULL` and `previewSeconds` is **absent**.
 - Preview enforcement is **server-side**: full audio is never reachable in `PREVIEW` mode (PRD §9.3 R8).
 
@@ -87,7 +91,7 @@ erDiagram
 ### 4.1 Input ports (use cases)
 
 ```java
-/** Resolve ownership and return a signed, time-boxed audio URL (full or 30s preview). */
+/** Resolve ownership and return a signed, time-boxed audio URL (full or server-clipped preview). */
 public interface GetStreamUrl {
     StreamUrlResult getStreamUrl(TrackId track, Optional<AccountId> caller);
 }
@@ -112,7 +116,7 @@ public record StreamUrlResult(String audioUrl, Optional<Integer> previewSeconds,
 ### 4.2 Output ports
 
 ```java
-/** Mints signed, time-boxed object-store URLs; full HLS or 30s preview rendition. Adapter: media module / WU-MED-1. */
+/** Mints signed, time-boxed object-store URLs; the full or the server-clipped preview rendition, one presigned object each (ADR-34). Adapter: media module / WU-MED-1. */
 public interface MediaService {
     SignedUrl issueSignedUrl(TrackId track, PlaybackMode mode, Duration ttl);
 }
@@ -136,7 +140,7 @@ public interface Clock { Instant now(); }
 public interface EventPublisher { void publish(DomainEvent event); }
 ```
 
-One-liners: `MediaService` → media module's S3/HLS signer (WU-MED-1); `OwnershipReader` → commerce
+One-liners: `MediaService` → media module's S3 object signer (WU-MED-1); `OwnershipReader` → commerce
 ownership grant reader (WU-COM-2); `CatalogReader` → catalog track read; `Clock`/`EventPublisher` →
 kernel.
 
@@ -186,8 +190,9 @@ claiming a multi-segment root that another class's method path also produces.
 ## 6. DTOs & API shapes
 
 - **`StreamUrlResponse`** — `audioUrl: string` (signed URL), `previewSeconds?: number` (present **only**
-  when gated; value `30`), `expiresAt: string` (ISO-8601). Traceable to `API-CONTRACT.md` §4 and
-  `Frontend/src/features/player/player-context.tsx` (`previewSeconds`, `PREVIEW_SECONDS = 30`).
+  when gated; `beatz.preview-seconds`, default `30`), `expiresAt: string` (ISO-8601). Traceable to
+  `API-CONTRACT.md` §4 and `Frontend/src/lib/api/queries/playback.ts`, which feeds it to the player as
+  the seek clamp — so an inaccurate value here is directly observable in the UI.
 - **`RecordPlayRequest`** — `source?: 'player' | 'preview' | 'autoplay'` (defaults `player`).
 - Durations are whole **seconds**; timestamps ISO-8601; no money in this module.
 
@@ -242,14 +247,14 @@ sequenceDiagram
       U->>OWN: isOwned(account, track)  %% skipped if free / anon+free
       OWN-->>U: true / n-a
       U->>MS: issueSignedUrl(track, FULL, ttl)
-      MS-->>U: SignedUrl(fullHls, expiresAt)
+      MS-->>U: SignedUrl(full.m4a, expiresAt)
       U-->>R: { audioUrl, expiresAt } (no previewSeconds)
     else for-sale AND not owned (incl. anonymous)
       U->>OWN: isOwned(account, track) -> false
       U->>MS: issueSignedUrl(track, PREVIEW, ttl)
-      MS-->>U: SignedUrl(preview30sClip, expiresAt)
+      MS-->>U: SignedUrl(preview.m4a clip, expiresAt)
       U->>CK: now()
-      U-->>R: { audioUrl=preview, previewSeconds=30, expiresAt }
+      U-->>R: { audioUrl=preview, previewSeconds, expiresAt }
     end
     R-->>C: 200 StreamUrlResponse
   end
@@ -286,9 +291,11 @@ decided once per request.
 ## 9. Cross-cutting hooks
 
 - **Server-side preview enforcement (INV-3 / PRD §9.3 R8).** In `PREVIEW` mode the URL points at the
-  **30s server-clipped rendition** produced by the transcoder (WU-MED-1); full audio is never
-  signed/served. The client's player timer (`PREVIEW_SECONDS = 30` in `player-context.tsx`) is
-  **advisory only** — the asset itself is ≤ 30s, so a tampered client still cannot reach full audio.
+  **server-clipped rendition** produced by the transcoder (WU-MED-1); full audio is never
+  signed/served. The client has **no** preview timer at all — `PREVIEW_SECONDS` was deleted (ADR-34).
+  The cap is now purely physical: the signed object *is* ~`beatz.preview-seconds` long, so a tampered
+  client has no further audio to reach. `RealTranscodeIT` ffprobes the output to prove the clip is
+  really short rather than merely named `preview.m4a`.
 - **Signed URL TTL.** TTL from `BEATZ_SIGNED_URL_TTL_SECONDS` (`PlatformSettings`, never hard-coded);
   `expiresAt = Clock.now() + ttl`, echoed in the response so the client refetches on expiry.
 - **Rate-limiting / anti-inflation on play recording.** `RecordPlay` de-duplicates per
@@ -325,10 +332,10 @@ ownership").
 
 **Key Given/When/Then (PRD §6.3):**
 - **Given** a `for-sale` track the caller does **not** own **When** `GET /stream` **Then** `audioUrl`
-  serves at most 30s and `previewSeconds = 30`.
+  serves at most `beatz.preview-seconds` and `previewSeconds` equals that setting.
 - **Given** the caller **owns** a `for-sale` track (or it is `free`) **When** `GET /stream` **Then**
-  full HLS URL and **no** `previewSeconds`.
-- **Given** anonymous caller + `for-sale` track **Then** preview + `previewSeconds = 30`; + `free`
+  the full `.m4a` URL and **no** `previewSeconds`.
+- **Given** anonymous caller + `for-sale` track **Then** preview + `previewSeconds`; + `free`
   track **Then** full URL.
 - **Given** unknown track id **Then** 404 `TRACK_NOT_FOUND`.
 - **Given** rapid repeated `POST /play` for the same (account, track) **Then** only de-duped/valid

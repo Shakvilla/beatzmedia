@@ -29,7 +29,7 @@ import org.shakvilla.beatzmedia.platform.fakes.FakeClock;
 import org.shakvilla.beatzmedia.platform.fakes.FakeIds;
 
 /**
- * INV-3 guard — verifies that the full HLS delivery URL is NEVER produced without an explicit
+ * INV-3 guard — verifies that the full delivery URL is NEVER produced without an explicit
  * ownership assertion ({@link DeliveryVariant#FULL}). Fulfils ADD §12 DoD §1.
  */
 class Inv3PreviewGateTest {
@@ -60,9 +60,11 @@ class Inv3PreviewGateTest {
   private MediaAssetId seedReadyAudioAsset() {
     MediaAssetId id = new MediaAssetId("asset-inv3-001");
     ObjectKey originalKey = new ObjectKey("test-originals", "originals/audio/asset-inv3-001");
-    ObjectKey fullKey = new ObjectKey("test-delivery", "delivery/asset-inv3-001/hls/playlist.m3u8");
-    ObjectKey previewKey =
-        new ObjectKey("test-delivery", "delivery/asset-inv3-001/preview/preview.m3u8");
+    // Real delivery key shape (FfmpegAudioTranscoderAdapter, ADR-34). A stale "/hls/playlist.m3u8"
+    // fixture made the "never leaks the full rendition" assertions vacuous: they looked for a path
+    // segment the production keys can no longer contain, so they passed without discriminating.
+    ObjectKey fullKey = new ObjectKey("test-delivery", "delivery/asset-inv3-001/full.m4a");
+    ObjectKey previewKey = new ObjectKey("test-delivery", "delivery/asset-inv3-001/preview.m4a");
     MediaAsset asset = new MediaAsset(
         id,
         new OwnerRef("catalog", "track-999"),
@@ -79,8 +81,9 @@ class Inv3PreviewGateTest {
   }
 
   /**
-   * INV-3: When the caller passes PREVIEW the returned URL must target the preview key (30s clip),
-   * not the full HLS playlist. There MUST be no code path that returns the full key for PREVIEW.
+   * INV-3: When the caller passes PREVIEW the returned URL must target the preview key (the
+   * server-clipped rendition), not the full one. There MUST be no code path that returns the full
+   * key for PREVIEW.
    */
   @Test
   void preview_variant_returns_preview_key_url() {
@@ -89,7 +92,7 @@ class Inv3PreviewGateTest {
     SignedUrl signed = service.issueSignedUrl(id, DeliveryVariant.PREVIEW, Duration.ofSeconds(300));
 
     assertNotNull(signed.url());
-    // The URL must contain the preview path segment, NOT the full HLS path
+    // The URL must reference preview.m4a, never full.m4a
     assertEquals(
         DeliveryVariant.PREVIEW,
         signed.variant(),
@@ -99,7 +102,7 @@ class Inv3PreviewGateTest {
 
   /**
    * INV-3: When the caller explicitly passes FULL (ownership asserted by caller) the URL must
-   * target the HLS key. This is the only path that may produce the full key.
+   * target the full key. This is the only path that may produce the full key.
    */
   @Test
   void full_variant_with_ownership_asserted_returns_full_key_url() {
@@ -117,28 +120,28 @@ class Inv3PreviewGateTest {
 
   /**
    * INV-3: There is NO code path that presigns fullKey without an asserted ownership decision.
-   * Specifically: passing PREVIEW must NEVER produce the full HLS URL.
+   * Specifically: passing PREVIEW must NEVER produce the full rendition's URL.
    * Symmetrically: passing FULL must NOT produce the preview URL.
    */
   @Test
-  void preview_url_never_contains_hls_path() {
+  void preview_url_never_references_the_full_rendition() {
     MediaAssetId id = seedReadyAudioAsset();
     SignedUrl signed = service.issueSignedUrl(id, DeliveryVariant.PREVIEW, Duration.ofSeconds(300));
     String url = signed.url();
-    if (url.contains("/hls/")) {
+    if (url.contains("full.m4a")) {
       throw new AssertionError(
-          "INV-3 VIOLATED: PREVIEW variant produced a URL containing /hls/ (full rendition path). URL: " + url);
+          "INV-3 VIOLATED: PREVIEW variant produced a URL referencing full.m4a. URL: " + url);
     }
   }
 
   @Test
-  void full_url_never_contains_preview_path() {
+  void full_url_never_references_the_preview_rendition() {
     MediaAssetId id = seedReadyAudioAsset();
     SignedUrl signed = service.issueSignedUrl(id, DeliveryVariant.FULL, Duration.ofSeconds(300));
     String url = signed.url();
-    if (url.contains("/preview/")) {
+    if (url.contains("preview.m4a")) {
       throw new AssertionError(
-          "Full variant should not produce a /preview/ URL. URL: " + url);
+          "Full variant should not produce a preview.m4a URL. URL: " + url);
     }
   }
 
@@ -159,9 +162,9 @@ class Inv3PreviewGateTest {
   }
 
   private void assertFakeUrlContainsFullKey(String url) {
-    if (!url.contains("hls")) {
+    if (!url.contains("full.m4a")) {
       throw new AssertionError(
-          "Expected URL to reference HLS rendition but got: " + url);
+          "Expected URL to reference the full rendition but got: " + url);
     }
   }
 }

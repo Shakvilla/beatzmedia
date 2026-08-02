@@ -7,8 +7,10 @@ import org.shakvilla.beatzmedia.catalog.domain.TrackId;
 import org.shakvilla.beatzmedia.playback.domain.PlaybackMode;
 
 /**
- * Output port: mints signed, time-boxed audio delivery URLs; full HLS or the 30s server-clipped
- * preview rendition. Adapter delegates to the media module's {@code MediaService} /
+ * Output port: mints signed, time-boxed audio delivery URLs; the full rendition or the
+ * server-clipped preview, each a single presigned {@code .m4a} object (ADR-34 — an HLS playlist's
+ * segments are referenced relatively and would be unsigned against a private bucket). Adapter
+ * delegates to the media module's {@code MediaService} /
  * {@code IssueDeliveryUrlUseCase} input port (WU-MED-1) — playback never constructs or signs a URL
  * itself. Playback ADD §4.2.
  */

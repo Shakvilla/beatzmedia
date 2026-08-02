@@ -32,7 +32,7 @@ import io.restassured.response.Response;
  * {@code ownership_grant}, established via a genuine checkout→settle flow), and the real catalog
  * {@code GetTrackPlaybackInfo} chain.
  *
- * <p>Proves INV-3 end-to-end: an owner of a for-sale track receives the full HLS rendition with no
+ * <p>Proves INV-3 end-to-end: an owner of a for-sale track receives the full rendition with no
  * {@code previewSeconds}; a non-owner (authenticated or anonymous) of the SAME for-sale track
  * receives the 30s preview rendition ONLY, with {@code previewSeconds = 30} — the client cannot
  * request "full" via any parameter. Also proves record-play persistence + de-dup.

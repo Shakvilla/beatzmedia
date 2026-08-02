@@ -26,7 +26,7 @@ import io.restassured.http.ContentType;
  * {@code episode} cart kind is out of scope until a later commerce WU, per the podcasts ADD §1),
  * and the real media {@code IssueDeliveryUrlUseCase} chain for the gated stream endpoint.
  *
- * <p>Proves INV-3 end-to-end: an owner (or a free episode) receives the full HLS rendition with no
+ * <p>Proves INV-3 end-to-end: an owner (or a free episode) receives the full rendition with no
  * {@code previewSeconds}; a non-owner (authenticated or anonymous) of a premium/early-access
  * episode receives the 30s preview rendition ONLY — the client cannot request "full" via any
  * parameter.
