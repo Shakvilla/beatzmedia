@@ -39,8 +39,14 @@ function ProgressTrack({
   )
 }
 
+// TODO(Task 6): player-context no longer exports a client-side preview-length constant —
+// the server-signed preview stream's own length is what limits playback (INV-3). This
+// local fallback only keeps the scrub bar from seeking past the old approximate preview
+// window until Task 6 rewires this file against the real <audio> element.
+const PREVIEW_SCRUB_CAP_SECONDS = 30
+
 export function PlayerBar() {
-  const { currentTrack, isPlaying, progress, volume, shuffle, repeat, isPreview, previewSeconds, previewHitLimit, togglePlay, next, prev, seek, setVolume, toggleQueue, toggleShuffle, cycleRepeat } = usePlayer()
+  const { currentTrack, isPlaying, progress, volume, shuffle, repeat, isPreview, previewHitLimit, togglePlay, next, prev, seek, setVolume, toggleQueue, toggleShuffle, cycleRepeat } = usePlayer()
   const { addItem } = useCart()
   const { toast } = useToast()
   const progressRatio = currentTrack?.duration ? Math.min(1, progress / currentTrack.duration) : 0
@@ -48,7 +54,7 @@ export function PlayerBar() {
   const seekCap = (ratio: number) => {
     if (!currentTrack) return
     const target = ratio * currentTrack.duration
-    seek(isPreview ? Math.min(target, previewSeconds) : target)
+    seek(isPreview ? Math.min(target, PREVIEW_SCRUB_CAP_SECONDS) : target)
   }
 
   const buyCurrent = () => {

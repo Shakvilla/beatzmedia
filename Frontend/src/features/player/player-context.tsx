@@ -5,19 +5,17 @@
  * (play/pause, progress, volume) and the queue-drawer open flag. Any component
  * can read state and dispatch actions via the `usePlayer()` hook.
  *
- * Playback is *simulated* today: a 1-second ticker advances progress and
- * auto-advances to the next track. When real audio lands, drive `progress`
- * from an <audio> element's timeupdate event and dispatch the same actions —
- * call sites won't change.
+ * The reducer keeps *intent* only (what's queued, whether it should be playing).
+ * *Time* comes from outside: an <audio> element reports position/duration/end/error
+ * via SET_PROGRESS / SET_DURATION / ENDED / STREAM_ERROR, and this store just records
+ * what it's told — it never guesses or simulates progress itself.
  */
 
 import {
   createContext,
   useContext,
-  useEffect,
   useMemo,
   useReducer,
-  useRef,
   type ReactNode,
 } from 'react'
 import type { Track } from '../../types'
@@ -26,10 +24,7 @@ import { useCollection } from '../collection/collection-context'
 
 export type RepeatMode = 'off' | 'all' | 'one'
 
-/** Seconds of a for-sale track a non-owner can preview before it locks. */
-export const PREVIEW_SECONDS = 30
-
-interface PlayerState {
+export interface PlayerState {
   queue: Track[]
   currentIndex: number
   isPlaying: boolean
@@ -42,9 +37,13 @@ interface PlayerState {
   repeat: RepeatMode
   /** True once a preview-limited track has hit its preview cap. */
   previewHitLimit: boolean
+  /** True when the current track has no playable stream. Never animate progress in this state. */
+  unavailable: boolean
+  /** Real duration from the audio element once known; falls back to catalogue metadata. */
+  duration: number | null
 }
 
-type PlayerAction =
+export type PlayerAction =
   | { type: 'PLAY_TRACK'; track: Track }
   | { type: 'PLAY_QUEUE'; tracks: Track[]; startIndex: number }
   | { type: 'TOGGLE_PLAY' }
@@ -53,14 +52,17 @@ type PlayerAction =
   | { type: 'NEXT' }
   | { type: 'PREV' }
   | { type: 'SEEK'; seconds: number }
-  | { type: 'TICK'; limited: boolean }
+  | { type: 'SET_PROGRESS'; seconds: number }
+  | { type: 'SET_DURATION'; seconds: number }
+  | { type: 'ENDED'; preview: boolean }
+  | { type: 'STREAM_ERROR' }
   | { type: 'SET_VOLUME'; volume: number }
   | { type: 'SET_QUEUE_OPEN'; open: boolean }
   | { type: 'CLEAR_QUEUE' }
   | { type: 'TOGGLE_SHUFFLE' }
   | { type: 'CYCLE_REPEAT' }
 
-const initialState: PlayerState = {
+export const initialState: PlayerState = {
   queue: defaultQueue,
   currentIndex: 0,
   isPlaying: false,
@@ -70,6 +72,8 @@ const initialState: PlayerState = {
   shuffle: false,
   repeat: 'off',
   previewHitLimit: false,
+  unavailable: false,
+  duration: null,
 }
 
 function clampIndex(index: number, length: number): number {
@@ -94,16 +98,16 @@ function advanceIndex(state: PlayerState): number | null {
   return repeat === 'all' ? 0 : null
 }
 
-function reducer(state: PlayerState, action: PlayerAction): PlayerState {
+export function reducer(state: PlayerState, action: PlayerAction): PlayerState {
   switch (action.type) {
     case 'PLAY_TRACK': {
       // If the track is already in the queue, jump to it; otherwise queue it next.
       const existing = state.queue.findIndex((t) => t.id === action.track.id)
       if (existing !== -1) {
-        return { ...state, currentIndex: existing, progress: 0, isPlaying: true, previewHitLimit: false }
+        return { ...state, currentIndex: existing, progress: 0, isPlaying: true, previewHitLimit: false, unavailable: false, duration: null }
       }
       const queue = [...state.queue, action.track]
-      return { ...state, queue, currentIndex: queue.length - 1, progress: 0, isPlaying: true, previewHitLimit: false }
+      return { ...state, queue, currentIndex: queue.length - 1, progress: 0, isPlaying: true, previewHitLimit: false, unavailable: false, duration: null }
     }
     case 'PLAY_QUEUE':
       return {
@@ -113,6 +117,8 @@ function reducer(state: PlayerState, action: PlayerAction): PlayerState {
         progress: 0,
         isPlaying: action.tracks.length > 0,
         previewHitLimit: false,
+        unavailable: false,
+        duration: null,
       }
     case 'TOGGLE_PLAY': {
       // Pressing play after a preview ended restarts the preview from the top.
@@ -126,37 +132,45 @@ function reducer(state: PlayerState, action: PlayerAction): PlayerState {
     case 'NEXT': {
       // Manual skip always advances (shuffle/repeat-all aware); repeat-one is ignored here.
       const ni = advanceIndex(state)
-      if (ni === null) return { ...state, progress: 0, isPlaying: false, previewHitLimit: false }
-      return { ...state, currentIndex: ni, progress: 0, previewHitLimit: false }
+      if (ni === null) return { ...state, progress: 0, isPlaying: false, previewHitLimit: false, unavailable: false, duration: null }
+      return { ...state, currentIndex: ni, progress: 0, previewHitLimit: false, unavailable: false, duration: null }
     }
     case 'PREV': {
       // Restart the track if we're more than 3s in, otherwise go to previous.
       if (state.progress > 3 || state.queue.length === 0) return { ...state, progress: 0, previewHitLimit: false }
       if (state.currentIndex === 0) {
-        if (state.repeat === 'all') return { ...state, currentIndex: state.queue.length - 1, progress: 0, previewHitLimit: false }
+        if (state.repeat === 'all') return { ...state, currentIndex: state.queue.length - 1, progress: 0, previewHitLimit: false, unavailable: false, duration: null }
         return { ...state, progress: 0, previewHitLimit: false }
       }
-      return { ...state, currentIndex: state.currentIndex - 1, progress: 0, previewHitLimit: false }
+      return { ...state, currentIndex: state.currentIndex - 1, progress: 0, previewHitLimit: false, unavailable: false, duration: null }
     }
     case 'SEEK':
       return { ...state, progress: Math.max(0, action.seconds), previewHitLimit: false }
-    case 'TICK': {
-      const current = state.queue[state.currentIndex]
-      if (!current) return state
-      const next = state.progress + 1
-      // For-sale tracks the user doesn't own lock after the preview window.
-      if (action.limited && next >= PREVIEW_SECONDS) {
-        return { ...state, progress: PREVIEW_SECONDS, isPlaying: false, previewHitLimit: true }
+
+    case 'SET_PROGRESS':
+      // The audio element is the clock. It reports where it actually is; we never guess,
+      // and we never advance time for a stream that is not playing.
+      return { ...state, progress: action.seconds }
+
+    case 'SET_DURATION':
+      return { ...state, duration: action.seconds }
+
+    case 'ENDED': {
+      // A preview stream ending IS the INV-3 cap: the server signed a ~30s file and it ran
+      // out. Do not advance — the fan should be told they can buy the rest.
+      if (action.preview) {
+        return { ...state, isPlaying: false, previewHitLimit: true }
       }
-      if (next >= current.duration) {
-        // Repeat-one replays the same track; otherwise auto-advance / stop.
-        if (state.repeat === 'one') return { ...state, progress: 0 }
-        const ni = advanceIndex(state)
-        if (ni === null) return { ...state, progress: current.duration, isPlaying: false }
-        return { ...state, currentIndex: ni, progress: 0 }
-      }
-      return { ...state, progress: next }
+      if (state.repeat === 'one') return { ...state, progress: 0 }
+      const ni = advanceIndex(state)
+      if (ni === null) return { ...state, isPlaying: false }
+      return { ...state, currentIndex: ni, progress: 0, duration: null }
     }
+
+    case 'STREAM_ERROR':
+      // No playable audio. Stop, and let the UI say so instead of animating over silence.
+      return { ...state, isPlaying: false, unavailable: true }
+
     case 'SET_VOLUME':
       return { ...state, volume: Math.max(0, Math.min(1, action.volume)) }
     case 'SET_QUEUE_OPEN':
@@ -188,7 +202,6 @@ interface PlayerContextValue extends PlayerState {
   cycleRepeat: () => void
   /** Current track is a for-sale track the user doesn't own (preview-limited). */
   isPreview: boolean
-  previewSeconds: number
 }
 
 const PlayerContext = createContext<PlayerContextValue | null>(null)
@@ -198,26 +211,17 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   const { isTrackOwned } = useCollection()
 
   const currentTrack = state.queue[state.currentIndex]
-  const hasCurrent = Boolean(currentTrack)
   const isPreview = !!currentTrack && currentTrack.ownership === 'for-sale' && !isTrackOwned(currentTrack.id)
 
-  // Keep the ticker's preview check fresh without restarting the interval.
-  const limitedRef = useRef(isPreview)
-  limitedRef.current = isPreview
-
-  // Simulated playback ticker.
-  useEffect(() => {
-    if (!state.isPlaying || !hasCurrent) return
-    const id = window.setInterval(() => dispatch({ type: 'TICK', limited: limitedRef.current }), 1000)
-    return () => window.clearInterval(id)
-  }, [state.isPlaying, hasCurrent])
+  // Progress/duration/ended/error now come from the <audio> element (Task 5), which
+  // dispatches SET_PROGRESS / SET_DURATION / ENDED / STREAM_ERROR. This provider no
+  // longer simulates time itself.
 
   const value = useMemo<PlayerContextValue>(
     () => ({
       ...state,
       currentTrack,
       isPreview,
-      previewSeconds: PREVIEW_SECONDS,
       playTrack: (track) => dispatch({ type: 'PLAY_TRACK', track }),
       playQueue: (tracks, startIndex = 0) =>
         dispatch({ type: 'PLAY_QUEUE', tracks, startIndex }),
