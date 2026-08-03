@@ -4,7 +4,7 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Search, MoreHorizontal, Check, Eye, Flag, ShieldX, Disc3 } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
-import { CATALOG_SUMMARY, type CatalogItem, type CatalogStatus } from '../lib/admin-data'
+import { type CatalogItem, type CatalogStatus } from '../lib/admin-data'
 import { catalogQuery, apiApproveCatalog, apiFlagCatalog, apiTakedownCatalog } from '../lib/api/queries/admin-catalog'
 import { AdminLoadError } from '../components/admin/load-error'
 import { usePaged, Pagination } from '../components/admin/pagination'
@@ -93,8 +93,16 @@ function AdminCatalog() {
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <div className="flex flex-col gap-1">
           <h1 className="text-display text-beatz-dark-bg dark:text-white">Catalog</h1>
+          {/*
+            This read "1,260 artists · 18,420 albums · 142,800 tracks" — CATALOG_SUMMARY, a literal
+            in admin-data.ts. It rendered those figures on an empty database, directly above the
+            tabs showing the real counts as 0. No endpoint exposes platform-wide artist/album/track
+            totals, so the honest options were a real number or none. The status tabs immediately
+            below already carry the counts that ARE real; restore a summary here only when an
+            aggregate endpoint exists.
+          */}
           <span className="text-sm text-gray-500 dark:text-gray-300">
-            {CATALOG_SUMMARY.artists.toLocaleString()} artists · {CATALOG_SUMMARY.albums.toLocaleString()} albums · {CATALOG_SUMMARY.tracks.toLocaleString()} tracks
+            {counts.pending + counts.published + counts.takedown} releases
           </span>
         </div>
         <div className="flex items-center gap-3">

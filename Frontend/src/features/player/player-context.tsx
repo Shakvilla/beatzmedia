@@ -22,7 +22,6 @@ import {
 } from 'react'
 import { useQuery } from '@tanstack/react-query'
 import type { Track } from '../../types'
-import { defaultQueue } from '../../lib/mock-data'
 import { trackStreamQuery } from '../../lib/api/queries/playback'
 
 export type RepeatMode = 'off' | 'all' | 'one'
@@ -73,7 +72,11 @@ export type PlayerAction =
   | { type: 'CYCLE_REPEAT' }
 
 export const initialState: PlayerState = {
-  queue: defaultQueue,
+  // Empty, not a mock queue. This used to be `defaultQueue` — five hardcoded track ids from
+  // mock-data.ts — so the player bar and the queue panel rendered Burna Boy, Black Sherif, Asake,
+  // King Promise and Lasmid on a completely empty database, with no API call behind any of them.
+  // The bar already renders "Nothing playing" for an absent track; the mock queue was hiding that.
+  queue: [],
   currentIndex: 0,
   isPlaying: false,
   progress: 0,

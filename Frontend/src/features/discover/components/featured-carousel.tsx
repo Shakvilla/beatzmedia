@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react'
 import { Link } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { Play, Sparkles, ChevronLeft, ChevronRight, ArrowRight } from 'lucide-react'
 import type { Album } from '../../../types'
 import { usePlayer } from '../../player/player-context'
-import { getAlbumTracks } from '../../../lib/mock-data'
+import { albumQuery } from '../../../lib/api/queries/catalog'
+import { useToast } from '../../../components/ui/toast-provider'
 import { cn } from '../../../utils/cn'
 
 const INTERVAL = 6000
@@ -15,9 +17,31 @@ const INTERVAL = 6000
  */
 export function FeaturedCarousel({ albums }: { albums: Album[] }) {
   const { playQueue } = usePlayer()
+  const queryClient = useQueryClient()
+  const { toast } = useToast()
   const [index, setIndex] = useState(0)
   const [paused, setPaused] = useState(false)
   const count = albums.length
+
+  /**
+   * Fetch the album's real tracks, then play them.
+   *
+   * This used to be `playQueue(getAlbumTracks(album.id))` — a lookup into mock-data. The carousel
+   * is handed REAL albums as props, so the id never matched a mock entry and "Play album" queued
+   * an empty list: the button appeared to work and silently did nothing.
+   */
+  const playAlbum = async (albumId: string) => {
+    try {
+      const { tracks } = await queryClient.fetchQuery(albumQuery(albumId))
+      if (tracks.length === 0) {
+        toast('This album has no playable tracks yet', 'info')
+        return
+      }
+      playQueue(tracks)
+    } catch {
+      toast('Could not load this album', 'error')
+    }
+  }
 
   useEffect(() => {
     if (paused || count <= 1) return
@@ -60,7 +84,7 @@ export function FeaturedCarousel({ albums }: { albums: Album[] }) {
                   onClick={(e) => {
                     e.preventDefault()
                     e.stopPropagation()
-                    playQueue(getAlbumTracks(album.id))
+                    void playAlbum(album.id)
                   }}
                   className="h-12 px-7 rounded-full bg-beatz-green text-black font-bold flex items-center gap-2 hover:scale-105 transition-transform"
                 >

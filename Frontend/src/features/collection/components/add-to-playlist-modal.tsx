@@ -1,10 +1,11 @@
 import { useState } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { Plus, Check, ListMusic, Lock, ShoppingCart } from 'lucide-react'
 import { Modal } from '../../../components/ui/modal'
 import { useToast } from '../../../components/ui/toast-provider'
 import { useCart } from '../../cart/cart-context'
 import { useCollection } from '../collection-context'
-import { getTrack, trackAccessible } from '../../../lib/mock-data'
+import { trackQuery } from '../../../lib/api/queries/catalog'
 import { formatPrice } from '../../../lib/format'
 
 interface AddToPlaylistModalProps {
@@ -15,14 +16,21 @@ interface AddToPlaylistModalProps {
 }
 
 export function AddToPlaylistModal({ trackId, isOpen, onClose }: AddToPlaylistModalProps) {
-  const { userPlaylists, isTrackInPlaylist, addTrackToPlaylist, removeTrackFromPlaylist, createPlaylist } = useCollection()
+  const { userPlaylists, isTrackInPlaylist, addTrackToPlaylist, removeTrackFromPlaylist, createPlaylist, isTrackOwned } = useCollection()
   const { addItem } = useCart()
   const { toast } = useToast()
   const [creating, setCreating] = useState(false)
   const [name, setName] = useState('')
 
-  const track = trackId ? getTrack(trackId) : undefined
-  const locked = track ? !trackAccessible(track) : false
+  // Was `getTrack(trackId)` against mock-data, so on a real catalogue the lookup missed and the
+  // modal silently treated every track as unlocked — no lock badge, no buy prompt, ever.
+  const { data: track } = useQuery({
+    ...trackQuery(trackId ?? ''),
+    enabled: !!trackId && isOpen,
+  })
+  // The old `trackAccessible` was `ownership !== 'for-sale'` and never consulted ownership at all,
+  // so a track the fan had already bought still read as locked.
+  const locked = track ? track.ownership === 'for-sale' && !isTrackOwned(track.id) : false
 
   const toggle = (playlistId: string, title: string) => {
     if (!trackId) return
