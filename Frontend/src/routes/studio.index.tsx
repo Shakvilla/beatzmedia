@@ -1,22 +1,24 @@
 import { createFileRoute, useNavigate, Link } from '@tanstack/react-router'
-import { useSuspenseQuery, useQuery } from '@tanstack/react-query'
+import { useSuspenseQuery } from '@tanstack/react-query'
 import {
   Plus, ArrowUp, ArrowRight, ArrowUpRight, Wallet, Headphones, Users,
   Tag, Heart, Music2, CalendarDays, BadgeCheck, Disc3, type LucideIcon,
 } from 'lucide-react'
 import { cn } from '../utils/cn'
-import { getAnalytics, getAudience, formatCompact } from '../lib/studio-analytics'
-import { getPayouts, type PayoutTxn } from '../lib/studio-payouts'
-import { studioArtist } from '../lib/studio-data'
-import { studioProfileQuery, studioSettingsQuery, studioReleasesQuery } from '../lib/api/queries/studio'
+import { formatCompact } from '../lib/studio-analytics'
+import type { PayoutTxn } from '../lib/studio-payouts'
+import { useCreatorIdentity } from '../features/studio/use-creator-identity'
+import { studioProfileQuery, studioSettingsQuery, studioReleasesQuery, studioAnalyticsQuery, studioAudienceQuery } from '../lib/api/queries/studio'
 import { payoutsQuery } from '../lib/api/queries/payouts'
 
+/** The overview's headline figures cover the last 28 days, matching /studio/analytics. */
+const OVERVIEW_RANGE = '28d' as const
+
 export const Route = createFileRoute('/studio/')({
-  loader: ({ context: { queryClient } }) => Promise.all([
-    queryClient.ensureQueryData(studioProfileQuery()),
-    queryClient.ensureQueryData(studioSettingsQuery()),
-    queryClient.ensureQueryData(studioReleasesQuery()),
-  ]),
+  // No loader prefetch here on purpose. This route matches for a signed-in FAN too — the
+  // /studio layout only swaps in the ArtistGate at render time — so any /v1/studio/* call
+  // made from a loader 403s for fans and takes the whole route down with it before the gate
+  // can render. The component's useSuspenseQuery calls run only once the gate has passed.
   component: OverviewComponent,
 })
 
@@ -32,16 +34,19 @@ function greeting() {
 
 function OverviewComponent() {
   const navigate = useNavigate()
-  const analytics = getAnalytics('28d')
-  const audience = getAudience('28d')
-  const payoutStats = getPayouts()
-  const { data: payouts } = useQuery(payoutsQuery())
-  const balance = payouts?.available ?? 0
-  const transactions = payouts?.transactions ?? []
+  // Every figure on this page comes from the same endpoints the pages it links to use.
+  // These were mock getters until the QA pass found the overview claiming ₵21,680 earned
+  // while /studio/payouts — one click away — correctly reported ₵0.
+  const { data: analytics } = useSuspenseQuery(studioAnalyticsQuery(OVERVIEW_RANGE))
+  const { data: audience } = useSuspenseQuery(studioAudienceQuery(OVERVIEW_RANGE))
+  const { data: payouts } = useSuspenseQuery(payoutsQuery())
+  const balance = payouts.available
+  const transactions = payouts.transactions
   const { data: profile } = useSuspenseQuery(studioProfileQuery())
   const { data: settings } = useSuspenseQuery(studioSettingsQuery())
   const { data: releases } = useSuspenseQuery(studioReleasesQuery())
-  const firstName = (profile.displayName.trim() || studioArtist.name).split(' ')[0]
+  const creator = useCreatorIdentity()
+  const firstName = creator.name.split(' ')[0]
 
   const inReview = releases.find((r) => r.status === 'in_review')
   const drafts = releases.filter((r) => r.status === 'draft')
@@ -61,8 +66,8 @@ function OverviewComponent() {
         <div className="flex flex-col gap-1">
           <h1 className="text-display text-beatz-dark-bg dark:text-white">{greeting()}, {firstName}</h1>
           <span className="flex items-center gap-2 text-sm text-gray-500 dark:text-gray-300">
-            Here's how {profile.displayName.trim() || studioArtist.name} is doing this month
-            {studioArtist.verified && <span className="flex items-center gap-1 text-beatz-green font-bold"><BadgeCheck size={14} /> Verified</span>}
+            Here's how {creator.name} is doing this month
+            {creator.verified && <span className="flex items-center gap-1 text-beatz-green font-bold"><BadgeCheck size={14} /> Verified</span>}
           </span>
         </div>
         <Link to="/studio/release/new/details" className="h-11 px-5 rounded-full bg-beatz-green text-black font-bold text-sm flex items-center gap-2 hover:scale-105 transition-transform shadow-lg shadow-beatz-green/20">
@@ -72,7 +77,7 @@ function OverviewComponent() {
 
       {/* KPI cards */}
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
-        <Stat label="This month" value={cedis0(payoutStats.thisMonth)} delta={payoutStats.thisMonthDelta} onClick={() => navigate({ to: '/studio/payouts' })} accent />
+        <Stat label="This month" value={cedis0(payouts.thisMonth)} delta={payouts.thisMonthDelta} onClick={() => navigate({ to: '/studio/payouts' })} accent />
         <Stat label="Streams" value={formatCompact(analytics.metrics.streams.total)} delta={analytics.metrics.streams.delta} icon={Headphones} onClick={() => navigate({ to: '/studio/analytics' })} />
         <Stat label="Monthly listeners" value={formatCompact(audience.monthlyListeners)} delta={audience.listenersDelta} icon={Users} onClick={() => navigate({ to: '/studio/audience' })} />
         <Stat label="Available balance" value={cedis2(balance)} icon={Wallet} sub="Withdraw anytime" onClick={() => navigate({ to: '/studio/payouts' })} />
@@ -105,6 +110,9 @@ function OverviewComponent() {
               <Link to="/studio/payouts" className="text-xs font-bold text-gray-500 dark:text-gray-300 hover:text-beatz-green flex items-center gap-1 transition-colors">All <ArrowRight size={13} /></Link>
             </div>
             <div className="flex flex-col">
+              {transactions.length === 0 && (
+                <span className="text-sm text-gray-400 dark:text-gray-500">No activity yet.</span>
+              )}
               {transactions.slice(0, 5).map((t) => <ActivityRow key={t.id} txn={t} />)}
             </div>
           </section>
@@ -134,6 +142,9 @@ function OverviewComponent() {
               <Link to="/studio/analytics" className="text-xs font-bold text-gray-500 dark:text-gray-300 hover:text-beatz-green flex items-center gap-1 transition-colors">More <ArrowRight size={13} /></Link>
             </div>
             <div className="flex flex-col">
+              {analytics.topTracks.length === 0 && (
+                <span className="text-sm text-gray-400 dark:text-gray-500">No track performance yet.</span>
+              )}
               {analytics.topTracks.map((t, i) => (
                 <div key={t.title} className="flex items-center gap-3 py-2.5 border-b border-dashed border-gray-200 dark:border-white/5 last:border-0">
                   <span className="w-4 text-sm font-mono text-gray-400 dark:text-gray-500 shrink-0">{i + 1}</span>
@@ -157,11 +168,16 @@ function OverviewComponent() {
           <div className="grid grid-cols-3 gap-4">
             <MiniStat label="Followers" value={formatCompact(audience.followers)} />
             <MiniStat label="Superfans" value={audience.superfans.toLocaleString()} accent />
-            <MiniStat label="Top city" value={audience.cities[0].name.split(' ·')[0]} />
+            {/* A new creator has no cities yet — an em dash, never a crash on cities[0]. */}
+            <MiniStat label="Top city" value={audience.cities[0]?.name.split(' ·')[0] ?? '—'} />
           </div>
           <div className="flex flex-col gap-2.5">
+            {audience.cities.length === 0 && (
+              <span className="text-sm text-gray-400 dark:text-gray-500">No listener cities yet.</span>
+            )}
             {audience.cities.slice(0, 3).map((c, i) => {
-              const max = audience.cities[0].value
+              // Guard the bar width: an all-zero series would divide by zero into NaN.
+              const max = audience.cities[0]?.value || 1
               return (
                 <div key={c.name} className="flex items-center gap-3">
                   <span className="w-24 text-sm text-beatz-dark-bg dark:text-white truncate shrink-0">{c.name}</span>
@@ -233,6 +249,15 @@ function MiniStat({ label, value, accent }: { label: string; value: string; acce
 
 function Sparkline({ series }: { series: number[] }) {
   const w = 600, h = 120, padTop = 10, padBot = 10
+  // Fewer than two points cannot describe a line: Math.max(...[]) is -Infinity and
+  // i/(length-1) divides by zero, both of which render as NaN in the SVG path.
+  if (series.length < 2) {
+    return (
+      <div className="w-full h-32 flex items-center justify-center text-sm text-gray-400 dark:text-gray-500">
+        Not enough data to chart yet.
+      </div>
+    )
+  }
   const max = Math.max(...series), min = Math.min(...series)
   const span = max - min || 1
   const pts = series.map((v, i) => {

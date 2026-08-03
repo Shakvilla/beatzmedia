@@ -74,7 +74,18 @@ class SplitInviteResourceIT {
   private static final String BOB_ACCOUNT_ID = "acc-bob";
   private static final String PLAINTEXT_TOKEN = "tok-1";
 
-  private static final Instant NOW = Instant.parse("2026-07-19T10:00:00Z");
+  /**
+   * Fixture clock, deliberately RELATIVE to real time.
+   *
+   * <p>This was the literal {@code 2026-07-19T10:00:00Z}, and the invite below is issued with a
+   * 14-day expiry — so at 2026-08-02T10:00Z the fixture silently became an *expired* invite, and
+   * the two tests asserting the pending path began failing on a build that changed nothing. A
+   * frozen date in a fixture whose meaning depends on "is this still in the future" is a time
+   * bomb with a fuse measured in whatever window the expiry allows.
+   *
+   * <p>Backdated a day so the invite is genuinely issued-in-the-past, never expired.
+   */
+  private static final Instant NOW = Instant.now().minus(Duration.ofDays(1));
 
   @Inject
   CatalogRepository repo;

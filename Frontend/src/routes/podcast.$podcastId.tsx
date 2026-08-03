@@ -199,7 +199,10 @@ function PodcastShowPage() {
         showTitle={show.title}
         isOpen={supportOpen}
         onClose={() => setSupportOpen(false)}
-        onSend={(amount) => toast(`Thank you! ₵${amount} sent to ${show.title} via MoMo 💚`, 'success')}
+        // NOT WIRED — see the same note on the artist page. POST /v1/podcasts/:id/tip resolves
+        // the creator itself (so no account-id problem here), but still requires a provider
+        // paymentToken the app cannot yet produce. Do not claim the money moved.
+        onSend={() => toast('Tipping isn’t available yet — no payment was made.', 'info')}
       />
     </div>
   )
