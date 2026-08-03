@@ -106,10 +106,15 @@ function SettingsComponent() {
               className="h-10 px-6 rounded-full border border-gray-300 dark:border-white/20 text-xs font-bold text-beatz-dark-bg dark:text-white flex items-center gap-2 transition-colors mb-8 disabled:opacity-40 disabled:cursor-not-allowed">
               <Edit2 size={14} /> Edit profile
             </button>
-            <div className="w-full pt-6 border-t border-gray-200 dark:border-white/5 grid grid-cols-3 gap-2">
+            {/*
+              "Spent" was the literal string ₵312 — every fan saw the same invented total, next to
+              two counts that are real. There is no endpoint for lifetime spend (commerce exposes
+              GET /me/orders/{id} only, no list or aggregate), so the honest options were a real
+              number or none. Restore it when an aggregate exists; do not re-add a placeholder.
+            */}
+            <div className="w-full pt-6 border-t border-gray-200 dark:border-white/5 grid grid-cols-2 gap-2">
               <Stat label="Owned" value={ownedTracks.length.toString()} />
               <Stat label="Playlists" value={userPlaylists.length.toString()} />
-              <Stat label="Spent" value="₵312" />
             </div>
           </div>
         </div>
