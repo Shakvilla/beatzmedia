@@ -1,8 +1,9 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useSuspenseQuery } from '@tanstack/react-query'
 import { useState } from 'react'
-import { Play, Pause, Share2, Heart, Plus, ListPlus, Info, Users, Check, ShoppingCart, Mic2, Send, MoreHorizontal, Clock, CalendarDays } from 'lucide-react'
+import { Play, Pause, Share2, Heart, Plus, ListPlus, Info, Users, Check, ShoppingCart, Mic2, Clock, CalendarDays } from 'lucide-react'
 import { cn } from '../utils/cn'
+import { copyLink, currentUrl } from '../utils/share'
 import { LyricsView } from '../components/music/lyrics-view'
 import { AddToPlaylistModal } from '../features/collection/components/add-to-playlist-modal'
 import { Card, CardContent, CardImage, CardSubtitle, CardTitle } from '../components/ui/card'
@@ -59,7 +60,6 @@ function TrackPageComponent() {
   const { data: lyricsLines } = useSuspenseQuery(lyricsQuery(trackId))
   const { data: artistTracks } = useSuspenseQuery(artistTracksQuery(track.artistId))
   const [isLyricsMode, setIsLyricsMode] = useState(false)
-  const [reaction, setReaction] = useState('')
   const [addOpen, setAddOpen] = useState(false)
 
   const { playQueue, togglePlay } = usePlayer()
@@ -105,11 +105,9 @@ function TrackPageComponent() {
     seekToRatio((e.clientX - rect.left) / rect.width)
   }
   const buyCurrent = () => buyTrack(track)
-  const share = () => toast('Link copied to clipboard', 'success')
-  const postReaction = () => {
-    if (!reaction.trim()) return
-    toast('Reaction posted', 'success')
-    setReaction('')
+  const share = async () => {
+    const ok = await copyLink(currentUrl())
+    toast(ok ? 'Link copied to clipboard' : 'Could not copy the link', ok ? 'success' : 'error')
   }
 
   return (
@@ -179,9 +177,7 @@ function TrackPageComponent() {
             <button onClick={share} aria-label="Share" className="w-11 h-11 rounded-full flex items-center justify-center text-gray-400 hover:text-beatz-dark-bg dark:hover:text-white transition-colors">
               <Share2 size={22} />
             </button>
-            <button aria-label="More" className="w-11 h-11 rounded-full flex items-center justify-center text-gray-400 hover:text-beatz-dark-bg dark:hover:text-white transition-colors">
-              <MoreHorizontal size={24} />
-            </button>
+
           </div>
 
           {/* Ownership / buy */}
@@ -254,21 +250,19 @@ function TrackPageComponent() {
               </section>
             )}
 
-            {/* Fan reactions */}
+            {/*
+              Fan reactions have no backend — no endpoint, no table, nothing to read them back
+              from. The composer used to accept a reaction, clear itself and toast "Reaction
+              posted", so the fan believed they had left a comment that was never sent anywhere.
+              Disabled and labelled until there is somewhere to put it.
+            */}
             <section className="flex flex-col gap-4">
               <h2 className="text-title text-beatz-dark-bg dark:text-white">Fan reactions</h2>
-              <div className="flex items-center gap-3">
-                <div className="w-10 h-10 rounded-full overflow-hidden shrink-0"><img src="https://i.pravatar.cc/100?img=11" alt="You" className="w-full h-full object-cover" /></div>
-                <div className="flex-1 flex items-center gap-2 bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 rounded-full h-12 pl-5 pr-2">
-                  <input
-                    value={reaction}
-                    onChange={(e) => setReaction(e.target.value)}
-                    onKeyDown={(e) => e.key === 'Enter' && postReaction()}
-                    placeholder="Write a reaction…"
-                    className="flex-1 bg-transparent text-sm text-beatz-dark-bg dark:text-white placeholder-gray-400 focus:outline-none"
-                  />
-                  <button onClick={postReaction} disabled={!reaction.trim()} className="w-9 h-9 rounded-full bg-beatz-green text-black flex items-center justify-center disabled:opacity-40 transition-opacity"><Send size={16} /></button>
-                </div>
+              <div className="flex items-center gap-3 rounded-2xl border border-dashed border-gray-300 dark:border-white/15 px-5 py-4">
+                <Mic2 size={18} className="shrink-0 text-gray-400 dark:text-gray-500" />
+                <p className="text-sm text-gray-500 dark:text-gray-400">
+                  Reactions are coming soon — you'll be able to leave a note for the artist here.
+                </p>
               </div>
             </section>
           </div>

@@ -88,7 +88,12 @@ interface CartContextValue {
   subtotal: number
   fee: number
   total: number
-  addItem: (item: Omit<CartItem, 'quantity'> & { quantity?: number }) => void
+  /**
+   * Add to cart. Resolves only once the server has accepted it, and REJECTS on failure, so
+   * callers cannot fire a success toast for an add that did not happen — the previous
+   * fire-and-forget signature is why "added to cart" and "could not add to cart" both appeared.
+   */
+  addItem: (item: Omit<CartItem, 'quantity'> & { quantity?: number }) => Promise<void>
   removeItem: (id: string) => void
   setQuantity: (id: string, quantity: number) => void
   clear: () => void
@@ -203,10 +208,12 @@ export function CartProvider({ children }: { children: ReactNode }) {
       subtotal: data.subtotal,
       fee: data.fee,
       total: data.total,
-      addItem: (item) => {
+      addItem: async (item) => {
         const full: CartItem = { quantity: 1, ...item }
         if (isAuthenticated) {
-          addMutation.mutate(full)
+          // mutateAsync rethrows, so a failed add reaches the caller instead of being swallowed.
+          // The error toast stays in the mutation's onError — one message, one source of truth.
+          await addMutation.mutateAsync(full)
         } else {
           dispatchGuest({ type: 'ADD', item: full })
         }
