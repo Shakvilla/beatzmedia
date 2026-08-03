@@ -2,7 +2,9 @@ package org.shakvilla.beatzmedia.media.domain;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 import org.shakvilla.beatzmedia.media.application.service.MagicByteValidator;
@@ -10,7 +12,8 @@ import org.shakvilla.beatzmedia.media.application.service.MagicByteValidator;
 
 /**
  * LLFR-MEDIA-01.1 — format validation table.
- * AC: WAV and FLAC accepted; MP3/EXE/short/null rejected with UNSUPPORTED_FORMAT.
+ * AC: WAV, FLAC and MP3 accepted (MP3 per ADR-35); EXE/short/null and malformed frame syncs
+ * rejected with UNSUPPORTED_FORMAT.
  */
 class MagicByteValidatorTest {
 
@@ -52,14 +55,46 @@ class MagicByteValidatorTest {
     assertEquals(ImageFormat.JPG, fmt);
   }
 
-  // ---- Rejects ----
+  // ---- MP3 (ADR-35) ----
 
   @Test
-  void mp3_rejected_for_audio() {
-    byte[] mp3 = new byte[]{(byte) 0xFF, (byte) 0xFB, 0x00, 0x00, 0x00, 0x00,
-                             0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-    assertThrows(UnsupportedFormatException.class, () -> validator.detectAudioFormat(mp3));
+  void mp3_bare_frame_sync_accepted() {
+    assertEquals(AudioFormat.MP3, validator.detectAudioFormat(mp3FrameSyncHeader()));
   }
+
+  @Test
+  void mp3_with_id3v2_tag_accepted() {
+    assertEquals(AudioFormat.MP3, validator.detectAudioFormat(mp3Id3Header()));
+  }
+
+  @Test
+  void mp3_is_the_only_lossy_accepted_format() {
+    // The wizard's quality warning keys off this flag, so a format silently flipping to
+    // lossy() == false would drop the warning without any test noticing.
+    assertTrue(AudioFormat.MP3.lossy());
+    assertFalse(AudioFormat.WAV.lossy());
+    assertFalse(AudioFormat.FLAC.lossy());
+  }
+
+  @Test
+  void frame_sync_with_reserved_version_rejected() {
+    // Sync word present, but version bits == 01, which the MPEG spec marks reserved. Accepting
+    // this would let an arbitrary 0xFF-leading binary pass as audio.
+    byte[] reservedVersion = new byte[]{(byte) 0xFF, (byte) 0xEA, 0x00, 0x00, 0x00, 0x00,
+                                        0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    assertThrows(
+        UnsupportedFormatException.class, () -> validator.detectAudioFormat(reservedVersion));
+  }
+
+  @Test
+  void frame_sync_with_reserved_layer_rejected() {
+    // Sync word present, version valid (MPEG-1), but layer bits == 00, also reserved.
+    byte[] reservedLayer = new byte[]{(byte) 0xFF, (byte) 0xF9, 0x00, 0x00, 0x00, 0x00,
+                                      0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
+    assertThrows(UnsupportedFormatException.class, () -> validator.detectAudioFormat(reservedLayer));
+  }
+
+  // ---- Rejects ----
 
   @Test
   void exe_rejected_for_audio() {
@@ -81,9 +116,15 @@ class MagicByteValidatorTest {
 
   @Test
   void mp3_rejected_for_image() {
-    byte[] mp3 = new byte[]{(byte) 0xFF, (byte) 0xFB, 0x00, 0x00, 0x00, 0x00,
-                             0x00, 0x00, 0x00, 0x00, 0x00, 0x00};
-    assertThrows(UnsupportedFormatException.class, () -> validator.detectImageFormat(mp3));
+    // Audio is admitted as audio (ADR-35) but must still never satisfy an ARTWORK upload.
+    assertThrows(
+        UnsupportedFormatException.class,
+        () -> validator.detectImageFormat(mp3FrameSyncHeader()));
+  }
+
+  @Test
+  void validate_audio_mp3_ok() {
+    assertDoesNotThrow(() -> validator.validate(MediaKind.AUDIO, mp3FrameSyncHeader()));
   }
 
   @Test
@@ -114,6 +155,23 @@ class MagicByteValidatorTest {
         0x52, 0x49, 0x46, 0x46, // RIFF
         0x00, 0x00, 0x00, 0x00, // size (ignored)
         0x57, 0x41, 0x56, 0x45  // WAVE
+    };
+  }
+
+  /** A bare MPEG-1 Layer III frame: 11-bit sync, version 11 (MPEG-1), layer 01 (Layer III). */
+  static byte[] mp3FrameSyncHeader() {
+    return new byte[]{
+        (byte) 0xFF, (byte) 0xFB, 0x00, 0x00, 0x00, 0x00,
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00
+    };
+  }
+
+  /** An MP3 carrying an ID3v2 tag — "ID3" then version/flags/size. The common tagged case. */
+  static byte[] mp3Id3Header() {
+    return new byte[]{
+        0x49, 0x44, 0x33, // "ID3"
+        0x03, 0x00, 0x00, // version 2.3, flags
+        0x00, 0x00, 0x00, 0x00, 0x00, 0x00
     };
   }
 

@@ -39,6 +39,21 @@ export interface UploadedTrack {
   src: string
   price: number
   explicit: boolean
+  /**
+   * The uploaded file was already a lossy format (MP3). Client-side only — derived from the
+   * picked `File`, never returned by the server, so it must be carried across `REPLACE_TRACK`
+   * the same way `price` is. Drives the wizard's quality warning (ADR-35).
+   */
+  lossy?: boolean
+}
+
+/**
+ * Whether a picked file is an already-lossy source, so the delivery rendition would be a second
+ * lossy generation. The backend admits WAV, FLAC and MP3 (ADR-35); of those only MP3 is lossy.
+ * Matched on MIME type with an extension fallback, since some browsers report an empty `type`.
+ */
+export function isLossyAudio(file: File): boolean {
+  return file.type === 'audio/mpeg' || file.type === 'audio/mp3' || /\.mp3$/i.test(file.name)
 }
 
 export interface ReleaseDraft {
@@ -254,6 +269,7 @@ export function ReleaseDraftProvider({ children, initial }: { children: ReactNod
 
       uploadTrack: async (file) => {
         const tempId = `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
+        const lossy = isLossyAudio(file)
         dispatch({
           type: 'ADD_PLACEHOLDER',
           track: {
@@ -265,12 +281,19 @@ export function ReleaseDraftProvider({ children, initial }: { children: ReactNod
             src: URL.createObjectURL(file),
             price: stateRef.current.price,
             explicit: false,
+            lossy,
           },
         })
         try {
           const id = await ensureDraft()
           const server = await apiUploadTrack(id, file)
-          dispatch({ type: 'REPLACE_TRACK', tempId, track: { ...server, price: stateRef.current.price } })
+          // `lossy` is client-derived and absent from the server payload — carry it across, or
+          // the warning vanishes the moment the upload resolves.
+          dispatch({
+            type: 'REPLACE_TRACK',
+            tempId,
+            track: { ...server, price: stateRef.current.price, lossy },
+          })
         } catch {
           dispatch({ type: 'MARK_TRACK_ERROR', id: tempId })
         }

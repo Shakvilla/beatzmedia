@@ -331,6 +331,7 @@ public class MediaApplicationService
       return switch (magicByteValidator.detectAudioFormat(header)) {
         case WAV -> "audio/wav";
         case FLAC -> "audio/flac";
+        case MP3 -> "audio/mpeg";
       };
     } else {
       return switch (magicByteValidator.detectImageFormat(header)) {

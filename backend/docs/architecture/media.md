@@ -79,7 +79,7 @@ Persistence (`media_asset`) is private to this module; consumers reference asset
 - `MediaKind { AUDIO, ARTWORK }`
 - `MediaStatus { UPLOADING, TRANSCODING, READY, ERROR }`
 - `DeliveryVariant { FULL, PREVIEW }`
-- `AudioFormat { WAV, FLAC }` · `ImageFormat { PNG, JPG }`
+- `AudioFormat { WAV, FLAC, MP3 }` (MP3 is `lossy()`, ADR-35) · `ImageFormat { PNG, JPG }`
 
 **Invariants enforced here:**
 
@@ -92,7 +92,7 @@ Persistence (`media_asset`) is private to this module; consumers reference asset
   (§9.3).
 - A `MediaAsset` reaches `READY` only after **both** `fullKey` and `previewKey` (for `AUDIO`) are
   written; artwork reaches `READY` after its processed variant is written.
-- Format guard: only `AUDIO ∈ {WAV,FLAC}` and `ARTWORK ∈ {PNG,JPG}` are admitted (§9).
+- Format guard: only `AUDIO ∈ {WAV,FLAC,MP3}` and `ARTWORK ∈ {PNG,JPG}` are admitted (§9).
 
 ### Object-storage layout
 
@@ -100,7 +100,7 @@ Two S3-compatible buckets (PRD §5: `beatz-media-originals` PRIVATE, `beatz-medi
 
 | Bucket | Prefix | Access | Contents |
 |---|---|---|---|
-| `beatz-media-originals` | `originals/{kind}/{assetId}` | **private**, never public, never signed for read by clients | raw uploaded WAV/FLAC/PNG/JPG |
+| `beatz-media-originals` | `originals/{kind}/{assetId}` | **private**, never public, never signed for read by clients | raw uploaded WAV/FLAC/MP3/PNG/JPG |
 | `beatz-media-delivery` | `delivery/{assetId}/full.m4a` | signed read only | single AAC/M4A object, full rendition |
 | `beatz-media-delivery` | `delivery/{assetId}/preview.m4a` | signed read only | single AAC/M4A object, physically ≤30s |
 | `beatz-media-delivery` | `delivery/{assetId}/art/` | signed read only | processed artwork variants (e.g. `cover-1024.jpg`) |
@@ -368,7 +368,7 @@ sequenceDiagram
   participant FF as ffmpeg transcoder
   participant DB as media_asset
   Studio->>Svc: uploadOriginal(multipart WAV, ownerRef)
-  Svc->>Svc: validate magic bytes (WAV/FLAC) + size + virus scan
+  Svc->>Svc: validate magic bytes (WAV/FLAC/MP3) + size + virus scan
   alt rejected
     Svc-->>Studio: 422 UNSUPPORTED_FORMAT / FILE_REJECTED  (413 if oversize)
   else accepted
@@ -422,7 +422,7 @@ stateDiagram-v2
 
 ## 9. Cross-cutting hooks
 
-- **Format validation.** Magic-byte sniffing admits only `WAV`/`FLAC` (audio) and `PNG`/`JPG`
+- **Format validation.** Magic-byte sniffing admits `WAV`/`FLAC`/`MP3` (audio, ADR-35) and `PNG`/`JPG`
   (artwork). Mismatch → `422 UNSUPPORTED_FORMAT` (`error.field = file`). Oversize → `413`.
 - **Safety / virus rejection.** A scan step (ClamAV-style adapter) on the stored original; positive →
   `422 FILE_REJECTED` and the original is purged. Both rejection codes are stable, assertable strings.
@@ -451,7 +451,7 @@ units (CAT-3, PLY-1, POD-1, STU-2) list WU-MED-1 as a dependency.
 
 ## 11. Testing plan
 
-- **Unit (fakes for output ports):** format validation table (WAV/FLAC/PNG/JPG accept; MP3/EXE/oversize
+- **Unit (fakes for output ports):** format validation table (WAV/FLAC/MP3/PNG/JPG accept; EXE/oversize
   reject); status state-machine transitions; INV-3 guard (FULL refused without ownership assertion).
 - **Integration (Testcontainers MinIO + Postgres, REST-assured via the inbound modules):** real
   upload→store→transcode→ready against Compose MinIO and the `transcoder`; presign + fetch.

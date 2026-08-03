@@ -115,7 +115,7 @@ integration tests and Flyway migrations, honouring the hexagonal dependency rule
 | Persona | Surface | Role / scope | What they need from the backend |
 |---|---|---|---|
 | **Fan** | Fan app | `fan` | Browse/search catalog; stream (full if owned/free, 30s preview otherwise); manage library (likes, follows, saved albums, playlists, owned tracks); cart → checkout via MoMo/card/bank; view orders; buy store items, premium podcast episodes, event tickets; tip creators; receive notifications; manage account settings (theme, audio, notifications, country, phone). |
-| **Creator (Artist Studio)** | Artist Studio | `artist` (superset of `fan`) | Become an artist; manage public profile; create/manage releases via the 4-step wizard (details → tracks upload → splits → review) producing an `in_review` release; upload audio (WAV/FLAC); set per-track price and royalty splits with collaborator confirmation; manage podcast shows/episodes (free/premium/early-access); view insights (streams, sales, followers, tips, top tracks, countries, sources) and audience; view payout balance/ledger, manage payout methods, request withdrawals (KYC-gated); configure studio settings. |
+| **Creator (Artist Studio)** | Artist Studio | `artist` (superset of `fan`) | Become an artist; manage public profile; create/manage releases via the 4-step wizard (details → tracks upload → splits → review) producing an `in_review` release; upload audio (WAV/FLAC/MP3); set per-track price and royalty splits with collaborator confirmation; manage podcast shows/episodes (free/premium/early-access); view insights (streams, sales, followers, tips, top tracks, countries, sources) and audience; view payout balance/ledger, manage payout methods, request withdrawals (KYC-gated); configure studio settings. |
 | **Admin** | Admin console | `super-admin \| finance \| moderator \| editor \| support` | Operate the platform per scoped RBAC: overview KPIs & system health; user lookup/verify/suspend/reactivate/impersonate/data-export; catalog moderation (approve/flag/takedown); moderation queue; finance (GMV, fees, run weekly/single payouts blocked on KYC, ledger, disputes refund/reject/escalate); editorial (featured slots, push schedule, curated playlists); trust & safety (risk signals review/clear/ban); support tickets; compliance (DSAR/Takedown/Tax with due dates); audit log; team & platform settings. Every privileged action is audited. |
 
 Role hierarchy: `artist ⊃ fan` (an artist can also act as a fan). Admin roles are **orthogonal** to
@@ -504,9 +504,10 @@ releases + 4-step wizard. *Rationale:* this is how catalog inventory is created.
   metadata and can `publish`/`unpublish` (live↔scheduled) within allowed transitions; DELETE allowed
   only for `draft`/`in_review` (409 `RELEASE_LIVE` otherwise). Auth: owning artist.
 - **LLFR-CATALOG-02.4 — Upload release track.** `POST /v1/studio/releases/:id/tracks` multipart audio
-  (WAV/FLAC) → `201 UploadedTrack { id, name, duration, status: uploading|ready|error }`. Delegates to
+  (WAV/FLAC/MP3, ADR-35) → `201 UploadedTrack { id, name, duration, status: uploading|ready|error }`. Delegates to
   `MediaService` (validate format/virus, probe duration, transcode → AAC/M4A + 30s preview). Rejects
-  non-WAV/FLAC → 422 `UNSUPPORTED_FORMAT`; oversize → 413. Auth: owning artist. *AC:* **Given** a WAV
+  anything else → 422 `UNSUPPORTED_FORMAT`; oversize → 413. An MP3 is accepted but flagged lossy,
+  and the Studio wizard shows a non-blocking quality warning (ADR-35). Auth: owning artist. *AC:* **Given** a WAV
   upload **Then** the track returns with a probed `duration` and transitions to `ready` once
   transcoding completes (INV-7-adjacent).
 - **LLFR-CATALOG-02.5 — Release state machine.** Enforce transitions: `draft → in_review`
@@ -1009,7 +1010,7 @@ rendition (plus a 30s preview clip), process artwork, lay assets out in object s
 via signed, expiring URLs — full only to owners, preview to others. *Output port:* `MediaService`.
 *Surfaces:* release/episode upload; playback delivery.
 - **LLFR-MEDIA-01.1 — Upload.** Multipart (and resumable for large files, OQ-10) to the private
-  originals bucket; accept WAV/FLAC audio and PNG/JPG artwork; reject others (422 `UNSUPPORTED_FORMAT`),
+  originals bucket; accept WAV/FLAC/MP3 audio (ADR-35) and PNG/JPG artwork; reject others (422 `UNSUPPORTED_FORMAT`),
   oversize (413), and virus-positive (422 `FILE_REJECTED`). Returns an asset handle + probed duration.
 - **LLFR-MEDIA-01.2 — Transcode.** Produce a full AAC/M4A rendition and a **30s preview** AAC/M4A
   rendition (the server-side enforcement of INV-3); store in the delivery bucket; mark the
@@ -1295,7 +1296,7 @@ Each carries a recommended default so no work unit is blocked; revisit before th
   downloads; hard delete is disallowed once any grant exists.
 - **OQ-9 — Local SMS capture.** No standard MailHog-equivalent for SMS. *Default:* a tiny in-repo SMS
   capture stub service (HTTP endpoint + UI) in Compose; the `SmsSender` adapter points at it in dev.
-- **OQ-10 — Resumable uploads.** Multipart vs resumable (tus) for large WAV/FLAC. *Default:* plain
+- **OQ-10 — Resumable uploads.** Multipart vs resumable (tus) for large WAV/FLAC/MP3. *Default:* plain
   multipart for v1 with a generous size limit; add resumable (tus or S3 multipart) when needed.
 - **OQ-11 — Inventory/concurrency for tickets & limited exclusives.** Overselling risk under
   concurrency. *Default:* decrement availability inside the settlement transaction with row locking;
