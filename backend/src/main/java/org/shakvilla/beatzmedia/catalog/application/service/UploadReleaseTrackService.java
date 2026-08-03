@@ -1,7 +1,6 @@
 package org.shakvilla.beatzmedia.catalog.application.service;
 
 import java.time.Instant;
-import java.util.Set;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -24,6 +23,7 @@ import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseTrack;
 import org.shakvilla.beatzmedia.catalog.domain.Track;
 import org.shakvilla.beatzmedia.catalog.domain.TrackId;
+import org.shakvilla.beatzmedia.media.application.port.in.AllowedAudioTypes;
 import org.shakvilla.beatzmedia.media.application.port.in.UploadCommand;
 import org.shakvilla.beatzmedia.media.application.port.in.UploadOriginalUseCase;
 import org.shakvilla.beatzmedia.media.domain.FileTooLargeException;
@@ -43,8 +43,6 @@ import org.shakvilla.beatzmedia.platform.domain.UnauthorizedException;
 @ApplicationScoped
 public class UploadReleaseTrackService implements UploadReleaseTrack {
 
-  private static final Set<String> ALLOWED_TYPES = Set.of(
-      "audio/wav", "audio/x-wav", "audio/flac", "audio/x-flac");
   /** 500 MB */
   private static final long MAX_BYTES = 500L * 1024 * 1024;
 
@@ -80,10 +78,12 @@ public class UploadReleaseTrackService implements UploadReleaseTrack {
   @Override
   @Transactional
   public UploadedTrackView upload(ReleaseId releaseId, ArtistId artistId, AudioUpload upload) {
-    // Validate format before touching persistence (LLFR-CATALOG-02.4)
-    String ct = upload.contentType() != null ? upload.contentType().toLowerCase() : "";
-    if (!ALLOWED_TYPES.contains(ct)) {
-      throw new UnsupportedFormatException("Only WAV/FLAC accepted, got: " + upload.contentType());
+    // Validate format before touching persistence (LLFR-CATALOG-02.4). The allowlist is shared
+    // with studio's episode upload and with MagicByteValidator — see AllowedAudioTypes for why
+    // this must not be inlined again.
+    if (!AllowedAudioTypes.isAllowed(upload.contentType())) {
+      throw new UnsupportedFormatException(
+          "Only " + AllowedAudioTypes.DISPLAY + " accepted, got: " + upload.contentType());
     }
     if (upload.sizeBytes() > MAX_BYTES) {
       throw new FileTooLargeException("Upload exceeds 500 MB limit");

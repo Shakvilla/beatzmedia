@@ -1,9 +1,11 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useSuspenseQuery } from '@tanstack/react-query'
-import { Play, Pause, Plus, Download, Share2, MoreHorizontal, Clock, ShoppingCart, Check } from 'lucide-react'
+import { Play, Pause, Plus, Download, Share2, Clock, ShoppingCart, Check } from 'lucide-react'
 import { cn } from '../../utils/cn'
+import { copyLink, currentUrl } from '../../utils/share'
 import { usePlayer } from '../../features/player/player-context'
 import { useCart } from '../../features/cart/cart-context'
+import { useCollection } from '../../features/collection/collection-context'
 import { useToast } from '../../components/ui/toast-provider'
 import { albumQuery, artistQuery } from '../../lib/api/queries/catalog'
 import { formatCount, formatDuration, formatPrice, formatTotalDuration } from '../../lib/format'
@@ -36,6 +38,7 @@ function Album({ albumId }: { albumId: string }) {
   const { data: artist } = useSuspenseQuery(artistQuery(album.artistId))
   const { currentTrack, isPlaying, playQueue, togglePlay } = usePlayer()
   const { addItem } = useCart()
+  const { savedAlbums, toggleSavedAlbum } = useCollection()
   const { toast } = useToast()
 
   const totalSeconds = tracks.reduce((sum, t) => sum + t.duration, 0)
@@ -52,8 +55,22 @@ function Album({ albumId }: { albumId: string }) {
     else playQueue(tracks, 0)
   }
 
-  const buyTrack = (track: Track) => {
-    addItem({
+  // The success toast now runs only after `addItem` resolves. It used to fire synchronously
+  // beside a fire-and-forget mutation, so a rejected add produced BOTH "added to cart" and
+  // "could not add item to cart". `addItem` rejects on failure and the error toast lives in the
+  // mutation, so exactly one message reaches the fan.
+  const saved = savedAlbums.includes(album.id)
+  const toggleSaved = () => {
+    toggleSavedAlbum(album.id)
+    toast(saved ? 'Removed from your library' : 'Saved to your library', 'success')
+  }
+  const share = async () => {
+    const ok = await copyLink(currentUrl())
+    toast(ok ? 'Link copied to clipboard' : 'Could not copy the link', ok ? 'success' : 'error')
+  }
+
+  const buyTrack = async (track: Track) => {
+    await addItem({
       id: `track:${track.id}`,
       kind: 'track',
       title: track.title,
@@ -63,8 +80,8 @@ function Album({ albumId }: { albumId: string }) {
     })
     toast(`“${track.title}” added to cart`, 'success')
   }
-  const buyRemaining = () => {
-    addItem({
+  const buyRemaining = async () => {
+    await addItem({
       id: `album-rest:${album.id}`,
       kind: 'album-rest',
       title: `${album.title} — remaining tracks`,
@@ -74,8 +91,8 @@ function Album({ albumId }: { albumId: string }) {
     })
     toast('Remaining tracks added to cart', 'success')
   }
-  const buyAlbum = () => {
-    addItem({
+  const buyAlbum = async () => {
+    await addItem({
       id: `album:${album.id}`,
       kind: 'album',
       title: album.title,
@@ -150,10 +167,29 @@ function Album({ albumId }: { albumId: string }) {
               )}
             </button>
             <div className="flex items-center gap-5 text-gray-400">
-              <button className="hover:text-beatz-dark-bg dark:hover:text-white transition-colors" aria-label="Add to library"><Plus size={24} /></button>
-              <button className="hover:text-beatz-dark-bg dark:hover:text-white transition-colors" aria-label="Download"><Download size={22} /></button>
-              <button className="hover:text-beatz-dark-bg dark:hover:text-white transition-colors" aria-label="Share"><Share2 size={22} /></button>
-              <button className="hover:text-beatz-dark-bg dark:hover:text-white transition-colors" aria-label="More"><MoreHorizontal size={24} /></button>
+              <button
+                onClick={toggleSaved}
+                aria-label={saved ? 'Remove from library' : 'Add to library'}
+                aria-pressed={saved}
+                className={cn('transition-colors', saved ? 'text-beatz-green' : 'hover:text-beatz-dark-bg dark:hover:text-white')}
+              >
+                {saved ? <Check size={24} /> : <Plus size={24} />}
+              </button>
+              {/*
+                Download is offline playback, which this product does not have yet (no offline
+                store, no licence enforcement off-network). It stays visible so the affordance
+                isn't a surprise later, but disabled and labelled — previously it was a live-looking
+                button that silently did nothing.
+              */}
+              <button
+                disabled
+                title="Offline downloads aren't available yet"
+                aria-label="Download (not available yet)"
+                className="opacity-40 cursor-not-allowed"
+              >
+                <Download size={22} />
+              </button>
+              <button onClick={share} className="hover:text-beatz-dark-bg dark:hover:text-white transition-colors" aria-label="Share"><Share2 size={22} /></button>
             </div>
           </div>
 

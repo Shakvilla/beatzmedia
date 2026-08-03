@@ -18,6 +18,33 @@ import type { Track } from '../types'
 
 const searchSchema = z.object({ q: z.string().optional().catch('') })
 
+/**
+ * Category id → gradient classes.
+ *
+ * These MUST be written out in full, in source. The API also returns a `colorClass`
+ * ("from-orange-500 to-amber-400"), and the page used to apply it directly — which produced no
+ * background at all, for two compounding reasons: Tailwind's JIT compiler only scans source files,
+ * so class names that arrive at runtime are never emitted into the stylesheet (verified: the built
+ * CSS contained zero occurrences of `from-orange-500`), and the value carried gradient *stops*
+ * with no `bg-gradient-to-*` direction, which renders nothing even when the classes do exist.
+ *
+ * Colour is presentation and belongs here, not in the API contract.
+ */
+const CATEGORY_GRADIENT: Record<string, string> = {
+  afrobeats: 'bg-gradient-to-br from-orange-500 to-amber-400',
+  amapiano: 'bg-gradient-to-br from-blue-500 to-cyan-400',
+  drill: 'bg-gradient-to-br from-red-500 to-rose-400',
+  gospel: 'bg-gradient-to-br from-yellow-500 to-lime-400',
+  highlife: 'bg-gradient-to-br from-green-500 to-teal-400',
+  hiplife: 'bg-gradient-to-br from-purple-500 to-pink-400',
+  jazz: 'bg-gradient-to-br from-slate-500 to-gray-400',
+  rb: 'bg-gradient-to-br from-indigo-500 to-violet-400',
+  reggae: 'bg-gradient-to-br from-emerald-500 to-green-400',
+}
+
+/** Anything the API adds later still gets a readable tile rather than a transparent one. */
+const CATEGORY_GRADIENT_FALLBACK = 'bg-gradient-to-br from-gray-600 to-gray-400'
+
 export const Route = createFileRoute('/search')({
   validateSearch: searchSchema,
   component: SearchComponent,
@@ -84,7 +111,7 @@ function SearchComponent() {
                     key={category.id}
                     to="/search"
                     search={{ q: category.title }}
-                    className={cn('relative overflow-hidden rounded-xl p-4 aspect-[2/1] flex items-start shadow-md hover:scale-[1.02] transition-transform duration-300 group', category.colorClass)}
+                    className={cn('relative overflow-hidden rounded-xl p-4 aspect-[2/1] flex items-start shadow-md hover:scale-[1.02] transition-transform duration-300 group', CATEGORY_GRADIENT[category.id] ?? CATEGORY_GRADIENT_FALLBACK)}
                   >
                     <h3 className="text-white font-bold text-lg md:text-xl z-10 relative">{category.title}</h3>
                     <div className="absolute -right-3 -bottom-3 w-16 h-16 bg-black/20 rounded-lg rotate-[25deg] shadow-lg group-hover:scale-110 transition-transform duration-300" />

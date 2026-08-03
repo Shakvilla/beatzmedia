@@ -271,11 +271,13 @@ class StudioPodcastResourceIT {
   @Test
   @Order(11)
   void createEpisode_unsupportedAudioType_returns422MediaInvalid() {
+    // Was audio/mpeg, which ADR-35 now accepts — the declared-type gate would no longer fire and
+    // this stopped exercising it. audio/ogg is genuinely outside the allowlist.
     given()
         .header("Authorization", "Bearer " + artistToken)
         .header("Idempotency-Key", "ep-key-7")
         .contentType("multipart/form-data")
-        .multiPart("audio", "ep7.mp3", "not audio".getBytes(), "audio/mpeg")
+        .multiPart("audio", "ep7.ogg", "not audio".getBytes(), "audio/ogg")
         .multiPart("data", """
             { "showId": "%s", "title": "Ep 7", "visibility": "public", "premium": false }
             """.formatted(showId), "application/json")
@@ -283,6 +285,26 @@ class StudioPodcastResourceIT {
         .then()
         .statusCode(422)
         .body("error.code", equalTo("MEDIA_INVALID"));
+  }
+
+  @Test
+  @Order(12)
+  void createEpisode_mp3ContentTypeButNotAudioBytes_stillRejected() {
+    // Widening the declared-type allowlist to admit MP3 must not weaken real enforcement. The
+    // content type is spoofable, so a caller can now claim audio/mpeg and get past the first
+    // gate — the magic-byte validator has to be the thing that actually refuses these bytes.
+    given()
+        .header("Authorization", "Bearer " + artistToken)
+        .header("Idempotency-Key", "ep-key-7b")
+        .contentType("multipart/form-data")
+        .multiPart("audio", "ep7b.mp3", "not audio".getBytes(), "audio/mpeg")
+        .multiPart("data", """
+            { "showId": "%s", "title": "Ep 7b", "visibility": "public", "premium": false }
+            """.formatted(showId), "application/json")
+        .when().post(EPISODES_URL)
+        .then()
+        .statusCode(422)
+        .body("error.code", equalTo("UNSUPPORTED_FORMAT"));
   }
 
   // ============================

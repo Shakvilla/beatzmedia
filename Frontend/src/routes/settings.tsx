@@ -1,4 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
+import { useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { Edit2, Sun, Moon, Monitor, LogOut, type LucideIcon } from 'lucide-react'
 import { cn } from '../utils/cn'
@@ -53,6 +54,30 @@ function SettingsComponent() {
   const { theme, setTheme } = useTheme()
   const { ownedTracks, userPlaylists } = useCollection()
   const { toast } = useToast()
+  const queryClient = useQueryClient()
+
+  /**
+   * Actually clear the client-side cache. This used to be `toast('Cache cleared', 'success')` —
+   * a success message for an operation that never ran, beside a hardcoded "420 MB" that was never
+   * measured. Now it drops every cached query and the app's own localStorage entries, and reports
+   * only what it really did. The auth token is deliberately preserved: clearing a cache should
+   * not sign the fan out.
+   */
+  const clearCache = () => {
+    queryClient.clear()
+    let removed = 0
+    try {
+      for (const key of Object.keys(localStorage)) {
+        // Keep the session; everything else the app caches is disposable.
+        if (key.includes('token')) continue
+        localStorage.removeItem(key)
+        removed++
+      }
+    } catch {
+      // Storage can be unavailable (private mode, quota); the query cache is still cleared.
+    }
+    toast(removed > 0 ? `Cache cleared · ${removed} stored item${removed === 1 ? '' : 's'} removed` : 'Cache cleared', 'success')
+  }
 
   const [prefs, setPrefs] = useState<FanPrefs>(loadPrefs)
   useEffect(() => { try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)) } catch { /* ignore */ } }, [prefs])
@@ -75,21 +100,22 @@ function SettingsComponent() {
             </div>
             <h2 className="text-2xl font-bold text-beatz-dark-bg dark:text-white">{name}</h2>
             <span className="text-sm text-gray-500 dark:text-gray-400 mb-6">{email}</span>
-            <button onClick={() => toast('Edit your profile', 'info')} className="h-10 px-6 rounded-full border border-gray-300 dark:border-white/20 text-xs font-bold text-beatz-dark-bg dark:text-white flex items-center gap-2 hover:bg-gray-100 dark:hover:bg-white/5 transition-colors mb-8">
+            <button
+              disabled
+              title="Editing your profile isn't available yet"
+              className="h-10 px-6 rounded-full border border-gray-300 dark:border-white/20 text-xs font-bold text-beatz-dark-bg dark:text-white flex items-center gap-2 transition-colors mb-8 disabled:opacity-40 disabled:cursor-not-allowed">
               <Edit2 size={14} /> Edit profile
             </button>
-            <div className="w-full pt-6 border-t border-gray-200 dark:border-white/5 grid grid-cols-3 gap-2">
+            {/*
+              "Spent" was the literal string ₵312 — every fan saw the same invented total, next to
+              two counts that are real. There is no endpoint for lifetime spend (commerce exposes
+              GET /me/orders/{id} only, no list or aggregate), so the honest options were a real
+              number or none. Restore it when an aggregate exists; do not re-add a placeholder.
+            */}
+            <div className="w-full pt-6 border-t border-gray-200 dark:border-white/5 grid grid-cols-2 gap-2">
               <Stat label="Owned" value={ownedTracks.length.toString()} />
               <Stat label="Playlists" value={userPlaylists.length.toString()} />
-              <Stat label="Spent" value="₵312" />
             </div>
-          </div>
-          <div className={cn(CARD, 'flex flex-col gap-4')}>
-            <div className="flex flex-col gap-1">
-              <span className="text-[10px] font-bold text-[#f6c644] uppercase tracking-widest">Beatzclik Premium</span>
-              <p className="text-sm font-bold text-beatz-dark-bg dark:text-white leading-snug">Unlimited streams · 15% off all buys</p>
-            </div>
-            <button onClick={() => toast('Upgrade to Premium', 'info')} className="h-12 w-full rounded-full bg-[#f6c644] text-black font-bold hover:bg-[#e5b83d] transition-colors">Upgrade · ₵40/mo</button>
           </div>
         </div>
 
@@ -112,7 +138,7 @@ function SettingsComponent() {
 
           <Group title="Account">
             <Row label="Email" desc={email} />
-            <Row label="Plan" desc="Free"><span className="text-sm font-bold text-[#f6c644]">Upgrade</span></Row>
+            <Row label="Plan" desc="Buy to own — no subscription" />
             <Row label="Country">
               <select className={SELECT} value={prefs.country} onChange={(e) => set('country', e.target.value)}>
                 {['Ghana', 'Nigeria', 'Côte d’Ivoire', 'UK', 'USA'].map((c) => <option key={c} value={c}>{c}</option>)}
@@ -144,7 +170,9 @@ function SettingsComponent() {
           <Group title="Data & storage">
             <ToggleRow label="Data saver" desc="Lower quality on mobile data" checked={prefs.dataSaver} onChange={(v) => set('dataSaver', v)} />
             <Row label="Downloads" desc={`${ownedTracks.length} tracks · 1.4 GB`} />
-            <Row label="Cache" desc="420 MB" last><button onClick={() => toast('Cache cleared', 'success')} className="text-sm font-bold text-beatz-green hover:underline">Clear</button></Row>
+            <Row label="Cache" desc="Cached artwork and API responses" last>
+              <button onClick={clearCache} className="text-sm font-bold text-beatz-green hover:underline">Clear</button>
+            </Row>
           </Group>
 
           <Group title="Notifications">

@@ -20,6 +20,10 @@ function wizardTitle(slug: ReleaseStepSlug, draft: ReleaseDraft): string {
 }
 
 export const Route = createFileRoute('/studio/release/new')({
+  // `?resume=<releaseId>` reopens an existing draft instead of starting a blank one. Without it
+  // the wizard could only ever create, so "Continue editing" had to fall back to the manage page.
+  validateSearch: (search: Record<string, unknown>): { resume?: string } =>
+    typeof search.resume === 'string' && search.resume ? { resume: search.resume } : {},
   loader: ({ context: { queryClient } }) => queryClient.ensureQueryData(studioSettingsQuery()),
   component: WizardRoot,
 })
@@ -45,7 +49,7 @@ function WizardChrome() {
   const location = useLocation()
   const navigate = useNavigate()
   const { toast } = useToast()
-  const { draft, reset, createOrUpdateDraft, submitRelease } = useReleaseDraft()
+  const { draft, reset, createOrUpdateDraft, submitRelease, hydrateFromServer } = useReleaseDraft()
   const [busy, setBusy] = useState(false)
   const errMsg = (e: unknown, fb: string) => (e instanceof ApiError ? e.message : fb)
   const queryClient = useQueryClient()
@@ -56,8 +60,25 @@ function WizardChrome() {
 
   const goTo = (s: ReleaseStepSlug) => navigate({ to: STEP_PATHS[s] })
 
+  // Resume an existing draft. This must settle BEFORE the step guard below runs, or the guard
+  // sees an empty title and bounces the artist back to Details — which is the behaviour that made
+  // "Continue editing" feel like starting over.
+  const { resume } = Route.useSearch()
+  const [resuming, setResuming] = useState(Boolean(resume) && draft.releaseId !== resume)
+  useEffect(() => {
+    if (!resume || draft.releaseId === resume) { setResuming(false); return }
+    let cancelled = false
+    setResuming(true)
+    hydrateFromServer(resume)
+      .catch(() => { /* fall through to an empty wizard rather than a blank screen */ })
+      .finally(() => { if (!cancelled) setResuming(false) })
+    return () => { cancelled = true }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [resume])
+
   // Guard against deep-linking to a step whose prerequisites aren't met.
   useEffect(() => {
+    if (resuming) return
     if (slug === 'details') return
     if (!draft.title.trim()) { goTo('details'); return }
     if ((slug === 'splits' || slug === 'review') && draft.tracks.length === 0) { goTo('tracks'); return }
@@ -66,7 +87,7 @@ function WizardChrome() {
       if (badSplit) goTo('splits')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug])
+  }, [slug, resuming])
 
   const handleContinue = async () => {
     if (busy) return

@@ -129,7 +129,15 @@ function ReleasesComponent() {
         ) : (
           filtered.map((r) => (
             <ReleaseRow key={r.id} release={r}
-              onOpen={() => navigate({ to: '/studio/release/$releaseId', params: { releaseId: r.id } })}
+              // A draft is unfinished work, so "Continue editing" reopens the WIZARD at the point
+              // the artist stopped. It used to route every status to the manage/publish page, so a
+              // draft with no audio yet was presented as ready to publish. Anything past draft has
+              // nothing left to author — those still go to manage.
+              onOpen={() =>
+                r.status === 'draft'
+                  ? navigate({ to: '/studio/release/new/details', search: { resume: r.id } })
+                  : navigate({ to: '/studio/release/$releaseId', params: { releaseId: r.id } })
+              }
               onView={() => { if (creator.id) navigate({ to: '/artist/$artistId', params: { artistId: creator.id } }) }}
               onDuplicate={() => toast(`Duplicated “${r.title}” as a draft`, 'success')}
               onUnpublish={() => toast(`“${r.title}” unpublished`, 'info')}

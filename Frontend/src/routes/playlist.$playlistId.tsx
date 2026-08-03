@@ -2,6 +2,7 @@ import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { Play, Pause, Share2, Clock, ShoppingCart, Globe, Lock, Check, Trash2, ListMusic } from 'lucide-react'
 import { cn } from '../utils/cn'
+import { copyLink, currentUrl } from '../utils/share'
 import { usePlayer } from '../features/player/player-context'
 import { useCart } from '../features/cart/cart-context'
 import { useCollection } from '../features/collection/collection-context'
@@ -159,7 +160,10 @@ function PlaylistComponent() {
             {isFollowing ? 'Following' : 'Follow'}
           </button>
         )}
-        <button onClick={() => toast('Link copied to clipboard', 'success')} className="w-10 h-10 rounded-full border border-gray-300 dark:border-white/20 flex items-center justify-center text-beatz-dark-bg dark:text-white hover:bg-gray-100 dark:hover:bg-white/5 transition-colors" aria-label="Share">
+        <button onClick={async () => {
+          const ok = await copyLink(currentUrl())
+          toast(ok ? 'Link copied to clipboard' : 'Could not copy the link', ok ? 'success' : 'error')
+        }} className="w-10 h-10 rounded-full border border-gray-300 dark:border-white/20 flex items-center justify-center text-beatz-dark-bg dark:text-white hover:bg-gray-100 dark:hover:bg-white/5 transition-colors" aria-label="Share">
           <Share2 size={18} />
         </button>
       </div>

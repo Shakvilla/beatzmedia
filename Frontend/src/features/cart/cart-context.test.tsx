@@ -29,13 +29,17 @@ beforeEach(() => {
 })
 
 describe('CartProvider guest mode', () => {
-  it('addItem/removeItem/setQuantity work locally with no API calls', () => {
+  it('addItem/removeItem/setQuantity work locally with no API calls', async () => {
     const { result } = renderHook(() => useCart(), { wrapper })
 
-    act(() => result.current.addItem({
-      id: 'track:t1', kind: 'track', title: 'Song', image: 'img.jpg',
-      price: { amount: 5, currency: 'GHS' },
-    }))
+    // addItem now returns a Promise and rejects on a failed server add, so callers can only
+    // claim success after it resolves. Guest mode stays local, but the signature is shared.
+    await act(async () => {
+      await result.current.addItem({
+        id: 'track:t1', kind: 'track', title: 'Song', image: 'img.jpg',
+        price: { amount: 5, currency: 'GHS' },
+      })
+    })
 
     expect(result.current.items).toHaveLength(1)
     expect(result.current.subtotal).toBe(5)

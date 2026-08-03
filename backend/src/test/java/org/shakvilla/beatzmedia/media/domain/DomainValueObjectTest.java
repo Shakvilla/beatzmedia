@@ -110,9 +110,12 @@ class DomainValueObjectTest {
   void media_ready_event_fields() {
     MediaAssetId id = new MediaAssetId("mr001");
     OwnerRef ref = new OwnerRef("catalog", "t001");
-    MediaReady event = new MediaReady(id, ref, MediaKind.AUDIO);
+    MediaReady event = new MediaReady(id, ref, MediaKind.AUDIO, 214);
     assertEquals(id, event.assetId());
     assertEquals(ref, event.ownerRef());
     assertEquals(MediaKind.AUDIO, event.kind());
+    // Consumers create their track/episode stub with duration 0 (ffprobe has not run yet), so the
+    // probed duration has to travel on the event or it is unobtainable without calling back.
+    assertEquals(214, event.durationSec());
   }
 }

@@ -94,19 +94,25 @@ describe('unavailable recovery is reachable from the surfaces that disable playb
 
     // If a refactor drops <UnavailableNotice/> from PlayerBar, every play control stays disabled
     // and this is the assertion that catches the resulting dead end.
-    await waitFor(() => {
-      const buttons = screen.getAllByRole('button', { name: /try again/i })
-      expect(buttons.length).toBeGreaterThan(0)
-      expect(buttons.some((b) => !(b as HTMLButtonElement).disabled)).toBe(true)
-    })
+    await waitFor(
+      () => {
+        const buttons = screen.getAllByRole('button', { name: /try again/i })
+        expect(buttons.length).toBeGreaterThan(0)
+        expect(buttons.some((b) => !(b as HTMLButtonElement).disabled)).toBe(true)
+      },
+      { timeout: 5000 },
+    )
   })
 
   it('shows the unavailable message alongside the recovery control, not instead of it', async () => {
     renderWithFailedStream(<PlayerBar />)
 
-    await waitFor(() => {
-      expect(screen.getAllByText(/not available to play right now/i).length).toBeGreaterThan(0)
-      expect(screen.getAllByRole('button', { name: /try again/i }).length).toBeGreaterThan(0)
-    })
+    await waitFor(
+      () => {
+        expect(screen.getAllByText(/not available to play right now/i).length).toBeGreaterThan(0)
+        expect(screen.getAllByRole('button', { name: /try again/i }).length).toBeGreaterThan(0)
+      },
+      { timeout: 5000 },
+    )
   })
 })

@@ -77,6 +77,51 @@ export function studioReleaseQuery(id: string) {
   })
 }
 
+/**
+ * Wire shape of `GET /v1/studio/releases/:id` — the DETAIL view, which carries genre,
+ * description, visibility, scheduledAt and the track list on top of the list fields.
+ *
+ * `toStudioRelease` deliberately maps only the list subset, so all of that was fetched and then
+ * thrown away. Resuming a draft needs it: without the tracks and metadata there is nothing to
+ * restore the wizard from, which is why "Continue editing" could only ever open the manage page.
+ */
+export interface StudioReleaseDetailWire extends StudioReleaseWire {
+  genre: string | null
+  description: string | null
+  visibility: string | null
+  scheduledAt: string | null
+  tracks: {
+    trackId: string
+    title: string
+    duration: number
+    status: string
+    position: number
+    price: { amount: number; currency: string }
+    splits: {
+      id: string
+      name: string
+      email: string
+      role: string
+      percent: number
+      confirmation: string
+    }[]
+  }[]
+}
+
+/** Imperative fetch of the same detail — used by the wizard's resume path, outside a query. */
+export function apiGetReleaseDetail(id: string): Promise<StudioReleaseDetailWire> {
+  return apiFetch<StudioReleaseDetailWire>(`/studio/releases/${id}`)
+}
+
+/** `GET /v1/studio/releases/:id` keeping the detail fields, for resuming a draft in the wizard. */
+export function studioReleaseDetailQuery(id: string) {
+  return queryOptions({
+    queryKey: ['studio', 'release-detail', id],
+    queryFn: () => apiFetch<StudioReleaseDetailWire>(`/studio/releases/${id}`),
+    staleTime: 0,
+  })
+}
+
 /** `PATCH /v1/studio/releases/:id` — rename (title is the only updatable field). */
 export function apiRenameRelease(id: string, title: string): Promise<StudioRelease> {
   return apiFetch<StudioReleaseWire>(`/studio/releases/${id}`, { method: 'PATCH', body: { title } })

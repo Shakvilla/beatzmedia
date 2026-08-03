@@ -9,10 +9,12 @@
 import {
   createContext, useContext, useMemo, useReducer, useRef, type ReactNode,
 } from 'react'
+import { ApiError } from '../../lib/api/errors'
 import type { Genre } from '../../types'
 import type { ReleaseType } from '../../lib/studio-data'
 import {
   apiCreateDraft, apiUploadTrack, apiUpdateRelease, apiSubmitRelease, apiDeleteTrack,
+  apiGetReleaseDetail,
   type CreateDraftInput, type UpdateReleaseInput,
 } from '../../lib/api/queries/studio'
 
@@ -39,6 +41,11 @@ export interface UploadedTrack {
   src: string
   price: number
   explicit: boolean
+  /**
+   * Why the upload failed, taken from the API error. Client-only. Exists because the UI used to
+   * render every `status: 'error'` as "metadata missing", which was true of almost none of them.
+   */
+  error?: string
   /**
    * The uploaded file was already a lossy format (MP3). Client-side only — derived from the
    * picked `File`, never returned by the server, so it must be carried across `REPLACE_TRACK`
@@ -100,7 +107,7 @@ type DraftAction =
   | { type: 'SET_RELEASE_ID'; id: string }
   | { type: 'ADD_PLACEHOLDER'; track: UploadedTrack }
   | { type: 'REPLACE_TRACK'; tempId: string; track: UploadedTrack }
-  | { type: 'MARK_TRACK_ERROR'; id: string }
+  | { type: 'MARK_TRACK_ERROR'; id: string; error?: string }
   | { type: 'UPDATE_TRACK'; id: string; patch: Partial<UploadedTrack> }
   | { type: 'REMOVE_TRACK'; id: string }
   | { type: 'MOVE_TRACK'; id: string; dir: -1 | 1 }
@@ -108,6 +115,7 @@ type DraftAction =
   | { type: 'SET_ALL_PRICES'; price: number }
   | { type: 'SET_TRACK_SPLITS'; trackId: string; splits: SplitEntry[] }
   | { type: 'APPLY_SPLITS_TO_ALL'; splits: SplitEntry[] }
+  | { type: 'HYDRATE'; draft: ReleaseDraft }
   | { type: 'RESET' }
 
 function reducer(state: ReleaseDraft, action: DraftAction): ReleaseDraft {
@@ -126,7 +134,9 @@ function reducer(state: ReleaseDraft, action: DraftAction): ReleaseDraft {
     case 'MARK_TRACK_ERROR':
       return {
         ...state,
-        tracks: state.tracks.map((t) => (t.id === action.id ? { ...t, status: 'error' } : t)),
+        tracks: state.tracks.map((t) =>
+          t.id === action.id ? { ...t, status: 'error', error: action.error } : t,
+        ),
       }
     case 'UPDATE_TRACK':
       return {
@@ -162,6 +172,8 @@ function reducer(state: ReleaseDraft, action: DraftAction): ReleaseDraft {
       }
       return { ...state, splits: next }
     }
+    case 'HYDRATE':
+      return action.draft
     case 'RESET':
       return initialDraft
     default:
@@ -207,6 +219,13 @@ interface ReleaseDraftContextValue {
   setTrackSplits: (trackId: string, splits: SplitEntry[]) => void
   applySplitsToAll: (splits: SplitEntry[]) => void
   createOrUpdateDraft: () => Promise<void>
+  /**
+   * Load an existing server draft into the wizard so the artist resumes where they left off.
+   * Without this, "Continue editing" had nowhere to go but the manage/publish page — the wizard
+   * always started from an empty draft, so a half-finished release (no audio yet) looked ready
+   * to publish.
+   */
+  hydrateFromServer: (releaseId: string) => Promise<void>
   uploadTrack: (file: File) => Promise<void>
   submitRelease: () => Promise<void>
   reset: () => void
@@ -267,6 +286,55 @@ export function ReleaseDraftProvider({ children, initial }: { children: ReactNod
         }
       },
 
+      hydrateFromServer: async (releaseId) => {
+        const d = await apiGetReleaseDetail(releaseId)
+        const type = (d.type ?? 'single') as ReleaseType
+        dispatch({
+          type: 'HYDRATE',
+          draft: {
+            ...initialDraft,
+            releaseId: d.id,
+            releaseType: type,
+            title: d.title ?? '',
+            genre: (d.genre ?? '') as ReleaseDraft['genre'],
+            description: d.description ?? '',
+            visibility: d.visibility === 'public' ? 'public' : 'scheduled',
+            // The wizard's date input is a plain yyyy-mm-dd, not an ISO instant.
+            releaseDate: d.scheduledAt ? d.scheduledAt.slice(0, 10) : '',
+            price: d.price?.amount ?? initialDraft.price,
+            tracks: (d.tracks ?? [])
+              .slice()
+              .sort((a, b) => a.position - b.position)
+              .map((t) => ({
+                id: t.trackId,
+                title: t.title,
+                duration: t.duration,
+                // A server-side track exists, so it uploaded. Anything not yet READY is still
+                // being processed rather than failed — 'error' here would resurrect the old
+                // "metadata missing" lie on a perfectly good draft.
+                status: t.status === 'ready' ? 'ready' : 'uploading',
+                progress: t.status === 'ready' ? 100 : 0,
+                src: '',
+                price: t.price?.amount ?? 0,
+                explicit: false,
+              })),
+            splits: Object.fromEntries(
+              (d.tracks ?? []).map((t) => [
+                t.trackId,
+                (t.splits ?? []).map((sp) => ({
+                  id: sp.id,
+                  name: sp.name,
+                  email: sp.email,
+                  role: sp.role,
+                  percent: sp.percent,
+                  confirmation: sp.confirmation as SplitEntry['confirmation'],
+                })),
+              ]),
+            ),
+          },
+        })
+      },
+
       uploadTrack: async (file) => {
         const tempId = `tmp-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
         const lossy = isLossyAudio(file)
@@ -294,8 +362,16 @@ export function ReleaseDraftProvider({ children, initial }: { children: ReactNod
             tempId,
             track: { ...server, price: stateRef.current.price, lossy },
           })
-        } catch {
-          dispatch({ type: 'MARK_TRACK_ERROR', id: tempId })
+        } catch (err) {
+          // Surface the server's reason. An unsupported format, an expired session and a 500 are
+          // very different problems for the artist, and collapsing them lost that entirely.
+          const reason =
+            err instanceof ApiError
+              ? err.status === 401
+                ? 'session expired — sign in again'
+                : (err.message || `upload failed (${err.status})`)
+              : 'upload failed'
+          dispatch({ type: 'MARK_TRACK_ERROR', id: tempId, error: reason })
         }
       },
 
