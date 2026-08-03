@@ -9,6 +9,7 @@
 import {
   createContext, useContext, useMemo, useReducer, useRef, type ReactNode,
 } from 'react'
+import { ApiError } from '../../lib/api/errors'
 import type { Genre } from '../../types'
 import type { ReleaseType } from '../../lib/studio-data'
 import {
@@ -39,6 +40,11 @@ export interface UploadedTrack {
   src: string
   price: number
   explicit: boolean
+  /**
+   * Why the upload failed, taken from the API error. Client-only. Exists because the UI used to
+   * render every `status: 'error'` as "metadata missing", which was true of almost none of them.
+   */
+  error?: string
   /**
    * The uploaded file was already a lossy format (MP3). Client-side only — derived from the
    * picked `File`, never returned by the server, so it must be carried across `REPLACE_TRACK`
@@ -100,7 +106,7 @@ type DraftAction =
   | { type: 'SET_RELEASE_ID'; id: string }
   | { type: 'ADD_PLACEHOLDER'; track: UploadedTrack }
   | { type: 'REPLACE_TRACK'; tempId: string; track: UploadedTrack }
-  | { type: 'MARK_TRACK_ERROR'; id: string }
+  | { type: 'MARK_TRACK_ERROR'; id: string; error?: string }
   | { type: 'UPDATE_TRACK'; id: string; patch: Partial<UploadedTrack> }
   | { type: 'REMOVE_TRACK'; id: string }
   | { type: 'MOVE_TRACK'; id: string; dir: -1 | 1 }
@@ -126,7 +132,9 @@ function reducer(state: ReleaseDraft, action: DraftAction): ReleaseDraft {
     case 'MARK_TRACK_ERROR':
       return {
         ...state,
-        tracks: state.tracks.map((t) => (t.id === action.id ? { ...t, status: 'error' } : t)),
+        tracks: state.tracks.map((t) =>
+          t.id === action.id ? { ...t, status: 'error', error: action.error } : t,
+        ),
       }
     case 'UPDATE_TRACK':
       return {
@@ -294,8 +302,16 @@ export function ReleaseDraftProvider({ children, initial }: { children: ReactNod
             tempId,
             track: { ...server, price: stateRef.current.price, lossy },
           })
-        } catch {
-          dispatch({ type: 'MARK_TRACK_ERROR', id: tempId })
+        } catch (err) {
+          // Surface the server's reason. An unsupported format, an expired session and a 500 are
+          // very different problems for the artist, and collapsing them lost that entirely.
+          const reason =
+            err instanceof ApiError
+              ? err.status === 401
+                ? 'session expired — sign in again'
+                : (err.message || `upload failed (${err.status})`)
+              : 'upload failed'
+          dispatch({ type: 'MARK_TRACK_ERROR', id: tempId, error: reason })
         }
       },
 

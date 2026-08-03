@@ -6,7 +6,6 @@ import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.HexFormat;
 import java.util.Optional;
-import java.util.Set;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
@@ -16,6 +15,7 @@ import jakarta.transaction.Transactional;
 import org.shakvilla.beatzmedia.audit.application.port.out.AuditWriter;
 import org.shakvilla.beatzmedia.audit.domain.AuditEntry;
 import org.shakvilla.beatzmedia.audit.domain.AuditType;
+import org.shakvilla.beatzmedia.media.application.port.in.AllowedAudioTypes;
 import org.shakvilla.beatzmedia.media.application.port.in.UploadCommand;
 import org.shakvilla.beatzmedia.media.application.port.in.UploadOriginalUseCase;
 import org.shakvilla.beatzmedia.media.domain.MediaHandle;
@@ -63,10 +63,6 @@ import org.shakvilla.beatzmedia.studio.domain.ShowNotFoundException;
  */
 @ApplicationScoped
 public class CreateEpisodeService implements CreateEpisode {
-
-  /** Same allow-list as {@code catalog.UploadReleaseTrackService} (WAV/FLAC only). */
-  private static final Set<String> ALLOWED_AUDIO_TYPES =
-      Set.of("audio/wav", "audio/x-wav", "audio/flac", "audio/x-flac");
 
   private final StudioRepository repo;
   private final UploadOriginalUseCase uploadOriginalUseCase;
@@ -140,9 +136,10 @@ public class CreateEpisodeService implements CreateEpisode {
     if (audio == null || audio.body() == null) {
       throw new MediaInvalidException("An 'audio' file part is required");
     }
-    String contentType = audio.contentType() != null ? audio.contentType().toLowerCase() : "";
-    if (!ALLOWED_AUDIO_TYPES.contains(contentType)) {
-      throw new MediaInvalidException("Only WAV/FLAC accepted, got: " + audio.contentType());
+    // Shared with catalog's track upload and MagicByteValidator — see AllowedAudioTypes.
+    if (!AllowedAudioTypes.isAllowed(audio.contentType())) {
+      throw new MediaInvalidException(
+          "Only " + AllowedAudioTypes.DISPLAY + " accepted, got: " + audio.contentType());
     }
 
     // 6. Media upload happens BEFORE the episode row is ever written (ADD §5.2): a failed upload

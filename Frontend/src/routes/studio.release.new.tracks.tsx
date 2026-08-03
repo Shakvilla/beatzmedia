@@ -466,7 +466,18 @@ function PlayButton({ playing, disabled, onClick, small }: { playing: boolean; d
 
 function StatusPill({ track }: { track: UploadedTrack }) {
   if (track.status === 'error') {
-    return <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-beatz-red/15 text-beatz-red">metadata missing</span>
+    // Was "metadata missing" — which this state never meant. `status: 'error'` is set by the
+    // catch-all in uploadTrack, so a 422, a 401, a 500 or a dropped connection all rendered as
+    // a metadata problem, sending the artist to hunt for a title field that was never at fault.
+    // Report the reason the upload actually gave us, and fall back to something honest.
+    return (
+      <span
+        title={track.error ?? undefined}
+        className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-beatz-red/15 text-beatz-red"
+      >
+        {track.error ?? 'upload failed'}
+      </span>
+    )
   }
   if (track.status === 'uploading') {
     return <span className="px-2.5 py-1 rounded-full text-[10px] font-bold bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-300">uploading…</span>

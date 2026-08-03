@@ -6,7 +6,11 @@ import java.util.concurrent.Executors;
 import jakarta.annotation.PreDestroy;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
+import jakarta.transaction.Status;
+import jakarta.transaction.Synchronization;
+import jakarta.transaction.TransactionSynchronizationRegistry;
 
+import org.jboss.logging.Logger;
 import org.shakvilla.beatzmedia.media.application.port.out.AudioTranscoderPort;
 import org.shakvilla.beatzmedia.media.application.port.out.TranscodeJob;
 import org.shakvilla.beatzmedia.media.application.port.out.TranscodeJobPort;
@@ -40,6 +44,8 @@ import org.shakvilla.beatzmedia.media.domain.ObjectKey;
 @ApplicationScoped
 public class InProcessTranscodeJobAdapter implements TranscodeJobPort {
 
+  private static final Logger LOG = Logger.getLogger(InProcessTranscodeJobAdapter.class);
+
   private final ExecutorService executor = Executors.newVirtualThreadPerTaskExecutor();
   private final AudioTranscoderPort transcoder;
 
@@ -47,30 +53,92 @@ public class InProcessTranscodeJobAdapter implements TranscodeJobPort {
   MediaApplicationService mediaApplicationService;
 
   @Inject
+  TransactionSynchronizationRegistry txRegistry;
+
+  @Inject
   public InProcessTranscodeJobAdapter(AudioTranscoderPort transcoder) {
     this.transcoder = transcoder;
   }
 
+  /**
+   * Hand the job to the worker, but never before the caller's transaction has COMMITTED.
+   *
+   * <p>{@code submit} is called from inside {@code uploadOriginal}'s still-open {@code
+   * @Transactional} scope, and the worker opens its OWN transaction to load the asset. Dispatching
+   * immediately is therefore a race the worker usually wins: it read {@code media_asset} before the
+   * inserting transaction committed, got {@code NotFoundException}, and — because the throwable was
+   * parked in an unread {@code Future} — died silently, stranding every audio upload in {@code
+   * UPLOADING} with an empty delivery bucket and no log line. Observed at ~82ms from queue to
+   * death, i.e. it lost essentially every time.
+   *
+   * <p>So: if a transaction is active, register an interposed synchronization and dispatch in
+   * {@code afterCompletion} only on {@code STATUS_COMMITTED} — a rolled-back upload must not
+   * transcode an asset that no longer exists. With no active transaction (unit tests, an already
+   * committed re-enqueue) dispatch straight away.
+   */
   @Override
   public void submit(TranscodeJob job) {
-    executor.submit(() -> {
-      // B4: persist TRANSCODING status before invoking ffmpeg so the state machine is correct.
-      // This runs in its own @Transactional unit inside markTranscoding.
-      mediaApplicationService.markTranscoding(job.assetId());
+    if (txRegistry.getTransactionKey() != null) {
+      txRegistry.registerInterposedSynchronization(new Synchronization() {
+        @Override
+        public void beforeCompletion() {
+          // nothing to do — the point is to wait for the commit
+        }
 
-      TranscodeResult result;
+        @Override
+        public void afterCompletion(int status) {
+          if (status == Status.STATUS_COMMITTED) {
+            dispatch(job);
+          } else {
+            LOG.infof(
+                "transcode: caller rolled back, not dispatching asset=%s", job.assetId().value());
+          }
+        }
+      });
+      return;
+    }
+    dispatch(job);
+  }
+
+  private void dispatch(TranscodeJob job) {
+    LOG.infof("transcode: queued asset=%s original=%s", job.assetId().value(), job.original().key());
+    executor.submit(() -> {
+      // Everything is inside this try. `markTranscoding` and `onResult` used to sit OUTSIDE it,
+      // and `executor.submit` parks any throwable in a Future that nobody reads — so if either
+      // threw, the asset stayed UPLOADING forever with not one line in the log. Uploads appeared
+      // to hang indefinitely, and the wizard reported it as "metadata missing". A background job
+      // that can fail invisibly is worse than one that fails loudly.
       try {
-        int durationSec = transcoder.probeDurationSec(job.original());
-        ObjectKey fullKey = transcoder.transcodeFull(job.original(), job.assetId());
-        ObjectKey previewKey =
-            transcoder.clipPreview(job.original(), job.assetId(), job.previewSeconds());
-        result = new TranscodeResult(job.assetId(), fullKey, previewKey, durationSec, true, null);
-      } catch (Exception ex) {
-        result =
-            new TranscodeResult(
-                job.assetId(), null, null, 0, false, "TRANSCODE_FAILED: " + ex.getMessage());
+        // B4: persist TRANSCODING status before invoking ffmpeg so the state machine is correct.
+        // This runs in its own @Transactional unit inside markTranscoding.
+        mediaApplicationService.markTranscoding(job.assetId());
+
+        TranscodeResult result;
+        try {
+          int durationSec = transcoder.probeDurationSec(job.original());
+          ObjectKey fullKey = transcoder.transcodeFull(job.original(), job.assetId());
+          ObjectKey previewKey =
+              transcoder.clipPreview(job.original(), job.assetId(), job.previewSeconds());
+          LOG.infof(
+              "transcode: ok asset=%s duration=%ds full=%s preview=%s",
+              job.assetId().value(), durationSec, fullKey.key(), previewKey.key());
+          result = new TranscodeResult(job.assetId(), fullKey, previewKey, durationSec, true, null);
+        } catch (Exception ex) {
+          LOG.errorf(ex, "transcode: ffmpeg stage failed for asset=%s", job.assetId().value());
+          result =
+              new TranscodeResult(
+                  job.assetId(), null, null, 0, false, "TRANSCODE_FAILED: " + ex.getMessage());
+        }
+        onResult(result);
+      } catch (Throwable fatal) {
+        // markTranscoding / onResult themselves failed (DB, CDI context, OOM…). Nothing further
+        // can persist a state for this asset, so at minimum make it visible instead of silent.
+        LOG.errorf(
+            fatal,
+            "transcode: worker died outside the ffmpeg stage for asset=%s — asset is left in its "
+                + "previous state and will need re-enqueueing",
+            job.assetId().value());
       }
-      onResult(result);
     });
   }
 

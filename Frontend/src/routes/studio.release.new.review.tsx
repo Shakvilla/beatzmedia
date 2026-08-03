@@ -64,8 +64,12 @@ function ReviewStep() {
       fix: count > 0 && !stillUploading ? undefined : goTracks,
     },
     metaMissing.length > 0
-      ? { label: `${metaMissing.length} track${metaMissing.length === 1 ? '' : 's'} missing metadata · “${metaMissing[0].title}”`, done: false, fix: goTracks }
-      : { label: 'All track metadata present', done: true },
+      ? {
+          label: `${metaMissing.length} track${metaMissing.length === 1 ? '' : 's'} failed to upload · “${metaMissing[0].title}” — ${metaMissing[0].error ?? 'upload failed'}`,
+          done: false,
+          fix: goTracks,
+        }
+      : { label: 'All tracks uploaded', done: true },
     { label: 'Splits set on all tracks', done: splitsComplete, fix: splitsComplete ? undefined : goSplits },
     pending.length > 0
       ? { label: `${pending.length} collaborator${pending.length === 1 ? '' : 's'} pending · ${pending[0].email || pending[0].name}`, done: false, fix: goSplits }
