@@ -32,6 +32,7 @@ public class GetStreamUrlService implements GetStreamUrl {
   private final OwnershipReader ownershipReader;
   private final MediaService mediaService;
   private final long signedUrlTtlSeconds;
+  private final int previewSeconds;
 
   @Inject
   public GetStreamUrlService(
@@ -39,11 +40,13 @@ public class GetStreamUrlService implements GetStreamUrl {
       OwnershipReader ownershipReader,
       MediaService mediaService,
       @ConfigProperty(name = "beatz.signed-url-ttl-seconds", defaultValue = "300")
-          long signedUrlTtlSeconds) {
+          long signedUrlTtlSeconds,
+      @ConfigProperty(name = "beatz.preview-seconds", defaultValue = "30") int previewSeconds) {
     this.catalogReader = catalogReader;
     this.ownershipReader = ownershipReader;
     this.mediaService = mediaService;
     this.signedUrlTtlSeconds = signedUrlTtlSeconds;
+    this.previewSeconds = previewSeconds;
   }
 
   @Override
@@ -63,9 +66,13 @@ public class GetStreamUrlService implements GetStreamUrl {
     Duration ttl = Duration.ofSeconds(signedUrlTtlSeconds);
     MediaService.SignedUrl signed = mediaService.issueSignedUrl(track, mode, ttl);
 
-    Optional<Integer> previewSeconds =
-        mode == PlaybackMode.PREVIEW ? Optional.of(30) : Optional.empty();
+    // The number reported here must be the length of the clip the transcoder actually produced,
+    // which comes from the same `beatz.preview-seconds` setting. A literal here would report 30
+    // against a 60s file the moment that setting moves, and the client trusts this value for its
+    // seek clamps. (CLAUDE.md: constants come from settings, never hard-coded.)
+    Optional<Integer> preview =
+        mode == PlaybackMode.PREVIEW ? Optional.of(previewSeconds) : Optional.empty();
 
-    return new StreamUrlResult(signed.url(), previewSeconds, signed.expiresAt());
+    return new StreamUrlResult(signed.url(), preview, signed.expiresAt());
   }
 }

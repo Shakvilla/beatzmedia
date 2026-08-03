@@ -96,15 +96,15 @@ class PodcastContractTest {
     em.createNativeQuery(
             "INSERT INTO media_asset (id, owner_ref, kind, status, duration_sec, original_key,"
                 + " hls_key, preview_key, content_hash, created_at)"
-                + " VALUES (:id, :ownerRef, 'AUDIO', 'READY', 1200, :originalKey, :hlsKey,"
+                + " VALUES (:id, :ownerRef, 'AUDIO', 'READY', 1200, :originalKey, :fullKey,"
                 + " :previewKey, :hash, now())"
                 + " ON CONFLICT (id) DO NOTHING")
         .setParameter("id", assetId)
         .setParameter("ownerRef", "podcasts:" + episodeId)
         .setParameter("originalKey", "beatz-media-originals|originals/audio/" + assetId)
-        .setParameter("hlsKey", "beatz-media-delivery|delivery/" + assetId + "/hls/playlist.m3u8")
+        .setParameter("fullKey", "beatz-media-delivery|delivery/" + assetId + "/full.m4a")
         .setParameter(
-            "previewKey", "beatz-media-delivery|delivery/" + assetId + "/preview/preview.m3u8")
+            "previewKey", "beatz-media-delivery|delivery/" + assetId + "/preview.m4a")
         .setParameter("hash", "hash-" + assetId)
         .executeUpdate();
   }

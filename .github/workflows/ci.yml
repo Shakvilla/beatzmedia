@@ -114,6 +114,16 @@ jobs:
           distribution: temurin
           java-version: "25"
           cache: maven
+      # RealTranscodeIT is the ONLY executable proof of INV-3 — that a non-owner's preview is
+      # physically ~BEATZ_PREVIEW_SECONDS long, not merely a file named preview.m4a. It guards
+      # itself with assumeTrue(ffmpegOnPath()), so without ffmpeg it reports "Tests run: 0" and
+      # the suite goes green having proven nothing. That is how INV-3 went uncovered before.
+      # Installing ffmpeg here is what makes the assertion actually execute; do not drop this step.
+      - name: Install ffmpeg (required for RealTranscodeIT / INV-3 coverage)
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends ffmpeg
+          ffprobe -version | head -1
       - name: Integration tests (failsafe + Testcontainers)
         working-directory: backend
         # -DskipITs=false activates failsafe via `verify`.

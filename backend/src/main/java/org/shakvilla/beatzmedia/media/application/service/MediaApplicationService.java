@@ -248,7 +248,7 @@ public class MediaApplicationService
   @Override
   public SignedUrl issueSignedUrl(MediaAssetId assetId, DeliveryVariant variant, Duration ttl) {
     MediaAsset asset = requireAsset(assetId);
-    // INV-3: resolveDeliveryKey enforces FULL → hlsKey only when variant == FULL; PREVIEW → previewKey
+    // INV-3: resolveDeliveryKey enforces FULL → fullKey only when variant == FULL; PREVIEW → previewKey
     ObjectKey deliveryKey = asset.resolveDeliveryKey(variant);
     return urlSigner.presignGet(deliveryKey, variant, ttl);
   }
@@ -268,7 +268,7 @@ public class MediaApplicationService
   }
 
   @Override
-  public void transcodeToHls(MediaAssetId assetId) {
+  public void transcodeToDelivery(MediaAssetId assetId) {
     enqueueTranscode(assetId);
   }
 
@@ -309,7 +309,7 @@ public class MediaApplicationService
   public void handleTranscodeResult(TranscodeResult result) {
     MediaAsset asset = requireAsset(result.assetId());
     if (result.ok()) {
-      asset.markReady(result.hlsKey(), result.previewKey(), result.durationSec());
+      asset.markReady(result.fullKey(), result.previewKey(), result.durationSec());
       repository.save(asset);
       mediaReadyEvent.fire(new MediaReady(asset.getId(), asset.getOwnerRef(), asset.getKind()));
     } else {

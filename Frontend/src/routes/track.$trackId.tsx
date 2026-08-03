@@ -7,7 +7,9 @@ import { LyricsView } from '../components/music/lyrics-view'
 import { AddToPlaylistModal } from '../features/collection/components/add-to-playlist-modal'
 import { Card, CardContent, CardImage, CardSubtitle, CardTitle } from '../components/ui/card'
 import { usePlayer } from '../features/player/player-context'
-import { useCart } from '../features/cart/cart-context'
+import { usePlaybackDisplay } from '../features/player/use-playback-display'
+import { UnavailableNotice } from '../features/player/components/unavailable-notice'
+import { useBuyTrack } from '../features/cart/use-buy-track'
 import { useCollection } from '../features/collection/collection-context'
 import { useToast } from '../components/ui/toast-provider'
 import { trackQuery, artistQuery, lyricsQuery, artistTracksQuery } from '../lib/api/queries/catalog'
@@ -60,17 +62,26 @@ function TrackPageComponent() {
   const [reaction, setReaction] = useState('')
   const [addOpen, setAddOpen] = useState(false)
 
-  const { currentTrack, isPlaying, progress, playQueue, togglePlay, seek } = usePlayer()
-  const { addItem } = useCart()
+  const { playQueue, togglePlay } = usePlayer()
+  // This page is the app's THIRD transport surface. It reads the same shared display state as the
+  // player bar and the lyrics view, so it can never again drift into showing catalogue duration
+  // against a 30s preview or seeking past the end of the signed file.
+  const {
+    isCurrent: isThis,
+    isPlaying: isThisPlaying,
+    progress: playbackProgress,
+    effectiveDuration,
+    progressRatio: ratio,
+    unavailable,
+    seekToRatio,
+  } = usePlaybackDisplay(track)
+  const buyTrack = useBuyTrack()
   const { isTrackLiked, toggleLikedTrack } = useCollection()
   const { toast } = useToast()
 
   if (isLyricsMode) return <LyricsView onClose={() => setIsLyricsMode(false)} />
 
   const liked = isTrackLiked(track.id)
-  const isThis = currentTrack?.id === track.id
-  const isThisPlaying = isPlaying && isThis
-  const ratio = isThis && track.duration ? Math.min(1, progress / track.duration) : 0
   const lyricLines = lyricsLines.filter((l) => l.text !== '♪').slice(0, 5)
   const moreTracks = artistTracks.filter((t) => t.id !== track.id).slice(0, 5)
 
@@ -87,13 +98,13 @@ function TrackPageComponent() {
       playQueue([track], 0)
       return
     }
+    if (unavailable) return
+    // Ratio against the *element's* duration, clamped to the preview window — a click two-thirds
+    // along the waveform of a 30s preview must not land past the end of the file.
     const rect = e.currentTarget.getBoundingClientRect()
-    seek(((e.clientX - rect.left) / rect.width) * track.duration)
+    seekToRatio((e.clientX - rect.left) / rect.width)
   }
-  const buyTrack = () => {
-    addItem({ id: `track:${track.id}`, kind: 'track', title: track.title, subtitle: track.artistName, image: track.image, price: track.price ?? { amount: 0, currency: 'GHS' } })
-    toast(`“${track.title}” added to cart`, 'success')
-  }
+  const buyCurrent = () => buyTrack(track)
   const share = () => toast('Link copied to clipboard', 'success')
   const postReaction = () => {
     if (!reaction.trim()) return
@@ -142,8 +153,9 @@ function TrackPageComponent() {
           <div className="flex items-center gap-4 md:gap-5">
             <button
               onClick={handlePlay}
+              disabled={unavailable}
               aria-label={isThisPlaying ? 'Pause' : 'Play'}
-              className="w-14 h-14 rounded-full bg-beatz-green flex items-center justify-center hover:scale-105 transition-transform shadow-lg shadow-beatz-green/20"
+              className="w-14 h-14 rounded-full bg-beatz-green flex items-center justify-center hover:scale-105 transition-transform shadow-lg shadow-beatz-green/20 disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
             >
               {isThisPlaying ? <Pause fill="black" size={26} className="text-black" /> : <Play fill="black" size={28} className="text-black ml-1" />}
             </button>
@@ -155,7 +167,7 @@ function TrackPageComponent() {
               <Heart size={24} fill={liked ? 'currentColor' : 'none'} />
             </button>
             <button
-              onClick={() => (track.ownership === 'for-sale' ? buyTrack() : setAddOpen(true))}
+              onClick={() => (track.ownership === 'for-sale' ? buyCurrent() : setAddOpen(true))}
               aria-label="Add to playlist"
               className="w-11 h-11 rounded-full flex items-center justify-center text-gray-400 hover:text-beatz-dark-bg dark:hover:text-white transition-colors"
             >
@@ -180,7 +192,7 @@ function TrackPageComponent() {
           ) : track.ownership === 'free' ? (
             <span className="text-sm font-bold text-beatz-green uppercase tracking-widest">Free to stream</span>
           ) : (
-            <button onClick={buyTrack} className="h-11 px-6 rounded-full bg-[#f6c644] text-black font-bold text-sm flex items-center gap-2 hover:scale-105 transition-transform">
+            <button onClick={buyCurrent} className="h-11 px-6 rounded-full bg-[#f6c644] text-black font-bold text-sm flex items-center gap-2 hover:scale-105 transition-transform">
               <ShoppingCart size={16} /> Buy • {formatPrice(track.price)}
             </button>
           )}
@@ -188,12 +200,15 @@ function TrackPageComponent() {
 
         {/* Waveform */}
         <section className="flex flex-col gap-3">
+          {unavailable && <UnavailableNotice className="px-1" />}
           <div className="flex items-center justify-between gap-2 text-[10px] font-mono text-gray-400 uppercase tracking-widest px-1">
-            <span className="shrink-0">{formatDuration(isThis ? progress : 0)}</span>
+            {/* Both ends of the scrub read the SAME clock the bar is drawn from: the element's own
+                duration once it's known. A 30s preview must not sit under a 3:24 total. */}
+            <span className="shrink-0">{formatDuration(playbackProgress)}</span>
             {track.quality && <span className="hidden sm:block truncate">{track.quality}</span>}
-            <span className="shrink-0">{formatDuration(track.duration)}</span>
+            <span className="shrink-0">{formatDuration(effectiveDuration)}</span>
           </div>
-          <div className="relative h-20 flex items-center gap-[1.5px] cursor-pointer" onClick={handleWaveClick}>
+          <div className={cn('relative h-20 flex items-center gap-[1.5px]', unavailable ? 'cursor-not-allowed opacity-60' : 'cursor-pointer')} onClick={handleWaveClick}>
             {WAVE.map((h, i) => (
               <div key={i} style={{ height: `${h}%` }} className={cn('flex-1 rounded-full transition-colors', i / WAVE.length <= ratio ? 'bg-beatz-green' : 'bg-gray-300 dark:bg-white/20')} />
             ))}
@@ -274,7 +289,7 @@ function TrackPageComponent() {
               {track.plays != null && <InfoRow icon={<Info size={18} />} label="Plays" value={`${formatCount(track.plays)}`} />}
               {track.quality && <InfoRow icon={<Info size={18} />} label="Audio quality" value={track.quality} />}
               <button
-                onClick={() => (track.ownership === 'for-sale' ? buyTrack() : setAddOpen(true))}
+                onClick={() => (track.ownership === 'for-sale' ? buyCurrent() : setAddOpen(true))}
                 className="flex items-center gap-3 text-left group pt-1"
               >
                 <div className="w-10 h-10 rounded-xl bg-gray-100 dark:bg-white/5 flex items-center justify-center text-gray-400 group-hover:text-beatz-green transition-colors"><ListPlus size={18} /></div>

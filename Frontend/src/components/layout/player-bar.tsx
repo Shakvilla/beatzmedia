@@ -2,11 +2,16 @@ import { useEffect } from "react"
 import { Play, Pause, SkipBack, SkipForward, Volume2, VolumeX, ListMusic, Shuffle, Repeat, Repeat1, Lock, ShoppingCart } from "lucide-react"
 import { Link } from "@tanstack/react-router"
 import { usePlayer } from "../../features/player/player-context"
-import { useCart } from "../../features/cart/cart-context"
+import { usePlaybackDisplay } from "../../features/player/use-playback-display"
+import { UnavailableNotice } from "../../features/player/components/unavailable-notice"
+import { useBuyTrack } from "../../features/cart/use-buy-track"
 import { useToast } from "../ui/toast-provider"
 import { formatDuration, formatPrice } from "../../lib/format"
 import { cn } from "../../utils/cn"
 import { Tooltip } from "../ui/tooltip"
+
+/** Single source of truth for the preview-ended copy — shown as both a toast and inline text. */
+export const PREVIEW_ENDED_MESSAGE = "Preview ended — buy this track to hear it all"
 
 /** Click-to-seek / click-to-set bar. `value` and `max` are in the same unit. */
 function ProgressTrack({
@@ -40,33 +45,34 @@ function ProgressTrack({
 }
 
 export function PlayerBar() {
-  const { currentTrack, isPlaying, progress, volume, shuffle, repeat, isPreview, previewSeconds, previewHitLimit, togglePlay, next, prev, seek, setVolume, toggleQueue, toggleShuffle, cycleRepeat } = usePlayer()
-  const { addItem } = useCart()
+  const {
+    currentTrack,
+    isPlaying,
+    progress,
+    volume,
+    shuffle,
+    repeat,
+    isPreview,
+    previewHitLimit,
+    togglePlay,
+    next,
+    prev,
+    setVolume,
+    toggleQueue,
+    toggleShuffle,
+    cycleRepeat,
+  } = usePlayer()
+  const { effectiveDuration, progressRatio, unavailable, seekToRatio } = usePlaybackDisplay()
+  const buyTrack = useBuyTrack()
   const { toast } = useToast()
-  const progressRatio = currentTrack?.duration ? Math.min(1, progress / currentTrack.duration) : 0
-  /** Cap scrubbing to the preview window for unowned for-sale tracks. */
-  const seekCap = (ratio: number) => {
-    if (!currentTrack) return
-    const target = ratio * currentTrack.duration
-    seek(isPreview ? Math.min(target, previewSeconds) : target)
-  }
 
   const buyCurrent = () => {
-    if (!currentTrack) return
-    addItem({
-      id: `track:${currentTrack.id}`,
-      kind: 'track',
-      title: currentTrack.title,
-      subtitle: currentTrack.artistName,
-      image: currentTrack.image,
-      price: currentTrack.price ?? { amount: 0, currency: 'GHS' },
-    })
-    toast(`“${currentTrack.title}” added to cart`, 'success')
+    if (currentTrack) buyTrack(currentTrack)
   }
 
   // Nudge the listener to buy when a preview runs out.
   useEffect(() => {
-    if (previewHitLimit) toast('Preview ended — buy to keep listening', 'info')
+    if (previewHitLimit) toast(PREVIEW_ENDED_MESSAGE, 'info')
   }, [previewHitLimit, toast])
 
   return (
@@ -108,13 +114,21 @@ export function PlayerBar() {
       </div>
 
       {/* Mobile transport — compact, on the right */}
-      <div className="flex md:hidden items-center gap-1 shrink-0">
-        <button onClick={togglePlay} aria-label={isPlaying ? "Pause" : "Play"} className="w-10 h-10 flex items-center justify-center text-beatz-dark-bg dark:text-white">
-          {isPlaying ? <Pause size={26} fill="currentColor" /> : <Play size={26} fill="currentColor" className="ml-0.5" />}
-        </button>
-        <button onClick={next} aria-label="Next" className="w-9 h-9 flex items-center justify-center text-gray-500 dark:text-gray-300">
-          <SkipForward size={20} fill="currentColor" />
-        </button>
+      <div className="flex md:hidden flex-col items-end gap-0.5 shrink-0">
+        <div className="flex items-center gap-1">
+          <button
+            onClick={togglePlay}
+            disabled={unavailable}
+            aria-label={isPlaying ? "Pause" : "Play"}
+            className="w-10 h-10 flex items-center justify-center text-beatz-dark-bg dark:text-white disabled:opacity-40 disabled:cursor-not-allowed"
+          >
+            {isPlaying ? <Pause size={26} fill="currentColor" /> : <Play size={26} fill="currentColor" className="ml-0.5" />}
+          </button>
+          <button onClick={next} aria-label="Next" className="w-9 h-9 flex items-center justify-center text-gray-500 dark:text-gray-300">
+            <SkipForward size={20} fill="currentColor" />
+          </button>
+        </div>
+        {unavailable && <UnavailableNotice compact className="pr-1" />}
       </div>
 
       {/* Desktop transport + seek */}
@@ -134,8 +148,9 @@ export function PlayerBar() {
           </button>
           <button
             onClick={togglePlay}
+            disabled={unavailable}
             aria-label={isPlaying ? "Pause" : "Play"}
-            className="w-10 h-10 bg-black dark:bg-white rounded-full flex items-center justify-center hover:scale-105 transition-transform cursor-pointer"
+            className="w-10 h-10 bg-black dark:bg-white rounded-full flex items-center justify-center hover:scale-105 transition-transform cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed disabled:hover:scale-100"
           >
             {isPlaying ? (
               <Pause className="text-white dark:text-black" size={20} fill="currentColor" />
@@ -157,15 +172,26 @@ export function PlayerBar() {
           </Tooltip>
         </div>
         <div className="w-full max-w-md flex items-center gap-3">
-          <span className="text-[10px] text-gray-400 font-mono">{formatDuration(progress)}</span>
-          <ProgressTrack
-            className="flex-1"
-            value={progress}
-            max={currentTrack?.duration ?? 0}
-            onScrub={seekCap}
-          />
-          <span className="text-[10px] text-gray-400 font-mono">{formatDuration(currentTrack?.duration ?? 0)}</span>
+          {unavailable ? (
+            <UnavailableNotice />
+          ) : (
+            <>
+              <span className="text-[10px] text-gray-400 font-mono">{formatDuration(progress)}</span>
+              <ProgressTrack
+                className="flex-1"
+                value={progress}
+                max={effectiveDuration}
+                onScrub={seekToRatio}
+              />
+              <span className="text-[10px] text-gray-400 font-mono">{formatDuration(effectiveDuration)}</span>
+            </>
+          )}
         </div>
+        {previewHitLimit && (
+          <span className="text-xs font-bold text-[#f6c644]">
+            {PREVIEW_ENDED_MESSAGE}
+          </span>
+        )}
       </div>
 
       <div className="hidden md:flex items-center justify-end gap-5 w-1/3">

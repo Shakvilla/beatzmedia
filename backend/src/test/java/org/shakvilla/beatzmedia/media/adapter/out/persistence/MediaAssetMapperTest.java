@@ -40,7 +40,7 @@ class MediaAssetMapperTest {
     assertEquals(0, entity.durationSec);
     assertEquals(
         "beatz-media-originals|originals/audio/map-001", entity.originalKey);
-    assertNull(entity.hlsKey);
+    assertNull(entity.fullKey);
     assertNull(entity.previewKey);
     assertEquals("sha256-hash-abc", entity.contentHash);
     assertEquals(NOW, entity.createdAt);
@@ -51,13 +51,13 @@ class MediaAssetMapperTest {
     assertEquals(domain.getKind(), restored.getKind());
     assertEquals(domain.getStatus(), restored.getStatus());
     assertEquals(domain.getDurationSec(), restored.getDurationSec());
-    assertNull(restored.getHlsKey());
+    assertNull(restored.getFullKey());
     assertNull(restored.getPreviewKey());
     assertEquals("sha256-hash-abc", restored.getContentHash());
   }
 
   @Test
-  void ready_audio_asset_with_hls_and_preview_round_trips() {
+  void ready_audio_asset_with_full_and_preview_round_trips() {
     MediaAsset domain = new MediaAsset(
         new MediaAssetId("map-002"),
         new OwnerRef("catalog", "track-002"),
@@ -65,8 +65,8 @@ class MediaAssetMapperTest {
         MediaStatus.READY,
         185,
         new ObjectKey("beatz-media-originals", "originals/audio/map-002"),
-        new ObjectKey("beatz-media-delivery", "delivery/map-002/hls/playlist.m3u8"),
-        new ObjectKey("beatz-media-delivery", "delivery/map-002/preview/preview.m3u8"),
+        new ObjectKey("beatz-media-delivery", "delivery/map-002/full.m4a"),
+        new ObjectKey("beatz-media-delivery", "delivery/map-002/preview.m4a"),
         NOW,
         "hash-ready");
 
@@ -74,19 +74,19 @@ class MediaAssetMapperTest {
     assertEquals("READY", entity.status);
     assertEquals(185, entity.durationSec);
     assertEquals(
-        "beatz-media-delivery|delivery/map-002/hls/playlist.m3u8", entity.hlsKey);
+        "beatz-media-delivery|delivery/map-002/full.m4a", entity.fullKey);
     assertEquals(
-        "beatz-media-delivery|delivery/map-002/preview/preview.m3u8", entity.previewKey);
+        "beatz-media-delivery|delivery/map-002/preview.m4a", entity.previewKey);
 
     MediaAsset restored = MediaAssetMapper.toDomain(entity);
     assertEquals(MediaStatus.READY, restored.getStatus());
     assertEquals(185, restored.getDurationSec());
-    assertEquals("delivery/map-002/hls/playlist.m3u8", restored.getHlsKey().key());
-    assertEquals("delivery/map-002/preview/preview.m3u8", restored.getPreviewKey().key());
+    assertEquals("delivery/map-002/full.m4a", restored.getFullKey().key());
+    assertEquals("delivery/map-002/preview.m4a", restored.getPreviewKey().key());
   }
 
   @Test
-  void null_hls_and_preview_survive_round_trip() {
+  void null_full_and_preview_survive_round_trip() {
     MediaAssetEntity entity = new MediaAssetEntity();
     entity.id = "map-003";
     entity.ownerRef = "catalog:track-003";
@@ -94,7 +94,7 @@ class MediaAssetMapperTest {
     entity.status = "TRANSCODING";
     entity.durationSec = null;
     entity.originalKey = "beatz-media-originals|originals/artwork/map-003";
-    entity.hlsKey = null;
+    entity.fullKey = null;
     entity.previewKey = null;
     entity.createdAt = NOW;
     entity.contentHash = "hash-null";
@@ -103,7 +103,7 @@ class MediaAssetMapperTest {
     assertEquals(MediaKind.ARTWORK, domain.getKind());
     assertEquals(MediaStatus.TRANSCODING, domain.getStatus());
     assertEquals(0, domain.getDurationSec()); // null → 0
-    assertNull(domain.getHlsKey());
+    assertNull(domain.getFullKey());
     assertNull(domain.getPreviewKey());
   }
 }

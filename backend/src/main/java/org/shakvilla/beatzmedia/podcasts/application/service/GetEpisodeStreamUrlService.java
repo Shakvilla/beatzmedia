@@ -35,6 +35,7 @@ public class GetEpisodeStreamUrlService implements GetEpisodeStreamUrl {
   private final MediaService mediaService;
   private final Clock clock;
   private final long signedUrlTtlSeconds;
+  private final int previewSeconds;
 
   @Inject
   public GetEpisodeStreamUrlService(
@@ -43,12 +44,14 @@ public class GetEpisodeStreamUrlService implements GetEpisodeStreamUrl {
       MediaService mediaService,
       Clock clock,
       @ConfigProperty(name = "beatz.signed-url-ttl-seconds", defaultValue = "300")
-          long signedUrlTtlSeconds) {
+          long signedUrlTtlSeconds,
+      @ConfigProperty(name = "beatz.preview-seconds", defaultValue = "30") int previewSeconds) {
     this.repository = repository;
     this.ownershipReader = ownershipReader;
     this.mediaService = mediaService;
     this.clock = clock;
     this.signedUrlTtlSeconds = signedUrlTtlSeconds;
+    this.previewSeconds = previewSeconds;
   }
 
   @Override
@@ -66,8 +69,10 @@ public class GetEpisodeStreamUrlService implements GetEpisodeStreamUrl {
     Instant now = clock.now();
     boolean publicNow = episode.publicAt().map(publicAt -> !now.isBefore(publicAt)).orElse(false);
 
-    EpisodeAccess access =
-        EpisodeAccess.decide(episode, owned, publicNow, EpisodeAccess.DEFAULT_PREVIEW_SEC);
+    // The preview length reported to the client must be the length of the clip the transcoder
+    // actually produced, so it comes from the same `beatz.preview-seconds` setting rather than the
+    // domain's fallback constant. (CLAUDE.md: constants come from settings, never hard-coded.)
+    EpisodeAccess access = EpisodeAccess.decide(episode, owned, publicNow, previewSeconds);
 
     Duration ttl = Duration.ofSeconds(signedUrlTtlSeconds);
     MediaService.SignedUrl signed =

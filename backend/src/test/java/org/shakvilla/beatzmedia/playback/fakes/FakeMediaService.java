@@ -28,10 +28,13 @@ public class FakeMediaService implements MediaService {
   @Override
   public SignedUrl issueSignedUrl(TrackId track, PlaybackMode mode, Duration ttl) {
     calls.add(new Call(track, mode, ttl));
+    // Mirrors the real delivery key shape (FfmpegAudioTranscoderAdapter): delivery/{id}/full.m4a
+    // and delivery/{id}/preview.m4a. Tests assert on these two filenames, which discriminate — a
+    // stale "hls" fixture made the FULL assertion unsatisfiable and the PREVIEW one vacuous.
     String url =
         mode == PlaybackMode.FULL
-            ? "https://cdn.test/delivery/" + track.value() + "/hls/playlist.m3u8?sig=full"
-            : "https://cdn.test/delivery/" + track.value() + "/preview/preview.m3u8?sig=preview";
+            ? "https://cdn.test/delivery/" + track.value() + "/full.m4a?sig=full"
+            : "https://cdn.test/delivery/" + track.value() + "/preview.m4a?sig=preview";
     return new SignedUrl(url, expiresAt);
   }
 

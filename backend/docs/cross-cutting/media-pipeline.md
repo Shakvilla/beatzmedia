@@ -42,14 +42,14 @@ flowchart TD
   S --> P[ffprobe duration]
   P --> A1[insert media_asset status=UPLOADING]
   A1 --> KAUDIO{kind?}
-  KAUDIO -->|AUDIO| Q[enqueue TranscodeJob previewSeconds=30]
+  KAUDIO -->|AUDIO| Q[enqueue TranscodeJob previewSeconds]
   KAUDIO -->|ARTWORK| ART[processArtwork -> delivery/{id}/art/]
   Q --> T[worker: status=TRANSCODING]
-  T --> HLS[ffmpeg HLS ladder -> delivery/{id}/hls/]
-  T --> PRV[ffmpeg 30s clip -> delivery/{id}/preview/]
-  HLS --> R{both written?}
+  T --> FULL[ffmpeg AAC -> delivery/{id}/full.m4a]
+  T --> PRV[ffmpeg clip -t previewSeconds -> delivery/{id}/preview.m4a]
+  FULL --> R{both written?}
   PRV --> R
-  R -->|yes| RDY[status=READY<br/>set hls_key, preview_key]
+  R -->|yes| RDY[status=READY<br/>set hls_key column = full key, preview_key]
   R -->|transcode error| ERR[status=ERROR<br/>retryable]
   ART --> RDY
   RDY --> EV[emit MediaReady assetId,ownerRef,kind]
@@ -62,14 +62,16 @@ flowchart TD
 1. **Upload** — caller's REST adapter streams the part into `UploadCommand` and calls
    `MediaService.uploadOriginal`. The part is streamed straight to object storage (not buffered whole
    in heap). Returns a `MediaHandle` synchronously while transcode runs async.
-2. **Validation** — *magic-byte* sniffing (not the declared `Content-Type`): admit `WAV`/`FLAC`
-   (audio), `PNG`/`JPG` (artwork). Size guard via `quarkus.http.limits.max-body-size`. Virus scan on
+2. **Validation** — *magic-byte* sniffing (not the declared `Content-Type`): `MagicByteValidator`
+   admits **only** `WAV` (RIFF/WAVE) and `FLAC` (`fLaC`) for audio, `PNG`/`JPG` for artwork. An MP3
+   or M4A upload is rejected `422 UNSUPPORTED_FORMAT`. Size guard via
+   `quarkus.http.limits.max-body-size`. Virus scan on
    the stored bytes (ClamAV-style adapter). Failures use the stable codes in §8.
 3. **Store original** — private bucket only. Originals are **never** signed for client read.
-4. **Transcode (audio)** — off the request thread, on the worker/queue: HLS variant ladder + a
-   physically clipped 30s preview rendition. Idempotent per `assetId`.
+4. **Transcode (audio)** — off the request thread, on the worker/queue: one full AAC/M4A rendition +
+   a physically clipped preview rendition of `BEATZ_PREVIEW_SECONDS`. Idempotent per `assetId`.
 5. **Artwork processing** — synchronous-ish image variant emission to the delivery bucket.
-6. **Mark ready** — `READY` only once *both* `hls_key` and `preview_key` exist (audio), or the art
+6. **Mark ready** — `READY` only once *both* the full key and `preview_key` exist (audio), or the art
    variant exists (artwork). Emits `MediaReady`.
 7. **Signed delivery** — on demand, separate from ingest; `playback`/`podcasts` request a time-boxed
    URL with FULL/PREVIEW chosen by ownership.
@@ -85,8 +87,8 @@ The defaults are `beatz-media-originals` and `beatz-media-delivery`, created by 
 | Bucket | Prefix / key | Access | Lifecycle |
 |---|---|---|---|
 | `beatz-media-originals` | `originals/{kind}/{assetId}` | **PRIVATE** — never public, never client-signed for read | retain (source of truth for re-transcode); optional cold-storage transition; orphan sweep (§8) |
-| `beatz-media-delivery` | `delivery/{assetId}/hls/playlist.m3u8` + `*.ts` | signed GET only | regenerable from original; safe to expire on takedown |
-| `beatz-media-delivery` | `delivery/{assetId}/preview/preview.m3u8` + ≤30s `*.ts` | signed GET only | regenerable |
+| `beatz-media-delivery` | `delivery/{assetId}/full.m4a` | signed GET only | regenerable from original; safe to expire on takedown |
+| `beatz-media-delivery` | `delivery/{assetId}/preview.m4a` (≤ `BEATZ_PREVIEW_SECONDS`) | signed GET only | regenerable |
 | `beatz-media-delivery` | `delivery/{assetId}/art/cover-1024.jpg` (+ sizes) | signed GET only | regenerable |
 
 **Public/private separation is a hard rule.** The delivery bucket is *not* world-readable either —
@@ -94,8 +96,10 @@ clients only ever reach it through a signed URL with a finite TTL (§5). The ori
 client-facing path at all**; only the transcoder and re-transcode jobs read it (server-side creds).
 
 **Key scheme rationale:** `{assetId}` is the partition key everywhere downstream, so takedown / cleanup
-is a single prefix delete (`delivery/{assetId}/`). `originalKey`, `hlsKey`, `previewKey` are persisted
-on `media_asset` (ADD §3) so delivery never reconstructs paths by convention at read time.
+is a single prefix delete (`delivery/{assetId}/`). `originalKey`, `fullKey`, `previewKey` are persisted
+on `media_asset` (ADD §3) so delivery never reconstructs paths by convention at read time. (`fullKey`
+is still stored in the legacy `hls_key` column — see ADR-34; the column was never renamed because
+nothing reads it by name outside the mapper.)
 
 ---
 
@@ -104,44 +108,47 @@ on `media_asset` (ADD §3) so delivery never reconstructs paths by convention at
 Transcode runs in the Compose `transcoder` service (`jrottenberg/ffmpeg`, or in-app `ffmpeg`),
 **driven by the async job** — never on the request thread.
 
-**Accepted in:** `WAV`, `FLAC` (lossless masters). **Produced out:** HLS (AAC-LC in fMP4/TS segments).
+**Accepted in:** `WAV`, `FLAC` (lossless masters only — `MagicByteValidator`). **Produced out:** one
+AAC-LC object per variant, in an MP4 container (`audio/mp4`).
 
-**HLS variant ladder** (audio-only adaptive bitrate; tune in the transcoder adapter, not hard-coded in
-domain):
+**One object per variant — not an HLS ladder (ADR-34).** An HLS playlist references its segments by
+*relative* path, so those segment requests carry no signature. The delivery bucket is private, which
+means every segment would 403 and playback could never work. Presigning a single object removes the
+unsigned sub-request entirely. Adaptive bitrate buys a catalogue of 2–4 minute tracks nothing, and
+`<audio src>` cannot play HLS in Chrome or Firefox without an `hls.js` dependency.
 
-| Rendition | Codec | Bitrate | Use |
+| Variant | Object key | Codec | Bitrate |
 |---|---|---|---|
-| `low` | AAC-LC | ~96 kbps | constrained mobile / data-saver |
-| `mid` | AAC-LC | ~160 kbps | default streaming |
-| `high` | AAC-LC | ~256 kbps | wifi / owned full-quality |
+| FULL | `delivery/{assetId}/full.m4a` | AAC-LC | 128 kbps |
+| PREVIEW | `delivery/{assetId}/preview.m4a` | AAC-LC | 128 kbps |
 
-The master `playlist.m3u8` references the per-rendition media playlists; segments target ~6s.
+AAC at 128 kbps is roughly MP3 at 192 kbps, so files are about a third smaller — a real product
+benefit where listeners pay for mobile data.
 
-**30s preview clip (INV-3 enforcement, physical):** a *separate* rendition trimmed server-side to
-`BEATZ_PREVIEW_SECONDS` (=30). It is not the full ladder with a client-side timer — the bytes for
-seconds 31+ are never written to `preview/`. Representative invocation (illustrative; the adapter owns
-the exact flags):
+**Preview clip (INV-3 enforcement, physical):** a *separate* rendition trimmed server-side to
+`BEATZ_PREVIEW_SECONDS` (default 30). It is not the full file with a client-side timer — the bytes
+past the cap are never written to `preview.m4a`, so a tampered client has no further audio to reach.
+The same setting is injected into `GetStreamUrlService`, so the `previewSeconds` the API reports is
+always the length of the file it just signed. Representative invocation (the adapter owns the exact
+flags):
 
 ```bash
-# preview: hard-clip to 30s, single mid-rate rendition, HLS
-ffmpeg -i original.wav -t 30 \
-  -c:a aac -b:a 160k -vn \
-  -f hls -hls_time 6 -hls_playlist_type vod \
-  -hls_segment_filename 'preview/seg_%03d.ts' preview/preview.m3u8
+# preview: hard-clip to BEATZ_PREVIEW_SECONDS
+ffmpeg -i original.wav -t 30 -vn -c:a aac -b:a 128k -movflags +faststart preview.m4a
 
-# full: probe duration first, then ladder (one stream-map per rendition)
+# full: probe duration first, then one rendition
 ffprobe -v error -show_entries format=duration -of csv=p=0 original.wav
-ffmpeg -i original.wav -c:a aac -vn \
-  -b:a 96k  -f hls -hls_time 6 hls/low/playlist.m3u8 \
-  -b:a 160k -f hls -hls_time 6 hls/mid/playlist.m3u8 \
-  -b:a 256k -f hls -hls_time 6 hls/high/playlist.m3u8
+ffmpeg -i original.wav -vn -c:a aac -b:a 128k -movflags +faststart full.m4a
 ```
+
+`-movflags +faststart` puts the moov atom first so the browser can begin playing before the object is
+fully downloaded — the property a segmented format would otherwise have provided.
 
 **Artwork:** validate format, then emit delivery variants (e.g. `cover-1024.jpg`); strip metadata,
 normalize color space. Artwork has no preview concept.
 
 **Where it runs:** `AudioTranscoderPort` (ADD §4.2) is implemented by the ffmpeg adapter; the
-`TranscodeJobPort` worker pulls jobs, calls `probeDurationSec` / `transcodeHls` / `clipPreviewHls`,
+`TranscodeJobPort` worker pulls jobs, calls `probeDurationSec` / `transcodeFull` / `clipPreview`,
 writes results via `ObjectStorePort.putDelivery`, then persists keys + `READY` in a short transaction.
 
 ---
@@ -155,11 +162,11 @@ Delivery is read-only and decoupled from ingest. `playback` (and `podcasts` for 
   `expiresAt` (ISO-8601 UTC). After `expiresAt` the object store rejects the GET — expiry is enforced
   by the store's signature, not by the app.
 - **Variant selection (INV-3 enforcement point):**
-  - **FULL** → presign `hlsKey`. Issued **only** when the caller asserts confirmed ownership (or the
+  - **FULL** → presign `fullKey`. Issued **only** when the caller asserts confirmed ownership (or the
     track is `free`).
   - **PREVIEW** → presign `previewKey` (the physical ≤30s rendition). Default for non-owners /
     anonymous on a `for-sale` track.
-  - **There is no code path that presigns `hlsKey` without an asserted ownership decision.** `media`
+  - **There is no code path that presigns `fullKey` without an asserted ownership decision.** `media`
     does not *resolve* ownership; the caller passes the decision in. The physical 30s rendition is the
     backstop even if a caller is buggy.
 
@@ -175,7 +182,7 @@ sequenceDiagram
   Own-->>Play: owned | free | for-sale(not owned)
   alt owned or free
     Play->>Media: issueSignedUrl(assetId, FULL, ttl)
-    Media->>Sign: presignGet(hlsKey, ttl)
+    Media->>Sign: presignGet(fullKey, ttl)
     Sign-->>Play: SignedUrl(full, expiresAt)
     Play-->>Client: { url, expiresAt }              %% no previewSeconds
   else for-sale, not owned
@@ -225,7 +232,7 @@ stateDiagram-v2
   [*] --> UPLOADING : original stored
   UPLOADING --> TRANSCODING : job submitted (audio)
   UPLOADING --> ERROR : probe/store failure
-  TRANSCODING --> READY : hls + preview written
+  TRANSCODING --> READY : full + preview written
   TRANSCODING --> ERROR : transcode failure
   ERROR --> TRANSCODING : retry enqueue
   READY --> [*]
@@ -289,9 +296,9 @@ an additional inbound adapter, **no API change** for consumers.
 
 ## 9. Security
 
-- **No full rendition without ownership.** `issueSignedUrl` presigns `hlsKey` only on an asserted
+- **No full rendition without ownership.** `issueSignedUrl` presigns `fullKey` only on an asserted
   ownership decision; the physical 30s `previewKey` is the backstop (INV-3). Never add a helper that
-  presigns `hlsKey` from a non-owner path.
+  presigns `fullKey` from a non-owner path.
 - **Originals are private.** No object in `beatz-media-originals` is ever client-signed. Only
   server-side jobs (transcode / re-transcode) read it.
 - **Content-type sniffing.** Trust magic bytes, never the declared `Content-Type` header.
@@ -308,7 +315,8 @@ an additional inbound adapter, **no API change** for consumers.
 - [ ] Consumers call `MediaService` only; never touch buckets/keys directly.
 - [ ] Uploads go to the **private** originals bucket; renditions to the delivery bucket under
       `delivery/{assetId}/...`.
-- [ ] Audio produces **both** HLS ladder + a physical ≤30s preview before `READY`.
+- [ ] Audio produces **both** `full.m4a` + a physical ≤`BEATZ_PREVIEW_SECONDS` `preview.m4a` before
+      `READY`, and an ffprobe assertion proves the preview is actually clipped (not merely named so).
 - [ ] `issueSignedUrl(FULL)` only with an asserted ownership decision; default to PREVIEW otherwise.
 - [ ] Every signed URL has a finite TTL (`BEATZ_SIGNED_URL_TTL_SECONDS`) and `expiresAt`; `variant`
       stays internal.

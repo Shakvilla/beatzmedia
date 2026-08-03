@@ -35,7 +35,7 @@ class DomainValueObjectTest {
 
   @Test
   void object_key_storage_round_trip() {
-    ObjectKey key = new ObjectKey("beatz-media-delivery", "delivery/id123/hls/playlist.m3u8");
+    ObjectKey key = new ObjectKey("beatz-media-delivery", "delivery/id123/full.m4a");
     String stored = key.toStorageString();
     ObjectKey parsed = ObjectKey.fromStorageString(stored);
     assertEquals(key.bucket(), parsed.bucket());

@@ -34,8 +34,13 @@ public class MediaAssetEntity {
   @Column(name = "original_key", nullable = false, length = 255)
   public String originalKey;
 
+  /**
+   * FULL delivery object key. The column is still named {@code hls_key} for historical
+   * reasons — renaming a merged column would require a migration for no behavioural gain.
+   * Since 2026-08-01 this holds a single {@code .m4a} object key, not an HLS playlist.
+   */
   @Column(name = "hls_key", length = 255)
-  public String hlsKey;
+  public String fullKey;
 
   @Column(name = "preview_key", length = 255)
   public String previewKey;

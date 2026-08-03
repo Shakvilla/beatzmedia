@@ -24,9 +24,9 @@ public interface ObjectStorePort {
       MediaKind kind, MediaAssetId id, InputStream body, String contentType, long contentLength);
 
   /**
-   * Write a delivery-side file (HLS segment, playlist, artwork variant) to the delivery bucket.
+   * Write a delivery-side file (audio rendition, artwork variant) to the delivery bucket.
    *
-   * @param relativeKey path within delivery bucket (e.g. "delivery/{id}/hls/playlist.m3u8")
+   * @param relativeKey path within delivery bucket (e.g. "delivery/{id}/full.m4a")
    * @return the resulting {@link ObjectKey}
    */
   ObjectKey putDelivery(MediaAssetId id, String relativeKey, InputStream body, String contentType);

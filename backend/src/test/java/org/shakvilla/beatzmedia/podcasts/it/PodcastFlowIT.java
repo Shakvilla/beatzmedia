@@ -26,7 +26,7 @@ import io.restassured.http.ContentType;
  * {@code episode} cart kind is out of scope until a later commerce WU, per the podcasts ADD §1),
  * and the real media {@code IssueDeliveryUrlUseCase} chain for the gated stream endpoint.
  *
- * <p>Proves INV-3 end-to-end: an owner (or a free episode) receives the full HLS rendition with no
+ * <p>Proves INV-3 end-to-end: an owner (or a free episode) receives the full rendition with no
  * {@code previewSeconds}; a non-owner (authenticated or anonymous) of a premium/early-access
  * episode receives the 30s preview rendition ONLY — the client cannot request "full" via any
  * parameter.
@@ -117,15 +117,15 @@ class PodcastFlowIT {
     em.createNativeQuery(
             "INSERT INTO media_asset (id, owner_ref, kind, status, duration_sec, original_key,"
                 + " hls_key, preview_key, content_hash, created_at)"
-                + " VALUES (:id, :ownerRef, 'AUDIO', 'READY', 1200, :originalKey, :hlsKey,"
+                + " VALUES (:id, :ownerRef, 'AUDIO', 'READY', 1200, :originalKey, :fullKey,"
                 + " :previewKey, :hash, now())"
                 + " ON CONFLICT (id) DO NOTHING")
         .setParameter("id", assetId)
         .setParameter("ownerRef", "podcasts:" + episodeId)
         .setParameter("originalKey", "beatz-media-originals|originals/audio/" + assetId)
-        .setParameter("hlsKey", "beatz-media-delivery|delivery/" + assetId + "/hls/playlist.m3u8")
+        .setParameter("fullKey", "beatz-media-delivery|delivery/" + assetId + "/full.m4a")
         .setParameter(
-            "previewKey", "beatz-media-delivery|delivery/" + assetId + "/preview/preview.m3u8")
+            "previewKey", "beatz-media-delivery|delivery/" + assetId + "/preview.m4a")
         .setParameter("hash", "hash-" + assetId)
         .executeUpdate();
   }
@@ -295,7 +295,7 @@ class PodcastFlowIT {
         .get("/v1/podcasts/episodes/" + premiumEpisodeId + "/stream")
         .then()
         .statusCode(200)
-        .body("audioUrl", containsString("hls"))
+        .body("audioUrl", containsString("full.m4a"))
         .body("previewSeconds", equalTo(null))
         .body("expiresAt", notNullValue());
   }
@@ -310,8 +310,8 @@ class PodcastFlowIT {
         .get("/v1/podcasts/episodes/" + premiumEpisodeId + "/stream")
         .then()
         .statusCode(200)
-        .body("audioUrl", containsString("preview"))
-        .body("audioUrl", not(containsString("hls")))
+        .body("audioUrl", containsString("preview.m4a"))
+        .body("audioUrl", not(containsString("full.m4a")))
         .body("previewSeconds", equalTo(30))
         .body("expiresAt", notNullValue());
   }
@@ -323,7 +323,7 @@ class PodcastFlowIT {
         .get("/v1/podcasts/episodes/" + premiumEpisodeId + "/stream")
         .then()
         .statusCode(200)
-        .body("audioUrl", containsString("preview"))
+        .body("audioUrl", containsString("preview.m4a"))
         .body("previewSeconds", equalTo(30));
   }
 
@@ -334,7 +334,7 @@ class PodcastFlowIT {
         .get("/v1/podcasts/episodes/" + freeEpisodeId + "/stream")
         .then()
         .statusCode(200)
-        .body("audioUrl", containsString("hls"))
+        .body("audioUrl", containsString("full.m4a"))
         .body("previewSeconds", equalTo(null));
   }
 
@@ -345,7 +345,7 @@ class PodcastFlowIT {
         .get("/v1/podcasts/episodes/" + earlyAccessEpisodeId + "/stream")
         .then()
         .statusCode(200)
-        .body("audioUrl", containsString("preview"))
+        .body("audioUrl", containsString("preview.m4a"))
         .body("previewSeconds", equalTo(30));
   }
 

@@ -5,11 +5,11 @@ import org.shakvilla.beatzmedia.media.domain.ObjectKey;
 
 /**
  * Outcome of an async transcode job, passed to {@link TranscodeJobPort#onResult}. ADD §4.2.
- * On failure, {@code ok=false} and {@code errorCode} is populated; hlsKey/previewKey are null.
+ * On failure, {@code ok=false} and {@code errorCode} is populated; fullKey/previewKey are null.
  */
 public record TranscodeResult(
     MediaAssetId assetId,
-    ObjectKey hlsKey,
+    ObjectKey fullKey,
     ObjectKey previewKey,
     int durationSec,
     boolean ok,

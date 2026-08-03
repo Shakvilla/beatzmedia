@@ -61,10 +61,10 @@ public class InProcessTranscodeJobAdapter implements TranscodeJobPort {
       TranscodeResult result;
       try {
         int durationSec = transcoder.probeDurationSec(job.original());
-        ObjectKey hlsKey = transcoder.transcodeHls(job.original(), job.assetId());
+        ObjectKey fullKey = transcoder.transcodeFull(job.original(), job.assetId());
         ObjectKey previewKey =
-            transcoder.clipPreviewHls(job.original(), job.assetId(), job.previewSeconds());
-        result = new TranscodeResult(job.assetId(), hlsKey, previewKey, durationSec, true, null);
+            transcoder.clipPreview(job.original(), job.assetId(), job.previewSeconds());
+        result = new TranscodeResult(job.assetId(), fullKey, previewKey, durationSec, true, null);
       } catch (Exception ex) {
         result =
             new TranscodeResult(

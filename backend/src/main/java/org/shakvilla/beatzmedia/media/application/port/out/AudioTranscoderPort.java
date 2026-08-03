@@ -18,21 +18,17 @@ public interface AudioTranscoderPort {
   int probeDurationSec(ObjectKey original);
 
   /**
-   * Transcode the original to a full HLS rendition and upload segments to the delivery bucket.
-   *
-   * @param original the originals-bucket key
-   * @param id       the asset id (used to compose the delivery key prefix)
-   * @return the delivery-bucket key of the HLS playlist
+   * Transcode the original to the FULL delivery rendition: a single AAC/M4A object at
+   * {@code delivery/{id}/full.m4a}. Single-file (not HLS) so one presigned URL is fully
+   * playable — an HLS playlist's segments are referenced relatively and would be unsigned
+   * against the private delivery bucket. Media ADD §4.
    */
-  ObjectKey transcodeHls(ObjectKey original, MediaAssetId id);
+  ObjectKey transcodeFull(ObjectKey original, MediaAssetId id);
 
   /**
-   * Produce a physically-clipped ≤previewSeconds HLS rendition for the preview gate (INV-3).
-   *
-   * @param original       the originals-bucket key
-   * @param id             the asset id
-   * @param previewSeconds how many seconds to clip (from BEATZ_PREVIEW_SECONDS, default 30)
-   * @return the delivery-bucket key of the preview playlist
+   * Transcode the first {@code previewSeconds} of the original to the PREVIEW rendition, a
+   * single AAC/M4A object at {@code delivery/{id}/preview.m4a}. The clip IS the enforcement:
+   * a non-owner is only ever signed this object, so INV-3 cannot be overrun client-side.
    */
-  ObjectKey clipPreviewHls(ObjectKey original, MediaAssetId id, int previewSeconds);
+  ObjectKey clipPreview(ObjectKey original, MediaAssetId id, int previewSeconds);
 }
