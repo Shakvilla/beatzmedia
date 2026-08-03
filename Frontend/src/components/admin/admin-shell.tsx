@@ -2,7 +2,7 @@ import { Link, Outlet, useLocation } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { LayoutDashboard, Users, ListMusic, Flag, Wallet, Radio, Activity, ScrollText, SlidersHorizontal, ShieldAlert, LifeBuoy, Scale, Search, ArrowLeft, Menu, X, ShieldCheck, type LucideIcon } from 'lucide-react'
 import { cn } from '../../utils/cn'
-import { adminUser } from '../../lib/admin-data'
+import { useAdminIdentity } from '../../features/admin/use-admin-identity'
 import { AdminCommand } from './admin-command'
 
 const NAV: { to: string; icon: LucideIcon; label: string }[] = [
@@ -56,6 +56,7 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
 }
 
 function AdminFooter({ onNavigate }: { onNavigate?: () => void }) {
+  const admin = useAdminIdentity()
   return (
     <div className="mt-auto flex flex-col gap-5">
       <Link to="/" onClick={onNavigate} className="flex items-center gap-2 px-2 text-xs font-bold text-gray-400 hover:text-beatz-dark-bg dark:hover:text-white transition-colors">
@@ -63,13 +64,16 @@ function AdminFooter({ onNavigate }: { onNavigate?: () => void }) {
       </Link>
       <div className="flex items-center gap-3 px-2 pt-5 border-t border-gray-200 dark:border-white/5">
         <div className="w-9 h-9 rounded-full border border-gray-300 dark:border-white/20 flex items-center justify-center shrink-0 text-[11px] font-bold text-gray-600 dark:text-gray-300">
-          {adminUser.initials}
+          {admin.initials}
         </div>
         <div className="flex flex-col min-w-0">
-          <span className="text-sm font-bold truncate">Admin · {adminUser.name}</span>
-          <span className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-[0.15em] text-beatz-green">
-            <ShieldCheck size={11} /> {adminUser.role}
-          </span>
+          <span className="text-sm font-bold truncate">Admin · {admin.name}</span>
+          {/* Only shown when the role is actually known — never a guessed privilege level. */}
+          {admin.role && (
+            <span className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-[0.15em] text-beatz-green">
+              <ShieldCheck size={11} /> {admin.role}
+            </span>
+          )}
         </div>
       </div>
     </div>

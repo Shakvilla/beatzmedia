@@ -80,11 +80,23 @@
 # You can find more information about the UBI base runtime images and their configuration here:
 # https://rh-openjdk.github.io/redhat-openjdk-containers/
 ###
-# Pin to the most recent patch rebuild of the 1.24 stream (as of 2026-06-22).
-# Red Hat rebuilds this image frequently; the long build-number suffix is the
-# most recent rebuild incorporating current OS security patches. Update by
-# querying: curl -s https://registry.access.redhat.com/v2/ubi9/openjdk-25-runtime/tags/list
-# There is no 1.25/1.26 minor available yet — 1.24-2.1781533370 is the latest.
+# Pin to the most recent patch rebuild of the 1.24 stream (as of 2026-07-24).
+# Red Hat rebuilds this image frequently; each rebuild incorporates current OS
+# security patches. Update by querying:
+#   curl -s https://registry.access.redhat.com/v2/ubi9/openjdk-25-runtime/tags/list
+# There is no 1.25/1.26 minor available yet — 1.24-3 is the latest.
+#
+# Pinned by DIGEST as well as tag: this rebuild publishes only floating tags
+# (1.24, 1.24-3, latest) with no immutable build-number suffix, so the tag alone
+# would not pin anything. The digest is the multi-arch manifest list
+# (amd64/arm64/ppc64le/s390x), so it resolves on CI and on developer machines.
+#
+# 2026-08-01: bumped from 1.24-2.1781533370, which shipped
+# java-25-openjdk 25.0.3.0.9-1.el9 and failed the Trivy gate on CVE-2026-47063
+# (HIGH, "Enhance Jar handling", Oracle CPU 2026-07). This rebuild ships
+# java-25-openjdk{,-headless,-crypto-adapter} 25.0.4.0.7-1.1.el9, the fixed
+# version. Nothing in the repo changed — the CVE was published after the
+# previous pin, so master began failing the same gate.
 # ── Stage 1: pull static ffmpeg binary ───────────────────────────────────────
 # mwader/static-ffmpeg provides a zero-dependency, statically-linked ffmpeg/ffprobe
 # binary compiled against the latest upstream release. We COPY only the two
@@ -94,7 +106,7 @@
 FROM mwader/static-ffmpeg:8.1.2 AS ffmpeg-stage
 
 # ── Stage 2: Quarkus JVM runtime ─────────────────────────────────────────────
-FROM registry.access.redhat.com/ubi9/openjdk-25-runtime:1.24-2.1781533370
+FROM registry.access.redhat.com/ubi9/openjdk-25-runtime:1.24-3@sha256:de073e98f1bb4be12f1454e1685c37db876af845896e0495f4eab0931154f9e4
 
 ENV LANGUAGE='en_US:en'
 

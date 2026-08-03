@@ -3,7 +3,8 @@ import { Check, AlertCircle } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
 import { useReleaseDraft } from '../features/studio/release-draft-context'
-import { isMultiTrack, releaseTypeLabel, BUNDLE_DISCOUNT, studioArtist } from '../lib/studio-data'
+import { isMultiTrack, releaseTypeLabel, BUNDLE_DISCOUNT } from '../lib/studio-data'
+import { useCreatorIdentity } from '../features/studio/use-creator-identity'
 
 export const Route = createFileRoute('/studio/release/new/review')({
   component: ReviewStep,
@@ -27,6 +28,7 @@ interface CheckItem {
 
 function ReviewStep() {
   const { draft, setField } = useReleaseDraft()
+  const creator = useCreatorIdentity()
   const { toast } = useToast()
   const navigate = useNavigate()
 
@@ -93,7 +95,7 @@ function ReviewStep() {
   ]
 
   const subline = [
-    draft.primaryArtist.trim() || studioArtist.name,
+    draft.primaryArtist.trim() || creator.name,
     draft.featuredArtists.trim() ? `feat ${draft.featuredArtists.trim()}` : null,
     releaseTypeLabel(draft.releaseType),
     `${count} track${count === 1 ? '' : 's'}`,

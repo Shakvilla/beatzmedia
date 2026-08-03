@@ -9,22 +9,8 @@
 
 import type { Genre } from '../types'
 
-/** The signed-in creator (the artist whose studio we're viewing). */
-export interface StudioArtist {
-  id: string
-  name: string
-  /** Two-letter monogram used in the sidebar avatar. */
-  initials: string
-  avatar?: string
-  verified: boolean
-}
-
-export const studioArtist: StudioArtist = {
-  id: 'black-sherif',
-  name: 'Black Sherif',
-  initials: 'BS',
-  verified: true,
-}
+// The signed-in creator's identity is NOT a constant — it comes from the
+// session and the creator's own profile. See features/studio/use-creator-identity.
 
 export type ReleaseType = 'single' | 'ep' | 'album' | 'mixtape'
 

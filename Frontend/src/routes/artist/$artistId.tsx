@@ -209,7 +209,12 @@ function Artist({ artistId }: { artistId: string }) {
         title="Tip artist"
         isOpen={tipOpen}
         onClose={() => setTipOpen(false)}
-        onSend={(amount) => toast(`Thank you! ₵${amount} tipped to ${artist.name} via MoMo 💚`, 'success')}
+        // NOT WIRED — and it must not claim otherwise. POST /v1/payments/tips exists and is
+        // complete server-side, but it needs a creator ACCOUNT id (this page only has an
+        // artist-profile id, which differs for catalogue artists) and a provider paymentToken,
+        // which the app has no way to obtain yet. Until both exist, say so plainly rather than
+        // thanking the fan for money that never moved.
+        onSend={() => toast('Tipping isn’t available yet — no payment was made.', 'info')}
       />
     </div>
   )
