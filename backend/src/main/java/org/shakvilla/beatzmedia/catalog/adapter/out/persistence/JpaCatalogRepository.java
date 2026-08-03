@@ -43,6 +43,7 @@ import org.shakvilla.beatzmedia.catalog.domain.Track;
 import org.shakvilla.beatzmedia.catalog.domain.TrackCredit;
 import org.shakvilla.beatzmedia.catalog.domain.TrackId;
 import org.shakvilla.beatzmedia.catalog.domain.Visibility;
+import org.shakvilla.beatzmedia.platform.adapter.out.persistence.TaxonomyTermEntity;
 import org.shakvilla.beatzmedia.platform.domain.Page;
 import org.shakvilla.beatzmedia.platform.domain.PageRequest;
 
@@ -198,13 +199,22 @@ public class JpaCatalogRepository implements CatalogRepository {
 
   // ---- WU-CAT-2: home feed + browse ----
 
+  /**
+   * Browse tiles now come from the admin-managed {@code taxonomy_term} table (V972), which replaced
+   * the standalone {@code browse_category} table so that an operator can add a tile from the console
+   * instead of by migration. The domain shape is unchanged: {@code slug} carries the original
+   * {@code browse_category.id}, so existing client-side keys keep working. Inactive tiles are
+   * excluded — that is how a tile is retired without deleting it.
+   */
   @Override
   public List<BrowseCategory> browseCategories() {
     return em.createQuery(
-            "SELECT b FROM BrowseCategoryEntity b ORDER BY b.id", BrowseCategoryEntity.class)
+            "SELECT t FROM TaxonomyTermEntity t WHERE t.kind = 'browse_category'"
+                + " AND t.active = true ORDER BY t.sortOrder, t.label",
+            TaxonomyTermEntity.class)
         .getResultList()
         .stream()
-        .map(e -> new BrowseCategory(e.id, e.title, e.colorClass))
+        .map(e -> new BrowseCategory(e.slug, e.label, e.colorClass))
         .toList();
   }
 
