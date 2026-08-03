@@ -5,7 +5,8 @@ import { ArrowLeft, Disc3, ExternalLink, Trash2, Eye, EyeOff } from 'lucide-reac
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
 import { studioReleaseQuery, studioReleasesQuery, apiRenameRelease, apiDeleteRelease } from '../lib/api/queries/studio'
-import { PRICE_OPTIONS, releaseTypeLabel, studioArtist, type ReleaseStatus, type StudioRelease } from '../lib/studio-data'
+import { PRICE_OPTIONS, releaseTypeLabel, type ReleaseStatus, type StudioRelease } from '../lib/studio-data'
+import { useCreatorIdentity } from '../features/studio/use-creator-identity'
 
 export const Route = createFileRoute('/studio/release/$releaseId')({
   loader: ({ context: { queryClient }, params: { releaseId } }) =>
@@ -42,6 +43,7 @@ function coverGradient(title: string): string {
 function ReleaseManage() {
   const { releaseId } = Route.useParams()
   const navigate = useNavigate()
+  const creator = useCreatorIdentity()
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const { data: release } = useSuspenseQuery(studioReleaseQuery(releaseId))
@@ -104,7 +106,7 @@ function ReleaseManage() {
         </div>
         <div className="flex items-center gap-3">
           {live && (
-            <button onClick={() => navigate({ to: '/artist/$artistId', params: { artistId: studioArtist.id } })} className="h-11 px-4 rounded-full bg-gray-100 dark:bg-white/10 text-beatz-dark-bg dark:text-white font-bold text-sm flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors">
+            <button onClick={() => { if (creator.id) navigate({ to: '/artist/$artistId', params: { artistId: creator.id } }) }} className="h-11 px-4 rounded-full bg-gray-100 dark:bg-white/10 text-beatz-dark-bg dark:text-white font-bold text-sm flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors">
               <ExternalLink size={16} /> View on BeatzClik
             </button>
           )}

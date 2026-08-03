@@ -3,7 +3,8 @@ import { useRef } from 'react'
 import { UploadCloud, CalendarClock } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useReleaseDraft } from '../features/studio/release-draft-context'
-import { releaseTypes, studioGenres, studioArtist } from '../lib/studio-data'
+import { releaseTypes, studioGenres } from '../lib/studio-data'
+import { useCreatorIdentity } from '../features/studio/use-creator-identity'
 import type { Genre } from '../types'
 
 export const Route = createFileRoute('/studio/release/new/details')({
@@ -16,6 +17,7 @@ const INPUT =
 
 function ReleaseDetailsStep() {
   const { draft, setField } = useReleaseDraft()
+  const creator = useCreatorIdentity()
   const fileRef = useRef<HTMLInputElement>(null)
 
   const onCover = (e: React.ChangeEvent<HTMLInputElement>) => {
@@ -66,7 +68,7 @@ function ReleaseDetailsStep() {
             className={INPUT}
             value={draft.primaryArtist}
             onChange={(e) => setField('primaryArtist', e.target.value)}
-            placeholder={studioArtist.name}
+            placeholder={creator.name || 'Your artist name'}
           />
         </Field>
 

@@ -1,17 +1,8 @@
 import { Link, Outlet, useLocation } from '@tanstack/react-router'
-import { useQuery } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { Home, Upload, LineChart, Users, Wallet, Disc3, BadgeCheck, ArrowLeft, Settings, Menu, X, Mic, type LucideIcon } from 'lucide-react'
 import { cn } from '../../utils/cn'
-import { studioArtist } from '../../lib/studio-data'
-import { studioProfileQuery } from '../../lib/api/queries/studio'
-
-/** Two-letter monogram from a display name. */
-function initialsOf(name: string): string {
-  const parts = name.trim().split(/\s+/).filter(Boolean)
-  if (parts.length === 0) return '?'
-  return (parts[0][0] + (parts[1]?.[0] ?? '')).toUpperCase()
-}
+import { useCreatorIdentity, initialsOf } from '../../features/studio/use-creator-identity'
 
 const NAV: { to: string; icon: LucideIcon; label: string }[] = [
   { to: '/studio', icon: Home, label: 'Overview' },
@@ -59,7 +50,7 @@ function NavLinks({ onNavigate }: { onNavigate?: () => void }) {
   )
 }
 
-function CreatorFooter({ name, avatar, onNavigate }: { name: string; avatar: string | null; onNavigate?: () => void }) {
+function CreatorFooter({ name, avatar, verified, onNavigate }: { name: string; avatar: string | null; verified: boolean; onNavigate?: () => void }) {
   return (
     <div className="mt-auto flex flex-col gap-5">
       <Link to="/" onClick={onNavigate} className="flex items-center gap-2 px-2 text-xs font-bold text-gray-400 hover:text-beatz-dark-bg dark:hover:text-white transition-colors">
@@ -71,7 +62,7 @@ function CreatorFooter({ name, avatar, onNavigate }: { name: string; avatar: str
         </div>
         <div className="flex flex-col min-w-0">
           <span className="text-sm font-bold truncate">{name}</span>
-          {studioArtist.verified && (
+          {verified && (
             <span className="flex items-center gap-1 text-[9px] font-bold uppercase tracking-[0.15em] text-beatz-green"><BadgeCheck size={11} /> Verified</span>
           )}
         </div>
@@ -85,8 +76,7 @@ function CreatorFooter({ name, avatar, onNavigate }: { name: string; avatar: str
  * top bar + slide-in drawer below that. Mounted by the `/studio` layout route.
  */
 export function StudioShell() {
-  const { data: profile } = useQuery(studioProfileQuery())
-  const name = profile?.displayName.trim() || studioArtist.name
+  const creator = useCreatorIdentity()
   const [drawerOpen, setDrawerOpen] = useState(false)
   const location = useLocation()
 
@@ -99,7 +89,7 @@ export function StudioShell() {
       <aside className="hidden md:flex w-64 shrink-0 flex-col gap-8 border-r border-gray-200 dark:border-white/5 bg-beatz-light-surface dark:bg-black p-6">
         <Brand />
         <NavLinks />
-        <CreatorFooter name={name} avatar={profile?.avatar ?? null} />
+        <CreatorFooter name={creator.name} avatar={creator.avatar} verified={creator.verified} />
       </aside>
 
       {/* Mobile drawer + backdrop */}
@@ -121,7 +111,7 @@ export function StudioShell() {
             </button>
           </div>
           <NavLinks onNavigate={() => setDrawerOpen(false)} />
-          <CreatorFooter name={name} avatar={profile?.avatar ?? null} onNavigate={() => setDrawerOpen(false)} />
+          <CreatorFooter name={creator.name} avatar={creator.avatar} verified={creator.verified} onNavigate={() => setDrawerOpen(false)} />
         </aside>
       </div>
 

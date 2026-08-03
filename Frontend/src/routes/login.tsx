@@ -6,12 +6,29 @@ import { useAuth } from '../features/auth/auth-context'
 import { SocialButtons } from '../components/auth/social-buttons'
 import { useToast } from '../components/ui/toast-provider'
 
+interface LoginSearch {
+  /** Where to send the user once they're back in — set by the auth gate. */
+  redirect?: string
+  /** True when the gate bounced them because the session lapsed, not a deliberate logout. */
+  expired?: boolean
+}
+
 export const Route = createFileRoute('/login')({
+  validateSearch: (search: Record<string, unknown>): LoginSearch => ({
+    // Only accept in-app paths: an absolute or protocol-relative URL here would be an
+    // open redirect straight off the login form.
+    redirect:
+      typeof search.redirect === 'string' && search.redirect.startsWith('/') && !search.redirect.startsWith('//')
+        ? search.redirect
+        : undefined,
+    expired: search.expired === true || search.expired === 'true',
+  }),
   component: LoginComponent,
 })
 
 function LoginComponent() {
   const navigate = useNavigate()
+  const { redirect, expired } = Route.useSearch()
   const { login } = useAuth()
   const { toast } = useToast()
   const [email, setEmail] = useState('')
@@ -24,7 +41,7 @@ function LoginComponent() {
     setError('')
     try {
       await login(email, password)
-      navigate({ to: '/' })
+      navigate({ to: redirect ?? '/' })
     } catch {
       setError('Incorrect email or password.')
     }
@@ -75,7 +92,9 @@ function LoginComponent() {
         <div className="w-full max-w-md flex flex-col gap-10">
           <div className="flex flex-col gap-2">
             <h2 className="text-4xl font-bold text-white tracking-tight">Welcome back</h2>
-            <p className="text-gray-500 dark:text-gray-300 font-medium">Enter your details to access your collection.</p>
+            <p className="text-gray-500 dark:text-gray-300 font-medium">
+              {expired ? 'Your session expired — sign in again to pick up where you left off.' : 'Enter your details to access your collection.'}
+            </p>
           </div>
 
           <div className="flex flex-col gap-4">

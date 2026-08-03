@@ -4,7 +4,8 @@ import { useSuspenseQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Disc3, Search, MoreHorizontal, Pencil, ExternalLink, Copy, Trash2, EyeOff } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
-import { releaseTypeLabel, studioArtist, type StudioRelease, type ReleaseStatus } from '../lib/studio-data'
+import { releaseTypeLabel, type StudioRelease, type ReleaseStatus } from '../lib/studio-data'
+import { useCreatorIdentity } from '../features/studio/use-creator-identity'
 import { formatCompact } from '../lib/studio-analytics'
 import { studioReleasesQuery, apiDeleteRelease } from '../lib/api/queries/studio'
 
@@ -42,6 +43,7 @@ function coverGradient(title: string): string {
 function ReleasesComponent() {
   const { toast } = useToast()
   const navigate = useNavigate()
+  const creator = useCreatorIdentity()
   const queryClient = useQueryClient()
   const { data: releases } = useSuspenseQuery(studioReleasesQuery())
   const [filter, setFilter] = useState<'all' | ReleaseStatus>('all')
@@ -128,7 +130,7 @@ function ReleasesComponent() {
           filtered.map((r) => (
             <ReleaseRow key={r.id} release={r}
               onOpen={() => navigate({ to: '/studio/release/$releaseId', params: { releaseId: r.id } })}
-              onView={() => navigate({ to: '/artist/$artistId', params: { artistId: studioArtist.id } })}
+              onView={() => { if (creator.id) navigate({ to: '/artist/$artistId', params: { artistId: creator.id } }) }}
               onDuplicate={() => toast(`Duplicated “${r.title}” as a draft`, 'success')}
               onUnpublish={() => toast(`“${r.title}” unpublished`, 'info')}
               onDelete={() => remove(r.id)}
