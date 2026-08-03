@@ -159,9 +159,25 @@ class CreateEpisodeServiceTest {
 
   @Test
   void create_unsupportedAudioContentType_throwsMediaInvalid() {
-    AudioUpload bad = new AudioUpload("ep.mp3", "audio/mpeg", 1024, new ByteArrayInputStream(new byte[]{1}), "h");
+    // Was audio/mpeg, which ADR-35 now ACCEPTS — the case stopped testing anything and started
+    // asserting the opposite of the policy. Uses a type the validator genuinely rejects.
+    AudioUpload bad =
+        new AudioUpload("ep.ogg", "audio/ogg", 1024, new ByteArrayInputStream(new byte[]{1}), "h");
     assertThrows(MediaInvalidException.class, () -> service.create(ARTIST, "idem-7", publicCommand(), bad));
     assertEquals(0, mediaUpload.callCount());
+  }
+
+  @Test
+  void create_mp3Audio_isAccepted() {
+    // The other half of ADR-35: an episode uploaded as MP3 must reach the media pipeline rather
+    // than being turned away at the declared-content-type gate. This is the podcast equivalent of
+    // the catalog track case, and both gates used to carry their own inlined WAV/FLAC allowlist.
+    AudioUpload mp3 =
+        new AudioUpload("ep.mp3", "audio/mpeg", 1024, new ByteArrayInputStream(new byte[]{1}), "h-mp3");
+
+    service.create(ARTIST, "idem-mp3", publicCommand(), mp3);
+
+    assertEquals(1, mediaUpload.callCount());
   }
 
   @Test
