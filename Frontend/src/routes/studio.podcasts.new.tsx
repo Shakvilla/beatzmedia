@@ -5,7 +5,7 @@ import { ArrowLeft, Upload, Play, Pause, ImagePlus, X } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
 import { studioShowsQuery, studioEpisodesQuery, apiCreateEpisode } from '../lib/api/queries/podcasts-studio'
-import { STUDIO_PODCAST_CATEGORIES } from '../lib/studio-data'
+import { taxonomyQuery } from '../lib/api/queries/taxonomy'
 import { formatDuration } from '../lib/format'
 
 export const Route = createFileRoute('/studio/podcasts/new')({
@@ -33,7 +33,11 @@ function NewEpisode() {
     }
   }, [shows])
   const [newShowTitle, setNewShowTitle] = useState('')
-  const [newShowCat, setNewShowCat] = useState<string>(STUDIO_PODCAST_CATEGORIES[0])
+  // Categories come from the admin-managed taxonomy. They used to be STUDIO_PODCAST_CATEGORIES,
+  // a hardcoded array mirroring a CHECK constraint that has since been dropped (V972) — so a
+  // category an admin added was unselectable here, and one they removed was still offered.
+  const { data: categoryTerms = [] } = useQuery(taxonomyQuery('podcast_category'))
+  const [newShowCat, setNewShowCat] = useState<string>('')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [cover, setCover] = useState<string | null>(null)
@@ -151,7 +155,8 @@ function NewEpisode() {
                 <Field label="Show name"><input className={INPUT} value={newShowTitle} onChange={(e) => setNewShowTitle(e.target.value)} placeholder="e.g. Konongo Diaries" /></Field>
                 <Field label="Category">
                   <select className={cn(INPUT, 'appearance-none cursor-pointer')} value={newShowCat} onChange={(e) => setNewShowCat(e.target.value)}>
-                    {STUDIO_PODCAST_CATEGORIES.map((c) => <option key={c} value={c}>{c}</option>)}
+                    <option value="" disabled>Select a category</option>
+                    {categoryTerms.map((c) => <option key={c.id} value={c.label}>{c.label}</option>)}
                   </select>
                 </Field>
               </div>

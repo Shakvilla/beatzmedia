@@ -49,6 +49,7 @@ import { Route as ArtistArtistIdRouteImport } from './routes/artist/$artistId'
 import { Route as AlbumAlbumIdRouteImport } from './routes/album/$albumId'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as AdminTrustRouteImport } from './routes/admin.trust'
+import { Route as AdminTaxonomyRouteImport } from './routes/admin.taxonomy'
 import { Route as AdminSupportRouteImport } from './routes/admin.support'
 import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
 import { Route as AdminModerationRouteImport } from './routes/admin.moderation'
@@ -273,6 +274,11 @@ const AdminTrustRoute = AdminTrustRouteImport.update({
   path: '/trust',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminTaxonomyRoute = AdminTaxonomyRouteImport.update({
+  id: '/taxonomy',
+  path: '/taxonomy',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminSupportRoute = AdminSupportRouteImport.update({
   id: '/support',
   path: '/support',
@@ -415,6 +421,7 @@ export interface FileRoutesByFullPath {
   '/admin/moderation': typeof AdminModerationRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/support': typeof AdminSupportRoute
+  '/admin/taxonomy': typeof AdminTaxonomyRoute
   '/admin/trust': typeof AdminTrustRoute
   '/admin/users': typeof AdminUsersRouteWithChildren
   '/album/$albumId': typeof AlbumAlbumIdRoute
@@ -475,6 +482,7 @@ export interface FileRoutesByTo {
   '/admin/moderation': typeof AdminModerationRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/support': typeof AdminSupportRoute
+  '/admin/taxonomy': typeof AdminTaxonomyRoute
   '/admin/trust': typeof AdminTrustRoute
   '/admin/users': typeof AdminUsersRouteWithChildren
   '/album/$albumId': typeof AlbumAlbumIdRoute
@@ -539,6 +547,7 @@ export interface FileRoutesById {
   '/admin/moderation': typeof AdminModerationRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/support': typeof AdminSupportRoute
+  '/admin/taxonomy': typeof AdminTaxonomyRoute
   '/admin/trust': typeof AdminTrustRoute
   '/admin/users': typeof AdminUsersRouteWithChildren
   '/album/$albumId': typeof AlbumAlbumIdRoute
@@ -606,6 +615,7 @@ export interface FileRouteTypes {
     | '/admin/moderation'
     | '/admin/settings'
     | '/admin/support'
+    | '/admin/taxonomy'
     | '/admin/trust'
     | '/admin/users'
     | '/album/$albumId'
@@ -666,6 +676,7 @@ export interface FileRouteTypes {
     | '/admin/moderation'
     | '/admin/settings'
     | '/admin/support'
+    | '/admin/taxonomy'
     | '/admin/trust'
     | '/admin/users'
     | '/album/$albumId'
@@ -729,6 +740,7 @@ export interface FileRouteTypes {
     | '/admin/moderation'
     | '/admin/settings'
     | '/admin/support'
+    | '/admin/taxonomy'
     | '/admin/trust'
     | '/admin/users'
     | '/album/$albumId'
@@ -1076,6 +1088,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminTrustRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/taxonomy': {
+      id: '/admin/taxonomy'
+      path: '/taxonomy'
+      fullPath: '/admin/taxonomy'
+      preLoaderRoute: typeof AdminTaxonomyRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/support': {
       id: '/admin/support'
       path: '/support'
@@ -1290,6 +1309,7 @@ interface AdminRouteChildren {
   AdminModerationRoute: typeof AdminModerationRoute
   AdminSettingsRoute: typeof AdminSettingsRoute
   AdminSupportRoute: typeof AdminSupportRoute
+  AdminTaxonomyRoute: typeof AdminTaxonomyRoute
   AdminTrustRoute: typeof AdminTrustRoute
   AdminUsersRoute: typeof AdminUsersRouteWithChildren
   AdminIndexRoute: typeof AdminIndexRoute
@@ -1305,6 +1325,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminModerationRoute: AdminModerationRoute,
   AdminSettingsRoute: AdminSettingsRoute,
   AdminSupportRoute: AdminSupportRoute,
+  AdminTaxonomyRoute: AdminTaxonomyRoute,
   AdminTrustRoute: AdminTrustRoute,
   AdminUsersRoute: AdminUsersRouteWithChildren,
   AdminIndexRoute: AdminIndexRoute,

@@ -7,7 +7,6 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
 import org.shakvilla.beatzmedia.platform.domain.Currency;
-import org.shakvilla.beatzmedia.store.domain.Genre;
 import org.shakvilla.beatzmedia.store.domain.LicenseOption;
 import org.shakvilla.beatzmedia.store.domain.LicenseTier;
 import org.shakvilla.beatzmedia.store.domain.MerchVariant;
@@ -55,7 +54,7 @@ public class StoreEntityMapper {
         e.image,
         e.priceMinor,
         Currency.valueOf(e.currency),
-        e.genre == null ? null : Genre.fromWireValue(e.genre),
+        e.genre,
         readStringList(e.badgesJson),
         e.description,
         e.popularity,

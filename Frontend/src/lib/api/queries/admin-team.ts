@@ -58,7 +58,7 @@ export async function apiInviteAdmin(email: string, role: AdminRole): Promise<Ad
   return toAdminMember(
     await apiFetch<AdminMemberWire>('/admin/team/invite', {
       method: 'POST',
-      body: JSON.stringify({ email, role: toWireRole(role) }),
+      body: { email, role: toWireRole(role) },
     }),
   )
 }
@@ -68,7 +68,7 @@ export async function apiChangeAdminRole(id: string, role: AdminRole): Promise<A
   return toAdminMember(
     await apiFetch<AdminMemberWire>(`/admin/team/${id}`, {
       method: 'PATCH',
-      body: JSON.stringify({ role: toWireRole(role) }),
+      body: { role: toWireRole(role) },
     }),
   )
 }

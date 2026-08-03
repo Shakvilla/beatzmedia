@@ -87,7 +87,7 @@ export async function apiCreateTerm(
   return toAdminTerm(
     await apiFetch<AdminTaxonomyTermWire>(`/admin/taxonomy?kind=${kind}`, {
       method: 'POST',
-      body: JSON.stringify(body),
+      body,
     }),
   )
 }
@@ -103,7 +103,7 @@ export async function apiUpdateTerm(
   return toAdminTerm(
     await apiFetch<AdminTaxonomyTermWire>(`/admin/taxonomy/${id}`, {
       method: 'PATCH',
-      body: JSON.stringify(body),
+      body,
     }),
   )
 }
