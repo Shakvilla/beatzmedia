@@ -31,6 +31,9 @@ public final class Track {
   private final Integer year;
   private final String status;
 
+  /** Wire value the catalog read model treats as publicly visible. */
+  public static final String READY_STATUS = "ready";
+
   public Track(
       TrackId id,
       String title,
@@ -64,6 +67,27 @@ public final class Track {
     this.quality = quality;
     this.year = year;
     this.status = status;
+  }
+
+  /**
+   * The upload finished transcoding: publish the track and record the real duration.
+   *
+   * <p>A track is created as a stub with {@code status="uploading"} and {@code durationSec=0} —
+   * the duration is only known once ffprobe has run, which happens during transcode, long after
+   * the upload response was returned. Nothing ever moved it off that stub state, so uploaded
+   * tracks stayed "uploading" forever and never became visible to fans.
+   *
+   * <p>Idempotent: replaying it on an already-ready track is a no-op, because the media module
+   * may re-fire {@code MediaReady} on a re-transcode.
+   */
+  public Track markReady(int probedDurationSec) {
+    if (READY_STATUS.equals(status) && durationSec == probedDurationSec) {
+      return this;
+    }
+    return new Track(
+        id, title, artistId, artistName, albumId, albumTitle,
+        probedDurationSec > 0 ? probedDurationSec : durationSec,
+        image, ownership, priceMinor, plays, audioUrl, credits, quality, year, READY_STATUS);
   }
 
   public TrackId getId() {

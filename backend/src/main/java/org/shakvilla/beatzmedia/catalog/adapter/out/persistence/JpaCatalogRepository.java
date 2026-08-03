@@ -541,7 +541,13 @@ public class JpaCatalogRepository implements CatalogRepository {
     e.quality = track.getQuality().orElse(null);
     e.year = track.getYear().orElse(null);
     e.status = track.getStatus();
-    em.persist(e);
+    // merge, not persist: this is an upsert. persist() only ever worked because every caller
+    // until now was creating a brand-new track. The MediaReady projection reads a track and
+    // writes it back inside one transaction, so a managed TrackEntity with this id is already in
+    // the persistence context — persisting a second instance threw NonUniqueObjectException and
+    // took the whole observer down with it. merge reconciles with the managed copy and still
+    // INSERTs when the row is genuinely new.
+    em.merge(e);
   }
 
   @Override

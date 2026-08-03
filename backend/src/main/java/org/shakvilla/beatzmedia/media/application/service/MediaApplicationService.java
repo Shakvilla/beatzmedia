@@ -311,7 +311,9 @@ public class MediaApplicationService
     if (result.ok()) {
       asset.markReady(result.fullKey(), result.previewKey(), result.durationSec());
       repository.save(asset);
-      mediaReadyEvent.fire(new MediaReady(asset.getId(), asset.getOwnerRef(), asset.getKind()));
+      mediaReadyEvent.fire(
+          new MediaReady(
+              asset.getId(), asset.getOwnerRef(), asset.getKind(), asset.getDurationSec()));
     } else {
       asset.markError();
       repository.save(asset);
