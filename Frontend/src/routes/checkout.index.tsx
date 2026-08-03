@@ -12,7 +12,7 @@ export const Route = createFileRoute('/checkout/')({
 })
 
 const PAYMENT_METHODS = [
-  { id: 'mtn', name: 'MTN MoMo', subtitle: '0244 ••• 9210 - default', color: 'bg-[#f6c644]', textColor: 'text-black', logoText: 'MTN' },
+  { id: 'mtn', name: 'MTN MoMo', subtitle: 'Pay with your MoMo number', color: 'bg-[#f6c644]', textColor: 'text-black', logoText: 'MTN' },
   { id: 'telecel', name: 'Telecel Cash', subtitle: 'Add new number', color: 'bg-red-600', textColor: 'text-white', logoText: 'T' },
   { id: 'airtel', name: 'AirtelTigo Money', subtitle: 'Add new number', color: 'bg-red-700', textColor: 'text-white', logoText: 'AT' },
   { id: 'card', name: 'Card', subtitle: 'Visa / Mastercard', color: 'bg-beatz-dark-surface-3', textColor: 'text-white', isCard: true },
@@ -108,7 +108,7 @@ function CheckoutComponent() {
             <div className="p-6 rounded-2xl bg-white dark:bg-beatz-dark-surface-2 border border-gray-100 dark:border-transparent flex flex-col gap-3">
               <h3 className="font-bold text-beatz-dark-bg dark:text-white">Confirm with MoMo PIN</h3>
               <p className="text-sm text-gray-500 dark:text-gray-300 leading-relaxed">
-                You'll receive a prompt on <span className="text-beatz-dark-bg dark:text-white font-bold">0244 ••• 9210</span> to authorize this payment. The charge will appear as <span className="text-[#f6c644] font-bold">BEATZCLIK GH</span> on your statement.
+                You'll receive a prompt on your MoMo number to authorize this payment. The charge will appear as <span className="text-[#f6c644] font-bold">BEATZCLIK GH</span> on your statement.
               </p>
             </div>
           )}

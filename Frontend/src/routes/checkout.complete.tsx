@@ -1,6 +1,7 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
-import { Check, Download, Loader2, XCircle } from 'lucide-react'
+import { useEffect, useState } from 'react'
+import { Check, Clock, Download, Loader2, XCircle } from 'lucide-react'
 import { orderQuery } from '../lib/api/queries/commerce'
 import { formatPrice } from '../lib/format'
 
@@ -15,15 +16,33 @@ export const Route = createFileRoute('/checkout/complete')({
   component: CheckoutCompleteComponent,
 })
 
+/**
+ * How long to wait for settlement before telling the fan we haven't heard back.
+ * A MoMo prompt lapses after about a minute, so an order still `pending` well past
+ * that will almost never resolve on its own — polling it forever leaves the fan on a
+ * spinner with no idea whether they were charged.
+ */
+const AUTHORIZE_TIMEOUT_MS = 120_000
+const POLL_INTERVAL_MS = 2000
+
 function CheckoutCompleteComponent() {
   const { orderId } = Route.useSearch()
+  const [timedOut, setTimedOut] = useState(false)
+
+  // Restart the clock if the fan retries with a different order.
+  useEffect(() => {
+    setTimedOut(false)
+    const t = setTimeout(() => setTimedOut(true), AUTHORIZE_TIMEOUT_MS)
+    return () => clearTimeout(t)
+  }, [orderId])
 
   const { data: order, isLoading, isError } = useQuery({
     ...orderQuery(orderId ?? ''),
     enabled: !!orderId,
     refetchInterval: (query) => {
       const status = query.state.data?.status
-      return status === 'pending' ? 2000 : false
+      // Stop polling once we've given up, so a stranded order doesn't hammer the API forever.
+      return status === 'pending' && !timedOut ? POLL_INTERVAL_MS : false
     },
   })
 
@@ -56,6 +75,28 @@ function CheckoutCompleteComponent() {
   }
 
   if (order.status === 'pending') {
+    // Still waiting, but past the point where a MoMo prompt would realistically land.
+    // Say so honestly and give the fan somewhere to go, rather than spinning forever.
+    if (timedOut) {
+      return (
+        <div className="flex flex-col items-center justify-center text-center gap-4 py-32">
+          <div className="w-16 h-16 rounded-full bg-[#f6c644]/15 flex items-center justify-center">
+            <Clock className="text-[#b8881f] dark:text-[#f6c644]" size={32} />
+          </div>
+          <h1 className="text-title text-beatz-dark-bg dark:text-white">Still waiting for confirmation</h1>
+          <p className="text-gray-500 dark:text-gray-300 max-w-md">
+            We haven't had confirmation of your payment yet. If you approved the prompt, your
+            purchase will appear in your library shortly — you have not been charged twice.
+            If the prompt expired, you can try again.
+          </p>
+          <p className="text-xs font-mono text-gray-400 dark:text-gray-500">Order {order.reference}</p>
+          <div className="flex items-center gap-3">
+            <Link to="/library" className="h-11 px-6 rounded-full bg-beatz-green text-black font-bold flex items-center">Check my library</Link>
+            <Link to="/cart" className="h-11 px-6 rounded-full border border-gray-300 dark:border-white/20 text-beatz-dark-bg dark:text-white font-bold flex items-center">Back to cart</Link>
+          </div>
+        </div>
+      )
+    }
     return <AuthorizingState />
   }
 

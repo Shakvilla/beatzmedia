@@ -12,11 +12,8 @@ export interface AdminUser {
   initials: string
 }
 
-export const adminUser: AdminUser = {
-  name: 'Yaa',
-  role: 'Super-admin',
-  initials: 'AD',
-}
+// The signed-in admin's identity is NOT a constant — name and role come from the session
+// and GET /v1/admin/team. See features/admin/use-admin-identity.
 
 export type AdminRange = '24h' | '7d' | '30d'
 
