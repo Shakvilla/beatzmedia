@@ -14,6 +14,7 @@ import type { Genre } from '../../types'
 import type { ReleaseType } from '../../lib/studio-data'
 import {
   apiCreateDraft, apiUploadTrack, apiUpdateRelease, apiSubmitRelease, apiDeleteTrack,
+  apiGetReleaseDetail,
   type CreateDraftInput, type UpdateReleaseInput,
 } from '../../lib/api/queries/studio'
 
@@ -114,6 +115,7 @@ type DraftAction =
   | { type: 'SET_ALL_PRICES'; price: number }
   | { type: 'SET_TRACK_SPLITS'; trackId: string; splits: SplitEntry[] }
   | { type: 'APPLY_SPLITS_TO_ALL'; splits: SplitEntry[] }
+  | { type: 'HYDRATE'; draft: ReleaseDraft }
   | { type: 'RESET' }
 
 function reducer(state: ReleaseDraft, action: DraftAction): ReleaseDraft {
@@ -170,6 +172,8 @@ function reducer(state: ReleaseDraft, action: DraftAction): ReleaseDraft {
       }
       return { ...state, splits: next }
     }
+    case 'HYDRATE':
+      return action.draft
     case 'RESET':
       return initialDraft
     default:
@@ -215,6 +219,13 @@ interface ReleaseDraftContextValue {
   setTrackSplits: (trackId: string, splits: SplitEntry[]) => void
   applySplitsToAll: (splits: SplitEntry[]) => void
   createOrUpdateDraft: () => Promise<void>
+  /**
+   * Load an existing server draft into the wizard so the artist resumes where they left off.
+   * Without this, "Continue editing" had nowhere to go but the manage/publish page — the wizard
+   * always started from an empty draft, so a half-finished release (no audio yet) looked ready
+   * to publish.
+   */
+  hydrateFromServer: (releaseId: string) => Promise<void>
   uploadTrack: (file: File) => Promise<void>
   submitRelease: () => Promise<void>
   reset: () => void
@@ -273,6 +284,55 @@ export function ReleaseDraftProvider({ children, initial }: { children: ReactNod
         } else {
           await apiUpdateRelease(stateRef.current.releaseId, toMetaPatch(stateRef.current))
         }
+      },
+
+      hydrateFromServer: async (releaseId) => {
+        const d = await apiGetReleaseDetail(releaseId)
+        const type = (d.type ?? 'single') as ReleaseType
+        dispatch({
+          type: 'HYDRATE',
+          draft: {
+            ...initialDraft,
+            releaseId: d.id,
+            releaseType: type,
+            title: d.title ?? '',
+            genre: (d.genre ?? '') as ReleaseDraft['genre'],
+            description: d.description ?? '',
+            visibility: d.visibility === 'public' ? 'public' : 'scheduled',
+            // The wizard's date input is a plain yyyy-mm-dd, not an ISO instant.
+            releaseDate: d.scheduledAt ? d.scheduledAt.slice(0, 10) : '',
+            price: d.price?.amount ?? initialDraft.price,
+            tracks: (d.tracks ?? [])
+              .slice()
+              .sort((a, b) => a.position - b.position)
+              .map((t) => ({
+                id: t.trackId,
+                title: t.title,
+                duration: t.duration,
+                // A server-side track exists, so it uploaded. Anything not yet READY is still
+                // being processed rather than failed — 'error' here would resurrect the old
+                // "metadata missing" lie on a perfectly good draft.
+                status: t.status === 'ready' ? 'ready' : 'uploading',
+                progress: t.status === 'ready' ? 100 : 0,
+                src: '',
+                price: t.price?.amount ?? 0,
+                explicit: false,
+              })),
+            splits: Object.fromEntries(
+              (d.tracks ?? []).map((t) => [
+                t.trackId,
+                (t.splits ?? []).map((sp) => ({
+                  id: sp.id,
+                  name: sp.name,
+                  email: sp.email,
+                  role: sp.role,
+                  percent: sp.percent,
+                  confirmation: sp.confirmation as SplitEntry['confirmation'],
+                })),
+              ]),
+            ),
+          },
+        })
       },
 
       uploadTrack: async (file) => {
