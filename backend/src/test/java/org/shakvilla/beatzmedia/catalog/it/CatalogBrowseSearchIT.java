@@ -18,18 +18,10 @@ import io.quarkus.test.junit.QuarkusTest;
 @Tag("integration")
 class CatalogBrowseSearchIT {
 
-  // --- GET /v1/browse-categories ---
-
-  @Test
-  void browse_categories_returns_200_with_seeded_categories() {
-    given()
-        .when().get("/v1/browse-categories")
-        .then()
-        .statusCode(200)
-        .body("[0].id", isA(String.class))
-        .body("[0].title", isA(String.class))
-        .body("[0].colorClass", isA(String.class));
-  }
+  // GET /v1/browse-categories is retired (V973). The home/search "Browse by mood & genre" tiles are
+  // the GENRES now, carrying their colours on the taxonomy term, so the endpoint and its
+  // browse_category table were a second list saying the same thing. Coverage moved to the taxonomy
+  // endpoint; there is nothing left here to assert.
 
   // --- GET /v1/home ---
 

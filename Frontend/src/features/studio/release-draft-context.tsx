@@ -267,6 +267,56 @@ export function ReleaseDraftProvider({ children, initial }: { children: ReactNod
       return p
     }
 
+    /**
+     * Watch a freshly uploaded track until transcoding settles it.
+     *
+     * Upload and transcode are deliberately decoupled on the server — the POST returns as soon as
+     * the bytes are stored, with `status: 'uploading'`, and ffmpeg runs on a worker. There is no
+     * push channel, so the client has to ask. Without this the wizard showed "uploading" forever
+     * on an upload that had already finished, which is what made the step look hung.
+     *
+     * Bounded at ~2 minutes: a real transcode of a normal track takes seconds, so anything past
+     * that is a stuck job, and saying so beats spinning indefinitely. Only the status/duration are
+     * patched, never the whole draft — the artist may be editing the title while this runs.
+     */
+    const pollUntilReady = async (releaseId: string, trackId: string) => {
+      const INTERVAL_MS = 2000
+      const MAX_ATTEMPTS = 60
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        await new Promise((r) => setTimeout(r, INTERVAL_MS))
+        // The artist navigated away or reset the wizard — stop asking.
+        if (stateRef.current.releaseId !== releaseId) return
+        try {
+          const detail = await apiGetReleaseDetail(releaseId)
+          const server = detail.tracks?.find((t) => t.trackId === trackId)
+          if (!server) return // track removed while we were waiting
+          if (server.status === 'ready') {
+            dispatch({
+              type: 'UPDATE_TRACK',
+              id: trackId,
+              patch: { status: 'ready', progress: 100, duration: server.duration },
+            })
+            return
+          }
+          if (server.status === 'error') {
+            dispatch({
+              type: 'MARK_TRACK_ERROR',
+              id: trackId,
+              error: 'processing failed on the server',
+            })
+            return
+          }
+        } catch {
+          // A transient failure mid-poll is not a failed upload; keep waiting.
+        }
+      }
+      dispatch({
+        type: 'MARK_TRACK_ERROR',
+        id: trackId,
+        error: 'still processing after 2 minutes — reload to check again',
+      })
+    }
+
     return {
       draft,
       setField: (field, value) => dispatch({ type: 'SET_FIELD', field, value }),
@@ -362,6 +412,11 @@ export function ReleaseDraftProvider({ children, initial }: { children: ReactNod
             tempId,
             track: { ...server, price: stateRef.current.price, lossy },
           })
+          // The upload responds the moment the bytes are stored; transcoding runs asynchronously,
+          // so `server.status` is always 'uploading' here. Nothing used to close that loop, which
+          // is why a perfectly good upload sat on "uploading" forever while the backend had long
+          // since marked it ready. Poll until it settles.
+          void pollUntilReady(id, server.id)
         } catch (err) {
           // Surface the server's reason. An unsupported format, an expired session and a 500 are
           // very different problems for the artist, and collapsing them lost that entirely.
