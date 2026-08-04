@@ -8,6 +8,7 @@ import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.shakvilla.beatzmedia.catalog.domain.CatalogDefaults;
 import org.shakvilla.beatzmedia.catalog.application.port.in.ProvisionArtistProfile.ProvisionCommand;
 import org.shakvilla.beatzmedia.catalog.application.service.ProvisionArtistProfileService;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
@@ -52,7 +53,7 @@ class ProvisionArtistProfileServiceTest {
     service.provision(new ProvisionCommand(id, "No Avatar", "  "));
 
     assertEquals(
-        ProvisionArtistProfileService.DEFAULT_IMAGE, repo.findArtist(id).orElseThrow().getImage());
+        CatalogDefaults.PLACEHOLDER_IMAGE, repo.findArtist(id).orElseThrow().getImage());
   }
 
   @Test
