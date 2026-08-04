@@ -106,8 +106,12 @@ public class StudioPodcastResource {
   @Consumes(MediaType.APPLICATION_JSON)
   public Response createShow(CreateShowBody body) {
     PodcastShowView view = createPodcastShow.create(
-        artistId(), new CreatePodcastShowCommand(body != null ? body.title() : null,
-            body != null ? body.category() : null));
+        artistId(),
+        new CreatePodcastShowCommand(
+            body != null ? body.title() : null,
+            body != null ? body.category() : null,
+            body != null ? body.image() : null,
+            body != null ? body.description() : null));
     return Response.status(Response.Status.CREATED).entity(view).build();
   }
 
@@ -227,7 +231,8 @@ public class StudioPodcastResource {
   // ---- Request DTOs (records) ----
 
   /** {@code CreateShowDto {title,category}} — Studio ADD §5.1. */
-  public record CreateShowBody(String title, String category) {}
+  /** {@code image} is the show cover — optional here, required before an episode can publish. */
+  public record CreateShowBody(String title, String category, String image, String description) {}
 
   /**
    * {@code CreateEpisodeDto} — Studio ADD §6. {@code showId} XOR {@code newShow}; {@code cover} is

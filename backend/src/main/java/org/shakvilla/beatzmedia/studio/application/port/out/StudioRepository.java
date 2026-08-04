@@ -45,6 +45,15 @@ public interface StudioRepository {
 
   /** Idempotency lookup — WU-STU-2 §9: a replay of the same {@code (artist, idempotencyKey)}
    * returns the previously-created episode with no second media upload. */
+  /**
+   * Looks an episode up by id alone, without an owning artist.
+   *
+   * <p>Needed by the MediaReady observer: {@code OwnerRef} carries only the episode id, and the
+   * media module has no reason to know which artist owns it. Every other read stays
+   * artist-scoped — this one is not reachable from a request.
+   */
+  Optional<Episode> findEpisodeById(EpisodeId id);
+
   Optional<Episode> findEpisodeByIdempotencyKey(ArtistId artist, String idempotencyKey);
 
   /** All {@code scheduled} episodes whose {@code scheduledAt <= now} — indexed on {@code (status,

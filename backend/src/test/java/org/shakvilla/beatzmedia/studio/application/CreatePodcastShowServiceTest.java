@@ -26,7 +26,7 @@ class CreatePodcastShowServiceTest {
   @Test
   void create_validInput_returnsView() {
     setUp();
-    PodcastShowView view = service.create(ARTIST, new CreatePodcastShowCommand("My Show", "Comedy"));
+    PodcastShowView view = service.create(ARTIST, new CreatePodcastShowCommand("My Show", "Comedy", null, null));
     assertEquals("My Show", view.title());
     assertEquals("Comedy", view.category());
     assertEquals(1, repo.findShows(ARTIST).size());
@@ -37,7 +37,7 @@ class CreatePodcastShowServiceTest {
     setUp();
     assertThrows(
         ValidationException.class,
-        () -> service.create(ARTIST, new CreatePodcastShowCommand("", "Comedy")));
+        () -> service.create(ARTIST, new CreatePodcastShowCommand("", "Comedy", null, null)));
   }
 
   @Test
@@ -45,7 +45,7 @@ class CreatePodcastShowServiceTest {
     setUp();
     assertThrows(
         ValidationException.class,
-        () -> service.create(ARTIST, new CreatePodcastShowCommand("My Show", "")));
+        () -> service.create(ARTIST, new CreatePodcastShowCommand("My Show", "", null, null)));
   }
 
   private void setUp() {
