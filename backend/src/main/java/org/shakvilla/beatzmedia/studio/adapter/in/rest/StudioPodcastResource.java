@@ -33,6 +33,7 @@ import org.shakvilla.beatzmedia.studio.application.port.in.CreateEpisode.CreateE
 import org.shakvilla.beatzmedia.studio.application.port.in.CreatePodcastShow;
 import org.shakvilla.beatzmedia.studio.application.port.in.CreatePodcastShow.CreatePodcastShowCommand;
 import org.shakvilla.beatzmedia.studio.application.port.in.DeleteEpisode;
+import org.shakvilla.beatzmedia.studio.application.port.in.SetShowCover;
 import org.shakvilla.beatzmedia.studio.application.port.in.EpisodeView;
 import org.shakvilla.beatzmedia.studio.application.port.in.ListStudioEpisodes;
 import org.shakvilla.beatzmedia.studio.application.port.in.ListStudioPodcastShows;
@@ -41,6 +42,7 @@ import org.shakvilla.beatzmedia.studio.application.port.in.UpdateEpisode;
 import org.shakvilla.beatzmedia.studio.application.port.in.UpdateEpisode.UpdateEpisodeCommand;
 import org.shakvilla.beatzmedia.studio.domain.ArtistId;
 import org.shakvilla.beatzmedia.studio.domain.EpisodeId;
+import org.shakvilla.beatzmedia.studio.domain.ShowId;
 
 /**
  * Thin REST resource for the Studio podcast shows/episodes endpoints (LLFR-STUDIO-02.1 – 02.4).
@@ -71,6 +73,7 @@ public class StudioPodcastResource {
   private final CreateEpisode createEpisode;
   private final UpdateEpisode updateEpisode;
   private final DeleteEpisode deleteEpisode;
+  private final SetShowCover setShowCover;
   private final JsonWebToken jwt;
 
   @Inject
@@ -81,6 +84,7 @@ public class StudioPodcastResource {
       CreateEpisode createEpisode,
       UpdateEpisode updateEpisode,
       DeleteEpisode deleteEpisode,
+      SetShowCover setShowCover,
       JsonWebToken jwt) {
     this.listStudioPodcastShows = listStudioPodcastShows;
     this.createPodcastShow = createPodcastShow;
@@ -88,6 +92,7 @@ public class StudioPodcastResource {
     this.createEpisode = createEpisode;
     this.updateEpisode = updateEpisode;
     this.deleteEpisode = deleteEpisode;
+    this.setShowCover = setShowCover;
     this.jwt = jwt;
   }
 
@@ -113,6 +118,24 @@ public class StudioPodcastResource {
             body != null ? body.image() : null,
             body != null ? body.description() : null));
     return Response.status(Response.Status.CREATED).entity(view).build();
+  }
+
+  /**
+   * POST /v1/studio/podcasts/shows/:id/cover — multipart {@code image} part.
+   *
+   * <p>Returns {@code { "image": "/v1/media/images/{assetId}" }}, the stable URL now stored on the
+   * show. A show cannot publish an episode to fans without one, because the fan-facing
+   * {@code podcast.image} column is NOT NULL.
+   */
+  @POST
+  @Path("/shows/{id}/cover")
+  @Consumes(MediaType.MULTIPART_FORM_DATA)
+  public Response setShowCover(@PathParam("id") String id, @MultipartForm ShowCoverForm form) {
+    if (form == null || form.image == null) {
+      throw new ValidationException("'image' file part is required", "image");
+    }
+    String url = setShowCover.setCover(artistId(), new ShowId(id), toImageUpload(form.image));
+    return Response.ok(java.util.Map.of("image", url)).build();
   }
 
   // ---- Episodes ----
@@ -196,6 +219,26 @@ public class StudioPodcastResource {
       return Instant.parse(value);
     } catch (Exception e) {
       throw new ValidationException(field + " must be an ISO-8601 timestamp", field);
+    }
+  }
+
+  /** Same hash-then-restream shape as {@link #toAudioUpload}: media needs the digest up front. */
+  private static SetShowCover.ImageUpload toImageUpload(FileUpload file) {
+    try (InputStream body = java.nio.file.Files.newInputStream(file.uploadedFile())) {
+      MessageDigest digest = MessageDigest.getInstance("SHA-256");
+      DigestInputStream digestBody = new DigestInputStream(body, digest);
+      byte[] buf = new byte[8192];
+      //noinspection StatementWithEmptyBody
+      while (digestBody.read(buf) != -1) {}
+      String contentHash = bytesToHex(digest.digest());
+      return new SetShowCover.ImageUpload(
+          file.fileName(),
+          file.contentType(),
+          file.size(),
+          java.nio.file.Files.newInputStream(file.uploadedFile()),
+          contentHash);
+    } catch (IOException | NoSuchAlgorithmException e) {
+      throw new IllegalStateException("Could not read the uploaded image", e);
     }
   }
 

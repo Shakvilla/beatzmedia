@@ -4,7 +4,9 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Upload, Play, Pause, ImagePlus, X } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
-import { studioShowsQuery, studioEpisodesQuery, apiCreateEpisode } from '../lib/api/queries/podcasts-studio'
+import {
+  studioShowsQuery, studioEpisodesQuery, apiCreateEpisode, apiCreateShow, apiUploadShowCover,
+} from '../lib/api/queries/podcasts-studio'
 import { taxonomyQuery } from '../lib/api/queries/taxonomy'
 import { formatDuration } from '../lib/format'
 
@@ -53,6 +55,10 @@ function NewEpisode() {
   const audioRef = useRef<HTMLAudioElement>(null)
   const fileRef = useRef<HTMLInputElement>(null)
   const coverRef = useRef<HTMLInputElement>(null)
+  // The preview is a blob: URL, which is useless to the server. Keep the File itself so the
+  // cover can actually be uploaded — previously only the preview existed, and the `cover`
+  // string sent to the API was a blob: URL that meant nothing outside this tab.
+  const coverFileRef = useRef<File | null>(null)
   const audioFileRef = useRef<File | null>(null)
 
   const onAudio = (f?: File) => {
@@ -79,13 +85,30 @@ function NewEpisode() {
     if (!canSubmit || !file) { toast('Add an episode title, audio and a show to publish', 'error'); return }
     setSubmitting(true)
     try {
+      // The show is created FIRST, so its cover can be uploaded before the episode publishes.
+      // Creating the show inline with the episode left no moment to attach art, and an episode
+      // whose show has no cover never reaches fans — podcast.image is NOT NULL.
+      let targetShowId = showId === NEW_SHOW ? null : showId
+      if (showId === NEW_SHOW) {
+        const created = await apiCreateShow({ title: newShowTitle.trim(), category: newShowCat })
+        targetShowId = created.id
+      }
+
+      let coverUrl: string | null = null
+      const coverFile = coverFileRef.current
+      if (targetShowId && coverFile) {
+        // Real upload, real URL. Failing here must not publish a coverless episode, so it is not
+        // caught separately — the whole submit fails and the artist can retry.
+        coverUrl = await apiUploadShowCover(targetShowId, coverFile)
+      }
+
       await apiCreateEpisode({
         audio: file,
-        showId: showId === NEW_SHOW ? null : showId,
-        newShow: showId === NEW_SHOW ? { title: newShowTitle.trim(), category: newShowCat } : null,
+        showId: targetShowId,
+        newShow: null,
         title: title.trim(),
         description: description.trim(),
-        cover, // client preview URL or null — backend takes a URL string
+        cover: coverUrl,
         visibility,
         date: visibility === 'scheduled' ? date : null,
         premium,
@@ -169,11 +192,22 @@ function NewEpisode() {
         {/* Side: cover + visibility + monetization */}
         <div className="flex flex-col gap-6">
           <section className={cn(CARD, 'flex flex-col gap-3')}>
-            <span className={LABEL}>Episode art</span>
-            <input ref={coverRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) setCover(URL.createObjectURL(f)) }} />
+            <span className={LABEL}>Show art</span>
+            <input ref={coverRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) { coverFileRef.current = f; setCover(URL.createObjectURL(f)) } }} />
             <button type="button" onClick={() => coverRef.current?.click()} className="w-full aspect-square rounded-2xl overflow-hidden bg-beatz-light-surface-2 dark:bg-white/5 border border-gray-200 dark:border-white/10 flex items-center justify-center hover:border-beatz-green/60 transition-colors">
               {cover ? <img src={cover} alt="Cover" className="w-full h-full object-cover" /> : <span className="flex flex-col items-center gap-2 text-gray-400 dark:text-gray-500"><ImagePlus size={26} /><span className="text-[11px] font-mono uppercase tracking-widest">3000×3000</span></span>}
             </button>
+            {/*
+              Said plainly rather than discovered after publishing. Without a cover the episode is
+              created and marked published in the Studio, but the projection into the fan-facing
+              catalogue is refused (podcast.image is NOT NULL) — so it would look shipped and be
+              invisible. This is the one field that decides that.
+            */}
+            {!cover && (
+              <p className="text-xs text-[#b8881f] dark:text-[#f6c644]">
+                Required to reach listeners — an episode without show art stays in your Studio.
+              </p>
+            )}
           </section>
 
           <section className={cn(CARD, 'flex flex-col gap-3')}>

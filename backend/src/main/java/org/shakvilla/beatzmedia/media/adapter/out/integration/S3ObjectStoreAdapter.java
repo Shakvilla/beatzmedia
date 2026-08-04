@@ -14,6 +14,7 @@ import jakarta.inject.Inject;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.jboss.logging.Logger;
 import org.shakvilla.beatzmedia.media.application.port.out.ObjectStorePort;
+import org.shakvilla.beatzmedia.media.application.port.out.ObjectStorePort.StoredObject;
 import org.shakvilla.beatzmedia.media.application.port.out.UrlSignerPort;
 import org.shakvilla.beatzmedia.media.domain.DeliveryVariant;
 import org.shakvilla.beatzmedia.media.domain.FileTooLargeException;
@@ -27,6 +28,9 @@ import software.amazon.awssdk.core.exception.SdkException;
 import software.amazon.awssdk.core.sync.RequestBody;
 import software.amazon.awssdk.services.s3.S3Client;
 import software.amazon.awssdk.services.s3.model.DeleteObjectRequest;
+import software.amazon.awssdk.core.ResponseInputStream;
+import software.amazon.awssdk.services.s3.model.GetObjectRequest;
+import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 import software.amazon.awssdk.services.s3.model.HeadObjectRequest;
 import software.amazon.awssdk.services.s3.model.NoSuchKeyException;
 import software.amazon.awssdk.services.s3.model.PutObjectRequest;
@@ -248,6 +252,17 @@ public class S3ObjectStoreAdapter implements ObjectStorePort, UrlSignerPort {
     } catch (NoSuchKeyException e) {
       return false;
     }
+  }
+
+  @Override
+  public StoredObject open(ObjectKey key) {
+    ResponseInputStream<GetObjectResponse> stream =
+        s3Client.getObject(GetObjectRequest.builder().bucket(key.bucket()).key(key.key()).build());
+    GetObjectResponse meta = stream.response();
+    return new StoredObject(
+        stream,
+        meta.contentType() == null ? "application/octet-stream" : meta.contentType(),
+        meta.contentLength() == null ? -1L : meta.contentLength());
   }
 
   @Override
