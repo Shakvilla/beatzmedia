@@ -62,4 +62,8 @@ public class ReleaseEntity {
   /** Nullable; settable while {@code status = 'draft'}. WU-CAT-5 / V970. */
   @Column(name = "description")
   public String description;
+
+  /** Cover art URL (V975); nullable until the artist uploads one. */
+  @Column(name = "cover_image")
+  public String coverImage;
 }

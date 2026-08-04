@@ -486,6 +486,7 @@ public class JpaCatalogRepository implements CatalogRepository {
     e.updatedAt = release.getUpdatedAt();
     e.genre = release.getGenre();
     e.description = release.getDescription();
+    e.coverImage = release.getCoverImage();
     em.merge(e);
 
     // Upsert release_track rows. Remove existing managed entities (rather than a bulk JPQL
@@ -906,10 +907,14 @@ public class JpaCatalogRepository implements CatalogRepository {
     List<ReleaseTrack> tracks = trackEntities.stream()
         .map(rt -> new ReleaseTrack(rt.trackId, rt.pk.position, rt.priceMinor))
         .toList();
-    return Release.reconstitute(
+    Release release = Release.reconstitute(
         e.id, e.artistId, e.title, ReleaseType.valueOf(e.type), ReleaseStatus.valueOf(e.status),
         Visibility.fromDbValue(e.visibility), e.scheduledAt, e.wentLiveAt, e.listPriceMinor,
         e.createdAt, e.updatedAt, tracks, e.genre, e.description, splits);
+    // Set outside the factory: cover art arrives by upload after the draft exists, so widening four
+    // reconstitute/create overloads for it would ripple through every call site for no gain.
+    release.setCoverImage(e.coverImage);
+    return release;
   }
 
   // ---- Batch-mapping helpers ----

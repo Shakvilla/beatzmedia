@@ -2,8 +2,8 @@
  * Release-draft store for the new-release wizard, backed by the WU-CAT-5
  * draft flow. Holds the in-progress release as the creator moves across the
  * wizard's four steps (Details → Tracks → Splits → Review). The server draft
- * is created on leaving Details; tracks are uploaded for real; splits / cover
- * art / other extras stay client-only (not sent) until their backends land.
+ * is created on leaving Details; tracks and COVER ART are uploaded for real.
+ * Splits and the remaining extras stay client-only until their backends land.
  */
 
 import {
@@ -14,6 +14,7 @@ import type { Genre } from '../../types'
 import type { ReleaseType } from '../../lib/studio-data'
 import {
   apiCreateDraft, apiUploadTrack, apiUpdateRelease, apiSubmitRelease, apiDeleteTrack,
+  apiUploadReleaseCover,
   apiGetReleaseDetail,
   type CreateDraftInput, type UpdateReleaseInput,
 } from '../../lib/api/queries/studio'
@@ -227,6 +228,15 @@ interface ReleaseDraftContextValue {
    */
   hydrateFromServer: (releaseId: string) => Promise<void>
   uploadTrack: (file: File) => Promise<void>
+  /**
+   * Remembers the picked cover FILE, not just its preview URL.
+   *
+   * The wizard only ever held `URL.createObjectURL(file)` — a `blob:` URL that never left the
+   * browser — so the "Add cover art before submitting" gate passed with nothing stored server-side.
+   * The file is kept here rather than in component state because it is chosen on the Details step
+   * and uploaded on submit, two different routes.
+   */
+  setCoverFile: (file: File) => void
   submitRelease: () => Promise<void>
   reset: () => void
 }
@@ -248,6 +258,7 @@ export function ReleaseDraftProvider({ children, initial }: { children: ReactNod
   // Memoizes an in-flight create so concurrent callers (e.g. multi-file uploads)
   // share one apiCreateDraft instead of each firing its own (double-create race).
   const createInFlight = useRef<Promise<string> | null>(null)
+  const coverFileRef = useRef<File | null>(null)
 
   const value = useMemo<ReleaseDraftContextValue>(() => {
     const ensureDraft = (): Promise<string> => {
@@ -442,6 +453,10 @@ export function ReleaseDraftProvider({ children, initial }: { children: ReactNod
         }
       },
 
+      setCoverFile: (file) => {
+        coverFileRef.current = file
+        dispatch({ type: 'SET_FIELD', field: 'coverImage', value: URL.createObjectURL(file) })
+      },
       submitRelease: async () => {
         const rid = await ensureDraft()
         const s = stateRef.current
@@ -449,6 +464,13 @@ export function ReleaseDraftProvider({ children, initial }: { children: ReactNod
           .filter((t) => isServerId(t.id) && t.status !== 'error')
           .map((t, i) => ({ trackId: t.id, position: i, priceMinor: Math.round(t.price * 100) }))
         await apiUpdateRelease(rid, { ...toMetaPatch(s), tracks })
+        // Upload the cover BEFORE submitting. It is not caught separately: a release that reaches
+        // in_review without art would carry the placeholder image on every one of its tracks, and
+        // failing the whole submit lets the artist retry rather than discover it after approval.
+        const coverFile = coverFileRef.current
+        if (coverFile) {
+          await apiUploadReleaseCover(rid, coverFile)
+        }
         await apiSubmitRelease(rid, crypto.randomUUID())
       },
     }

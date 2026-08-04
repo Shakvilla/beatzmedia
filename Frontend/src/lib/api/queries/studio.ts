@@ -182,3 +182,20 @@ export function apiSubmitRelease(releaseId: string, idempotencyKey: string): Pro
 export function apiDeleteTrack(releaseId: string, trackId: string): Promise<void> {
   return apiFetch<void>(`/studio/releases/${releaseId}/tracks/${trackId}`, { method: 'DELETE' })
 }
+
+/**
+ * `POST /v1/studio/releases/:id/cover` — uploads the release's cover art.
+ *
+ * Returns the stable URL the backend stored, and restamps the release's tracks server-side. Until
+ * this existed the wizard held a `blob:` object URL that never left the browser, so "Add cover art
+ * before submitting" was satisfied by nothing, and every uploaded track kept the placeholder image
+ * that fans actually see on the track row, the artist page and in search.
+ */
+export function apiUploadReleaseCover(releaseId: string, image: File): Promise<string> {
+  const form = new FormData()
+  form.append('image', image)
+  return apiFetch<{ image: string }>(`/studio/releases/${releaseId}/cover`, {
+    method: 'POST',
+    body: form,
+  }).then((r) => r.image)
+}

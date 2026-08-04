@@ -28,6 +28,11 @@ public final class Release {
   private List<ReleaseTrack> tracks;
   private String genre;
   private String description;
+  /**
+   * Cover art URL (V975), set separately from the constructors because it arrives by upload after
+   * the draft exists. Null until the artist provides one; {@link #hasCover()} is the submit gate.
+   */
+  private String coverImage;
   private List<SplitEntry> splits;
 
   private Release(
@@ -216,6 +221,20 @@ public final class Release {
    * Updates draft metadata (genre/description/visibility/scheduledAt, optionally title).
    * Draft-only — use {@link #updateTitle} for a title-only edit on any status.
    */
+  /** Attaches uploaded cover art. Allowed in any status: replacing artwork is not a transition. */
+  public void setCoverImage(String url) {
+    this.coverImage = url == null || url.isBlank() ? null : url.trim();
+  }
+
+  public String getCoverImage() {
+    return coverImage;
+  }
+
+  /** Whether this release has art. Fans see it as the track image, so it is not optional. */
+  public boolean hasCover() {
+    return coverImage != null && !coverImage.isBlank();
+  }
+
   public void updateMetadata(
       String title, String genre, String description, Visibility visibility,
       Instant scheduledAt, Instant now) {

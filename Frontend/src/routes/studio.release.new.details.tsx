@@ -18,7 +18,7 @@ const INPUT =
   'w-full h-12 rounded-xl bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 px-4 text-sm text-beatz-dark-bg dark:text-white placeholder:text-gray-400 dark:placeholder:text-white/25 focus:outline-none focus:border-beatz-green/60 focus:ring-1 focus:ring-beatz-green/30 transition-all'
 
 function ReleaseDetailsStep() {
-  const { draft, setField } = useReleaseDraft()
+  const { draft, setField, setCoverFile } = useReleaseDraft()
   const creator = useCreatorIdentity()
   const fileRef = useRef<HTMLInputElement>(null)
 
@@ -29,7 +29,9 @@ function ReleaseDetailsStep() {
 
   const onCover = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (file) setField('coverImage', URL.createObjectURL(file))
+    // Hands the FILE to the context, which keeps it for upload at submit and derives the preview.
+    // Setting only the object URL is what left every release without real cover art.
+    if (file) setCoverFile(file)
   }
 
   return (
