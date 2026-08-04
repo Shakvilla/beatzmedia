@@ -4,7 +4,6 @@ import {
   toTrack,
   toAlbum,
   toAlbumTracks,
-  toBrowseCategory,
   toLyricLines,
   toStoreItem,
   toEvent,
@@ -174,15 +173,6 @@ describe('toAlbum / toAlbumTracks', () => {
   })
 })
 
-describe('toBrowseCategory', () => {
-  it('passes fields through unchanged', () => {
-    expect(toBrowseCategory({ id: 'c1', title: 'Afrobeats', colorClass: 'bg-red-500' })).toEqual({
-      id: 'c1',
-      title: 'Afrobeats',
-      colorClass: 'bg-red-500',
-    })
-  })
-})
 
 describe('toLyricLines', () => {
   it('returns the lines array', () => {

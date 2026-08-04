@@ -11,7 +11,6 @@ import org.junit.jupiter.api.Test;
 import org.shakvilla.beatzmedia.platform.domain.Currency;
 import org.shakvilla.beatzmedia.store.application.port.in.StoreItemView;
 import org.shakvilla.beatzmedia.store.application.service.GetStoreItemService;
-import org.shakvilla.beatzmedia.store.domain.Genre;
 import org.shakvilla.beatzmedia.store.domain.LicenseOption;
 import org.shakvilla.beatzmedia.store.domain.LicenseTier;
 import org.shakvilla.beatzmedia.store.domain.StoreItem;
@@ -41,7 +40,7 @@ class GetStoreItemServiceTest {
             "img.png",
             5000L,
             Currency.GHS,
-            Genre.DRILL,
+            "Drill",
             List.of("STEMS INCLUDED"),
             "desc",
             92,

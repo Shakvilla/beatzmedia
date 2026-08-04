@@ -1,5 +1,6 @@
 import { Outlet, useLocation, useNavigate } from '@tanstack/react-router'
 import { useEffect } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { TanStackRouterDevtools } from '@tanstack/router-devtools'
 import { Sidebar } from './sidebar'
 import { MobileNav } from './mobile-nav'
@@ -7,6 +8,7 @@ import { Header } from './header'
 import { PlayerBar } from './player-bar'
 import { QueueDrawer } from '../music/queue-drawer'
 import { useAuth } from '../../features/auth/auth-context'
+import { fanPreferencesQuery } from '../../lib/api/queries/fan-preferences'
 
 const AUTH_ROUTES = ['/login', '/signup']
 
@@ -15,6 +17,21 @@ export function AppShell() {
   const navigate = useNavigate()
   const { isAuthenticated, isLoading } = useAuth()
   const onAuthRoute = AUTH_ROUTES.some((route) => location.pathname.startsWith(route))
+  const onOnboarding = location.pathname.startsWith('/onboarding')
+
+  /**
+   * Onboarding state. Only fetched once signed in — an anonymous visitor has no preferences and
+   * asking would just 401. Admin and studio surfaces are exempt: the gate is a fan-taste step, and
+   * an operator signing in to fix something should not be made to pick three genres first.
+   */
+  const exemptFromOnboarding =
+    onAuthRoute || onOnboarding
+    || location.pathname.startsWith('/admin')
+    || location.pathname.startsWith('/studio')
+  const { data: prefs, isLoading: prefsLoading } = useQuery({
+    ...fanPreferencesQuery(),
+    enabled: isAuthenticated && !exemptFromOnboarding,
+  })
 
   // Gate the whole app: signed-out users are sent to the login screen. Wait for the
   // initial session hydration (GET /v1/me) before deciding — otherwise a valid,
@@ -31,10 +48,21 @@ export function AppShell() {
     }
   }, [isLoading, isAuthenticated, onAuthRoute, navigate, location.href])
 
+  // Send a fan who has never onboarded to the picker, once. `prefs` is undefined while the query
+  // is disabled or in flight, so this only fires on a definite `onboarded: false`.
+  useEffect(() => {
+    if (isAuthenticated && !exemptFromOnboarding && prefs && !prefs.onboarded) {
+      navigate({ to: '/onboarding', replace: true })
+    }
+  }, [isAuthenticated, exemptFromOnboarding, prefs, navigate])
+
   if (isLoading) return null
   if (!isAuthenticated && !onAuthRoute) return null
+  // Hold the app back while we find out whether this fan has onboarded. Rendering the home page
+  // first and redirecting a beat later would flash content the gate is meant to sit in front of.
+  if (isAuthenticated && !onAuthRoute && !onOnboarding && prefsLoading) return null
 
-  const fullScreenRoutes = ['/lyrics', '/login', '/signup', '/studio', '/admin']
+  const fullScreenRoutes = ['/lyrics', '/login', '/signup', '/onboarding', '/studio', '/admin']
   const isFullScreen = fullScreenRoutes.some(route => location.pathname.startsWith(route))
 
   return (

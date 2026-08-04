@@ -12,7 +12,6 @@ import org.shakvilla.beatzmedia.commerce.application.port.out.PricedItem;
 import org.shakvilla.beatzmedia.commerce.domain.PriceUnavailableException;
 import org.shakvilla.beatzmedia.platform.domain.Currency;
 import org.shakvilla.beatzmedia.platform.domain.Money;
-import org.shakvilla.beatzmedia.store.domain.Genre;
 import org.shakvilla.beatzmedia.store.domain.LicenseOption;
 import org.shakvilla.beatzmedia.store.domain.LicenseTier;
 import org.shakvilla.beatzmedia.store.domain.StoreItem;
@@ -40,7 +39,7 @@ class StorePriceSourceTest {
             new LicenseOption(LicenseTier.EXCLUSIVE, "Exclusive", 100000L, List.of("STEMS"), "terms"));
     return new StoreItem(
         new StoreItemId("beat-1"), StoreItemType.BEAT_LICENSE, "Drill Beat", "Joker", null, "img.png",
-        10000L, Currency.GHS, Genre.DRILL, List.of("STEMS"), "desc", 92, CREATED, options, List.of(),
+        10000L, Currency.GHS, "Drill", List.of("STEMS"), "desc", 92, CREATED, options, List.of(),
         null, null, null);
   }
 

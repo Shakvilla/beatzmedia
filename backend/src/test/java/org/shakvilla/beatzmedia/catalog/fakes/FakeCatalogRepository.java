@@ -16,7 +16,6 @@ import org.shakvilla.beatzmedia.catalog.domain.Album;
 import org.shakvilla.beatzmedia.catalog.domain.AlbumId;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistProfile;
-import org.shakvilla.beatzmedia.catalog.domain.BrowseCategory;
 import org.shakvilla.beatzmedia.catalog.domain.InviteOutcome;
 import org.shakvilla.beatzmedia.catalog.domain.Lyrics;
 import org.shakvilla.beatzmedia.catalog.domain.Playlist;
@@ -40,7 +39,6 @@ public class FakeCatalogRepository implements CatalogRepository {
   private final Map<String, Track> tracks = new HashMap<>();
   private final Map<String, Lyrics> lyrics = new HashMap<>();
   private final Map<String, Playlist> playlists = new HashMap<>();
-  private final List<BrowseCategory> browseCategories = new ArrayList<>();
   private final Map<String, Release> releases = new HashMap<>();
   private final Map<String, String> idempotencyKeys = new HashMap<>(); // key → releaseId
   private final Set<String> releasesWithPendingSplits = new HashSet<>();
@@ -87,9 +85,6 @@ public class FakeCatalogRepository implements CatalogRepository {
     playlists.put(playlist.getId().value(), playlist);
   }
 
-  public void addBrowseCategory(BrowseCategory category) {
-    browseCategories.add(category);
-  }
 
   @Override
   public Optional<ArtistProfile> findArtist(ArtistId id) {
@@ -155,10 +150,6 @@ public class FakeCatalogRepository implements CatalogRepository {
     return result;
   }
 
-  @Override
-  public List<BrowseCategory> browseCategories() {
-    return List.copyOf(browseCategories);
-  }
 
   @Override
   public List<Track> trendingTracks(int limit) {

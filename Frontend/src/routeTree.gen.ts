@@ -15,6 +15,7 @@ import { Route as SignupRouteImport } from './routes/signup'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SearchRouteImport } from './routes/search'
 import { Route as PodcastsRouteImport } from './routes/podcasts'
+import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as NotificationsRouteImport } from './routes/notifications'
 import { Route as LyricsRouteImport } from './routes/lyrics'
 import { Route as LoginRouteImport } from './routes/login'
@@ -102,6 +103,11 @@ const SearchRoute = SearchRouteImport.update({
 const PodcastsRoute = PodcastsRouteImport.update({
   id: '/podcasts',
   path: '/podcasts',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OnboardingRoute = OnboardingRouteImport.update({
+  id: '/onboarding',
+  path: '/onboarding',
   getParentRoute: () => rootRouteImport,
 } as any)
 const NotificationsRoute = NotificationsRouteImport.update({
@@ -406,6 +412,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/lyrics': typeof LyricsRoute
   '/notifications': typeof NotificationsRoute
+  '/onboarding': typeof OnboardingRoute
   '/podcasts': typeof PodcastsRoute
   '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
@@ -470,6 +477,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/lyrics': typeof LyricsRoute
   '/notifications': typeof NotificationsRoute
+  '/onboarding': typeof OnboardingRoute
   '/podcasts': typeof PodcastsRoute
   '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
@@ -532,6 +540,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/lyrics': typeof LyricsRoute
   '/notifications': typeof NotificationsRoute
+  '/onboarding': typeof OnboardingRoute
   '/podcasts': typeof PodcastsRoute
   '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
@@ -600,6 +609,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/lyrics'
     | '/notifications'
+    | '/onboarding'
     | '/podcasts'
     | '/search'
     | '/settings'
@@ -664,6 +674,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/lyrics'
     | '/notifications'
+    | '/onboarding'
     | '/podcasts'
     | '/search'
     | '/settings'
@@ -725,6 +736,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/lyrics'
     | '/notifications'
+    | '/onboarding'
     | '/podcasts'
     | '/search'
     | '/settings'
@@ -792,6 +804,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   LyricsRoute: typeof LyricsRoute
   NotificationsRoute: typeof NotificationsRoute
+  OnboardingRoute: typeof OnboardingRoute
   PodcastsRoute: typeof PodcastsRoute
   SearchRoute: typeof SearchRoute
   SettingsRoute: typeof SettingsRoute
@@ -848,6 +861,13 @@ declare module '@tanstack/react-router' {
       path: '/podcasts'
       fullPath: '/podcasts'
       preLoaderRoute: typeof PodcastsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/onboarding': {
+      id: '/onboarding'
+      path: '/onboarding'
+      fullPath: '/onboarding'
+      preLoaderRoute: typeof OnboardingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/notifications': {
@@ -1439,6 +1459,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   LyricsRoute: LyricsRoute,
   NotificationsRoute: NotificationsRoute,
+  OnboardingRoute: OnboardingRoute,
   PodcastsRoute: PodcastsRoute,
   SearchRoute: SearchRoute,
   SettingsRoute: SettingsRoute,
