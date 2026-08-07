@@ -8,11 +8,11 @@ import java.util.List;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.shakvilla.beatzmedia.catalog.domain.CatalogDefaults;
 import org.shakvilla.beatzmedia.catalog.application.port.in.ProvisionArtistProfile.ProvisionCommand;
 import org.shakvilla.beatzmedia.catalog.application.service.ProvisionArtistProfileService;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistProfile;
+import org.shakvilla.beatzmedia.catalog.domain.CatalogDefaults;
 import org.shakvilla.beatzmedia.catalog.fakes.FakeCatalogRepository;
 
 /**

@@ -1,13 +1,13 @@
 package org.shakvilla.beatzmedia.identity.application.service;
 
-import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
-import jakarta.transaction.Transactional;
-
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
 import java.util.stream.Collectors;
+
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import jakarta.transaction.Transactional;
 
 import org.shakvilla.beatzmedia.identity.application.port.in.ManageFanPreferences;
 import org.shakvilla.beatzmedia.identity.application.port.out.FanPreferencesRepository;

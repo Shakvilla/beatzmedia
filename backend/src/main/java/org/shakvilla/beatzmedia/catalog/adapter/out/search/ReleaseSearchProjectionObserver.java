@@ -1,12 +1,12 @@
 package org.shakvilla.beatzmedia.catalog.adapter.out.search;
 
+import java.util.List;
+
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Observes;
 import jakarta.enterprise.event.TransactionPhase;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
-
-import java.util.List;
 
 import org.jboss.logging.Logger;
 import org.shakvilla.beatzmedia.catalog.application.port.out.CatalogRepository;

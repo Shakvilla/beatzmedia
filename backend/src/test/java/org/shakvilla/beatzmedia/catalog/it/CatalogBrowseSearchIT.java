@@ -2,7 +2,6 @@ package org.shakvilla.beatzmedia.catalog.it;
 
 import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.equalTo;
-import static org.hamcrest.Matchers.isA;
 import static org.hamcrest.Matchers.notNullValue;
 
 import org.junit.jupiter.api.Tag;

@@ -5,9 +5,9 @@ import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 
 import org.jboss.logging.Logger;
+import org.shakvilla.beatzmedia.platform.domain.ValidationException;
 import org.shakvilla.beatzmedia.podcasts.application.port.in.PublishPodcastEpisode;
 import org.shakvilla.beatzmedia.podcasts.application.port.out.PodcastCatalogWriter;
-import org.shakvilla.beatzmedia.platform.domain.ValidationException;
 
 /**
  * Turns a published Studio episode into fan-facing podcast rows.

@@ -1,10 +1,10 @@
 package org.shakvilla.beatzmedia.podcasts.adapter.out.persistence;
 
+import java.time.Instant;
+
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
-
-import java.time.Instant;
 
 import org.shakvilla.beatzmedia.podcasts.application.port.in.PublishPodcastEpisode.PublishEpisodeCommand;
 import org.shakvilla.beatzmedia.podcasts.application.port.out.PodcastCatalogWriter;

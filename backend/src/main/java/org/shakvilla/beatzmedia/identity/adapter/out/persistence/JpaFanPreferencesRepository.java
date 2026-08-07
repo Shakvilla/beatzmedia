@@ -1,12 +1,12 @@
 package org.shakvilla.beatzmedia.identity.adapter.out.persistence;
 
-import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.inject.Inject;
-import jakarta.persistence.EntityManager;
-
 import java.util.Arrays;
 import java.util.List;
 import java.util.Optional;
+
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import jakarta.persistence.EntityManager;
 
 import org.shakvilla.beatzmedia.identity.application.port.out.FanPreferencesRepository;
 import org.shakvilla.beatzmedia.identity.domain.AccountId;

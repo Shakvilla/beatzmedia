@@ -33,11 +33,11 @@ import org.shakvilla.beatzmedia.studio.application.port.in.CreateEpisode.CreateE
 import org.shakvilla.beatzmedia.studio.application.port.in.CreatePodcastShow;
 import org.shakvilla.beatzmedia.studio.application.port.in.CreatePodcastShow.CreatePodcastShowCommand;
 import org.shakvilla.beatzmedia.studio.application.port.in.DeleteEpisode;
-import org.shakvilla.beatzmedia.studio.application.port.in.SetShowCover;
 import org.shakvilla.beatzmedia.studio.application.port.in.EpisodeView;
 import org.shakvilla.beatzmedia.studio.application.port.in.ListStudioEpisodes;
 import org.shakvilla.beatzmedia.studio.application.port.in.ListStudioPodcastShows;
 import org.shakvilla.beatzmedia.studio.application.port.in.PodcastShowView;
+import org.shakvilla.beatzmedia.studio.application.port.in.SetShowCover;
 import org.shakvilla.beatzmedia.studio.application.port.in.UpdateEpisode;
 import org.shakvilla.beatzmedia.studio.application.port.in.UpdateEpisode.UpdateEpisodeCommand;
 import org.shakvilla.beatzmedia.studio.domain.ArtistId;

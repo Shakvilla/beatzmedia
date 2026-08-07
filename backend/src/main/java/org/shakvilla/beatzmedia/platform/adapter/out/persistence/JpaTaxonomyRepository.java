@@ -1,12 +1,12 @@
 package org.shakvilla.beatzmedia.platform.adapter.out.persistence;
 
-import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.persistence.EntityManager;
-import jakarta.persistence.NoResultException;
-import jakarta.inject.Inject;
-
 import java.util.List;
 import java.util.Optional;
+
+import jakarta.enterprise.context.ApplicationScoped;
+import jakarta.inject.Inject;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.NoResultException;
 
 import org.shakvilla.beatzmedia.platform.application.port.out.TaxonomyRepository;
 import org.shakvilla.beatzmedia.platform.domain.TaxonomyKind;

@@ -36,13 +36,12 @@ import org.shakvilla.beatzmedia.catalog.application.port.in.ListStudioReleases;
 import org.shakvilla.beatzmedia.catalog.application.port.in.PageView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.RemoveReleaseTrack;
 import org.shakvilla.beatzmedia.catalog.application.port.in.ResendSplitInvites;
+import org.shakvilla.beatzmedia.catalog.application.port.in.SetReleaseCover;
 import org.shakvilla.beatzmedia.catalog.application.port.in.StudioReleaseDetailView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.StudioReleaseView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.UpdateRelease;
 import org.shakvilla.beatzmedia.catalog.application.port.in.UpdateRelease.TrackRef;
 import org.shakvilla.beatzmedia.catalog.application.port.in.UpdateRelease.UpdateReleaseCommand;
-import org.shakvilla.beatzmedia.catalog.application.port.in.SetReleaseCover;
-import org.shakvilla.beatzmedia.platform.domain.ValidationException;
 import org.shakvilla.beatzmedia.catalog.application.port.in.UploadReleaseTrack;
 import org.shakvilla.beatzmedia.catalog.application.port.in.UploadReleaseTrack.AudioUpload;
 import org.shakvilla.beatzmedia.catalog.application.port.in.UploadedTrackView;
@@ -53,6 +52,7 @@ import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseType;
 import org.shakvilla.beatzmedia.catalog.domain.TrackId;
 import org.shakvilla.beatzmedia.catalog.domain.Visibility;
+import org.shakvilla.beatzmedia.platform.domain.ValidationException;
 
 /**
  * REST resource for the artist Studio release create flow (LLFR-CATALOG-02.1 – 02.5): draft

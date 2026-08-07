@@ -1,6 +1,8 @@
 package org.shakvilla.beatzmedia.identity.adapter.in.rest;
 
-import io.quarkus.security.Authenticated;
+import java.time.Instant;
+import java.util.List;
+
 import jakarta.inject.Inject;
 import jakarta.validation.Valid;
 import jakarta.validation.constraints.NotNull;
@@ -12,13 +14,12 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 
-import java.time.Instant;
-import java.util.List;
-
 import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.shakvilla.beatzmedia.identity.application.port.in.ManageFanPreferences;
 import org.shakvilla.beatzmedia.identity.domain.AccountId;
 import org.shakvilla.beatzmedia.identity.domain.FanPreferences;
+
+import io.quarkus.security.Authenticated;
 
 /**
  * The signed-in fan's taste profile and onboarding state.

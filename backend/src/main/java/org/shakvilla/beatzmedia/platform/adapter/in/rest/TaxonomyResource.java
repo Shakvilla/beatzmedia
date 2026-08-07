@@ -1,5 +1,7 @@
 package org.shakvilla.beatzmedia.platform.adapter.in.rest;
 
+import java.util.List;
+
 import jakarta.annotation.security.PermitAll;
 import jakarta.inject.Inject;
 import jakarta.ws.rs.GET;
@@ -7,8 +9,6 @@ import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.QueryParam;
 import jakarta.ws.rs.core.MediaType;
-
-import java.util.List;
 
 import org.shakvilla.beatzmedia.platform.application.port.in.ManageTaxonomy;
 import org.shakvilla.beatzmedia.platform.domain.TaxonomyKind;
