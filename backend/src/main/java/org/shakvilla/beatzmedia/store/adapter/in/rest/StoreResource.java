@@ -29,7 +29,8 @@ import org.shakvilla.beatzmedia.store.domain.StoreSort;
  *
  * <ul>
  *   <li>GET /v1/store?type=&amp;genre=&amp;sort=&amp;page=&amp;size= → Page&lt;StoreItemDto&gt; (200); 422
- *       on an unknown {@code type}/{@code genre}/{@code sort} enum value.
+ *       on an unknown {@code type} or {@code sort} enum value. {@code genre} is an admin-managed
+ *       label rather than an enum, so an unknown one filters to an empty page instead.
  *   <li>GET /v1/store/:id → StoreItemDto (200); 404 NOT_FOUND.
  * </ul>
  *

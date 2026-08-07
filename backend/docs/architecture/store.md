@@ -68,7 +68,11 @@ the store references `catalog` artist/album/track rows **by id only** (denormali
 - `StoreItemType = TRACK | ALBUM | BEAT_LICENSE | MERCH | EXCLUSIVE`
 - `LicenseTier = LEASE | PREMIUM | EXCLUSIVE`
 - `StoreSort = popular | newest | price-asc | price-desc`
-- `Genre = Afrobeats | Hiplife | Highlife | Amapiano | Drill | Gospel | R&B | Reggae | Jazz`
+
+`genre` is **not** an enum. It was one — a verbatim third copy of the same nine values that also
+lived in `platform.domain.Genre` and in the frontend's TypeScript union. Genres are admin-managed
+from `taxonomy_term` as of V972, so the closed enum is gone and `genre` is a plain label string
+throughout this module.
 
 **Invariants enforced here** (guard conditions in the domain, not the UI)
 
@@ -134,7 +138,7 @@ public interface ListStore {                         // LLFR-STORE-01.1
 
     record StoreQuery(
         Optional<StoreItemType> type,                // ?type=
-        Optional<Genre> genre,                       // ?genre=
+        Optional<String> genre,                      // ?genre=  (admin-managed label, not an enum)
         StoreSort sort) {}                           // ?sort=  (default popular)
 }
 
@@ -160,7 +164,7 @@ public interface StoreRepository {
 }
 
 public interface SearchIndex {
-    Page<StoreItemId> query(String text, Optional<StoreItemType> type, Optional<Genre> genre,
+    Page<StoreItemId> query(String text, Optional<StoreItemType> type, Optional<String> genre,
                             StoreSort sort, PageRequest page);                 // shared with WU-SRCH-1
     void index(StoreItem item);                                               // upsert on create/update
     void remove(StoreItemId id);
@@ -179,14 +183,17 @@ public interface SearchIndex {
 
 | Method | Path | Auth/scope | Request DTO | Response DTO | Success | Error codes | LLFR |
 |---|---|---|---|---|---|---|---|
-| GET | `/v1/store?type=&genre=&sort=popular\|newest\|price-asc\|price-desc` | public | query params (`type?`, `genre?`, `sort?`, `page?`, `size?`) | `Page<StoreItemDto>` `{ items, page, size, total }` | `200` | `422` (bad `type`/`sort`/`genre` enum) | LLFR-STORE-01.1 |
+| GET | `/v1/store?type=&genre=&sort=popular\|newest\|price-asc\|price-desc` | public | query params (`type?`, `genre?`, `sort?`, `page?`, `size?`) | `Page<StoreItemDto>` `{ items, page, size, total }` | `200` | `422` (bad `type`/`sort` enum) | LLFR-STORE-01.1 |
 | GET | `/v1/store/:id` | public | path `id` | `StoreItemDto` | `200` | `404` (`NOT_FOUND`, unknown id) | LLFR-STORE-01.2 |
 
 Paths/verbs/shapes lifted from `API-CONTRACT.md` §7. **Sort semantics:** `popular` (default) orders by
 `popularity` descending (nulls last); `newest` orders by `created_at` descending; `price-asc` /
 `price-desc` order by `price_minor` ascending / descending. Pagination per conventions §5
-(`page=1`, `size=20`, max `100`). Unknown enum values for `type`/`sort`/`genre` → `422` with
-`error.field`.
+(`page=1`, `size=20`, max `100`). Unknown enum values for `type`/`sort` → `422` with `error.field`.
+An unknown `genre` is **not** a `422`: genres are admin-managed, so a label added by an operator
+yesterday exists in no Java file, and rejecting it would make every new genre an error until the next
+deploy. It filters to an empty page — the honest answer for a search parameter, and one that keeps a
+taxonomy lookup off a hot read path.
 
 ### 5.2 Outbound — persistence & integrations
 
@@ -228,7 +235,7 @@ All field shapes trace to `Frontend/src/types/index.ts`. Money is serialized `{ 
 | `artistId` | string? | when linked to a catalog artist |
 | `image` | string | cover art URL |
 | `price` | `Money` | `{ amount, currency }` base/"from" price |
-| `genre` | `Genre?` | |
+| `genre` | string? | admin-managed taxonomy label, not an enum |
 | `badges` | string[]? | e.g. `HI-FI LOSSLESS`, `STEMS INCLUDED`, `LIMITED` |
 | `description` | string? | |
 | `popularity` | number? | ranking weight for `popular` sort |
