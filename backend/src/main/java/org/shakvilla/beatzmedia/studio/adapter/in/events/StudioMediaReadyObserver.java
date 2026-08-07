@@ -9,7 +9,7 @@ import jakarta.transaction.Transactional;
 import org.jboss.logging.Logger;
 import org.shakvilla.beatzmedia.media.domain.MediaKind;
 import org.shakvilla.beatzmedia.media.domain.MediaReady;
-import org.shakvilla.beatzmedia.studio.adapter.out.podcasts.EpisodePublishedProjector;
+import org.shakvilla.beatzmedia.studio.application.port.out.PodcastCataloguePublisher;
 import org.shakvilla.beatzmedia.studio.application.port.out.StudioRepository;
 import org.shakvilla.beatzmedia.studio.domain.ArtistId;
 import org.shakvilla.beatzmedia.studio.domain.Episode;
@@ -31,7 +31,7 @@ import org.shakvilla.beatzmedia.studio.domain.EpisodeStatus;
  *
  * <p><strong>Ordering.</strong> Publish and transcode race, and either can finish first. This
  * observer covers "audio finished after the episode was already published" by re-running the
- * projection itself; {@link EpisodePublishedProjector} covers the opposite order by only projecting
+ * projection itself; {@link EpisodePublishedObserver} covers the opposite order by only projecting
  * once a duration is known. Between them both orderings converge on the same result.
  */
 @ApplicationScoped
@@ -43,12 +43,12 @@ public class StudioMediaReadyObserver {
   private static final String STUDIO_MODULE = "studio";
 
   private final StudioRepository repo;
-  private final EpisodePublishedProjector projector;
+  private final PodcastCataloguePublisher publisher;
 
   @Inject
-  public StudioMediaReadyObserver(StudioRepository repo, EpisodePublishedProjector projector) {
+  public StudioMediaReadyObserver(StudioRepository repo, PodcastCataloguePublisher publisher) {
     this.repo = repo;
-    this.projector = projector;
+    this.publisher = publisher;
   }
 
   @Transactional(Transactional.TxType.REQUIRES_NEW)
@@ -74,7 +74,7 @@ public class StudioMediaReadyObserver {
     // If the artist published before the transcode finished, the projection was skipped for want of
     // a duration. Now that it exists, finish the job rather than leaving the episode Studio-only.
     if (episode.status() == EpisodeStatus.published) {
-      projector.project(new ArtistId(episode.artistId().value()), episode);
+      publisher.publish(new ArtistId(episode.artistId().value()), episode);
     }
   }
 }

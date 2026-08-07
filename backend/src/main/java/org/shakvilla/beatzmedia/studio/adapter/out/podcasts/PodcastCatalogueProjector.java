@@ -1,22 +1,17 @@
 package org.shakvilla.beatzmedia.studio.adapter.out.podcasts;
 
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.enterprise.event.Observes;
-import jakarta.enterprise.event.TransactionPhase;
 import jakarta.inject.Inject;
-import jakarta.transaction.Transactional;
 
 import org.jboss.logging.Logger;
+import org.shakvilla.beatzmedia.platform.domain.ValidationException;
 import org.shakvilla.beatzmedia.podcasts.application.port.in.PublishPodcastEpisode;
 import org.shakvilla.beatzmedia.podcasts.application.port.in.PublishPodcastEpisode.PublishEpisodeCommand;
+import org.shakvilla.beatzmedia.studio.application.port.out.PodcastCataloguePublisher;
 import org.shakvilla.beatzmedia.studio.application.port.out.StudioRepository;
 import org.shakvilla.beatzmedia.studio.domain.ArtistId;
 import org.shakvilla.beatzmedia.studio.domain.Episode;
-import org.shakvilla.beatzmedia.studio.domain.EpisodeId;
-import org.shakvilla.beatzmedia.studio.domain.EpisodePublished;
 import org.shakvilla.beatzmedia.studio.domain.PodcastShow;
-import org.shakvilla.beatzmedia.studio.domain.ShowId;
-import org.shakvilla.beatzmedia.platform.domain.ValidationException;
 
 /**
  * Publishes a Studio episode into the fan-facing podcast catalogue.
@@ -24,54 +19,34 @@ import org.shakvilla.beatzmedia.platform.domain.ValidationException;
  * <p><strong>Why this exists.</strong> Studio wrote {@code studio_podcast_show} /
  * {@code studio_episode} and nothing ever projected those into {@code podcast} /
  * {@code podcast_episode}, so a podcast created in the Studio was invisible to fans no matter how
- * many episodes went live. {@link EpisodePublished} was fired on both publish paths — publish-now
- * in {@code CreateEpisodeService} and the scheduled sweep in {@code RunEpisodeGoLiveSweepService} —
- * and had <em>no observers at all</em>, the same shape the audio upload was in before its
- * projection was added.
+ * many episodes went live. {@code EpisodePublished} was fired on both publish paths — publish-now in
+ * {@code CreateEpisodeService} and the scheduled sweep in {@code RunEpisodeGoLiveSweepService} — and
+ * had <em>no observers at all</em>, the same shape the audio upload was in before its projection was
+ * added.
  *
- * <p><strong>Direction.</strong> studio → podcasts via {@link PublishPodcastEpisode}, an input
- * port. Studio reads only its own tables and hands across a complete command; podcasts owns the
- * write and its invariants. Neither module touches the other's schema.
+ * <p><strong>Direction.</strong> studio → podcasts via {@link PublishPodcastEpisode}, an input port.
+ * Studio reads only its own tables and hands across a complete command; podcasts owns the write and
+ * its invariants. Neither module touches the other's schema.
  *
- * <p><strong>Timing.</strong> {@code AFTER_SUCCESS} so nothing is published for a transition that
- * rolled back, {@code REQUIRES_NEW} because an AFTER_SUCCESS observer runs with no active
- * transaction.
+ * <p>The observers that trigger this live in {@code adapter.in.events} and reach it through
+ * {@link PodcastCataloguePublisher} — an inbound adapter may not import an outbound one.
  */
 @ApplicationScoped
-public class EpisodePublishedProjector {
+public class PodcastCatalogueProjector implements PodcastCataloguePublisher {
 
-  private static final Logger LOG = Logger.getLogger(EpisodePublishedProjector.class);
+  private static final Logger LOG = Logger.getLogger(PodcastCatalogueProjector.class);
 
   private final StudioRepository studio;
   private final PublishPodcastEpisode publish;
 
   @Inject
-  public EpisodePublishedProjector(StudioRepository studio, PublishPodcastEpisode publish) {
+  public PodcastCatalogueProjector(StudioRepository studio, PublishPodcastEpisode publish) {
     this.studio = studio;
     this.publish = publish;
   }
 
-  @Transactional(Transactional.TxType.REQUIRES_NEW)
-  public void onEpisodePublished(
-      @Observes(during = TransactionPhase.AFTER_SUCCESS) EpisodePublished event) {
-    ArtistId artist = new ArtistId(event.artistId());
-
-    Episode episode = studio.findEpisode(artist, new EpisodeId(event.episodeId())).orElse(null);
-    if (episode == null) {
-      LOG.warnf("podcasts: episode %s published but no longer exists", event.episodeId());
-      return;
-    }
-    project(artist, episode);
-  }
-
-  /**
-   * Projects one published episode, if it is ready to be seen.
-   *
-   * <p>Called from two places because publish and transcode race: here on publish, and again from
-   * {@code StudioMediaReadyObserver} when the audio finishes after the episode was already
-   * published. Both are idempotent, so whichever lands second is a harmless no-op.
-   */
-  public void project(ArtistId artist, Episode episode) {
+  @Override
+  public void publish(ArtistId artist, Episode episode) {
     // Duration is measured by ffprobe during transcode, so it is 0 until MediaReady lands. The
     // fan-facing podcast_episode enforces duration_sec > 0, and an episode with no duration is not
     // playable anyway — so wait rather than write a placeholder. MediaReady will re-run this.
@@ -100,7 +75,7 @@ public class EpisodePublishedProjector {
     }
 
     try {
-      publish.publish(new PublishEpisodeCommand(
+      this.publish.publish(new PublishEpisodeCommand(
           show.id().value(),
           show.title(),
           show.category(),
