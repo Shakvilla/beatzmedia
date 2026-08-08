@@ -108,6 +108,42 @@ downloaded and the network tab stays silent.
 
 ---
 
+### GAP-22 · Nothing in the application ever creates an album
+
+Found by following a published release all the way to the fan app rather than stopping at "the
+endpoint returned 200".
+
+`release` supports four types — `single | ep | album | mixtape` — and publishing any of them writes
+`release`, `release_track` and `track` rows. **It never writes an `album` row.** The only
+`INSERT INTO album` in the entire codebase is in `R__seed_dev_data.sql`.
+
+So the `album` table can only ever contain dev-seed data. **In production it will be empty forever**,
+and everything keyed on it is dead:
+
+| Surface | Consequence |
+|---|---|
+| `rails.newReleases` (`newestAlbums()`) | Permanently empty — nothing an artist releases ever appears in "New releases" |
+| `featuredAlbums` | Permanently empty |
+| `GET /v1/albums/{id}` | No real album can be fetched |
+| `GET /v1/artists/{id}/albums` | Always empty on an artist's page |
+| `PUT /v1/me/saved/albums/{albumId}` | Nothing real to save |
+| `Frontend/src/routes/album/` | An entire detail route with no reachable content |
+
+**Verified live.** The release "Test" is `live` and genuinely fan-visible — `trending: 1`,
+`top10: 1`, `popularArtists: 1`, `/artists/{id}/tracks: 1`, `/search?q=Sweet: 1`. Only the
+album-backed rails are empty: `newReleases: 0`, `featuredAlbums: 0`, with `album` at 0 rows.
+
+**Why this is easy to miss.** Every individual endpoint answers `200`, the release genuinely reaches
+fans through five other surfaces, and the empty rails read as "no data yet" on a fresh database. The
+defect is only visible when you ask *which* table the rail reads and then check whether anything
+writes to it.
+
+**Note on INV-2.** "Album purchases expand to all constituent tracks" is a stated invariant. Album
+purchase is keyed on an entity the product cannot create, so that invariant is currently untestable
+against real content.
+
+---
+
 ### GAP-21 · The same anti-pattern runs through Studio and the fan app — 14 controls total
 
 GAP-19 is not an admin problem. Sweeping the whole frontend for the same shape found **14
@@ -397,6 +433,12 @@ Listed so this report is not mistaken for full coverage.
 
 ## 8. Suggested triage order
 
+0. **GAP-22** — nothing creates albums. Six fan-facing surfaces, including the "New releases" rail
+   and the entire album detail route, are dead on any database without the dev seed. Decide whether
+   publishing an `album`/`ep`/`mixtape` release should project an `album` row (the same projection
+   shape already used for podcasts), or whether the album concept should be retired in favour of
+   releases. Everything else in this list is a defect; this one is a missing feature the rest of the
+   product already assumes exists.
 1. **GAP-19 + GAP-21** — 14 controls that do nothing, 9 claiming success, across admin, Studio and
    the fan app. Fix the two editorial buttons by connecting them (backends exist). For the rest,
    the honest interim move is to **remove or visibly disable** them: a missing button costs a
