@@ -33,7 +33,7 @@ public final class StoreItem {
   private final String image;
   private final long priceMinor;
   private final Currency currency;
-  private final Genre genre;
+  private final String genre;
   private final List<String> badges;
   private final String description;
   private final Integer popularity;
@@ -53,7 +53,7 @@ public final class StoreItem {
       String image,
       long priceMinor,
       Currency currency,
-      Genre genre,
+      String genre,
       List<String> badges,
       String description,
       Integer popularity,
@@ -191,7 +191,7 @@ public final class StoreItem {
     return currency;
   }
 
-  public Optional<Genre> genre() {
+  public Optional<String> genre() {
     return Optional.ofNullable(genre);
   }
 

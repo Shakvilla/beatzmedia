@@ -1,9 +1,21 @@
 package org.shakvilla.beatzmedia.search.application.service;
 
-// WU-CAT-3/CAT-4: wire ReleaseWentLive/ContentTakenDown observers here once those events are
-// published by the catalog module. Analogous wiring for StoreItemPublished/StoreItemRemoved
-// (WU-STO-1), PodcastPublished (WU-POD-1), EventPublished (WU-EVT-1), PopularityUpdated (WU-PLY-3).
+// Index-freshness wiring, tracked here because the observers deliberately live in the OWNING module
+// rather than in search — catalog owns its data and its document mapping, and search never reads
+// catalog (same direction as TrackIndexSource and store's SearchIndexPg).
 //
-// Each observer will be a CDI @ApplicationScoped bean with @Observes(during=AFTER_SUCCESS) on the
-// event parameter, delegating to IndexEntityUseCase.index/deindex. No wiring is added here because
-// the source event types do not yet exist in the codebase (constraint #3 in WU-SRCH-1 spec).
+// DONE:
+//   ReleaseWentLive / ContentTakenDown -> catalog.adapter.out.search.ReleaseSearchProjectionObserver
+//     Covers admin approval, the scheduled go-live job, reinstate and takedown in one place, since
+//     PublishReleaseService fires those two events on all four paths.
+//
+// STILL UNWIRED — these are refreshed only by the periodic reindex, so a change is not searchable
+// (or stays searchable after removal) until the next backfill runs:
+//   StoreItemPublished / StoreItemRemoved (WU-STO-1)
+//   PodcastPublished                      (WU-POD-1)
+//   EventPublished                        (WU-EVT-1)
+//   PopularityUpdated                     (WU-PLY-3)
+//
+// Each follows the same shape: an @ApplicationScoped bean in the owning module with
+// @Observes(during = AFTER_SUCCESS) plus @Transactional(REQUIRES_NEW), delegating to
+// IndexEntityUseCase.index/deindex.

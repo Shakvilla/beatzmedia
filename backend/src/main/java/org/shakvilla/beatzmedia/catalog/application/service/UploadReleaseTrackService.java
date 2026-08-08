@@ -14,6 +14,7 @@ import org.shakvilla.beatzmedia.catalog.application.port.in.UploadReleaseTrack;
 import org.shakvilla.beatzmedia.catalog.application.port.in.UploadedTrackView;
 import org.shakvilla.beatzmedia.catalog.application.port.out.CatalogRepository;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
+import org.shakvilla.beatzmedia.catalog.domain.CatalogDefaults;
 import org.shakvilla.beatzmedia.catalog.domain.IllegalTransitionException;
 import org.shakvilla.beatzmedia.catalog.domain.OwnershipStatus;
 import org.shakvilla.beatzmedia.catalog.domain.Release;
@@ -122,7 +123,7 @@ public class UploadReleaseTrackService implements UploadReleaseTrack {
         null, // albumId
         null, // albumTitle
         handle.durationSec(),
-        "/images/placeholder.jpg",
+        CatalogDefaults.PLACEHOLDER_IMAGE,
         OwnershipStatus.free,
         null, // priceMinor
         0L,

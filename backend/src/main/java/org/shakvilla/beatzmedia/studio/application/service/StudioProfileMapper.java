@@ -3,7 +3,6 @@ package org.shakvilla.beatzmedia.studio.application.service;
 import java.time.Instant;
 import java.util.List;
 
-import org.shakvilla.beatzmedia.platform.domain.Genre;
 import org.shakvilla.beatzmedia.studio.application.port.in.SaveStudioProfileCommand;
 import org.shakvilla.beatzmedia.studio.application.port.in.StudioLinks;
 import org.shakvilla.beatzmedia.studio.application.port.in.StudioPressAsset;
@@ -29,7 +28,7 @@ final class StudioProfileMapper {
         profile.displayName(),
         profile.username(),
         profile.hometown(),
-        profile.genres().stream().map(Genre::wireValue).toList(),
+        profile.genres(),
         profile.bio(),
         profile.avatarUrl(),
         profile.bannerUrl(),
@@ -54,8 +53,7 @@ final class StudioProfileMapper {
 
   /** Builds the domain aggregate from a validated command (genres already checked by the caller). */
   static StudioProfile toDomain(ArtistId artist, SaveStudioProfileCommand cmd, Instant updatedAt) {
-    List<Genre> genres =
-        cmd.genres() == null ? List.of() : cmd.genres().stream().map(Genre::fromWireValue).toList();
+    List<String> genres = cmd.genres() == null ? List.of() : cmd.genres();
     ProfileLinks links = cmd.links() == null
         ? ProfileLinks.empty()
         : new ProfileLinks(

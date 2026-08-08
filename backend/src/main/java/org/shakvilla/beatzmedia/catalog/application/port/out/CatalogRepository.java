@@ -8,7 +8,6 @@ import org.shakvilla.beatzmedia.catalog.domain.Album;
 import org.shakvilla.beatzmedia.catalog.domain.AlbumId;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistProfile;
-import org.shakvilla.beatzmedia.catalog.domain.BrowseCategory;
 import org.shakvilla.beatzmedia.catalog.domain.InviteOutcome;
 import org.shakvilla.beatzmedia.catalog.domain.Lyrics;
 import org.shakvilla.beatzmedia.catalog.domain.Playlist;
@@ -56,8 +55,6 @@ public interface CatalogRepository {
   List<Track> tracksByIds(List<String> ids);
 
   // ---- WU-CAT-2: home feed + browse ----
-
-  List<BrowseCategory> browseCategories();
 
   List<Track> trendingTracks(int limit);
 

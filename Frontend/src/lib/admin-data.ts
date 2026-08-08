@@ -239,14 +239,10 @@ export const ADMIN_ROLES: { role: AdminRole; scope: string }[] = [
 
 export interface AdminMember { id: string; name: string; email: string; role: AdminRole; lastActive: string }
 
-export function getAdminTeam(): AdminMember[] {
-  return [
-    { id: 'a-yaa', name: 'Yaa Mensima', email: 'yaa@beatzclik.com', role: 'Super-admin', lastActive: 'now' },
-    { id: 'a-kofi', name: 'Kofi Annor', email: 'kofi@beatzclik.com', role: 'Finance', lastActive: '2h ago' },
-    { id: 'a-adwoa', name: 'Adwoa Smart', email: 'adwoa@beatzclik.com', role: 'Moderator', lastActive: '1d ago' },
-    { id: 'a-kwame', name: 'Kwame DJ', email: 'kwame@beatzclik.com', role: 'Editor', lastActive: '3d ago' },
-  ]
-}
+// getAdminTeam() returned four invented staff members — Yaa Mensima, Kofi Annor, Adwoa Smart and
+// Kwame DJ — which the Settings page rendered as the platform's real admin roster while
+// GET /v1/admin/team was already being fetched on that same page. Deleted: the page now reads
+// adminTeamQuery(), and invite / role-change / remove call the endpoints that always existed.
 
 export interface PlatformSettings {
   platformFeePct: number
@@ -482,8 +478,10 @@ export interface CatalogItem {
   status: CatalogStatus
 }
 
-export const CATALOG_SUMMARY = { artists: 1260, albums: 18420, tracks: 142800 }
-export const CATALOG_COUNTS = { pending: 24, published: 18396, takedown: 8 }
+// CATALOG_SUMMARY and CATALOG_COUNTS were invented platform totals (1,260 artists / 18,420 albums
+// / 142,800 tracks; 24 pending / 18,396 published / 8 takedown). The admin Catalog page rendered
+// the first set as fact on an empty database. Both are deleted rather than left unused, so nothing
+// can quietly reach for them again — the page uses the counts the API actually returns.
 
 export function getCatalog(): CatalogItem[] {
   return [

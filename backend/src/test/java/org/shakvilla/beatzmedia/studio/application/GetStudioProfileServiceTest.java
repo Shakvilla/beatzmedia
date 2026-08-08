@@ -8,7 +8,6 @@ import java.util.List;
 
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.shakvilla.beatzmedia.platform.domain.Genre;
 import org.shakvilla.beatzmedia.studio.application.port.in.StudioProfileView;
 import org.shakvilla.beatzmedia.studio.application.service.GetStudioProfileService;
 import org.shakvilla.beatzmedia.studio.domain.ArtistId;
@@ -29,7 +28,7 @@ class GetStudioProfileServiceTest {
         "blacko",
         "Black Sherif",
         "Konongo, Ghana",
-        List.of(Genre.DRILL, Genre.HIPLIFE),
+        List.of("Drill", "Hiplife"),
         "bio",
         "avatar.png",
         "banner.png",

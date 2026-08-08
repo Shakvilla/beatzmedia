@@ -19,7 +19,6 @@ import org.shakvilla.beatzmedia.store.application.port.in.GetStoreItem;
 import org.shakvilla.beatzmedia.store.application.port.in.ListStore;
 import org.shakvilla.beatzmedia.store.application.port.in.ListStore.StoreQuery;
 import org.shakvilla.beatzmedia.store.application.port.in.StoreItemView;
-import org.shakvilla.beatzmedia.store.domain.Genre;
 import org.shakvilla.beatzmedia.store.domain.StoreItemId;
 import org.shakvilla.beatzmedia.store.domain.StoreItemType;
 import org.shakvilla.beatzmedia.store.domain.StoreSort;
@@ -30,7 +29,8 @@ import org.shakvilla.beatzmedia.store.domain.StoreSort;
  *
  * <ul>
  *   <li>GET /v1/store?type=&amp;genre=&amp;sort=&amp;page=&amp;size= → Page&lt;StoreItemDto&gt; (200); 422
- *       on an unknown {@code type}/{@code genre}/{@code sort} enum value.
+ *       on an unknown {@code type} or {@code sort} enum value. {@code genre} is an admin-managed
+ *       label rather than an enum, so an unknown one filters to an empty page instead.
  *   <li>GET /v1/store/:id → StoreItemDto (200); 404 NOT_FOUND.
  * </ul>
  *
@@ -82,15 +82,23 @@ public class StoreResource {
     }
   }
 
-  private static Optional<Genre> parseGenre(String raw) {
+  /**
+   * The genre filter is a plain label now, not a compiled-in enum.
+   *
+   * <p>This used to parse against {@code store.domain.Genre} — a verbatim third copy of the same
+   * nine values that also lived in {@code platform.domain.Genre} and in the frontend's TypeScript
+   * union. With genres admin-managed (V972), any of those copies would have thrown
+   * {@code IllegalArgumentException} the moment an operator added one.
+   *
+   * <p>An unrecognised genre is no longer a 422: it is simply a filter that matches nothing, which
+   * is the honest outcome for a search parameter and avoids a read endpoint needing to consult the
+   * taxonomy on every request.
+   */
+  private static Optional<String> parseGenre(String raw) {
     if (raw == null || raw.isBlank()) {
       return Optional.empty();
     }
-    try {
-      return Optional.of(Genre.fromWireValue(raw));
-    } catch (IllegalArgumentException e) {
-      throw new ValidationException("Invalid genre: " + raw, "genre");
-    }
+    return Optional.of(raw);
   }
 
   private static StoreSort parseSort(String raw) {

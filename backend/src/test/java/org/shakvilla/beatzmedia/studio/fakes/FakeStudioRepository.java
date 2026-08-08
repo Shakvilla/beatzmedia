@@ -107,6 +107,11 @@ public class FakeStudioRepository implements StudioRepository {
   }
 
   @Override
+  public Optional<Episode> findEpisodeById(EpisodeId id) {
+    return Optional.ofNullable(episodes.get(id.value()));
+  }
+
+  @Override
   public Optional<Episode> findEpisode(ArtistId artist, EpisodeId id) {
     Episode e = episodes.get(id.value());
     if (e == null || !e.artistId().value().equals(artist.value())) {

@@ -15,6 +15,7 @@ import { Route as SignupRouteImport } from './routes/signup'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as SearchRouteImport } from './routes/search'
 import { Route as PodcastsRouteImport } from './routes/podcasts'
+import { Route as OnboardingRouteImport } from './routes/onboarding'
 import { Route as NotificationsRouteImport } from './routes/notifications'
 import { Route as LyricsRouteImport } from './routes/lyrics'
 import { Route as LoginRouteImport } from './routes/login'
@@ -49,6 +50,7 @@ import { Route as ArtistArtistIdRouteImport } from './routes/artist/$artistId'
 import { Route as AlbumAlbumIdRouteImport } from './routes/album/$albumId'
 import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as AdminTrustRouteImport } from './routes/admin.trust'
+import { Route as AdminTaxonomyRouteImport } from './routes/admin.taxonomy'
 import { Route as AdminSupportRouteImport } from './routes/admin.support'
 import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
 import { Route as AdminModerationRouteImport } from './routes/admin.moderation'
@@ -101,6 +103,11 @@ const SearchRoute = SearchRouteImport.update({
 const PodcastsRoute = PodcastsRouteImport.update({
   id: '/podcasts',
   path: '/podcasts',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const OnboardingRoute = OnboardingRouteImport.update({
+  id: '/onboarding',
+  path: '/onboarding',
   getParentRoute: () => rootRouteImport,
 } as any)
 const NotificationsRoute = NotificationsRouteImport.update({
@@ -273,6 +280,11 @@ const AdminTrustRoute = AdminTrustRouteImport.update({
   path: '/trust',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminTaxonomyRoute = AdminTaxonomyRouteImport.update({
+  id: '/taxonomy',
+  path: '/taxonomy',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminSupportRoute = AdminSupportRouteImport.update({
   id: '/support',
   path: '/support',
@@ -400,6 +412,7 @@ export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/lyrics': typeof LyricsRoute
   '/notifications': typeof NotificationsRoute
+  '/onboarding': typeof OnboardingRoute
   '/podcasts': typeof PodcastsRoute
   '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
@@ -415,6 +428,7 @@ export interface FileRoutesByFullPath {
   '/admin/moderation': typeof AdminModerationRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/support': typeof AdminSupportRoute
+  '/admin/taxonomy': typeof AdminTaxonomyRoute
   '/admin/trust': typeof AdminTrustRoute
   '/admin/users': typeof AdminUsersRouteWithChildren
   '/album/$albumId': typeof AlbumAlbumIdRoute
@@ -463,6 +477,7 @@ export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/lyrics': typeof LyricsRoute
   '/notifications': typeof NotificationsRoute
+  '/onboarding': typeof OnboardingRoute
   '/podcasts': typeof PodcastsRoute
   '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
@@ -475,6 +490,7 @@ export interface FileRoutesByTo {
   '/admin/moderation': typeof AdminModerationRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/support': typeof AdminSupportRoute
+  '/admin/taxonomy': typeof AdminTaxonomyRoute
   '/admin/trust': typeof AdminTrustRoute
   '/admin/users': typeof AdminUsersRouteWithChildren
   '/album/$albumId': typeof AlbumAlbumIdRoute
@@ -524,6 +540,7 @@ export interface FileRoutesById {
   '/login': typeof LoginRoute
   '/lyrics': typeof LyricsRoute
   '/notifications': typeof NotificationsRoute
+  '/onboarding': typeof OnboardingRoute
   '/podcasts': typeof PodcastsRoute
   '/search': typeof SearchRoute
   '/settings': typeof SettingsRoute
@@ -539,6 +556,7 @@ export interface FileRoutesById {
   '/admin/moderation': typeof AdminModerationRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/support': typeof AdminSupportRoute
+  '/admin/taxonomy': typeof AdminTaxonomyRoute
   '/admin/trust': typeof AdminTrustRoute
   '/admin/users': typeof AdminUsersRouteWithChildren
   '/album/$albumId': typeof AlbumAlbumIdRoute
@@ -591,6 +609,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/lyrics'
     | '/notifications'
+    | '/onboarding'
     | '/podcasts'
     | '/search'
     | '/settings'
@@ -606,6 +625,7 @@ export interface FileRouteTypes {
     | '/admin/moderation'
     | '/admin/settings'
     | '/admin/support'
+    | '/admin/taxonomy'
     | '/admin/trust'
     | '/admin/users'
     | '/album/$albumId'
@@ -654,6 +674,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/lyrics'
     | '/notifications'
+    | '/onboarding'
     | '/podcasts'
     | '/search'
     | '/settings'
@@ -666,6 +687,7 @@ export interface FileRouteTypes {
     | '/admin/moderation'
     | '/admin/settings'
     | '/admin/support'
+    | '/admin/taxonomy'
     | '/admin/trust'
     | '/admin/users'
     | '/album/$albumId'
@@ -714,6 +736,7 @@ export interface FileRouteTypes {
     | '/login'
     | '/lyrics'
     | '/notifications'
+    | '/onboarding'
     | '/podcasts'
     | '/search'
     | '/settings'
@@ -729,6 +752,7 @@ export interface FileRouteTypes {
     | '/admin/moderation'
     | '/admin/settings'
     | '/admin/support'
+    | '/admin/taxonomy'
     | '/admin/trust'
     | '/admin/users'
     | '/album/$albumId'
@@ -780,6 +804,7 @@ export interface RootRouteChildren {
   LoginRoute: typeof LoginRoute
   LyricsRoute: typeof LyricsRoute
   NotificationsRoute: typeof NotificationsRoute
+  OnboardingRoute: typeof OnboardingRoute
   PodcastsRoute: typeof PodcastsRoute
   SearchRoute: typeof SearchRoute
   SettingsRoute: typeof SettingsRoute
@@ -836,6 +861,13 @@ declare module '@tanstack/react-router' {
       path: '/podcasts'
       fullPath: '/podcasts'
       preLoaderRoute: typeof PodcastsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/onboarding': {
+      id: '/onboarding'
+      path: '/onboarding'
+      fullPath: '/onboarding'
+      preLoaderRoute: typeof OnboardingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/notifications': {
@@ -1076,6 +1108,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminTrustRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/taxonomy': {
+      id: '/admin/taxonomy'
+      path: '/taxonomy'
+      fullPath: '/admin/taxonomy'
+      preLoaderRoute: typeof AdminTaxonomyRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/support': {
       id: '/admin/support'
       path: '/support'
@@ -1290,6 +1329,7 @@ interface AdminRouteChildren {
   AdminModerationRoute: typeof AdminModerationRoute
   AdminSettingsRoute: typeof AdminSettingsRoute
   AdminSupportRoute: typeof AdminSupportRoute
+  AdminTaxonomyRoute: typeof AdminTaxonomyRoute
   AdminTrustRoute: typeof AdminTrustRoute
   AdminUsersRoute: typeof AdminUsersRouteWithChildren
   AdminIndexRoute: typeof AdminIndexRoute
@@ -1305,6 +1345,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminModerationRoute: AdminModerationRoute,
   AdminSettingsRoute: AdminSettingsRoute,
   AdminSupportRoute: AdminSupportRoute,
+  AdminTaxonomyRoute: AdminTaxonomyRoute,
   AdminTrustRoute: AdminTrustRoute,
   AdminUsersRoute: AdminUsersRouteWithChildren,
   AdminIndexRoute: AdminIndexRoute,
@@ -1418,6 +1459,7 @@ const rootRouteChildren: RootRouteChildren = {
   LoginRoute: LoginRoute,
   LyricsRoute: LyricsRoute,
   NotificationsRoute: NotificationsRoute,
+  OnboardingRoute: OnboardingRoute,
   PodcastsRoute: PodcastsRoute,
   SearchRoute: SearchRoute,
   SettingsRoute: SettingsRoute,

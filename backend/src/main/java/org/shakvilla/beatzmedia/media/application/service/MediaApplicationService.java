@@ -20,6 +20,7 @@ import jakarta.transaction.Transactional;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.shakvilla.beatzmedia.media.application.port.in.FindAssetForOwnerUseCase;
 import org.shakvilla.beatzmedia.media.application.port.in.IssueDeliveryUrlUseCase;
+import org.shakvilla.beatzmedia.media.application.port.in.ReadArtworkUseCase;
 import org.shakvilla.beatzmedia.media.application.port.in.TranscodeUseCase;
 import org.shakvilla.beatzmedia.media.application.port.in.UploadCommand;
 import org.shakvilla.beatzmedia.media.application.port.in.UploadOriginalUseCase;
@@ -27,6 +28,7 @@ import org.shakvilla.beatzmedia.media.application.port.out.ArtworkProcessorPort;
 import org.shakvilla.beatzmedia.media.application.port.out.MediaAssetRepository;
 import org.shakvilla.beatzmedia.media.application.port.out.MediaService;
 import org.shakvilla.beatzmedia.media.application.port.out.ObjectStorePort;
+import org.shakvilla.beatzmedia.media.application.port.out.ObjectStorePort.StoredObject;
 import org.shakvilla.beatzmedia.media.application.port.out.TranscodeJob;
 import org.shakvilla.beatzmedia.media.application.port.out.TranscodeJobPort;
 import org.shakvilla.beatzmedia.media.application.port.out.TranscodeResult;
@@ -73,6 +75,7 @@ public class MediaApplicationService
         TranscodeUseCase,
         IssueDeliveryUrlUseCase,
         FindAssetForOwnerUseCase,
+        ReadArtworkUseCase,
         MediaService {
 
   /** Maximum upload size: 500 MB in bytes. */
@@ -321,6 +324,23 @@ public class MediaApplicationService
   }
 
   // ---- Helpers ----
+
+  @Override
+  public StoredObject openArtwork(MediaAssetId assetId) {
+    MediaAsset asset = requireAsset(assetId);
+    if (asset.getKind() != MediaKind.ARTWORK) {
+      // Guarded explicitly: this endpoint is public, and without the check an assetId would serve
+      // any object in the bucket — including the ORIGINAL master audio a fan is meant to buy.
+      throw new NotFoundException("Not an artwork asset: " + assetId.value());
+    }
+    // ARTWORK stores its processed variant in previewKey, not fullKey — see
+    // MediaAsset.markArtworkReady. Reading fullKey here returned null and 404'd every cover.
+    ObjectKey key = asset.getPreviewKey();
+    if (key == null) {
+      throw new NotFoundException("Artwork not processed yet: " + assetId.value());
+    }
+    return objectStore.open(key);
+  }
 
   private MediaAsset requireAsset(MediaAssetId assetId) {
     return repository

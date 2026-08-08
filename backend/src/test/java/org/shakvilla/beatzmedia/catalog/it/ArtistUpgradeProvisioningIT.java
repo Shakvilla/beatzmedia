@@ -16,6 +16,7 @@ import jakarta.inject.Inject;
 
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.shakvilla.beatzmedia.catalog.domain.CatalogDefaults;
 import org.shakvilla.beatzmedia.platform.application.port.out.FeatureFlags;
 import org.shakvilla.beatzmedia.platform.domain.FeatureKey;
 
@@ -38,7 +39,9 @@ import io.restassured.http.ContentType;
 class ArtistUpgradeProvisioningIT {
 
   private static final String RELEASES_URL = "/v1/studio/releases";
-  private static final String PLACEHOLDER_IMAGE = "/images/placeholder.jpg";
+  // Bound to the production constant, not a copy of its value. A duplicated literal here is what
+  // let the path drift: the asset it named was never in the repo, and this test still passed.
+  private static final String PLACEHOLDER_IMAGE = CatalogDefaults.PLACEHOLDER_IMAGE;
 
   @Inject FeatureFlags featureFlags;
   @Inject AgroalDataSource dataSource;

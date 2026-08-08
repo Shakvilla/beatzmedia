@@ -9,6 +9,7 @@ import org.shakvilla.beatzmedia.catalog.application.port.in.ProvisionArtistProfi
 import org.shakvilla.beatzmedia.catalog.application.port.out.CatalogRepository;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistProfile;
+import org.shakvilla.beatzmedia.catalog.domain.CatalogDefaults;
 
 /**
  * Application service for {@link ProvisionArtistProfile}. Creates the {@code artist_profile} shell
@@ -25,7 +26,6 @@ import org.shakvilla.beatzmedia.catalog.domain.ArtistProfile;
 public class ProvisionArtistProfileService implements ProvisionArtistProfile {
 
   /** Fallback square image when the upgrading account has no avatar. Matches the catalog default. */
-  public static final String DEFAULT_IMAGE = "/images/placeholder.jpg";
 
   /** Fallback display name when the account carries a blank name (defensive; signup requires one). */
   public static final String DEFAULT_NAME = "Artist";
@@ -49,7 +49,7 @@ public class ProvisionArtistProfileService implements ProvisionArtistProfile {
     String name =
         (command.name() == null || command.name().isBlank()) ? DEFAULT_NAME : command.name();
     String image =
-        (command.image() == null || command.image().isBlank()) ? DEFAULT_IMAGE : command.image();
+        (command.image() == null || command.image().isBlank()) ? CatalogDefaults.PLACEHOLDER_IMAGE : command.image();
 
     ArtistProfile shell = new ArtistProfile(
         artistId,

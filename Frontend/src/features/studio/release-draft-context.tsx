@@ -2,8 +2,8 @@
  * Release-draft store for the new-release wizard, backed by the WU-CAT-5
  * draft flow. Holds the in-progress release as the creator moves across the
  * wizard's four steps (Details → Tracks → Splits → Review). The server draft
- * is created on leaving Details; tracks are uploaded for real; splits / cover
- * art / other extras stay client-only (not sent) until their backends land.
+ * is created on leaving Details; tracks and COVER ART are uploaded for real.
+ * Splits and the remaining extras stay client-only until their backends land.
  */
 
 import {
@@ -14,6 +14,7 @@ import type { Genre } from '../../types'
 import type { ReleaseType } from '../../lib/studio-data'
 import {
   apiCreateDraft, apiUploadTrack, apiUpdateRelease, apiSubmitRelease, apiDeleteTrack,
+  apiUploadReleaseCover,
   apiGetReleaseDetail,
   type CreateDraftInput, type UpdateReleaseInput,
 } from '../../lib/api/queries/studio'
@@ -227,6 +228,15 @@ interface ReleaseDraftContextValue {
    */
   hydrateFromServer: (releaseId: string) => Promise<void>
   uploadTrack: (file: File) => Promise<void>
+  /**
+   * Remembers the picked cover FILE, not just its preview URL.
+   *
+   * The wizard only ever held `URL.createObjectURL(file)` — a `blob:` URL that never left the
+   * browser — so the "Add cover art before submitting" gate passed with nothing stored server-side.
+   * The file is kept here rather than in component state because it is chosen on the Details step
+   * and uploaded on submit, two different routes.
+   */
+  setCoverFile: (file: File) => void
   submitRelease: () => Promise<void>
   reset: () => void
 }
@@ -248,6 +258,7 @@ export function ReleaseDraftProvider({ children, initial }: { children: ReactNod
   // Memoizes an in-flight create so concurrent callers (e.g. multi-file uploads)
   // share one apiCreateDraft instead of each firing its own (double-create race).
   const createInFlight = useRef<Promise<string> | null>(null)
+  const coverFileRef = useRef<File | null>(null)
 
   const value = useMemo<ReleaseDraftContextValue>(() => {
     const ensureDraft = (): Promise<string> => {
@@ -265,6 +276,56 @@ export function ReleaseDraftProvider({ children, initial }: { children: ReactNod
         if (createInFlight.current === p) createInFlight.current = null
       })
       return p
+    }
+
+    /**
+     * Watch a freshly uploaded track until transcoding settles it.
+     *
+     * Upload and transcode are deliberately decoupled on the server — the POST returns as soon as
+     * the bytes are stored, with `status: 'uploading'`, and ffmpeg runs on a worker. There is no
+     * push channel, so the client has to ask. Without this the wizard showed "uploading" forever
+     * on an upload that had already finished, which is what made the step look hung.
+     *
+     * Bounded at ~2 minutes: a real transcode of a normal track takes seconds, so anything past
+     * that is a stuck job, and saying so beats spinning indefinitely. Only the status/duration are
+     * patched, never the whole draft — the artist may be editing the title while this runs.
+     */
+    const pollUntilReady = async (releaseId: string, trackId: string) => {
+      const INTERVAL_MS = 2000
+      const MAX_ATTEMPTS = 60
+      for (let attempt = 0; attempt < MAX_ATTEMPTS; attempt++) {
+        await new Promise((r) => setTimeout(r, INTERVAL_MS))
+        // The artist navigated away or reset the wizard — stop asking.
+        if (stateRef.current.releaseId !== releaseId) return
+        try {
+          const detail = await apiGetReleaseDetail(releaseId)
+          const server = detail.tracks?.find((t) => t.trackId === trackId)
+          if (!server) return // track removed while we were waiting
+          if (server.status === 'ready') {
+            dispatch({
+              type: 'UPDATE_TRACK',
+              id: trackId,
+              patch: { status: 'ready', progress: 100, duration: server.duration },
+            })
+            return
+          }
+          if (server.status === 'error') {
+            dispatch({
+              type: 'MARK_TRACK_ERROR',
+              id: trackId,
+              error: 'processing failed on the server',
+            })
+            return
+          }
+        } catch {
+          // A transient failure mid-poll is not a failed upload; keep waiting.
+        }
+      }
+      dispatch({
+        type: 'MARK_TRACK_ERROR',
+        id: trackId,
+        error: 'still processing after 2 minutes — reload to check again',
+      })
     }
 
     return {
@@ -362,6 +423,11 @@ export function ReleaseDraftProvider({ children, initial }: { children: ReactNod
             tempId,
             track: { ...server, price: stateRef.current.price, lossy },
           })
+          // The upload responds the moment the bytes are stored; transcoding runs asynchronously,
+          // so `server.status` is always 'uploading' here. Nothing used to close that loop, which
+          // is why a perfectly good upload sat on "uploading" forever while the backend had long
+          // since marked it ready. Poll until it settles.
+          void pollUntilReady(id, server.id)
         } catch (err) {
           // Surface the server's reason. An unsupported format, an expired session and a 500 are
           // very different problems for the artist, and collapsing them lost that entirely.
@@ -387,6 +453,10 @@ export function ReleaseDraftProvider({ children, initial }: { children: ReactNod
         }
       },
 
+      setCoverFile: (file) => {
+        coverFileRef.current = file
+        dispatch({ type: 'SET_FIELD', field: 'coverImage', value: URL.createObjectURL(file) })
+      },
       submitRelease: async () => {
         const rid = await ensureDraft()
         const s = stateRef.current
@@ -394,6 +464,13 @@ export function ReleaseDraftProvider({ children, initial }: { children: ReactNod
           .filter((t) => isServerId(t.id) && t.status !== 'error')
           .map((t, i) => ({ trackId: t.id, position: i, priceMinor: Math.round(t.price * 100) }))
         await apiUpdateRelease(rid, { ...toMetaPatch(s), tracks })
+        // Upload the cover BEFORE submitting. It is not caught separately: a release that reaches
+        // in_review without art would carry the placeholder image on every one of its tracks, and
+        // failing the whole submit lets the artist retry rather than discover it after approval.
+        const coverFile = coverFileRef.current
+        if (coverFile) {
+          await apiUploadReleaseCover(rid, coverFile)
+        }
         await apiSubmitRelease(rid, crypto.randomUUID())
       },
     }
