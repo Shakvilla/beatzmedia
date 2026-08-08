@@ -7,6 +7,7 @@ import { UnavailableNotice } from '../../features/player/components/unavailable-
 import { useBuyTrack } from '../../features/cart/use-buy-track'
 import { useToast } from '../ui/toast-provider'
 import { getLyrics, activeLyricIndex } from '../../lib/lyrics-data'
+import { copyLink, currentUrl } from '../../utils/share'
 import { formatDuration, formatPrice } from '../../lib/format'
 import { PREVIEW_ENDED_MESSAGE } from '../layout/player-bar'
 
@@ -66,7 +67,14 @@ export function LyricsView({ onClose, showCloseButton = true }: LyricsViewProps)
           </div>
         </div>
         <button
-          onClick={() => toast('Lyric link copied', 'success')}
+          onClick={async () => {
+            // This reported "Lyric link copied" without ever touching the clipboard, so the fan
+            // pasted whatever was there before. copyLink() reports whether the write succeeded —
+            // the clipboard API can be refused (permissions, insecure context) and a failure must
+            // not read as success.
+            const ok = await copyLink(`${currentUrl().split('?')[0]}?track=${currentTrack.id}`)
+            toast(ok ? 'Lyric link copied' : 'Could not copy the link', ok ? 'success' : 'error')
+          }}
           className="h-10 px-5 rounded-full border border-white/20 text-xs font-bold flex items-center gap-2 hover:bg-white/10 transition-colors"
         >
           <Share2 size={16} /> Share
