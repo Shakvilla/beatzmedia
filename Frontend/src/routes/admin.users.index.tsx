@@ -9,7 +9,7 @@ import { usersQuery, apiVerifyUser, apiSuspendUser, apiReactivateUser } from '..
 import { AdminLoadError } from '../components/admin/load-error'
 import { usePaged, Pagination } from '../components/admin/pagination'
 
-export const Route = createFileRoute('/admin/users')({
+export const Route = createFileRoute('/admin/users/')({
   component: AdminUsers,
 })
 

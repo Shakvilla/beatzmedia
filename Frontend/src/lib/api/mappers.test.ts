@@ -628,7 +628,15 @@ describe('admin users mappers', () => {
     expect(list.counts).toEqual({ all: 10, fans: 7, artists: 3, verified: 2, suspended: 1 })
   })
 
-  it('toUserDetail projects summary + formatted actionLog, ignoring activity/orders/devices', () => {
+  /**
+   * This asserted the opposite — that activity/orders/devices were dropped here.
+   *
+   * Dropping them is what let the detail page substitute a hardcoded fixture, so a real account
+   * displayed purchases, tips and follows that never happened. The API sends these arrays (empty,
+   * for now, and documented as such); carrying them through is what lets the page render honest
+   * empty states today and light up on its own when the endpoint starts filling them.
+   */
+  it('toUserDetail projects summary + formatted actionLog and carries activity/orders/devices through', () => {
     const wire: UserDetailWire = {
       summary: rowWire,
       activity: [{ junk: true }], orders: [{ junk: true }], devices: [{ junk: true }],
@@ -638,9 +646,22 @@ describe('admin users mappers', () => {
     expect(d.summary.id).toBe('u1')
     expect(d.summary.joined).toBe('Mar 2024')
     expect(d.actionLog).toEqual([{ id: 'l1', action: 'Verified artist', by: 'Admin', time: '1h ago' }])
-    expect(d).not.toHaveProperty('activity')
-    expect(d).not.toHaveProperty('orders')
-    expect(d).not.toHaveProperty('devices')
+    // Passed through untouched — the mapper does not interpret them, so whatever the API sends is
+    // what the page sees.
+    expect(d.activity).toEqual([{ junk: true }])
+    expect(d.orders).toEqual([{ junk: true }])
+    expect(d.devices).toEqual([{ junk: true }])
+  })
+
+  it('toUserDetail defaults activity/orders/devices to empty arrays when absent', () => {
+    const wire = {
+      summary: rowWire,
+      actionLog: [],
+    } as unknown as UserDetailWire
+    const d = toUserDetail(wire, NOW)
+    expect(d.activity).toEqual([])
+    expect(d.orders).toEqual([])
+    expect(d.devices).toEqual([])
   })
 })
 
