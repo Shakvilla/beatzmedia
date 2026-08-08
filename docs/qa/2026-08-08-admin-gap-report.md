@@ -59,6 +59,23 @@ testing would have surfaced.
 | Catalog: takedown | release → `takedown`, fan `/v1/home` `newReleases` → 0, audited |
 | Catalog: tab filters | pending/published/takedown/all each filter correctly |
 
+**Second batch, after the first write-up** — same method, database-verified:
+
+| Action | Evidence |
+|---|---|
+| Team: invite / change role / remove | stub account created with `support`, PATCH → `moderator`, DELETE → team back to 1 |
+| Users: suspend, reactivate | `norghamusic` → `suspended` → `active`; both audited; menu correctly swaps Suspend↔Reactivate |
+| Catalog: reinstate | via API (no UI — GAP-06); → `live`, `REINSTATE_RELEASE` audited, search index rebuilt |
+| Overview: 24h / 7d / 30d | label updates and requests carry `?range=` |
+| Ledger: type filters | server-side — `?type=Sale`, `?type=Payout` |
+| Catalog: bulk select + bulk approve | selection bar appears; approving an already-live release returns `409` and the UI says **"Could not approve the selected releases"** |
+| Finance: run weekly payout | correctly declines with "No ready payouts to run" when none are ready; the real path carries an idempotency key and an `inFlight` re-entrancy guard |
+| ⌘K palette | opens, filters sections — but see GAP-24 for what it searches |
+
+The last two deserve emphasis because they are the counter-example to GAP-19: **bulk approve reports
+a real failure honestly, and the payout button refuses rather than pretending.** The codebase is
+capable of the right behaviour; the placebo buttons are not a house style.
+
 **Three false alarms I caught before reporting them**, recorded because they show where this kind of
 testing misleads:
 
@@ -526,15 +543,22 @@ Listed so this report is not mistaken for full coverage.
    Verified by mutation: temporarily declaring `finance` permitted on `GET /v1/admin/audit` produced
    exactly one failure — `DENIED but should be allowed: GET /v1/admin/audit as finance` — and nothing
    else. The test can fail, and fails precisely.
-2. **Data-heavy behaviour.** Empty queues meant no pagination at volume, no sort/filter under load,
-   no bulk-select across pages, no moderation triage, no dispute or payout flows.
-3. **Export buttons** on Audit and Users — not clicked; unknown whether they produce a file, call an
-   endpoint, or do nothing. No export endpoint appears in the OpenAPI spec, which is suggestive.
-4. **`run-weekly` payouts and `disputes/*` actions** — deliberately not fired against real data on a
-   database holding a live release and real accounts.
-5. **Impersonation** — no UI, and not exercised via API.
-6. **Overview "Needs attention"** — was empty throughout, but the catalog was empty of pending items
-   the whole time, so I cannot say whether it would populate.
+2. **Data-heavy behaviour.** Fixtures gave each queue 3 rows — enough to exercise every action, not
+   enough for pagination at volume, sort under load, or bulk-select across pages.
+3. ~~**Export buttons**~~ — **CLOSED.** Clicked. They do nothing and claim success (GAP-19).
+4. **`run-weekly` payouts against real balances** — the button was clicked and correctly declined
+   ("No ready payouts to run"), so the guard is verified but the **actual payout run is not**. It
+   needs a creator with a ready balance, which this database has never had.
+5. **Disputes** — no dispute rows exist, and I did not fabricate one; refund/escalate/reject are
+   unexercised end to end.
+6. **Impersonation** — no UI (GAP-08), not exercised via API.
+7. **Overview "Needs attention"** — empty throughout, but nothing was ever in a state that should
+   populate it, so I still cannot say whether it works.
+8. **Suspension against a live session.** Suspension is enforced at login, but there is **no token
+   revocation anywhere** — no denylist, no `jti`, no session store. An already-issued JWT stays valid
+   for its full lifetime after an account is suspended, and the "Sign out of device" control that
+   would cover this is one of the placebos in GAP-19. I confirmed the absence by code search; I did
+   not measure the window with a live token.
 
 ---
 
