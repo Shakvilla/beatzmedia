@@ -3,7 +3,6 @@ import type {
   Album,
   Track,
   TrackCredit,
-  BrowseCategory,
   Playlist,
   Genre,
   OwnershipStatus,
@@ -139,15 +138,7 @@ export function toAlbumTracks(wire: AlbumWire): Track[] {
   return (wire.tracks ?? []).map(toTrack)
 }
 
-export interface BrowseCategoryWire {
-  id: string
-  title: string
-  colorClass: string
-}
 
-export function toBrowseCategory(wire: BrowseCategoryWire): BrowseCategory {
-  return { id: wire.id, title: wire.title, colorClass: wire.colorClass }
-}
 
 export interface LyricLineWire {
   time: number

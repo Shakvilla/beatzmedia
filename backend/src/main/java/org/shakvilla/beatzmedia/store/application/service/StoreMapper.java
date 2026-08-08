@@ -26,7 +26,7 @@ final class StoreMapper {
         item.artistId().orElse(null),
         item.image(),
         MoneyView.ofMinor(item.priceMinor(), item.currency().name()),
-        item.genre().map(g -> g.wireValue()).orElse(null),
+        item.genre().orElse(null),
         item.badges().isEmpty() ? null : item.badges(),
         item.description().orElse(null),
         item.popularity().orElse(null),

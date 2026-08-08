@@ -8,7 +8,8 @@ import { Toggle } from '../components/ui/toggle'
 import { AdminLoadError } from '../components/admin/load-error'
 import { ApiError } from '../lib/api/errors'
 import { platformSettingsQuery, apiSaveSettings } from '../lib/api/queries/admin-settings'
-import { getAdminTeam, ADMIN_ROLES, type PlatformSettings, type AdminMember, type AdminRole } from '../lib/admin-data'
+import { adminTeamQuery, apiInviteAdmin, apiChangeAdminRole, apiRemoveAdmin } from '../lib/api/queries/admin-team'
+import { ADMIN_ROLES, type PlatformSettings, type AdminRole } from '../lib/admin-data'
 
 export const Route = createFileRoute('/admin/settings')({
   component: AdminSettings,
@@ -26,9 +27,14 @@ function AdminSettings() {
   const [draft, setDraft] = useState<PlatformSettings | null>(null)
   const [saving, setSaving] = useState(false)
   const inFlight = useRef(false)
-  const [team, setTeam] = useState<AdminMember[]>(() => getAdminTeam())
+  // The real admin team. This used to be `useState(() => getAdminTeam())` — four invented people
+  // (Yaa Mensima, Kofi Annor, Adwoa Smart, Kwame DJ) hardcoded in admin-data.ts. GET /v1/admin/team
+  // was already being fetched on this page and returns the actual members; the UI simply threw the
+  // response away and rendered the fakes, so the console showed a staff roster that did not exist.
+  const { data: team = [] } = useQuery(adminTeamQuery())
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState<AdminRole>('Support')
+  const [teamBusy, setTeamBusy] = useState(false)
 
   // The draft is derived from the server copy, never seeded in an effect: it stays authoritative
   // until the user edits, which keeps `dirty` a true comparison against what the server holds.
@@ -56,15 +62,51 @@ function AdminSettings() {
     }
   }
 
-  const invite = () => {
+  /**
+   * All three of these used to mutate local React state and nothing else, so a role change or a
+   * removal vanished on the next reload and an invite was never sent. The endpoints existed the
+   * whole time (`AdminTeamResource`: POST /invite, PATCH /{id}, DELETE /{id}, all super-admin).
+   * Each now calls the API, invalidates the team query so the list reflects the server, and
+   * reports a failure instead of a success it did not earn.
+   */
+  const refreshTeam = () => queryClient.invalidateQueries({ queryKey: ['admin', 'team'] })
+
+  const invite = async () => {
     const email = inviteEmail.trim()
-    if (!email) return
-    setTeam((t) => [...t, { id: `a-${Date.now()}`, name: email.split('@')[0], email, role: inviteRole, lastActive: 'invited' }])
-    setInviteEmail('')
-    toast(`Invite noted locally — admin team management has no backend yet`, 'info')
+    if (!email || teamBusy) return
+    setTeamBusy(true)
+    try {
+      await apiInviteAdmin(email, inviteRole)
+      setInviteEmail('')
+      await refreshTeam()
+      toast(`Invited ${email} as ${inviteRole}`, 'success')
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'Could not send the invite', 'error')
+    } finally {
+      setTeamBusy(false)
+    }
   }
-  const changeRole = (id: string, role: AdminRole) => setTeam((t) => t.map((m) => (m.id === id ? { ...m, role } : m)))
-  const removeMember = (id: string) => setTeam((t) => t.filter((m) => m.id !== id))
+
+  const changeRole = async (id: string, role: AdminRole) => {
+    try {
+      await apiChangeAdminRole(id, role)
+      await refreshTeam()
+      toast(`Role updated to ${role}`, 'success')
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'Could not change the role', 'error')
+      await refreshTeam() // undo the optimistic-looking select by re-reading the server
+    }
+  }
+
+  const removeMember = async (id: string) => {
+    try {
+      await apiRemoveAdmin(id)
+      await refreshTeam()
+      toast('Admin removed', 'success')
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'Could not remove this admin', 'error')
+    }
+  }
 
   return (
     <div className="flex flex-col gap-6 max-w-4xl">
@@ -123,7 +165,7 @@ function AdminSettings() {
           </Section>
 
           {/* Admin team & roles */}
-          <Section title="Admin team & roles" desc="Who can access the console and what they can do. Changes here are not saved yet — team management has no backend.">
+          <Section title="Admin team & roles" desc="Who can access the console and what they can do. Only a super-admin may invite, change roles or remove.">
             <div className="flex flex-col gap-3">
               {team.map((m) => (
                 <div key={m.id} className="flex items-center gap-3 py-2">

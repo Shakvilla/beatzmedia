@@ -36,6 +36,7 @@ import org.shakvilla.beatzmedia.catalog.application.port.in.ListStudioReleases;
 import org.shakvilla.beatzmedia.catalog.application.port.in.PageView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.RemoveReleaseTrack;
 import org.shakvilla.beatzmedia.catalog.application.port.in.ResendSplitInvites;
+import org.shakvilla.beatzmedia.catalog.application.port.in.SetReleaseCover;
 import org.shakvilla.beatzmedia.catalog.application.port.in.StudioReleaseDetailView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.StudioReleaseView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.UpdateRelease;
@@ -51,6 +52,7 @@ import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseType;
 import org.shakvilla.beatzmedia.catalog.domain.TrackId;
 import org.shakvilla.beatzmedia.catalog.domain.Visibility;
+import org.shakvilla.beatzmedia.platform.domain.ValidationException;
 
 /**
  * REST resource for the artist Studio release create flow (LLFR-CATALOG-02.1 – 02.5): draft
@@ -80,6 +82,7 @@ public class StudioReleaseResource {
   private final UpdateRelease updateRelease;
   private final DeleteRelease deleteRelease;
   private final UploadReleaseTrack uploadReleaseTrack;
+  private final SetReleaseCover setReleaseCover;
   private final RemoveReleaseTrack removeReleaseTrack;
   private final FinalizeRelease finalizeRelease;
   private final ResendSplitInvites resendSplitInvites;
@@ -93,6 +96,7 @@ public class StudioReleaseResource {
       UpdateRelease updateRelease,
       DeleteRelease deleteRelease,
       UploadReleaseTrack uploadReleaseTrack,
+      SetReleaseCover setReleaseCover,
       RemoveReleaseTrack removeReleaseTrack,
       FinalizeRelease finalizeRelease,
       ResendSplitInvites resendSplitInvites,
@@ -103,6 +107,7 @@ public class StudioReleaseResource {
     this.updateRelease = updateRelease;
     this.deleteRelease = deleteRelease;
     this.uploadReleaseTrack = uploadReleaseTrack;
+    this.setReleaseCover = setReleaseCover;
     this.removeReleaseTrack = removeReleaseTrack;
     this.finalizeRelease = finalizeRelease;
     this.resendSplitInvites = resendSplitInvites;
@@ -219,6 +224,41 @@ public class StudioReleaseResource {
       }
     } catch (IOException | NoSuchAlgorithmException e) {
       throw new RuntimeException("Failed to read uploaded file", e);
+    }
+  }
+
+  /**
+   * POST /v1/studio/releases/:id/cover — multipart {@code image} part.
+   *
+   * <p>Returns {@code { "image": "/v1/media/images/{assetId}" }}. Also restamps the release's
+   * tracks, whose {@code image} is what fans actually see and which otherwise keeps the
+   * {@code /images/placeholder.jpg} stamped at upload time.
+   */
+  @POST
+  @Path("/{id}/cover")
+  @Consumes(MediaType.MULTIPART_FORM_DATA)
+  public Response setCover(@PathParam("id") String releaseId, @MultipartForm ReleaseCoverForm form) {
+    if (form == null || form.image == null) {
+      throw new ValidationException("'image' file part is required", "image");
+    }
+    FileUpload file = form.image;
+    try (InputStream body = java.nio.file.Files.newInputStream(file.uploadedFile())) {
+      MessageDigest digest = MessageDigest.getInstance("SHA-256");
+      DigestInputStream digestBody = new DigestInputStream(body, digest);
+      byte[] buf = new byte[8192];
+      //noinspection StatementWithEmptyBody
+      while (digestBody.read(buf) != -1) {}
+      String contentHash = bytesToHex(digest.digest());
+      try (InputStream uploadBody = java.nio.file.Files.newInputStream(file.uploadedFile())) {
+        String url = setReleaseCover.setCover(
+            artistId(),
+            new ReleaseId(releaseId),
+            new SetReleaseCover.ImageUpload(
+                file.fileName(), file.contentType(), file.size(), uploadBody, contentHash));
+        return Response.ok(java.util.Map.of("image", url)).build();
+      }
+    } catch (IOException | NoSuchAlgorithmException e) {
+      throw new RuntimeException("Failed to read the uploaded image", e);
     }
   }
 

@@ -39,7 +39,9 @@ public class CreatePodcastShowService implements CreatePodcastShow {
       throw new ValidationException("category is required", "category");
     }
     PodcastShow show =
-        PodcastShow.create(new ShowId(ids.newId()), artist, cmd.title(), cmd.category(), clock.now());
+        PodcastShow.create(
+            new ShowId(ids.newId()), artist, cmd.title(), cmd.category(), cmd.image(),
+            cmd.description(), clock.now());
     PodcastShow saved = repository.saveShow(show);
     return ListStudioPodcastShowsService.toView(saved);
   }

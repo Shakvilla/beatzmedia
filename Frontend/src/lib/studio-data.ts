@@ -7,7 +7,6 @@
  * exists — call sites won't change.
  */
 
-import type { Genre } from '../types'
 
 // The signed-in creator's identity is NOT a constant — it comes from the
 // session and the creator's own profile. See features/studio/use-creator-identity.
@@ -21,18 +20,9 @@ export const releaseTypes: { value: ReleaseType; label: string; hint?: string }[
   { value: 'mixtape', label: 'Mixtape' },
 ]
 
-/** Genres a creator can tag a release with (reuses the fan-side taxonomy). */
-export const studioGenres: Genre[] = [
-  'Afrobeats',
-  'Hiplife',
-  'Highlife',
-  'Amapiano',
-  'Drill',
-  'Gospel',
-  'R&B',
-  'Reggae',
-  'Jazz',
-]
+// `studioGenres` was a hardcoded array of the same nine values held by the TypeScript `Genre` union
+// and two separate Java enums. Genres are admin-managed now (taxonomy_term, V972), so it is deleted
+// rather than left in place for something to reach for: use `taxonomyQuery('genre')`.
 
 /** The four steps of the new-release wizard, in order. */
 export const RELEASE_WIZARD_STEPS = [
@@ -105,9 +95,8 @@ export function getReleases(): StudioRelease[] {
 
 export type EpisodeStatus = 'published' | 'scheduled' | 'draft'
 
-export const STUDIO_PODCAST_CATEGORIES = [
-  'News & Politics', 'Comedy', 'Business', 'Sports', 'Culture', 'Tech', 'Health', 'Storytelling',
-] as const
+// STUDIO_PODCAST_CATEGORIES was a hardcoded mirror of the chk_pod_category CHECK constraint, which
+// V972 drops. Deleted: use `taxonomyQuery('podcast_category')`.
 
 export interface StudioPodcastShow {
   id: string

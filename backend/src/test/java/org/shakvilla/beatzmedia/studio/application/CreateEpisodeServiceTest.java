@@ -56,6 +56,7 @@ class CreateEpisodeServiceTest {
   void setUp() {
     repo = new FakeStudioRepository();
     repo.withShow(PodcastShow.create(new ShowId("sh-1"), ARTIST, "Konongo Diaries", "Storytelling",
+        null, null,
         java.time.Instant.parse(NOW)));
     mediaUpload = new FakeUploadOriginalUseCase();
     clock = FakeClock.at(NOW);

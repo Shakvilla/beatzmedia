@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { apiFetch } from '../client'
-import { homeQuery, artistQuery, albumQuery, trackQuery, browseCategoriesQuery, lyricsQuery, resolveQuery } from './catalog'
+import { homeQuery, artistQuery, albumQuery, trackQuery, lyricsQuery, resolveQuery } from './catalog'
 
 vi.mock('../client', () => ({ apiFetch: vi.fn() }))
 
@@ -41,14 +41,6 @@ describe('catalog query factories', () => {
     expect(result.rails.curatedPlaylists[0].id).toBe('pl1')
   })
 
-  it('browseCategoriesQuery fetches /browse-categories', async () => {
-    vi.mocked(apiFetch).mockResolvedValue([{ id: 'c1', title: 'Afrobeats', colorClass: 'bg-red-500' }])
-
-    const result = await browseCategoriesQuery().queryFn!(ctx)
-
-    expect(apiFetch).toHaveBeenCalledWith('/browse-categories')
-    expect(result).toEqual([{ id: 'c1', title: 'Afrobeats', colorClass: 'bg-red-500' }])
-  })
 
   it('artistQuery fetches /artists/:id', async () => {
     vi.mocked(apiFetch).mockResolvedValue({

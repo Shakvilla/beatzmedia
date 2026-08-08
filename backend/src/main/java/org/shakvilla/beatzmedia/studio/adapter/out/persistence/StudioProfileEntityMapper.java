@@ -6,7 +6,6 @@ import java.util.List;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
-import org.shakvilla.beatzmedia.platform.domain.Genre;
 import org.shakvilla.beatzmedia.studio.domain.ArtistId;
 import org.shakvilla.beatzmedia.studio.domain.PressAsset;
 import org.shakvilla.beatzmedia.studio.domain.ProfileLinks;
@@ -32,9 +31,9 @@ public class StudioProfileEntityMapper {
   }
 
   StudioProfile toDomain(StudioProfileEntity e) {
-    List<Genre> genres = e.genres == null
+    List<String> genres = e.genres == null
         ? List.of()
-        : Arrays.stream(e.genres).map(Genre::fromWireValue).toList();
+        : Arrays.stream(e.genres).toList();
     return new StudioProfile(
         new ArtistId(e.artistId),
         e.username,
@@ -58,7 +57,7 @@ public class StudioProfileEntityMapper {
     entity.username = profile.username();
     entity.displayName = profile.displayName();
     entity.hometown = profile.hometown();
-    entity.genres = profile.genres().stream().map(Genre::wireValue).toArray(String[]::new);
+    entity.genres = profile.genres().toArray(String[]::new);
     entity.bio = profile.bio();
     entity.avatarUrl = profile.avatarUrl();
     entity.bannerUrl = profile.bannerUrl();

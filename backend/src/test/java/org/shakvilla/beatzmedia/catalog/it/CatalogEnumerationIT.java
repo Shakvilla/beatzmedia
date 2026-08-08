@@ -28,6 +28,7 @@ class CatalogEnumerationIT {
   // 'black-sherif' artist for the artist_id FK; each test cleans these rows up in @AfterEach so
   // other ITs sharing the database are unaffected.
   private static final String LIVE_TRACK_ID = "wu-srch2-live-track";
+  private static final String ORPHAN_TRACK_ID = "wu-srch2-orphan-track";
   private static final String LIVE_RELEASE_ID = "wu-srch2-live-release";
   private static final String TAKEDOWN_TRACK_ID = "wu-srch2-takedown-track";
   private static final String TAKEDOWN_RELEASE_ID = "wu-srch2-takedown-release";
@@ -43,9 +44,12 @@ class CatalogEnumerationIT {
         .setParameter(1, LIVE_RELEASE_ID)
         .setParameter(2, TAKEDOWN_RELEASE_ID)
         .executeUpdate();
-    em.createNativeQuery("DELETE FROM track WHERE id IN (?1, ?2)")
+    em.createNativeQuery("DELETE FROM track WHERE id IN (?1, ?2, ?3)")
         .setParameter(1, LIVE_TRACK_ID)
         .setParameter(2, TAKEDOWN_TRACK_ID)
+        // The orphan fixture has no release rows to cascade from, so it must be named explicitly
+        // or it survives into every later test sharing this database.
+        .setParameter(3, ORPHAN_TRACK_ID)
         .executeUpdate();
   }
 
@@ -60,13 +64,24 @@ class CatalogEnumerationIT {
   }
 
   @Test
-  void allTracksForIndex_seeded_track_with_no_release_is_visible() {
-    // Pins the "no owning release" arm: without it the index goes empty again, since every seeded
-    // track has no release_track row at all.
-    IndexableTrack indexed = findIndexed("last-last");
+  @Transactional
+  void allTracksForIndex_track_with_no_release_is_NOT_visible() {
+    // This assertion is inverted from what it used to be, deliberately.
+    //
+    // The old rule was "a track with no owning release is always visible", written so the dev seed
+    // (which created no releases) would still populate the index. It also meant a studio upload was
+    // searchable the instant ffmpeg finished — before its release was ever finalized, and forever if
+    // the artist abandoned the draft. That is how an unpublished track reached the fan surfaces.
+    //
+    // Visibility is opt-in now: a LIVE release is required. The seed grants its own tracks live
+    // releases (see R__seed_dev_data.sql), so dev data still shows up — through the same rule as
+    // everything else rather than an exception carved around it.
+    insertTrack(ORPHAN_TRACK_ID, "WU-SRCH-2 Orphan Track");
 
-    assertNotNull(indexed, "seeded track with no release must be enumerated");
-    assertTrue(indexed.visible(), "a track with no owning release must be visible");
+    IndexableTrack indexed = findIndexed(ORPHAN_TRACK_ID);
+
+    assertNotNull(indexed, "the track must still be enumerated so a stale document can be overwritten");
+    assertFalse(indexed.visible(), "a track with no owning release must NOT be visible");
   }
 
   @Test

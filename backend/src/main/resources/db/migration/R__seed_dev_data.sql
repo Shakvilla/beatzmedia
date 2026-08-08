@@ -315,18 +315,10 @@ ON CONFLICT (playlist_id, position) DO UPDATE
   SET track_id = EXCLUDED.track_id;
 
 
--- Browse categories (WU-CAT-2: mock-data.ts browseCategories)
-INSERT INTO browse_category (id, title, color_class) VALUES
-  ('afrobeats',  'Afrobeats',  'from-orange-500 to-amber-400'),
-  ('hiplife',    'Hiplife',    'from-purple-500 to-pink-400'),
-  ('highlife',   'Highlife',   'from-green-500 to-teal-400'),
-  ('amapiano',   'Amapiano',   'from-blue-500 to-cyan-400'),
-  ('drill',      'Drill',      'from-red-500 to-rose-400'),
-  ('gospel',     'Gospel',     'from-yellow-500 to-lime-400'),
-  ('rb',         'R&B',        'from-indigo-500 to-violet-400'),
-  ('reggae',     'Reggae',     'from-emerald-500 to-green-400'),
-  ('jazz',       'Jazz',       'from-slate-500 to-gray-400')
-ON CONFLICT (id) DO UPDATE SET title = EXCLUDED.title, color_class = EXCLUDED.color_class;
+-- Browse categories are no longer seeded here. The browse_category table was migrated into
+-- taxonomy_term (V972) and then dropped (V973), because the home/search tiles ARE the genres and
+-- carry their colours on the genre terms. This block inserting into a dropped table was failing the
+-- whole repeatable migration, which in turn failed every @QuarkusTest that boots the schema.
 
 -- ==========================================================================
 -- Podcasts (WU-POD-1: Frontend/src/lib/podcast-data.ts `podcasts`)
@@ -842,3 +834,48 @@ ON CONFLICT (id) DO UPDATE
   SET label      = EXCLUDED.label,
       options    = EXCLUDED.options,
       sort_order = EXCLUDED.sort_order;
+
+
+-- ==========================================================================
+-- Published releases for the seeded tracks.
+--
+-- WHY THIS EXISTS. Fan-facing surfaces (home rails, artist pages, the search index) now require a
+-- track to belong to a LIVE release before it is visible. That rule replaced "a track with no
+-- release is always visible", which was what leaked in-progress studio uploads — a track reaches
+-- status='ready' the moment ffmpeg finishes, long before its release is finalized.
+--
+-- The seed previously created no release rows at all, so under the new rule every seeded track
+-- would have been correct-but-invisible and the dev app would look empty. Seeded tracks represent
+-- ALREADY-PUBLISHED catalogue, so they get exactly that: one live release per artist, with their
+-- tracks attached. This keeps the visibility rule uniform instead of carving out an exception that
+-- an upload could slip through.
+-- ==========================================================================
+
+INSERT INTO "release" (id, artist_id, title, type, status, visibility, went_live_at, list_price_minor)
+SELECT DISTINCT
+    'rel-seed-' || t.artist_id,
+    t.artist_id,
+    'Seed Catalogue',
+    'album',
+    'live',
+    'public',
+    now(),
+    0
+FROM track t
+WHERE t.artist_id IS NOT NULL
+ON CONFLICT (id) DO UPDATE SET status = 'live', visibility = 'public';
+
+-- release_track's primary key is (release_id, position), NOT (release_id, track_id) — so
+-- idempotency comes from the NOT EXISTS guard, which also stops a track being linked twice.
+-- Only tracks that belong to no release at all are adopted; a real studio upload already has its
+-- own release_track row and must keep whatever status that release has.
+INSERT INTO release_track (release_id, track_id, position, price_minor)
+SELECT
+    'rel-seed-' || t.artist_id,
+    t.id,
+    row_number() OVER (PARTITION BY t.artist_id ORDER BY t.id) - 1,
+    0
+FROM track t
+WHERE t.artist_id IS NOT NULL
+  AND NOT EXISTS (SELECT 1 FROM release_track rt WHERE rt.track_id = t.id)
+ON CONFLICT (release_id, position) DO NOTHING;

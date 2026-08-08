@@ -35,6 +35,20 @@ public interface ObjectStorePort {
   boolean exists(ObjectKey key);
 
   /**
+   * Opens a stored object for reading.
+   *
+   * <p>Needed because cover images are served through the app rather than signed. A presigned URL
+   * is time-boxed, which suits a 30-second audio stream but not {@code podcast.image}, which sits
+   * on a browse card indefinitely and is rendered by every fan.
+   *
+   * @return the object's bytes and content type; the caller must close the stream
+   */
+  StoredObject open(ObjectKey key);
+
+  /** An object's bytes plus the content type to echo back. */
+  record StoredObject(java.io.InputStream body, String contentType, long sizeBytes) {}
+
+  /**
    * Delete an object from the store. Used after virus-scan rejection to purge malicious originals.
    * Implementations must treat a missing key as a no-op (idempotent delete). H-1.
    */
