@@ -37,7 +37,90 @@ gives a false picture of where the risk actually is.
 
 ---
 
+## 1b. Second pass — clicking every control (2026-08-08, later)
+
+The first pass verified that pages *render* and endpoints *respond*. It did not verify that clicking
+a control does what it says. This pass did: every action was clicked in the browser, and the result
+checked against the **database**, not the toast.
+
+That distinction found **GAP-19**, the worst finding in this report, which no amount of endpoint
+testing would have surfaced.
+
+**Verified working end to end** — clicked in the UI, confirmed in Postgres, audit entry present:
+
+| Action | Evidence |
+|---|---|
+| Moderation: review, approve & keep | `qa-mod-2` → `in_review` → `resolved`; audit `Reviewed report`, `Approved content` |
+| Trust: review, clear | `qa-risk-1` → `cleared`; audit `Reviewed risk signal`, `Cleared risk signal` |
+| Support: reply | `support_message` row written, author `Admin`; ticket → `pending` |
+| Compliance: start | `qa-cmp-3` → `in_progress`; audited |
+| Taxonomy: create / rename / hide / delete | all four persisted, all four audited; hide correctly drops the term from the **public** `/v1/taxonomy` list |
+| Settings: save | `FAN_MESSAGING` flipped in `feature_flag` and persisted |
+| Catalog: takedown | release → `takedown`, fan `/v1/home` `newReleases` → 0, audited |
+| Catalog: tab filters | pending/published/takedown/all each filter correctly |
+
+**Three false alarms I caught before reporting them**, recorded because they show where this kind of
+testing misleads:
+
+1. Coordinate-based clicks silently failed several times (the screenshot is 2× the coordinate
+   space). "Review does nothing" and "Published tab is empty" were both my harness, not the app.
+   Both were confirmed working once driven through the DOM.
+2. "Reply has no send button" — it has one; it is an icon button with `aria-label="Send"` and no text,
+   which my text scan missed.
+3. "Rename doesn't persist" — React listens for `focusout`, not the non-bubbling `blur` I dispatched.
+   It persists correctly with a real focus/blur.
+
+---
+
 ## 2. Blockers — do not ship
+
+### GAP-19 · Seven buttons do nothing but claim they worked
+
+Found only by clicking. Each of these has an `onClick` that fires a toast and makes **no API call
+whatsoever** — verified in the browser: zero network requests, no download, no navigation.
+
+| Control | File | What it claims | Severity |
+|---|---|---|---|
+| **Export** (audit log) | `admin.audit.tsx:56` | `"Exporting audit log as CSV"` — **success** | High |
+| **Export** (users) | `admin.users.tsx:90` | `"Exporting users as CSV"` — **success** | High |
+| **Export** (ledger) | `admin.finance.ledger.tsx:55` | `"Exporting ledger as CSV"` — **success** | High |
+| **Sign out** (device) | `admin.users.$userId.tsx:169` | `"Signed out of device"` — **success** | High |
+| **New playlist** | `admin.editorial.tsx:78` | `"New playlist — pick tracks to curate"` | High |
+| **Schedule push** | `admin.editorial.tsx:122` | `"Schedule a new push notification"` | High |
+| **Preview track** | `admin.catalog.$itemId.tsx:102` | `"Previewing …"` | Low |
+
+Four of them report **`'success'`**. This is worse than a dead button: a dead button is discovered
+the first time someone uses it, whereas a button that reports success is believed.
+
+Three consequences worth separating:
+
+- **"Signed out of device" is a security control.** An operator responding to a compromised account
+  is told the session was terminated. It was not. Nothing was called.
+- **Editorial is entirely non-functional**, and not for want of a backend:
+  `POST /v1/admin/editorial/playlists` and `POST /v1/admin/editorial/push` both exist, are guarded,
+  and work. The page has two buttons and neither is connected to either endpoint. Verified live:
+  clicking both produced **0** API calls.
+- **The three CSV exports have no endpoint at all** — nothing in the OpenAPI spec serves them. This
+  is unbuilt backend, not just unwired frontend, so the fix is larger than connecting a handler.
+
+**Repro.** Open `/admin/audit`, click **Export**. A green success toast appears. No file is
+downloaded and the network tab stays silent.
+
+---
+
+### GAP-20 · `overdue` compliance requests can never appear
+
+`ComplianceStatus.OVERDUE` exists, the UI counts it (`admin.compliance.tsx:60`) and styles it red —
+but **nothing ever sets it**. The domain class says so outright: *"no scheduler recomputes it in this
+WU."* There is no sweep job.
+
+Confirmed live: a compliance request seeded a day past its `due_at` still displayed under
+`0 overdue`.
+
+**Impact.** DSAR deadlines are statutory. The one indicator that a legal deadline has been missed is
+permanently stuck at zero, on the page whose entire purpose is tracking those deadlines.
+
+---
 
 ### GAP-01 · Two admin detail pages are unreachable dead code
 
@@ -284,12 +367,20 @@ Listed so this report is not mistaken for full coverage.
 
 ## 8. Suggested triage order
 
-1. **GAP-01** — dead detail routes. Smallest fix, largest surface restored.
-2. **GAP-02** — wire the four flags into `PlatformEnforcementFilter`. No kill switch is a launch risk.
-3. **GAP-03** — populate `actor_name`. Compliance-relevant and cheap.
-4. **GAP-05 + GAP-06** — confirmation + reason prompt on takedown, and expose reinstate. Ship together.
-5. **GAP-07** — settings cache invalidation after commit.
-6. **GAP-04** — either wire real health signals or stop showing a green all-clear.
+1. **GAP-19** — seven lying buttons. Four claim success. Fix by connecting the two editorial handlers
+   (backends already exist), and by making the three exports and the device sign-out either real or
+   visibly absent. Nothing here should ship saying "success" while doing nothing.
+2. **GAP-01** — dead detail routes. Smallest fix, largest surface restored.
+3. **GAP-02** — wire the four flags into `PlatformEnforcementFilter`. No kill switch is a launch risk.
+4. **GAP-03** — populate `actor_name`. Compliance-relevant and cheap. Note `support_message` already
+   stores an author name, so the pattern exists.
+5. **GAP-05 + GAP-06** — confirmation + reason prompt on takedown, and expose reinstate. Ship
+   together: takedown is one click, irreversible from the UI, and stamps a canned reason into the
+   permanent audit record. Confirmed live.
+6. **GAP-20** — either compute `overdue` from `due_at` or add the sweep. Statutory deadlines.
+7. **GAP-07** — settings cache invalidation after commit. Observed biting in the UI: a second toggle
+   after a save operates on stale state and writes the wrong value.
+8. **GAP-04** — either wire real health signals or stop showing a green all-clear.
 
 ---
 
