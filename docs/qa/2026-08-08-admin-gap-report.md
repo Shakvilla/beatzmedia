@@ -108,6 +108,48 @@ downloaded and the network tab stays silent.
 
 ---
 
+### GAP-23 · No password-reset email is ever sent, in any environment
+
+Reached by asking a question the endpoint sweep could not: after inviting an admin, **how does that
+person ever sign in?**
+
+The invite works — it creates a stub account with the right role and `is_admin = true`. But the stub
+has **no credential**, and:
+
+- signing up with that email returns `409 EMAIL_TAKEN`;
+- `InviteAdminService` sends nothing — there is no invite email and no accept/activate endpoint;
+- the only recovery path is the public `POST /v1/me/password/reset`, which does correctly mint a
+  `password_reset_token` row.
+
+That token never reaches the user. The identity module's only `Mailer` implementation is
+`LoggingMailer`, which logs and returns:
+
+```java
+LOG.infof("Password reset requested for %s; reset token generated and dispatched.", email);
+```
+
+It is `@ApplicationScoped` with **no profile guard** — not `@IfBuildProfile("dev")`, no `%prod`
+alternative. It is the implementation in production too. The class javadoc is explicit that it "must
+be swapped for a real SMTP/provider adapter before go-live"; that swap has not happened, and nothing
+fails a build or a test if it never does.
+
+**Impact, in order of severity:**
+
+1. **No user can recover a forgotten password.** Not admins, not artists, not fans. The reset token
+   is created and silently discarded.
+2. **Every invited admin is locked out permanently** — no password, no signup, no email.
+3. The log line says **"dispatched"**, so operations sees a healthy-looking success message for mail
+   that was never sent. Same shape as GAP-19, one layer down.
+
+Note the platform *can* send mail: `notifications` has a real `SmtpMailer`, and Mailpit is running in
+Compose on 1025/8025. Identity simply does not use it — there are two separate `Mailer` ports and
+only one of them is implemented for real.
+
+**Repro.** `POST /v1/me/password/reset` with any registered email → `204`. A `password_reset_token`
+row appears. The mail sink at `http://localhost:8025` stays empty.
+
+---
+
 ### GAP-22 · Nothing in the application ever creates an album
 
 Found by following a published release all the way to the fan app rather than stopping at "the
@@ -433,6 +475,10 @@ Listed so this report is not mistaken for full coverage.
 
 ## 8. Suggested triage order
 
+0. **GAP-23** — no password-reset mail is sent anywhere. Nobody can recover an account, and every
+   invited admin is locked out. `notifications.SmtpMailer` already works and Mailpit is running, so
+   this is wiring identity's `Mailer` port to a real adapter, not building one. Highest
+   severity-to-effort ratio in this report.
 0. **GAP-22** — nothing creates albums. Six fan-facing surfaces, including the "New releases" rail
    and the entire album detail route, are dead on any database without the dev seed. Decide whether
    publishing an `album`/`ep`/`mixtape` release should project an `album` row (the same projection
