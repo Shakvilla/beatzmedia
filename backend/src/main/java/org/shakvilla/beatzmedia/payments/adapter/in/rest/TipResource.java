@@ -20,7 +20,9 @@ import org.shakvilla.beatzmedia.payments.domain.MethodKind;
 import org.shakvilla.beatzmedia.payments.domain.MissingIdempotencyKeyException;
 import org.shakvilla.beatzmedia.payments.domain.PaymentMethodRef;
 import org.shakvilla.beatzmedia.payments.domain.Provider;
+import org.shakvilla.beatzmedia.platform.adapter.in.rest.RequiresFeature;
 import org.shakvilla.beatzmedia.platform.domain.Currency;
+import org.shakvilla.beatzmedia.platform.domain.FeatureKey;
 import org.shakvilla.beatzmedia.platform.domain.Money;
 import org.shakvilla.beatzmedia.platform.domain.ValidationException;
 
@@ -42,7 +44,7 @@ import io.quarkus.security.Authenticated;
  */
 @Path("/v1/payments/tips")
 @Produces(MediaType.APPLICATION_JSON)
-@Authenticated
+@Authenticated@RequiresFeature(FeatureKey.TIPPING)
 public class TipResource {
 
   private final IssueTip issueTip;
