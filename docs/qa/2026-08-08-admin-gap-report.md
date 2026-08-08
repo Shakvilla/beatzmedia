@@ -108,6 +108,71 @@ downloaded and the network tab stays silent.
 
 ---
 
+### GAP-25 · Every track displays invented lyrics
+
+`GET /v1/tracks/{id}/lyrics` exists in the API. `lyrics-view.tsx:9` does not call it — it imports
+`getLyrics()` from `src/lib/lyrics-data.ts`:
+
+```ts
+export function getLyrics(trackId: string, duration: number): LyricLine[] {
+  if (SPECIFIC[trackId]) return SPECIFIC[trackId]
+  const n = GENERIC.length
+  return GENERIC.map((text, i) => ({ time: Math.round((i / n) * duration), text }))
+}
+```
+
+For any track without a hardcoded entry — i.e. **every track a real artist uploads** — it returns a
+generic block of placeholder lines, evenly spread across the song's duration so it looks
+time-synced.
+
+Unlike an empty rail, this does not read as missing data. It reads as *this artist's lyrics*.
+Fabricated words attributed to a named artist's song is a different kind of problem from a broken
+button, and it ships to fans. The backend already has `lyrics` and `lyric_line` tables and a working
+endpoint.
+
+Related: the **Share** button on the same view reports "Lyric link copied" without touching the
+clipboard (GAP-21).
+
+---
+
+### GAP-24 · The ⌘K command palette searches hardcoded fiction
+
+`admin-command.tsx:5` imports `getAdminUsers()` and `getCatalog()` from `src/lib/admin-data.ts` —
+**hardcoded arrays**, not the API queries every other admin screen uses.
+
+Demonstrated live against a database holding exactly 2 accounts and 1 release:
+
+| Query | Palette returns | Reality |
+|---|---|---|
+| `Kojo` | *Kojo Asante*, *DJ Kojo* | Neither account exists |
+| `Iron Boy` | *Iron Boy · Black Sherif* | Deleted; no such release |
+| `Abdul` | **"No results for 'Abdul'."** | A real, active artist account |
+
+So the one search box spanning the whole console **invents users and releases that do not exist and
+cannot find the ones that do.**
+
+It compounds with GAP-01: selecting a fabricated result navigates to
+`/admin/users/u-kojo` or `/admin/catalog/c1`, and because those detail routes are dead, the operator
+lands silently back on the list — no error, no "not found", just a click that appears to do nothing.
+
+This is the same "invented data over working endpoints" class that commit `1cbfdc8` set out to
+remove. It survived because the palette is a shared component rather than a route, so a
+route-by-route sweep misses it.
+
+**I swept for the rest.** 22 files import from the mock modules, but almost all import *types*
+only, which is harmless. Exactly **three** import data-returning functions:
+
+| File | Imports | Status |
+|---|---|---|
+| `components/admin/admin-command.tsx` | `getAdminUsers`, `getCatalog` | This finding |
+| `components/music/lyrics-view.tsx` | `getLyrics` | GAP-25 |
+| `routes/admin.users.$userId.tsx` | `getUserDetail` | Fabricated activity feed — "Bought 'Soja' · ₵2.50", "Followed Black Sherif" — for whichever user is opened. Currently masked by GAP-01 (the route is dead); **fixing GAP-01 alone would expose invented per-user activity**, so the two must be fixed together. |
+
+The type-only imports are worth leaving alone; the distinction matters because a naive "delete the
+mock modules" would break 22 files for a problem that lives in three.
+
+---
+
 ### GAP-23 · No password-reset email is ever sent, in any environment
 
 Reached by asking a question the endpoint sweep could not: after inviting an admin, **how does that
