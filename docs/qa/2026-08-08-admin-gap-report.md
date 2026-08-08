@@ -108,6 +108,36 @@ downloaded and the network tab stays silent.
 
 ---
 
+### GAP-21 · The same anti-pattern runs through Studio and the fan app — 14 controls total
+
+GAP-19 is not an admin problem. Sweeping the whole frontend for the same shape found **14
+toast-only controls across 10 files**, **9 of which report `'success'`**. There are no other
+dead-control patterns — no empty handlers, no `alert()` stubs — so this is one anti-pattern applied
+consistently, which makes it both easy to find and easy to fix.
+
+**Creator-facing (Studio) — 6:**
+
+| Control | File | Claims | Why it matters |
+|---|---|---|---|
+| Change password | `studio.settings.tsx:252` | **"Password reset link sent to your email"** — success | No email is sent. A locked-out creator waits for a mail that never arrives. |
+| Deactivate profile | `studio.settings.tsx:413` | "Profile deactivated — reactivate any time" | The profile stays fully live. The creator believes they are offline. |
+| Send thank-you | `studio.audience.tsx:91` | **"Thank-you sent to your top superfans 💚"** — success | Nothing is sent to anyone. The creator believes they contacted their fans. |
+| Export transactions | `studio.payouts.tsx:162` | "Exporting transactions as CSV" — success | Financial records. |
+| View invoices | `studio.settings.tsx:401` | "Exporting invoices" — success | Financial records. |
+| Manage billing | `studio.settings.tsx:398` | "Opening billing portal" | No portal opens. |
+
+**Fan-facing — 1:**
+
+| Control | File | Claims | Why it matters |
+|---|---|---|---|
+| Share lyrics | `lyrics-view.tsx:69` | **"Lyric link copied"** — success | The clipboard is never written. The fan pastes whatever was there before. |
+
+**The three that assert a security, account or communication outcome are the sharpest** — password
+reset, profile deactivation, and the fan thank-you. Each tells a user that something irreversible or
+outbound has happened on their behalf. None of it has.
+
+---
+
 ### GAP-20 · `overdue` compliance requests can never appear
 
 `ComplianceStatus.OVERDUE` exists, the UI counts it (`admin.compliance.tsx:60`) and styles it red —
@@ -367,9 +397,11 @@ Listed so this report is not mistaken for full coverage.
 
 ## 8. Suggested triage order
 
-1. **GAP-19** — seven lying buttons. Four claim success. Fix by connecting the two editorial handlers
-   (backends already exist), and by making the three exports and the device sign-out either real or
-   visibly absent. Nothing here should ship saying "success" while doing nothing.
+1. **GAP-19 + GAP-21** — 14 controls that do nothing, 9 claiming success, across admin, Studio and
+   the fan app. Fix the two editorial buttons by connecting them (backends exist). For the rest,
+   the honest interim move is to **remove or visibly disable** them: a missing button costs a
+   feature, a button that says "Password reset link sent" costs trust. Nothing should ship
+   reporting success while doing nothing.
 2. **GAP-01** — dead detail routes. Smallest fix, largest surface restored.
 3. **GAP-02** — wire the four flags into `PlatformEnforcementFilter`. No kill switch is a launch risk.
 4. **GAP-03** — populate `actor_name`. Compliance-relevant and cheap. Note `support_message` already
