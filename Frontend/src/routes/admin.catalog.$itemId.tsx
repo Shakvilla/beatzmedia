@@ -99,7 +99,13 @@ function AdminCatalogDetail() {
             {item.tracks.map((t) => (
               <div key={t.position} className="flex items-center gap-3 py-2.5 border-b border-dashed border-gray-200 dark:border-white/5 last:border-0 group">
                 <span className="w-5 text-sm font-mono text-gray-400 dark:text-gray-500 shrink-0">{t.position}</span>
-                <button onClick={() => toast(`Previewing “${t.title}”`, 'info')} className="w-7 h-7 rounded-full bg-beatz-green/10 text-beatz-green flex items-center justify-center shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"><Play size={12} fill="currentColor" /></button>
+                {/*
+                  Moderator preview needs the media pipeline (a stream URL per track) which this
+                  view does not have; it only ever toasted. Left visible but inert rather than
+                  claiming playback that never starts — a moderator deciding a takedown should not
+                  believe they have heard the track.
+                */}
+                <button disabled title="Track preview isn't available here yet." className="w-7 h-7 rounded-full bg-gray-100 dark:bg-white/10 text-gray-400 dark:text-gray-500 flex items-center justify-center shrink-0 opacity-0 group-hover:opacity-100 transition-opacity cursor-not-allowed"><Play size={12} fill="currentColor" /></button>
                 <span className="flex-1 text-sm font-bold text-beatz-dark-bg dark:text-white truncate">{t.title}</span>
                 <span className="text-xs font-mono text-gray-400 dark:text-gray-500 shrink-0">{t.isrc ?? '—'}</span>
                 <span className="w-12 text-right text-sm font-mono text-gray-500 dark:text-gray-300 shrink-0">{t.duration}</span>

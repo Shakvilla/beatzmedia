@@ -414,6 +414,25 @@ endpoints below are the *settings/flag* surface owned by platform (admin) and li
   - endpoint annotated `@RequiresFeature(FeatureKey.X)` while `FeatureFlags.isEnabled(X) == false` →
     `403 FEATURE_DISABLED`.
 
+  **Where the annotation is applied.** The annotation and this filter were both built and then never
+  attached to a resource, so the Settings toggles wrote to `feature_flag` while every endpoint kept
+  serving — there was no kill switch. Current coverage:
+
+  | Flag | Enforced on |
+  |---|---|
+  | `PODCASTS` | `PodcastResource`, `StudioPodcastResource` (class-level) |
+  | `EVENTS` | `EventsResource` (class-level) |
+  | `TIPPING` | `TipResource` (class-level), and the podcast tip method |
+  | `ARTIST_SIGNUPS` | `UpgradeToArtistService` (application layer) |
+  | `PSP_REDDE` | `PaymentGatewayRouter` (outbound adapter) |
+  | `FAN_MESSAGING` | **nothing — no messaging endpoint exists yet** |
+
+  `@RequiresFeature` takes an **array**, and a method annotation *replaces* the class annotation
+  rather than adding to it. `POST /v1/podcasts/:id/tip` therefore names both `PODCASTS` and
+  `TIPPING`: with a single-valued annotation it would have silently escaped its class's flag and
+  kept accepting tips with podcasts switched off. `FeatureFlagEnforcementTest` asserts this coverage,
+  because a unit test of the filter passes happily while nothing uses it.
+
 - **Persistence.** `platform_settings` is a single-row config (PK fixed `id=1`); `feature_flag` is
   keyed by `key`. Both are cached with a short TTL and invalidated on write. `audit_entry` is
   insert-only (no update/delete repo method). Rollup tables are upserted by the jobs. Transaction

@@ -14,6 +14,7 @@ import {
   STUDIO_LANGUAGES, PRICE_OPTIONS,
   type StudioSettings, type TeamMember,
 } from '../lib/studio-data'
+import { apiFetch } from '../lib/api/client'
 import { studioSettingsQuery, apiSaveStudioSettings } from '../lib/api/queries/studio'
 
 export const Route = createFileRoute('/studio/settings')({
@@ -110,6 +111,27 @@ function SettingsComponent() {
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState<TeamMember['role']>('Manager')
   const [deleteOpen, setDeleteOpen] = useState(false)
+  const [resetting, setResetting] = useState(false)
+
+  /**
+   * This button used to raise "Password reset link sent to your email" and call nothing, so a
+   * creator who had lost their password waited for mail that was never coming.
+   *
+   * The endpoint is deliberately non-enumerating — it answers 204 whether or not the address is
+   * registered — so the copy says "if an account exists" rather than asserting a send.
+   */
+  const requestPasswordReset = async () => {
+    if (resetting) return
+    setResetting(true)
+    try {
+      await apiFetch<void>('/me/password/reset', { method: 'POST', body: { email: s.email } })
+      toast(`If an account exists for ${s.email}, a reset link is on its way`, 'success')
+    } catch {
+      toast('Could not start the password reset', 'error')
+    } finally {
+      setResetting(false)
+    }
+  }
 
   const rootRef = useRef<HTMLDivElement>(null)
   const dirty = useMemo(() => JSON.stringify(s) !== JSON.stringify(storeSettings), [s, storeSettings])
@@ -127,15 +149,21 @@ function SettingsComponent() {
 
   const jump = (id: string) => document.getElementById(id)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
 
+  /**
+   * Adds a teammate to the local list, which persists with the rest of settings on save.
+   *
+   * <p>It used to say "Invite sent to {email}". No invite is sent and none can be: there is no
+   * studio team endpoint, no invitation email and no way for the named person to gain access. The
+   * row is a note to self until the feature exists, so the copy now says exactly that.
+   */
   const invite = () => {
     const email = inviteEmail.trim()
     if (!email) return
     set('team', [...s.team, { id: `u-${Date.now()}`, name: email.split('@')[0], email, role: inviteRole }])
     setInviteEmail('')
-    toast(`Invite sent to ${email}`, 'success')
+    toast(`${email} added to your team list — no invitation is sent yet`, 'info')
   }
   const removeMember = (id: string) => set('team', s.team.filter((m) => m.id !== id))
-  const signOutSession = (id: string) => { set('sessions', s.sessions.filter((x) => x.id !== id)); toast('Signed out of device', 'success') }
   const toggleApp = (id: string) => set('connectedApps', s.connectedApps.map((a) => a.id === id ? { ...a, connected: !a.connected } : a))
 
   // NOTE: PUT /v1/studio/settings persists only Category-A settings
@@ -249,12 +277,18 @@ function SettingsComponent() {
           {show('security') && (
             <Section id="security" icon={Lock} title="Security" desc="Protect your account and review where you're signed in.">
               <Row label="Password" desc="Last changed 3 months ago">
-                <button onClick={() => toast('Password reset link sent to your email', 'success')} className="h-9 px-4 rounded-full bg-gray-100 dark:bg-white/10 text-beatz-dark-bg dark:text-white text-xs font-bold hover:bg-gray-200 dark:hover:bg-white/15 transition-colors">Change</button>
+                <button onClick={() => void requestPasswordReset()} disabled={resetting} className="h-9 px-4 rounded-full bg-gray-100 dark:bg-white/10 text-beatz-dark-bg dark:text-white text-xs font-bold hover:bg-gray-200 dark:hover:bg-white/15 transition-colors disabled:opacity-40">{resetting ? 'Sending…' : 'Change'}</button>
               </Row>
               <ToggleRow label="Two-factor authentication" desc="Require a code on login. Recommended for creators handling payouts." checked={s.twoFactor} onChange={(v) => set('twoFactor', v)} />
               <div className="flex items-center justify-between pt-2">
                 <span className={LABEL}>Active sessions</span>
-                <button onClick={() => { set('sessions', s.sessions.filter((x) => x.current)); toast('Signed out of all other devices', 'success') }} className="text-xs font-bold text-beatz-red hover:underline">Sign out all others</button>
+                {/*
+                  Disabled, not removed. This dropped the other sessions from local state and said
+                  "Signed out of all other devices" — but sessions are stateless JWTs and there is
+                  no revocation endpoint, denylist or `jti` anywhere, so nothing was signed out. A
+                  security control that lies is worse than one that is visibly unavailable.
+                */}
+                <button disabled title="Session management isn't available yet — sessions are stateless and cannot be revoked from here." className="text-xs font-bold text-gray-400 dark:text-gray-500 cursor-not-allowed">Sign out all others</button>
               </div>
               <div className="flex flex-col gap-3">
                 {s.sessions.map((sess) => (
@@ -264,7 +298,8 @@ function SettingsComponent() {
                       <span className="text-sm font-bold text-beatz-dark-bg dark:text-white truncate">{sess.device} {sess.current && <span className="text-beatz-green text-xs">· this device</span>}</span>
                       <span className="text-xs text-gray-500 dark:text-gray-400 truncate">{sess.location} · {sess.lastActive}</span>
                     </div>
-                    {!sess.current && <button onClick={() => signOutSession(sess.id)} aria-label="Sign out" className="h-8 px-3 rounded-full text-gray-400 hover:text-beatz-red hover:bg-beatz-red/10 text-xs font-bold flex items-center gap-1.5 transition-colors"><LogOut size={13} /> Sign out</button>}
+                    {/* Same as "Sign out all others": stateless JWTs, nothing to revoke. */}
+                    {!sess.current && <button disabled aria-label="Sign out" title="Sessions are stateless and cannot be revoked yet." className="h-8 px-3 rounded-full text-gray-300 dark:text-gray-600 text-xs font-bold flex items-center gap-1.5 cursor-not-allowed"><LogOut size={13} /> Sign out</button>}
                   </div>
                 ))}
               </div>
@@ -395,10 +430,11 @@ function SettingsComponent() {
                   <span className="text-base font-bold text-beatz-dark-bg dark:text-white">{s.billing.plan} · ₵{s.billing.price}/mo</span>
                   <span className="text-xs text-gray-500 dark:text-gray-400">Renews {s.billing.renews}</span>
                 </div>
-                <button onClick={() => toast('Opening billing portal', 'info')} className="h-9 px-4 rounded-full bg-beatz-green text-black text-xs font-bold hover:scale-105 transition-transform">Manage</button>
+                {/* No billing system exists — no subscription, invoice or portal endpoint. */}
+                <button disabled title="Billing isn't available yet." className="h-9 px-4 rounded-full bg-gray-100 dark:bg-white/10 text-gray-400 dark:text-gray-500 text-xs font-bold cursor-not-allowed">Manage</button>
               </div>
               <Row label="Invoices" desc="Download past receipts." last>
-                <button onClick={() => toast('Exporting invoices', 'success')} className="h-9 px-4 rounded-full bg-gray-100 dark:bg-white/10 text-beatz-dark-bg dark:text-white text-xs font-bold hover:bg-gray-200 dark:hover:bg-white/15 transition-colors">View invoices</button>
+                <button disabled title="Invoices aren't available yet." className="h-9 px-4 rounded-full bg-gray-100 dark:bg-white/10 text-gray-400 dark:text-gray-500 text-xs font-bold cursor-not-allowed">View invoices</button>
               </Row>
             </Section>
           )}
@@ -410,7 +446,12 @@ function SettingsComponent() {
                 <p className="text-sm text-gray-500 dark:text-gray-400">Irreversible actions for this artist account.</p>
               </div>
               <Row label="Deactivate profile" desc="Temporarily hide your profile and catalog.">
-                <button onClick={() => toast('Profile deactivated — reactivate any time', 'info')} className="h-9 px-4 rounded-full border border-beatz-red/40 text-beatz-red text-xs font-bold hover:bg-beatz-red/10 transition-colors">Deactivate</button>
+                {/*
+                  This said "Profile deactivated — reactivate any time" while the profile stayed
+                  fully live. There is no deactivate endpoint; the closest thing is an admin-only
+                  suspend, which is not the same action and not the creator's to invoke.
+                */}
+                <button disabled title="Deactivating your profile isn't available yet — contact support." className="h-9 px-4 rounded-full border border-gray-200 dark:border-white/10 text-gray-400 dark:text-gray-500 text-xs font-bold cursor-not-allowed">Deactivate</button>
               </Row>
               <Row label="Delete studio account" desc="Permanently remove your studio, releases and earnings." last>
                 <button onClick={() => setDeleteOpen(true)} className="h-9 px-4 rounded-full bg-beatz-red text-white text-xs font-bold hover:bg-beatz-red-light transition-colors">Delete</button>

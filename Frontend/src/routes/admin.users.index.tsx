@@ -9,7 +9,7 @@ import { usersQuery, apiVerifyUser, apiSuspendUser, apiReactivateUser } from '..
 import { AdminLoadError } from '../components/admin/load-error'
 import { usePaged, Pagination } from '../components/admin/pagination'
 
-export const Route = createFileRoute('/admin/users')({
+export const Route = createFileRoute('/admin/users/')({
   component: AdminUsers,
 })
 
@@ -87,7 +87,8 @@ function AdminUsers() {
             <input value={query} onChange={(e) => setQuery(e.target.value)} placeholder="Search by name, email, ID…"
               className="w-full h-11 pl-10 pr-3 rounded-full bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 text-sm text-beatz-dark-bg dark:text-white placeholder:text-gray-400 focus:outline-none focus:border-beatz-green/60" />
           </div>
-          <button onClick={() => toast('Exporting users as CSV', 'success')} className="h-11 px-4 rounded-full bg-gray-100 dark:bg-white/10 text-beatz-dark-bg dark:text-white text-sm font-bold flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors">
+          {/* No user-export endpoint exists. Note /admin/users/{id}/data-export is per-user DSAR, not this. */}
+          <button disabled title="User export isn't available yet." className="h-11 px-4 rounded-full bg-gray-100 dark:bg-white/10 text-gray-400 dark:text-gray-500 text-sm font-bold flex items-center gap-2 cursor-not-allowed">
             <Download size={16} /> Export
           </button>
         </div>
