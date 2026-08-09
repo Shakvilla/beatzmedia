@@ -166,7 +166,12 @@ function AdminUserDetail() {
                     <span className="text-sm font-bold text-beatz-dark-bg dark:text-white truncate">{d.device}{d.current && <span className="text-beatz-green text-xs"> · this device</span>}</span>
                     <span className="text-xs text-gray-500 dark:text-gray-400 truncate">{d.location} · {d.lastActive}</span>
                   </div>
-                  {!d.current && <button onClick={() => toast('Signed out of device', 'success')} className="text-xs font-bold text-gray-400 hover:text-beatz-red transition-colors shrink-0">Sign out</button>}
+                  {/*
+                    Sessions are stateless JWTs with no denylist, `jti` or session store, so there
+                    is nothing to revoke. This told an operator responding to a compromised account
+                    that the session had been terminated when it had not.
+                  */}
+                  {!d.current && <button disabled title="Sessions are stateless and cannot be revoked yet." className="text-xs font-bold text-gray-300 dark:text-gray-600 cursor-not-allowed shrink-0">Sign out</button>}
                 </div>
               ))}
             </div>
