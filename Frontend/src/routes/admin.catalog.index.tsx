@@ -1,11 +1,12 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Search, MoreHorizontal, Check, Eye, Flag, ShieldX, Disc3 } from 'lucide-react'
+import { Search, MoreHorizontal, Check, Eye, Flag, ShieldX, RotateCcw, Disc3 } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
 import { type CatalogItem, type CatalogStatus } from '../lib/admin-data'
-import { catalogQuery, apiApproveCatalog, apiFlagCatalog, apiTakedownCatalog } from '../lib/api/queries/admin-catalog'
+import { catalogQuery, apiApproveCatalog, apiFlagCatalog, apiTakedownCatalog, apiReinstateCatalog } from '../lib/api/queries/admin-catalog'
+import { TakedownModal, FlagModal } from '../components/admin/takedown-modal'
 import { AdminLoadError } from '../components/admin/load-error'
 import { usePaged, Pagination } from '../components/admin/pagination'
 
@@ -59,14 +60,31 @@ function AdminCatalog() {
     try { await apiApproveCatalog(c.id); await invalidate(); toast(`“${c.title}” approved`, 'success') }
     catch { toast('Could not approve release', 'error') }
   }
-  const handleFlag = async (c: CatalogItem) => {
-    try { await apiFlagCatalog(c.id); await invalidate(); await invalidateModeration(); toast(`“${c.title}” flagged`, 'info') }
+  /*
+    Takedown and flag used to fire straight from the row menu — no confirmation, and takedown
+    stamped a hardcoded reason ("Taken down by moderator (quick action from catalog list)") into
+    the permanent audit record. Pulling an artist's release is among the most consequential actions
+    in the console; it was one misclick away, and the only record of why said nothing.
+
+    Both now go through the same dialogs the detail page already used.
+  */
+  const handleFlag = async (c: CatalogItem, note?: string) => {
+    try { await apiFlagCatalog(c.id, note); await invalidate(); await invalidateModeration(); toast(`“${c.title}” flagged`, 'info') }
     catch { toast('Could not flag release', 'error') }
   }
-  const handleTakedown = async (c: CatalogItem) => {
-    try { await apiTakedownCatalog(c.id, 'Taken down by moderator (quick action from catalog list)'); await invalidate(); toast(`“${c.title}” taken down`, 'success') }
+  const handleTakedown = async (c: CatalogItem, reason: string) => {
+    try { await apiTakedownCatalog(c.id, reason); await invalidate(); toast(`“${c.title}” taken down · ${reason}`, 'success') }
     catch { toast('Could not take down release', 'error') }
   }
+  const handleReinstate = async (c: CatalogItem) => {
+    try { await apiReinstateCatalog(c.id); await invalidate(); toast(`“${c.title}” reinstated`, 'success') }
+    catch { toast('Could not reinstate release', 'error') }
+  }
+
+  // Which release a dialog is about; null when closed. Held here rather than per-row so the modal
+  // renders once at page level instead of once per row.
+  const [takedownFor, setTakedownFor] = useState<CatalogItem | null>(null)
+  const [flagFor, setFlagFor] = useState<CatalogItem | null>(null)
 
   const allShownSelected = rows.length > 0 && rows.every((c) => selected.has(c.id))
   const toggleAll = () => setSelected(allShownSelected ? new Set() : new Set(rows.map((c) => c.id)))
@@ -165,8 +183,9 @@ function AdminCatalog() {
                 <CatalogRow key={c.id} item={c} selected={selected.has(c.id)} onSelect={() => toggleOne(c.id)}
                   onApprove={() => handleApprove(c)}
                   onView={() => navigate({ to: '/admin/catalog/$itemId', params: { itemId: c.id } })}
-                  onFlag={() => handleFlag(c)}
-                  onTakedown={() => handleTakedown(c)}
+                  onFlag={() => setFlagFor(c)}
+                  onTakedown={() => setTakedownFor(c)}
+                  onReinstate={() => handleReinstate(c)}
                 />
               ))
             )}
@@ -174,6 +193,15 @@ function AdminCatalog() {
         </div>
         <Pagination paged={paged} />
       </section>
+
+      {takedownFor && (
+        <TakedownModal isOpen title={takedownFor.title} onClose={() => setTakedownFor(null)}
+          onConfirm={(reason) => { const c = takedownFor; setTakedownFor(null); void handleTakedown(c, reason) }} />
+      )}
+      {flagFor && (
+        <FlagModal isOpen title={flagFor.title} onClose={() => setFlagFor(null)}
+          onConfirm={(note) => { const c = flagFor; setFlagFor(null); void handleFlag(c, note) }} />
+      )}
     </div>
   )
 }
@@ -199,9 +227,10 @@ function StatusPill({ status }: { status: CatalogStatus }) {
   return <span className={cn('px-2.5 py-1 rounded-full text-[10px] font-bold', cls)}>{status}</span>
 }
 
-function CatalogRow({ item: c, selected, onSelect, onApprove, onView, onFlag, onTakedown }: {
+function CatalogRow({ item: c, selected, onSelect, onApprove, onView, onFlag, onTakedown, onReinstate }: {
   item: CatalogItem; selected: boolean; onSelect: () => void
   onApprove: () => void; onView: () => void; onFlag: () => void; onTakedown: () => void
+  onReinstate: () => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
   const reviewable = c.status === 'pending' || c.status === 'flagged'
@@ -231,8 +260,16 @@ function CatalogRow({ item: c, selected, onSelect, onApprove, onView, onFlag, on
               <div className="absolute right-0 top-9 z-50 w-44 py-1 rounded-xl bg-white dark:bg-beatz-dark-surface-2 border border-gray-200 dark:border-white/10 shadow-xl">
                 {reviewable && <MenuItem icon={Check} label="Approve" onClick={() => { onApprove(); setMenuOpen(false) }} />}
                 <MenuItem icon={Eye} label="View details" onClick={() => { onView(); setMenuOpen(false) }} />
-                {c.status !== 'flagged' && <MenuItem icon={Flag} label="Flag" onClick={() => { onFlag(); setMenuOpen(false) }} />}
-                <MenuItem icon={ShieldX} label="Take down" danger onClick={() => { onTakedown(); setMenuOpen(false) }} />
+                {c.status !== 'flagged' && c.status !== 'takedown' && <MenuItem icon={Flag} label="Flag" onClick={() => { onFlag(); setMenuOpen(false) }} />}
+                {/*
+                  Reinstate is the missing half of takedown. The endpoint existed, guarded and
+                  tested, and nothing called it — so pulling a release was a one-way door from the
+                  console. Shown only where it applies, and it replaces "Take down" rather than
+                  sitting beside it: offering to take down an already-taken-down release is noise.
+                */}
+                {c.status === 'takedown'
+                  ? <MenuItem icon={RotateCcw} label="Reinstate" onClick={() => { onReinstate(); setMenuOpen(false) }} />
+                  : <MenuItem icon={ShieldX} label="Take down" danger onClick={() => { onTakedown(); setMenuOpen(false) }} />}
               </div>
             </>
           )}
