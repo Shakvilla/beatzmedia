@@ -10,7 +10,14 @@ import { QueueDrawer } from '../music/queue-drawer'
 import { useAuth } from '../../features/auth/auth-context'
 import { fanPreferencesQuery } from '../../lib/api/queries/fan-preferences'
 
-const AUTH_ROUTES = ['/login', '/signup']
+/**
+ * Routes reachable without a session.
+ *
+ * The password-recovery pages belong here for the obvious reason: the only person who needs them
+ * is someone who cannot sign in. Leaving them out sent a locked-out user to
+ * `/login?redirect=/forgot-password` — the very screen they were trying to escape.
+ */
+const AUTH_ROUTES = ['/login', '/signup', '/forgot-password', '/reset-password']
 
 export function AppShell() {
   const location = useLocation()
@@ -62,7 +69,10 @@ export function AppShell() {
   // first and redirecting a beat later would flash content the gate is meant to sit in front of.
   if (isAuthenticated && !onAuthRoute && !onOnboarding && prefsLoading) return null
 
-  const fullScreenRoutes = ['/lyrics', '/login', '/signup', '/onboarding', '/studio', '/admin']
+  // AUTH_ROUTES is spread in rather than repeated: these two lists previously both hardcoded
+  // /login and /signup, and adding a route to one but not the other renders an auth page wrapped
+  // in the sidebar, header and player bar — which is exactly what happened to the recovery pages.
+  const fullScreenRoutes = ['/lyrics', ...AUTH_ROUTES, '/onboarding', '/studio', '/admin']
   const isFullScreen = fullScreenRoutes.some(route => location.pathname.startsWith(route))
 
   return (
