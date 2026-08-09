@@ -3,7 +3,6 @@ import { useState } from 'react'
 import { useSuspenseQuery } from '@tanstack/react-query'
 import { ArrowUp, Heart } from 'lucide-react'
 import { cn } from '../utils/cn'
-import { useToast } from '../components/ui/toast-provider'
 import { studioAudienceQuery } from '../lib/api/queries/studio'
 import {
   formatCompact, AUDIENCE_RANGES,
@@ -27,7 +26,6 @@ function formatSession(sec: number): string {
 }
 
 function AudienceComponent() {
-  const { toast } = useToast()
   const [range, setRange] = useState<AudienceRange>(DEFAULT_RANGE)
   const { data } = useSuspenseQuery(studioAudienceQuery(range))
 
@@ -87,9 +85,15 @@ function AudienceComponent() {
       <section className={cn(CARD, 'flex flex-col gap-6')}>
         <div className="flex items-center justify-between gap-4">
           <h2 className="text-lg font-bold text-beatz-dark-bg dark:text-white">Top superfans</h2>
+          {/*
+            This claimed a message had been sent to real fans. There is no artist→fan messaging
+            capability at all — no endpoint, no notification type, nothing. Of the placebo controls
+            this was the one most likely to be believed, because the creator has no way to check.
+          */}
           <button
-            onClick={() => toast('Thank-you sent to your top superfans 💚', 'success')}
-            className="h-9 px-4 rounded-full bg-beatz-green/10 text-beatz-green text-xs font-bold flex items-center gap-2 hover:bg-beatz-green/20 transition-colors"
+            disabled
+            title="Messaging your fans isn't available yet."
+            className="h-9 px-4 rounded-full bg-gray-100 dark:bg-white/10 text-gray-400 dark:text-gray-500 text-xs font-bold flex items-center gap-2 cursor-not-allowed"
           >
             <Heart size={14} /> Send thank-you
           </button>
