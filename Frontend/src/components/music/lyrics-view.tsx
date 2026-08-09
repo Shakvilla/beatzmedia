@@ -6,7 +6,9 @@ import { usePlaybackDisplay } from '../../features/player/use-playback-display'
 import { UnavailableNotice } from '../../features/player/components/unavailable-notice'
 import { useBuyTrack } from '../../features/cart/use-buy-track'
 import { useToast } from '../ui/toast-provider'
-import { getLyrics, activeLyricIndex } from '../../lib/lyrics-data'
+import { useQuery } from '@tanstack/react-query'
+import { activeLyricIndex } from '../../lib/lyrics-data'
+import { lyricsQuery } from '../../lib/api/queries/catalog'
 import { copyLink, currentUrl } from '../../utils/share'
 import { formatDuration, formatPrice } from '../../lib/format'
 import { PREVIEW_ENDED_MESSAGE } from '../layout/player-bar'
@@ -23,7 +25,21 @@ export function LyricsView({ onClose, showCloseButton = true }: LyricsViewProps)
   const { toast } = useToast()
   const activeRef = useRef<HTMLButtonElement>(null)
 
-  const lines = currentTrack ? getLyrics(currentTrack.id, currentTrack.duration) : []
+  /**
+   * Real lyrics, from `GET /v1/tracks/:id/lyrics`.
+   *
+   * This called `getLyrics(trackId, duration)` from `lyrics-data.ts`, which returned a generic
+   * block of placeholder lines evenly spread across the song's duration for any track without a
+   * hardcoded entry — which is every track a real artist uploads. Because they were time-spread
+   * they looked synced, so they did not read as missing data; they read as *this artist's lyrics*.
+   *
+   * The endpoint answers 404 for the many tracks that have none, and `lyricsQuery` maps that to an
+   * empty list, so "no lyrics" now renders as no lyrics.
+   */
+  const { data: lines = [] } = useQuery({
+    ...lyricsQuery(currentTrack?.id ?? ''),
+    enabled: !!currentTrack,
+  })
   const activeIndex = activeLyricIndex(lines, progress)
 
   // Auto-scroll the active line into the middle of the lyrics column.
@@ -98,6 +114,15 @@ export function LyricsView({ onClose, showCloseButton = true }: LyricsViewProps)
 
         {/* Synced lyrics */}
         <div className="flex flex-col gap-5 lg:gap-7 h-full max-h-[58vh] lg:max-h-[620px] overflow-y-auto no-scrollbar py-8 mask-fade-edges">
+          {lines.length === 0 && (
+            // Most tracks genuinely have no lyrics — the endpoint 404s and that maps to []. Saying
+            // so is the point of this change: the placeholder block it replaced was indistinguishable
+            // from real, time-synced words.
+            <div className="flex flex-col items-center justify-center gap-3 h-full text-center">
+              <Mic2 size={32} className="text-white/30" />
+              <p className="text-white/50">No lyrics for this track yet.</p>
+            </div>
+          )}
           {lines.map((line, idx) => {
             const isActive = idx === activeIndex
             return (

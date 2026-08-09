@@ -9,7 +9,7 @@ import { catalogQuery, apiApproveCatalog, apiFlagCatalog, apiTakedownCatalog } f
 import { AdminLoadError } from '../components/admin/load-error'
 import { usePaged, Pagination } from '../components/admin/pagination'
 
-export const Route = createFileRoute('/admin/catalog')({
+export const Route = createFileRoute('/admin/catalog/')({
   component: AdminCatalog,
 })
 

@@ -50,7 +50,6 @@ import { Route as EventEventIdRouteImport } from './routes/event.$eventId'
 import { Route as CheckoutCompleteRouteImport } from './routes/checkout.complete'
 import { Route as ArtistArtistIdRouteImport } from './routes/artist/$artistId'
 import { Route as AlbumAlbumIdRouteImport } from './routes/album/$albumId'
-import { Route as AdminUsersRouteImport } from './routes/admin.users'
 import { Route as AdminTrustRouteImport } from './routes/admin.trust'
 import { Route as AdminTaxonomyRouteImport } from './routes/admin.taxonomy'
 import { Route as AdminSupportRouteImport } from './routes/admin.support'
@@ -60,10 +59,11 @@ import { Route as AdminHealthRouteImport } from './routes/admin.health'
 import { Route as AdminFinanceRouteImport } from './routes/admin.finance'
 import { Route as AdminEditorialRouteImport } from './routes/admin.editorial'
 import { Route as AdminComplianceRouteImport } from './routes/admin.compliance'
-import { Route as AdminCatalogRouteImport } from './routes/admin.catalog'
 import { Route as AdminAuditRouteImport } from './routes/admin.audit'
 import { Route as StudioPodcastsIndexRouteImport } from './routes/studio.podcasts.index'
+import { Route as AdminUsersIndexRouteImport } from './routes/admin.users.index'
 import { Route as AdminFinanceIndexRouteImport } from './routes/admin.finance.index'
+import { Route as AdminCatalogIndexRouteImport } from './routes/admin.catalog.index'
 import { Route as StudioReleaseNewRouteImport } from './routes/studio.release.new'
 import { Route as StudioReleaseReleaseIdRouteImport } from './routes/studio.release.$releaseId'
 import { Route as StudioPodcastsNewRouteImport } from './routes/studio.podcasts.new'
@@ -282,11 +282,6 @@ const AlbumAlbumIdRoute = AlbumAlbumIdRouteImport.update({
   path: '/album/$albumId',
   getParentRoute: () => rootRouteImport,
 } as any)
-const AdminUsersRoute = AdminUsersRouteImport.update({
-  id: '/users',
-  path: '/users',
-  getParentRoute: () => AdminRoute,
-} as any)
 const AdminTrustRoute = AdminTrustRouteImport.update({
   id: '/trust',
   path: '/trust',
@@ -332,11 +327,6 @@ const AdminComplianceRoute = AdminComplianceRouteImport.update({
   path: '/compliance',
   getParentRoute: () => AdminRoute,
 } as any)
-const AdminCatalogRoute = AdminCatalogRouteImport.update({
-  id: '/catalog',
-  path: '/catalog',
-  getParentRoute: () => AdminRoute,
-} as any)
 const AdminAuditRoute = AdminAuditRouteImport.update({
   id: '/audit',
   path: '/audit',
@@ -347,10 +337,20 @@ const StudioPodcastsIndexRoute = StudioPodcastsIndexRouteImport.update({
   path: '/',
   getParentRoute: () => StudioPodcastsRoute,
 } as any)
+const AdminUsersIndexRoute = AdminUsersIndexRouteImport.update({
+  id: '/users/',
+  path: '/users/',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminFinanceIndexRoute = AdminFinanceIndexRouteImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => AdminFinanceRoute,
+} as any)
+const AdminCatalogIndexRoute = AdminCatalogIndexRouteImport.update({
+  id: '/catalog/',
+  path: '/catalog/',
+  getParentRoute: () => AdminRoute,
 } as any)
 const StudioReleaseNewRoute = StudioReleaseNewRouteImport.update({
   id: '/release/new',
@@ -368,9 +368,9 @@ const StudioPodcastsNewRoute = StudioPodcastsNewRouteImport.update({
   getParentRoute: () => StudioPodcastsRoute,
 } as any)
 const AdminUsersUserIdRoute = AdminUsersUserIdRouteImport.update({
-  id: '/$userId',
-  path: '/$userId',
-  getParentRoute: () => AdminUsersRoute,
+  id: '/users/$userId',
+  path: '/users/$userId',
+  getParentRoute: () => AdminRoute,
 } as any)
 const AdminFinanceLedgerRoute = AdminFinanceLedgerRouteImport.update({
   id: '/ledger',
@@ -378,9 +378,9 @@ const AdminFinanceLedgerRoute = AdminFinanceLedgerRouteImport.update({
   getParentRoute: () => AdminFinanceRoute,
 } as any)
 const AdminCatalogItemIdRoute = AdminCatalogItemIdRouteImport.update({
-  id: '/$itemId',
-  path: '/$itemId',
-  getParentRoute: () => AdminCatalogRoute,
+  id: '/catalog/$itemId',
+  path: '/catalog/$itemId',
+  getParentRoute: () => AdminRoute,
 } as any)
 const StudioReleaseNewIndexRoute = StudioReleaseNewIndexRouteImport.update({
   id: '/',
@@ -434,7 +434,6 @@ export interface FileRoutesByFullPath {
   '/store': typeof StoreRouteWithChildren
   '/studio': typeof StudioRouteWithChildren
   '/admin/audit': typeof AdminAuditRoute
-  '/admin/catalog': typeof AdminCatalogRouteWithChildren
   '/admin/compliance': typeof AdminComplianceRoute
   '/admin/editorial': typeof AdminEditorialRoute
   '/admin/finance': typeof AdminFinanceRouteWithChildren
@@ -444,7 +443,6 @@ export interface FileRoutesByFullPath {
   '/admin/support': typeof AdminSupportRoute
   '/admin/taxonomy': typeof AdminTaxonomyRoute
   '/admin/trust': typeof AdminTrustRoute
-  '/admin/users': typeof AdminUsersRouteWithChildren
   '/album/$albumId': typeof AlbumAlbumIdRoute
   '/artist/$artistId': typeof ArtistArtistIdRoute
   '/checkout/complete': typeof CheckoutCompleteRoute
@@ -474,7 +472,9 @@ export interface FileRoutesByFullPath {
   '/studio/podcasts/new': typeof StudioPodcastsNewRoute
   '/studio/release/$releaseId': typeof StudioReleaseReleaseIdRoute
   '/studio/release/new': typeof StudioReleaseNewRouteWithChildren
+  '/admin/catalog/': typeof AdminCatalogIndexRoute
   '/admin/finance/': typeof AdminFinanceIndexRoute
+  '/admin/users/': typeof AdminUsersIndexRoute
   '/studio/podcasts/': typeof StudioPodcastsIndexRoute
   '/admin/finance/dispute/$disputeId': typeof AdminFinanceDisputeDisputeIdRoute
   '/studio/release/new/details': typeof StudioReleaseNewDetailsRoute
@@ -499,7 +499,6 @@ export interface FileRoutesByTo {
   '/settings': typeof SettingsRoute
   '/signup': typeof SignupRoute
   '/admin/audit': typeof AdminAuditRoute
-  '/admin/catalog': typeof AdminCatalogRouteWithChildren
   '/admin/compliance': typeof AdminComplianceRoute
   '/admin/editorial': typeof AdminEditorialRoute
   '/admin/health': typeof AdminHealthRoute
@@ -508,7 +507,6 @@ export interface FileRoutesByTo {
   '/admin/support': typeof AdminSupportRoute
   '/admin/taxonomy': typeof AdminTaxonomyRoute
   '/admin/trust': typeof AdminTrustRoute
-  '/admin/users': typeof AdminUsersRouteWithChildren
   '/album/$albumId': typeof AlbumAlbumIdRoute
   '/artist/$artistId': typeof ArtistArtistIdRoute
   '/checkout/complete': typeof CheckoutCompleteRoute
@@ -536,7 +534,9 @@ export interface FileRoutesByTo {
   '/admin/users/$userId': typeof AdminUsersUserIdRoute
   '/studio/podcasts/new': typeof StudioPodcastsNewRoute
   '/studio/release/$releaseId': typeof StudioReleaseReleaseIdRoute
+  '/admin/catalog': typeof AdminCatalogIndexRoute
   '/admin/finance': typeof AdminFinanceIndexRoute
+  '/admin/users': typeof AdminUsersIndexRoute
   '/studio/podcasts': typeof StudioPodcastsIndexRoute
   '/admin/finance/dispute/$disputeId': typeof AdminFinanceDisputeDisputeIdRoute
   '/studio/release/new/details': typeof StudioReleaseNewDetailsRoute
@@ -566,7 +566,6 @@ export interface FileRoutesById {
   '/store': typeof StoreRouteWithChildren
   '/studio': typeof StudioRouteWithChildren
   '/admin/audit': typeof AdminAuditRoute
-  '/admin/catalog': typeof AdminCatalogRouteWithChildren
   '/admin/compliance': typeof AdminComplianceRoute
   '/admin/editorial': typeof AdminEditorialRoute
   '/admin/finance': typeof AdminFinanceRouteWithChildren
@@ -576,7 +575,6 @@ export interface FileRoutesById {
   '/admin/support': typeof AdminSupportRoute
   '/admin/taxonomy': typeof AdminTaxonomyRoute
   '/admin/trust': typeof AdminTrustRoute
-  '/admin/users': typeof AdminUsersRouteWithChildren
   '/album/$albumId': typeof AlbumAlbumIdRoute
   '/artist/$artistId': typeof ArtistArtistIdRoute
   '/checkout/complete': typeof CheckoutCompleteRoute
@@ -606,7 +604,9 @@ export interface FileRoutesById {
   '/studio/podcasts/new': typeof StudioPodcastsNewRoute
   '/studio/release/$releaseId': typeof StudioReleaseReleaseIdRoute
   '/studio/release/new': typeof StudioReleaseNewRouteWithChildren
+  '/admin/catalog/': typeof AdminCatalogIndexRoute
   '/admin/finance/': typeof AdminFinanceIndexRoute
+  '/admin/users/': typeof AdminUsersIndexRoute
   '/studio/podcasts/': typeof StudioPodcastsIndexRoute
   '/admin/finance/dispute/$disputeId': typeof AdminFinanceDisputeDisputeIdRoute
   '/studio/release/new/details': typeof StudioReleaseNewDetailsRoute
@@ -637,7 +637,6 @@ export interface FileRouteTypes {
     | '/store'
     | '/studio'
     | '/admin/audit'
-    | '/admin/catalog'
     | '/admin/compliance'
     | '/admin/editorial'
     | '/admin/finance'
@@ -647,7 +646,6 @@ export interface FileRouteTypes {
     | '/admin/support'
     | '/admin/taxonomy'
     | '/admin/trust'
-    | '/admin/users'
     | '/album/$albumId'
     | '/artist/$artistId'
     | '/checkout/complete'
@@ -677,7 +675,9 @@ export interface FileRouteTypes {
     | '/studio/podcasts/new'
     | '/studio/release/$releaseId'
     | '/studio/release/new'
+    | '/admin/catalog/'
     | '/admin/finance/'
+    | '/admin/users/'
     | '/studio/podcasts/'
     | '/admin/finance/dispute/$disputeId'
     | '/studio/release/new/details'
@@ -702,7 +702,6 @@ export interface FileRouteTypes {
     | '/settings'
     | '/signup'
     | '/admin/audit'
-    | '/admin/catalog'
     | '/admin/compliance'
     | '/admin/editorial'
     | '/admin/health'
@@ -711,7 +710,6 @@ export interface FileRouteTypes {
     | '/admin/support'
     | '/admin/taxonomy'
     | '/admin/trust'
-    | '/admin/users'
     | '/album/$albumId'
     | '/artist/$artistId'
     | '/checkout/complete'
@@ -739,7 +737,9 @@ export interface FileRouteTypes {
     | '/admin/users/$userId'
     | '/studio/podcasts/new'
     | '/studio/release/$releaseId'
+    | '/admin/catalog'
     | '/admin/finance'
+    | '/admin/users'
     | '/studio/podcasts'
     | '/admin/finance/dispute/$disputeId'
     | '/studio/release/new/details'
@@ -768,7 +768,6 @@ export interface FileRouteTypes {
     | '/store'
     | '/studio'
     | '/admin/audit'
-    | '/admin/catalog'
     | '/admin/compliance'
     | '/admin/editorial'
     | '/admin/finance'
@@ -778,7 +777,6 @@ export interface FileRouteTypes {
     | '/admin/support'
     | '/admin/taxonomy'
     | '/admin/trust'
-    | '/admin/users'
     | '/album/$albumId'
     | '/artist/$artistId'
     | '/checkout/complete'
@@ -808,7 +806,9 @@ export interface FileRouteTypes {
     | '/studio/podcasts/new'
     | '/studio/release/$releaseId'
     | '/studio/release/new'
+    | '/admin/catalog/'
     | '/admin/finance/'
+    | '/admin/users/'
     | '/studio/podcasts/'
     | '/admin/finance/dispute/$disputeId'
     | '/studio/release/new/details'
@@ -1134,13 +1134,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AlbumAlbumIdRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/admin/users': {
-      id: '/admin/users'
-      path: '/users'
-      fullPath: '/admin/users'
-      preLoaderRoute: typeof AdminUsersRouteImport
-      parentRoute: typeof AdminRoute
-    }
     '/admin/trust': {
       id: '/admin/trust'
       path: '/trust'
@@ -1204,13 +1197,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminComplianceRouteImport
       parentRoute: typeof AdminRoute
     }
-    '/admin/catalog': {
-      id: '/admin/catalog'
-      path: '/catalog'
-      fullPath: '/admin/catalog'
-      preLoaderRoute: typeof AdminCatalogRouteImport
-      parentRoute: typeof AdminRoute
-    }
     '/admin/audit': {
       id: '/admin/audit'
       path: '/audit'
@@ -1225,12 +1211,26 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof StudioPodcastsIndexRouteImport
       parentRoute: typeof StudioPodcastsRoute
     }
+    '/admin/users/': {
+      id: '/admin/users/'
+      path: '/users'
+      fullPath: '/admin/users/'
+      preLoaderRoute: typeof AdminUsersIndexRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/finance/': {
       id: '/admin/finance/'
       path: '/'
       fullPath: '/admin/finance/'
       preLoaderRoute: typeof AdminFinanceIndexRouteImport
       parentRoute: typeof AdminFinanceRoute
+    }
+    '/admin/catalog/': {
+      id: '/admin/catalog/'
+      path: '/catalog'
+      fullPath: '/admin/catalog/'
+      preLoaderRoute: typeof AdminCatalogIndexRouteImport
+      parentRoute: typeof AdminRoute
     }
     '/studio/release/new': {
       id: '/studio/release/new'
@@ -1255,10 +1255,10 @@ declare module '@tanstack/react-router' {
     }
     '/admin/users/$userId': {
       id: '/admin/users/$userId'
-      path: '/$userId'
+      path: '/users/$userId'
       fullPath: '/admin/users/$userId'
       preLoaderRoute: typeof AdminUsersUserIdRouteImport
-      parentRoute: typeof AdminUsersRoute
+      parentRoute: typeof AdminRoute
     }
     '/admin/finance/ledger': {
       id: '/admin/finance/ledger'
@@ -1269,10 +1269,10 @@ declare module '@tanstack/react-router' {
     }
     '/admin/catalog/$itemId': {
       id: '/admin/catalog/$itemId'
-      path: '/$itemId'
+      path: '/catalog/$itemId'
       fullPath: '/admin/catalog/$itemId'
       preLoaderRoute: typeof AdminCatalogItemIdRouteImport
-      parentRoute: typeof AdminCatalogRoute
+      parentRoute: typeof AdminRoute
     }
     '/studio/release/new/': {
       id: '/studio/release/new/'
@@ -1319,18 +1319,6 @@ declare module '@tanstack/react-router' {
   }
 }
 
-interface AdminCatalogRouteChildren {
-  AdminCatalogItemIdRoute: typeof AdminCatalogItemIdRoute
-}
-
-const AdminCatalogRouteChildren: AdminCatalogRouteChildren = {
-  AdminCatalogItemIdRoute: AdminCatalogItemIdRoute,
-}
-
-const AdminCatalogRouteWithChildren = AdminCatalogRoute._addFileChildren(
-  AdminCatalogRouteChildren,
-)
-
 interface AdminFinanceRouteChildren {
   AdminFinanceLedgerRoute: typeof AdminFinanceLedgerRoute
   AdminFinanceIndexRoute: typeof AdminFinanceIndexRoute
@@ -1347,21 +1335,8 @@ const AdminFinanceRouteWithChildren = AdminFinanceRoute._addFileChildren(
   AdminFinanceRouteChildren,
 )
 
-interface AdminUsersRouteChildren {
-  AdminUsersUserIdRoute: typeof AdminUsersUserIdRoute
-}
-
-const AdminUsersRouteChildren: AdminUsersRouteChildren = {
-  AdminUsersUserIdRoute: AdminUsersUserIdRoute,
-}
-
-const AdminUsersRouteWithChildren = AdminUsersRoute._addFileChildren(
-  AdminUsersRouteChildren,
-)
-
 interface AdminRouteChildren {
   AdminAuditRoute: typeof AdminAuditRoute
-  AdminCatalogRoute: typeof AdminCatalogRouteWithChildren
   AdminComplianceRoute: typeof AdminComplianceRoute
   AdminEditorialRoute: typeof AdminEditorialRoute
   AdminFinanceRoute: typeof AdminFinanceRouteWithChildren
@@ -1371,13 +1346,15 @@ interface AdminRouteChildren {
   AdminSupportRoute: typeof AdminSupportRoute
   AdminTaxonomyRoute: typeof AdminTaxonomyRoute
   AdminTrustRoute: typeof AdminTrustRoute
-  AdminUsersRoute: typeof AdminUsersRouteWithChildren
   AdminIndexRoute: typeof AdminIndexRoute
+  AdminCatalogItemIdRoute: typeof AdminCatalogItemIdRoute
+  AdminUsersUserIdRoute: typeof AdminUsersUserIdRoute
+  AdminCatalogIndexRoute: typeof AdminCatalogIndexRoute
+  AdminUsersIndexRoute: typeof AdminUsersIndexRoute
 }
 
 const AdminRouteChildren: AdminRouteChildren = {
   AdminAuditRoute: AdminAuditRoute,
-  AdminCatalogRoute: AdminCatalogRouteWithChildren,
   AdminComplianceRoute: AdminComplianceRoute,
   AdminEditorialRoute: AdminEditorialRoute,
   AdminFinanceRoute: AdminFinanceRouteWithChildren,
@@ -1387,8 +1364,11 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminSupportRoute: AdminSupportRoute,
   AdminTaxonomyRoute: AdminTaxonomyRoute,
   AdminTrustRoute: AdminTrustRoute,
-  AdminUsersRoute: AdminUsersRouteWithChildren,
   AdminIndexRoute: AdminIndexRoute,
+  AdminCatalogItemIdRoute: AdminCatalogItemIdRoute,
+  AdminUsersUserIdRoute: AdminUsersUserIdRoute,
+  AdminCatalogIndexRoute: AdminCatalogIndexRoute,
+  AdminUsersIndexRoute: AdminUsersIndexRoute,
 }
 
 const AdminRouteWithChildren = AdminRoute._addFileChildren(AdminRouteChildren)
