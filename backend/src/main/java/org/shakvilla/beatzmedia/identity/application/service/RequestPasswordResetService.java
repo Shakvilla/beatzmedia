@@ -1,11 +1,7 @@
 package org.shakvilla.beatzmedia.identity.application.service;
 
-import java.nio.charset.StandardCharsets;
-import java.security.MessageDigest;
-import java.security.NoSuchAlgorithmException;
 import java.time.Duration;
 import java.time.Instant;
-import java.util.HexFormat;
 import java.util.Optional;
 
 import jakarta.enterprise.context.ApplicationScoped;
@@ -18,6 +14,7 @@ import org.shakvilla.beatzmedia.identity.application.port.out.AccountRepository;
 import org.shakvilla.beatzmedia.identity.application.port.out.Mailer;
 import org.shakvilla.beatzmedia.identity.domain.Account;
 import org.shakvilla.beatzmedia.identity.domain.PasswordResetToken;
+import org.shakvilla.beatzmedia.identity.domain.ResetTokenHash;
 import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
 import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
 
@@ -67,7 +64,7 @@ public class RequestPasswordResetService implements RequestPasswordReset {
 
     // Opaque, high-entropy plaintext token — generated fresh per request, never persisted.
     String plaintextToken = idGenerator.newId() + idGenerator.newId();
-    String tokenHash = sha256Hex(plaintextToken);
+    String tokenHash = ResetTokenHash.of(plaintextToken);
 
     Instant expiresAt = clock.now().plus(Duration.ofSeconds(resetTtlSeconds));
     PasswordResetToken token = PasswordResetToken.issue(tokenHash, account.getId(), expiresAt);
@@ -76,14 +73,4 @@ public class RequestPasswordResetService implements RequestPasswordReset {
     mailer.sendPasswordReset(account.getEmail(), plaintextToken);
   }
 
-  private static String sha256Hex(String value) {
-    try {
-      MessageDigest digest = MessageDigest.getInstance("SHA-256");
-      byte[] hash = digest.digest(value.getBytes(StandardCharsets.UTF_8));
-      return HexFormat.of().formatHex(hash);
-    } catch (NoSuchAlgorithmException e) {
-      // SHA-256 is guaranteed available on every JVM per the platform spec.
-      throw new IllegalStateException("SHA-256 not available", e);
-    }
-  }
 }

@@ -117,6 +117,16 @@ public class FakeCatalogRepository implements CatalogRepository {
   }
 
   @Override
+  public void saveAlbum(Album album) {
+    albums.put(album.getId().value(), album);
+  }
+
+  @Override
+  public void deleteAlbum(AlbumId id) {
+    albums.remove(id.value());
+  }
+
+  @Override
   public List<Track> tracksByAlbum(AlbumId id) {
     return tracks.values().stream()
         .filter(t -> t.getAlbumId().map(a -> a.value().equals(id.value())).orElse(false))
