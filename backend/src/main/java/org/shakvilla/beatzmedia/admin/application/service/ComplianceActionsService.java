@@ -56,7 +56,7 @@ public class ComplianceActionsService implements ComplianceActions {
     request.start(); // 409 before any write if illegal
     requests.save(request);
     audit(actorId, "Started compliance request", requestId, null);
-    return ComplianceRequestView.of(request);
+    return ComplianceRequestView.of(request, clock.now());
   }
 
   @Override
@@ -66,7 +66,7 @@ public class ComplianceActionsService implements ComplianceActions {
     request.complete(); // 409 before any write if illegal
     requests.save(request);
     audit(actorId, "Completed compliance request", requestId, null);
-    return ComplianceRequestView.of(request);
+    return ComplianceRequestView.of(request, clock.now());
   }
 
   @Override
@@ -83,7 +83,7 @@ public class ComplianceActionsService implements ComplianceActions {
   public ComplianceRequestView notice(String actorId, String requestId) {
     ComplianceRequest request = load(requestId); // 404 if missing; status unchanged
     audit(actorId, "Recorded compliance notice", requestId, null);
-    return ComplianceRequestView.of(request);
+    return ComplianceRequestView.of(request, clock.now());
   }
 
   private ComplianceRequest load(String requestId) {
