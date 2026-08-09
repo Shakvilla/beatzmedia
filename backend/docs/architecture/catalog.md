@@ -80,7 +80,7 @@ reads/writes only its own tables; other modules reference its rows by id. **Even
 | `ReleaseDraft` | Entity | `id`, `artistId`, JSON draft state, `updatedAt` | Server-persisted wizard draft (hydrates the client). |
 | `Track` | Aggregate root | `id`, `title`, `artistId`, `albumId?`, `durationSec`, `ownership`, `priceMinor?`, `plays`, `quality`, `year`, `releaseId?`, `status` | `ownership`/`price` decorated per-caller at the boundary. |
 | `TrackCredit` | Value object | `role`, `names[]` | Track detail credits. |
-| `Album` | Aggregate root | `id`, `title`, `artistId`, `artistName`, `year`, `coverImage`, `trackIds[]` | List price derived via INV-5 from constituent tracks. |
+| `Album` | Aggregate root | `id`, `title`, `artistId`, `artistName`, `year`, `coverImage`, `trackIds[]` | List price derived via INV-5 from constituent tracks. **Projected from a live release** — see below. |
 | `Lyrics` | Entity | `trackId`, `lines: LyricLine[]` | One-to-zero/one with Track. |
 | `LyricLine` | Value object | `tSec`, `text` | Time in **whole seconds** (frontend formats). |
 | `ArtistProfile` | Aggregate root | `id`, `name`, `image`, `coverImage?`, `verified`, `monthlyListeners`, `followers`, `bio`, `location`, `genres[]`, `shows[]` | Public artist page + sub-collections. |
@@ -91,6 +91,24 @@ reads/writes only its own tables; other modules reference its rows by id. **Even
 **Enums** (lifted verbatim from `Frontend/src/types`, `studio-data.ts`, `release-draft-context.tsx`)
 
 - `ReleaseType = single | ep | album | mixtape`
+
+**Album is a projection of a live release** (`ProjectReleaseAlbum`, driven by `ReleaseWentLive` /
+`ContentTakenDown`). Until this was wired, publishing wrote `release`, `release_track` and `track`
+but never an `album`: the only `INSERT INTO album` in the codebase was the dev seed, so on any
+database without it the table stayed empty forever and every album-backed surface — the
+`newReleases` and `featuredAlbums` rails, `GET /v1/albums/:id`, an artist's album list, saved
+albums — was permanently empty while still answering `200`.
+
+- The album **shares the release's id**: the relationship is one-to-one, so reusing it makes the
+  projection idempotent without a lookup table.
+- **Every release type projects, including `single`.** The album row is what the fan-facing
+  collection surfaces read; excluding singles would leave the commonest release format invisible in
+  "New releases".
+- `album.cover_image` is `NOT NULL`, so a release still awaiting artwork falls back to
+  `CatalogDefaults.PLACEHOLDER_IMAGE`; an artist with no `artist_profile` row is skipped rather than
+  written with an invented name (`album.artist_id` is a foreign key).
+- The projection is driven by the lifecycle **events**, not the publish path, so a release that goes
+  live via the scheduled sweep and one an admin approves are projected identically.
 - `ReleaseStatus = live | scheduled | in_review | draft | takedown` (PRD R6: `takedown` added for moderation parity)
 - `SplitConfirmation = self | confirmed | pending | auto`
 - `UploadedTrack.status = uploading | ready | error`

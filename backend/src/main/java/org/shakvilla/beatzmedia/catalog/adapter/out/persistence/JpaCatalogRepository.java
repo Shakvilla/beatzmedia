@@ -137,6 +137,55 @@ public class JpaCatalogRepository implements CatalogRepository {
   }
 
   @Override
+  @Transactional
+  public void saveAlbum(Album album) {
+    AlbumEntity entity = em.find(AlbumEntity.class, album.getId().value());
+    if (entity == null) {
+      entity = new AlbumEntity();
+      entity.id = album.getId().value();
+    }
+    entity.title = album.getTitle();
+    entity.artistId = album.getArtistId().value();
+    entity.artistName = album.getArtistName();
+    entity.year = album.getYear();
+    entity.coverImage = album.getCoverImage();
+    entity.genres = album.getGenres().toArray(new String[0]);
+    entity.listPriceMinor = album.getListPriceMinor();
+    em.merge(entity);
+
+    // Flush before the bulk updates below. A JPQL bulk UPDATE is issued as immediate SQL and does
+    // NOT trigger a flush of pending managed changes, so without this the track update runs before
+    // the album INSERT and fails on track_album_id_fkey — the album it points at does not exist yet.
+    em.flush();
+
+    // An album's track list lives on the tracks, so the row alone would render as an empty album.
+    // Detach first, then re-attach exactly what the album claims, so a re-projection after tracks
+    // were removed from the release does not leave the old ones behind.
+    em.createQuery("UPDATE TrackEntity t SET t.albumId = NULL WHERE t.albumId = :albumId")
+        .setParameter("albumId", album.getId().value())
+        .executeUpdate();
+    if (!album.getTrackIds().isEmpty()) {
+      em.createQuery("UPDATE TrackEntity t SET t.albumId = :albumId WHERE t.id IN :ids")
+          .setParameter("albumId", album.getId().value())
+          .setParameter("ids", album.getTrackIds())
+          .executeUpdate();
+    }
+  }
+
+  @Override
+  @Transactional
+  public void deleteAlbum(AlbumId id) {
+    // track.album_id is a foreign key; the tracks themselves outlive the album.
+    em.createQuery("UPDATE TrackEntity t SET t.albumId = NULL WHERE t.albumId = :albumId")
+        .setParameter("albumId", id.value())
+        .executeUpdate();
+    AlbumEntity entity = em.find(AlbumEntity.class, id.value());
+    if (entity != null) {
+      em.remove(entity);
+    }
+  }
+
+  @Override
   public List<Track> tracksByAlbum(AlbumId id) {
     List<TrackEntity> entities =
         em.createQuery(

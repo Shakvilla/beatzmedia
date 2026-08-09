@@ -49,6 +49,12 @@ public enum ErrorCode {
   // ---- Catalog codes (WU-CAT-9) — collaborator split invites ----
   SPLIT_INVITE_NOT_FOUND,
   SPLIT_INVITE_GONE,
+  /**
+   * A password-reset token could not be redeemed. Deliberately returned for all three failure
+   * modes — unknown, already used, and expired — so the response never reveals which, and a
+   * harvested token cannot be probed for validity.
+   */
+  RESET_TOKEN_INVALID,
   // ---- Catalog codes (WU-CAT-5) ----
   TRACK_NOT_IN_RELEASE,
   DUPLICATE_TRACK_REF,

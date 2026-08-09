@@ -20,7 +20,9 @@ import jakarta.ws.rs.core.Response;
 
 import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.shakvilla.beatzmedia.identity.domain.AccountId;
+import org.shakvilla.beatzmedia.platform.adapter.in.rest.RequiresFeature;
 import org.shakvilla.beatzmedia.platform.domain.Currency;
+import org.shakvilla.beatzmedia.platform.domain.FeatureKey;
 import org.shakvilla.beatzmedia.platform.domain.Money;
 import org.shakvilla.beatzmedia.platform.domain.Page;
 import org.shakvilla.beatzmedia.platform.domain.PageRequest;
@@ -64,6 +66,7 @@ import io.quarkus.security.Authenticated;
 @Path("/v1")
 @Produces(MediaType.APPLICATION_JSON)
 @PermitAll
+@RequiresFeature(FeatureKey.PODCASTS)
 public class PodcastResource {
 
   private final ListPodcasts listPodcasts;
@@ -153,6 +156,9 @@ public class PodcastResource {
   @Path("/podcasts/{id}/tip")
   @Consumes(MediaType.APPLICATION_JSON)
   @Authenticated
+  // Both, and listed explicitly: a method annotation replaces the class one, so omitting PODCASTS
+  // here would let podcast tips keep flowing with the whole podcasts feature switched off.
+  @RequiresFeature({FeatureKey.PODCASTS, FeatureKey.TIPPING})
   public Response tip(
       @PathParam("id") String id,
       @HeaderParam("Idempotency-Key") String idempotencyKey,

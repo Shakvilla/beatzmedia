@@ -112,7 +112,7 @@ function LoginComponent() {
             <div className="flex flex-col gap-2">
               <div className="flex items-center justify-between ml-1">
                 <label className="text-xs font-bold text-gray-400 uppercase tracking-widest">Password</label>
-                <Link to="/login" className="text-[10px] font-bold text-beatz-green uppercase hover:underline">Forgot password?</Link>
+                <Link to="/forgot-password" className="text-[10px] font-bold text-beatz-green uppercase hover:underline">Forgot password?</Link>
               </div>
               <input 
                 type="password"
