@@ -1,13 +1,14 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Search, Download, MoreHorizontal, BadgeCheck, Ban, RotateCcw, Eye, Check } from 'lucide-react'
+import { Search, Download, BadgeCheck, Ban, RotateCcw, Eye, Check } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
 import type { AdminUserRow, UserStatus } from '../lib/admin-data'
 import { usersQuery, apiVerifyUser, apiSuspendUser, apiReactivateUser } from '../lib/api/queries/admin-users'
 import { AdminLoadError } from '../components/admin/load-error'
 import { usePaged, Pagination } from '../components/admin/pagination'
+import { RowMenu, MenuItem } from '../components/admin/row-menu'
 
 export const Route = createFileRoute('/admin/users/')({
   component: AdminUsers,
@@ -185,7 +186,6 @@ function UserRow({ user: u, selected, onSelect, onView, onVerify, onSuspend, onR
   user: AdminUserRow; selected: boolean; onSelect: () => void
   onView: () => void; onVerify: () => void; onSuspend: () => void; onReactivate: () => void
 }) {
-  const [menuOpen, setMenuOpen] = useState(false)
   return (
     <div className={cn('flex items-center gap-4 px-3 py-3 border-b border-dashed border-gray-200 dark:border-white/5 last:border-0 transition-colors', selected ? 'bg-beatz-green/[0.05]' : 'hover:bg-gray-50 dark:hover:bg-white/5')}>
       <span className="w-5 shrink-0"><Checkbox checked={selected} onChange={onSelect} /></span>
@@ -198,33 +198,20 @@ function UserRow({ user: u, selected, onSelect, onView, onVerify, onSuspend, onR
       <span className="w-20 shrink-0 text-sm text-gray-500 dark:text-gray-300">{u.joined}</span>
       <span className="w-24 shrink-0 text-sm text-gray-500 dark:text-gray-300">{u.lastActive}</span>
       <span className="w-24 shrink-0"><StatusPill status={u.status} /></span>
-      <div className="w-8 shrink-0 relative flex justify-end">
-        <button onClick={() => setMenuOpen((o) => !o)} aria-label="User actions" className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-beatz-dark-bg dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors">
-          <MoreHorizontal size={18} />
-        </button>
-        {menuOpen && (
-          <>
-            <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
-            <div className="absolute right-0 top-9 z-50 w-44 py-1 rounded-xl bg-white dark:bg-beatz-dark-surface-2 border border-gray-200 dark:border-white/10 shadow-xl">
-              <MenuItem icon={Eye} label="View profile" onClick={() => { onView(); setMenuOpen(false) }} />
-              {u.role === 'artist' && !u.verified && <MenuItem icon={BadgeCheck} label="Verify artist" onClick={() => { onVerify(); setMenuOpen(false) }} />}
+      <div className="w-8 shrink-0 flex justify-end">
+        <RowMenu label="User actions">
+          {(close) => (
+            <>
+              <MenuItem icon={Eye} label="View profile" onClick={() => { onView(); close() }} />
+              {u.role === 'artist' && !u.verified && <MenuItem icon={BadgeCheck} label="Verify artist" onClick={() => { onVerify(); close() }} />}
               {u.status === 'suspended'
-                ? <MenuItem icon={RotateCcw} label="Reactivate" onClick={() => { onReactivate(); setMenuOpen(false) }} />
-                : <MenuItem icon={Ban} label="Suspend" danger onClick={() => { onSuspend(); setMenuOpen(false) }} />}
-            </div>
-          </>
-        )}
+                ? <MenuItem icon={RotateCcw} label="Reactivate" onClick={() => { onReactivate(); close() }} />
+                : <MenuItem icon={Ban} label="Suspend" danger onClick={() => { onSuspend(); close() }} />}
+            </>
+          )}
+        </RowMenu>
       </div>
     </div>
   )
 }
 
-function MenuItem({ icon: Icon, label, onClick, danger }: { icon: typeof Eye; label: string; onClick: () => void; danger?: boolean }) {
-  return (
-    <button onClick={onClick}
-      className={cn('w-full flex items-center gap-2.5 px-3 py-2 text-sm font-medium transition-colors',
-        danger ? 'text-beatz-red hover:bg-beatz-red/10' : 'text-beatz-dark-bg dark:text-white hover:bg-gray-100 dark:hover:bg-white/5')}>
-      <Icon size={15} /> {label}
-    </button>
-  )
-}

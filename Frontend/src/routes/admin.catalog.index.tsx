@@ -1,12 +1,13 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Search, MoreHorizontal, Check, Eye, Flag, ShieldX, RotateCcw, Disc3 } from 'lucide-react'
+import { Search, Check, Eye, Flag, ShieldX, RotateCcw, Disc3 } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
 import { type CatalogItem, type CatalogStatus } from '../lib/admin-data'
 import { catalogQuery, apiApproveCatalog, apiFlagCatalog, apiTakedownCatalog, apiReinstateCatalog } from '../lib/api/queries/admin-catalog'
 import { TakedownModal, FlagModal } from '../components/admin/takedown-modal'
+import { RowMenu, MenuItem } from '../components/admin/row-menu'
 import { AdminLoadError } from '../components/admin/load-error'
 import { usePaged, Pagination } from '../components/admin/pagination'
 
@@ -232,7 +233,6 @@ function CatalogRow({ item: c, selected, onSelect, onApprove, onView, onFlag, on
   onApprove: () => void; onView: () => void; onFlag: () => void; onTakedown: () => void
   onReinstate: () => void
 }) {
-  const [menuOpen, setMenuOpen] = useState(false)
   const reviewable = c.status === 'pending' || c.status === 'flagged'
   return (
     <div className={cn('flex items-center gap-4 px-3 py-3 border-b border-dashed border-gray-200 dark:border-white/5 last:border-0 transition-colors', selected ? 'bg-beatz-green/[0.05]' : 'hover:bg-gray-50 dark:hover:bg-white/5')}>
@@ -250,41 +250,26 @@ function CatalogRow({ item: c, selected, onSelect, onApprove, onView, onFlag, on
       <span className="w-24 shrink-0"><StatusPill status={c.status} /></span>
       <div className="w-28 shrink-0 flex items-center justify-end gap-1">
         {reviewable && <button onClick={onApprove} className="h-8 px-3 rounded-full text-beatz-green text-xs font-bold hover:bg-beatz-green/10 transition-colors">Approve</button>}
-        <div className="relative">
-          <button onClick={() => setMenuOpen((o) => !o)} aria-label="Actions" className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-beatz-dark-bg dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors">
-            <MoreHorizontal size={18} />
-          </button>
-          {menuOpen && (
+        <RowMenu>
+          {(close) => (
             <>
-              <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
-              <div className="absolute right-0 top-9 z-50 w-44 py-1 rounded-xl bg-white dark:bg-beatz-dark-surface-2 border border-gray-200 dark:border-white/10 shadow-xl">
-                {reviewable && <MenuItem icon={Check} label="Approve" onClick={() => { onApprove(); setMenuOpen(false) }} />}
-                <MenuItem icon={Eye} label="View details" onClick={() => { onView(); setMenuOpen(false) }} />
-                {c.status !== 'flagged' && c.status !== 'takedown' && <MenuItem icon={Flag} label="Flag" onClick={() => { onFlag(); setMenuOpen(false) }} />}
-                {/*
-                  Reinstate is the missing half of takedown. The endpoint existed, guarded and
-                  tested, and nothing called it — so pulling a release was a one-way door from the
-                  console. Shown only where it applies, and it replaces "Take down" rather than
-                  sitting beside it: offering to take down an already-taken-down release is noise.
-                */}
-                {c.status === 'takedown'
-                  ? <MenuItem icon={RotateCcw} label="Reinstate" onClick={() => { onReinstate(); setMenuOpen(false) }} />
-                  : <MenuItem icon={ShieldX} label="Take down" danger onClick={() => { onTakedown(); setMenuOpen(false) }} />}
-              </div>
+              {reviewable && <MenuItem icon={Check} label="Approve" onClick={() => { onApprove(); close() }} />}
+              <MenuItem icon={Eye} label="View details" onClick={() => { onView(); close() }} />
+              {c.status !== 'flagged' && c.status !== 'takedown' && <MenuItem icon={Flag} label="Flag" onClick={() => { onFlag(); close() }} />}
+              {/*
+                Reinstate is the missing half of takedown. The endpoint existed, guarded and
+                tested, and nothing called it — so pulling a release was a one-way door from the
+                console. Shown only where it applies, and it replaces "Take down" rather than
+                sitting beside it: offering to take down an already-taken-down release is noise.
+              */}
+              {c.status === 'takedown'
+                ? <MenuItem icon={RotateCcw} label="Reinstate" onClick={() => { onReinstate(); close() }} />
+                : <MenuItem icon={ShieldX} label="Take down" danger onClick={() => { onTakedown(); close() }} />}
             </>
           )}
-        </div>
+        </RowMenu>
       </div>
     </div>
   )
 }
 
-function MenuItem({ icon: Icon, label, onClick, danger }: { icon: typeof Check; label: string; onClick: () => void; danger?: boolean }) {
-  return (
-    <button onClick={onClick}
-      className={cn('w-full flex items-center gap-2.5 px-3 py-2 text-sm font-medium transition-colors',
-        danger ? 'text-beatz-red hover:bg-beatz-red/10' : 'text-beatz-dark-bg dark:text-white hover:bg-gray-100 dark:hover:bg-white/5')}>
-      <Icon size={15} /> {label}
-    </button>
-  )
-}
