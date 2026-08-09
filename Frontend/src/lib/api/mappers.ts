@@ -717,7 +717,19 @@ export interface UserDetailWire {
 
 export interface UserCounts { all: number; fans: number; artists: number; verified: number; suspended: number }
 export interface AdminUsersList { users: AdminUserRow[]; counts: UserCounts }
-export interface AdminUserDetailData { summary: AdminUserRow; actionLog: UserActionLog[] }
+/**
+ * `activity`/`orders`/`devices` are carried through even though the API documents them as
+ * always-empty today. The detail page previously dropped them here and substituted a hardcoded
+ * fixture, so a real account displayed invented purchases and tips; passing the real (empty)
+ * arrays lets the page render honest empty states now and light up on its own later.
+ */
+export interface AdminUserDetailData {
+  summary: AdminUserRow
+  activity: unknown[]
+  orders: unknown[]
+  devices: unknown[]
+  actionLog: UserActionLog[]
+}
 
 export function toAdminUserRow(w: AdminUserRowWire, now?: number): AdminUserRow {
   return {
@@ -746,7 +758,13 @@ export function toUserActionLog(w: UserActionLogWire, now?: number): UserActionL
 }
 
 export function toUserDetail(w: UserDetailWire, now?: number): AdminUserDetailData {
-  return { summary: toAdminUserRow(w.summary, now), actionLog: w.actionLog.map((l) => toUserActionLog(l, now)) }
+  return {
+    summary: toAdminUserRow(w.summary, now),
+    activity: w.activity ?? [],
+    orders: w.orders ?? [],
+    devices: w.devices ?? [],
+    actionLog: w.actionLog.map((l) => toUserActionLog(l, now)),
+  }
 }
 
 // ── Admin catalog (AdminCatalogResource) ──────────────────────────────────────

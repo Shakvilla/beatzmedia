@@ -26,6 +26,8 @@ import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.jboss.resteasy.reactive.MultipartForm;
 import org.jboss.resteasy.reactive.multipart.FileUpload;
+import org.shakvilla.beatzmedia.platform.adapter.in.rest.RequiresFeature;
+import org.shakvilla.beatzmedia.platform.domain.FeatureKey;
 import org.shakvilla.beatzmedia.platform.domain.ValidationException;
 import org.shakvilla.beatzmedia.studio.application.port.in.CreateEpisode;
 import org.shakvilla.beatzmedia.studio.application.port.in.CreateEpisode.AudioUpload;
@@ -64,7 +66,7 @@ import org.shakvilla.beatzmedia.studio.domain.ShowId;
  */
 @Path("/v1/studio/podcasts")
 @Produces(MediaType.APPLICATION_JSON)
-@RolesAllowed("artist")
+@RolesAllowed("artist")@RequiresFeature(FeatureKey.PODCASTS)
 public class StudioPodcastResource {
 
   private final ListStudioPodcastShows listStudioPodcastShows;

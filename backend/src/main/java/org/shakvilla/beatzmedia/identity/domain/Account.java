@@ -102,6 +102,25 @@ public final class Account {
     return status == AccountStatus.active || status == AccountStatus.pending;
   }
 
+  /**
+   * Replaces this account's password credential, as the final step of a password reset.
+   *
+   * <p>Guarded by {@link #canAuthenticate()}: a suspended or banned account must not be able to
+   * regain access by resetting its password. The reset request itself stays non-enumerating (an
+   * unknown email is a silent no-op), so this is the first point where the account's state is known
+   * and can be enforced.
+   *
+   * <p>A social-login account has no credential at all; resetting gives it one, which is the
+   * intended way for such a user to gain password access.
+   */
+  public void resetPassword(Credential newCredential, Instant now) {
+    if (!canAuthenticate()) {
+      throw new AccountSuspendedException();
+    }
+    this.credential = newCredential;
+    this.updatedAt = now;
+  }
+
   /** Suspends this account. Caller is responsible for appending an AuditEntry (INV-10). */
   public void suspend(Instant now) {
     this.status = AccountStatus.suspended;
