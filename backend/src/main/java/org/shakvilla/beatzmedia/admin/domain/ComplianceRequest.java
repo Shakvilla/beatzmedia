@@ -99,6 +99,25 @@ public final class ComplianceRequest {
     return detail;
   }
 
+  /**
+   * True when this request has passed its due date without being completed.
+   *
+   * <p><strong>Derived, not stored.</strong> {@link ComplianceStatus#OVERDUE} exists and nothing
+   * ever set it — no sweep job, no transition — so the Compliance page counted
+   * {@code status == 'overdue'} and showed {@code 0 overdue} for a request a day past its deadline.
+   * On a page whose purpose is tracking statutory DSAR deadlines, the one indicator that a legal
+   * deadline has been missed was permanently stuck at zero.
+   *
+   * <p>Deriving it beats adding a sweep for two reasons. It cannot lag: a request becomes overdue
+   * the instant its deadline passes, not on the next tick. And it survives {@code start}: the state
+   * machine moves {@code new|overdue → in_progress}, so a flipped status would be erased the moment
+   * anyone began work — precisely when the breach still matters most. Work having started does not
+   * un-miss a deadline.
+   */
+  public boolean isOverdue(Instant now) {
+    return dueAt != null && status != ComplianceStatus.COMPLETED && now.isAfter(dueAt);
+  }
+
   public Instant getDueAt() {
     return dueAt;
   }

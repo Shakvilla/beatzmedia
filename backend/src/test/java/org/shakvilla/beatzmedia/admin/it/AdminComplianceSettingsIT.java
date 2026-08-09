@@ -220,6 +220,18 @@ class AdminComplianceSettingsIT {
         .executeUpdate();
   }
 
+  /**
+   * Seeds a request with a deadline comfortably in the future.
+   *
+   * <p>This used to seed {@code due_at = now}, which made the request due at the instant it was
+   * created — so by the time the assertion ran it was, correctly, past due. That went unnoticed
+   * while {@code overdue} was a stored status nothing ever set; now that it is derived from
+   * {@code due_at}, the fixture would report {@code overdue} and this test's subject is the list and
+   * the start/complete transitions, not the deadline.
+   *
+   * <p>A future deadline is also what a real DSAR has — the statutory clock is measured in days.
+   * Overdue behaviour is covered by {@code ComplianceOverdueIT} and {@code ComplianceOverdueTest}.
+   */
   @Transactional
   String seedCompliance(String type, String status) {
     String id = "cs-it-co-" + System.nanoTime();
@@ -229,7 +241,7 @@ class AdminComplianceSettingsIT {
         .setParameter("id", id)
         .setParameter("type", type)
         .setParameter("subj", "@subject")
-        .setParameter("due", clock.now())
+        .setParameter("due", clock.now().plus(java.time.Duration.ofDays(30)))
         .setParameter("status", status)
         .setParameter("at", clock.now())
         .executeUpdate();
