@@ -44,6 +44,25 @@ public interface CatalogRepository {
 
   Optional<Album> findAlbum(AlbumId id);
 
+  /**
+   * Upserts an album and points its tracks at it.
+   *
+   * <p>{@code album.trackIds()} is authoritative: tracks it lists get {@code album_id} set, and any
+   * track previously on this album but no longer listed is detached. An album's track list is
+   * stored on the tracks themselves, so writing the row alone would leave an album that exists but
+   * appears empty.
+   */
+  void saveAlbum(Album album);
+
+  /**
+   * Deletes an album and detaches its tracks first.
+   *
+   * <p>{@code track.album_id} is a foreign key, so the detach is required, not tidiness — and the
+   * tracks must survive: a release coming down removes the album a fan browses, not the underlying
+   * recordings.
+   */
+  void deleteAlbum(AlbumId id);
+
   List<Track> tracksByAlbum(AlbumId id);
 
   Optional<Track> findTrack(TrackId id);
