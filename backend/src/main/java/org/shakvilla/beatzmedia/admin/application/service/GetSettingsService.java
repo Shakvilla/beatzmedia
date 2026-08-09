@@ -44,6 +44,25 @@ public class GetSettingsService implements GetSettings {
 
   /** Maps the kernel settings + flags to the frontend {@code PlatformSettings} shape. */
   static PlatformSettingsView toView(PlatformSettings s, FeatureFlags flags) {
+    return toView(
+        s,
+        new PlatformSettingsView.Flags(
+            flags.isEnabled(FeatureKey.ARTIST_SIGNUPS),
+            flags.isEnabled(FeatureKey.PODCASTS),
+            flags.isEnabled(FeatureKey.EVENTS),
+            flags.isEnabled(FeatureKey.TIPPING),
+            flags.isEnabled(FeatureKey.FAN_MESSAGING)));
+  }
+
+  /**
+   * Same view, from flag values the caller already holds.
+   *
+   * <p>For the save path, which must not read its own uncommitted writes. Reading through
+   * {@link FeatureFlags} there went to the cache, which reloads in a new transaction and therefore
+   * could not see flags written moments earlier in the still-open one — so a settings save returned
+   * the values it had just replaced.
+   */
+  static PlatformSettingsView toView(PlatformSettings s, PlatformSettingsView.Flags flags) {
     BigDecimal payoutMinimum =
         BigDecimal.valueOf(s.payoutMinimumMinor()).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
     return new PlatformSettingsView(
@@ -54,11 +73,6 @@ public class GetSettingsService implements GetSettings {
         s.maintenanceMode(),
         // providers.* — honest-static (no per-provider enablement subsystem).
         new PlatformSettingsView.Providers(true, true, true, true, true),
-        new PlatformSettingsView.Flags(
-            flags.isEnabled(FeatureKey.ARTIST_SIGNUPS),
-            flags.isEnabled(FeatureKey.PODCASTS),
-            flags.isEnabled(FeatureKey.EVENTS),
-            flags.isEnabled(FeatureKey.TIPPING),
-            flags.isEnabled(FeatureKey.FAN_MESSAGING)));
+        flags);
   }
 }
