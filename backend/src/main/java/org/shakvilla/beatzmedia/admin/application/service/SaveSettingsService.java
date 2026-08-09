@@ -104,7 +104,17 @@ public class SaveSettingsService implements SaveSettings {
             reason,
             clock.now()));
 
-    return GetSettingsService.toView(saved, featureFlags);
+    // Built from what was just written, not re-read through FeatureFlags: the flag cache reloads in
+    // a new transaction and cannot see these still-uncommitted writes, so re-reading here returned
+    // the previous values — the save appeared not to have taken.
+    return GetSettingsService.toView(
+        saved,
+        new PlatformSettingsView.Flags(
+            input.flags().artistSignups(),
+            input.flags().podcasts(),
+            input.flags().events(),
+            input.flags().tipping(),
+            input.flags().fanMessaging()));
   }
 
   private static Currency parseCurrency(String value) {
