@@ -34,8 +34,8 @@ import type {
 import type { StudioProfile, StudioSettings, StudioRelease, StudioPodcastShow, StudioEpisode, EpisodeStatus } from '../studio-data'
 import type { UploadedTrack } from '../../features/studio/release-draft-context'
 import type { Payouts, PayoutMethod, PayoutTxn, PayoutType, PayoutStatus, MethodKind } from '../studio-payouts'
-import type { AdminUserRow, UserRole, UserStatus, UserActionLog, CatalogItem, CatalogStatus, CatalogType, ModerationItem, ModReason, ModSeverity, ModStatus, Finance, PendingPayout, ProviderMix, Dispute, LedgerTxn, LedgerType, TimelineEntry, FeaturedSlot, PushItem, CuratedPlaylist, AdminOverview, AttentionItem, RevenueArtist, PayMethod, Health, HealthMetric, Incident, AuditEntry, AuditType, SupportTicket, SupportMessage, TicketStatus, TicketPriority, RiskSignal, RiskLevel, RiskStatus, ComplianceRequest, ComplianceType, ComplianceStatus, PlatformSettings } from '../admin-data'
-import { relativeTimeAgo, monthYear, formatDuration, relativeTime, toCedis, monthDay, dueLabel } from '../format'
+import type { AdminUserRow, AdminMemberRole, UserRole, UserStatus, UserActionLog, CatalogItem, CatalogStatus, CatalogType, ModerationItem, ModReason, ModSeverity, ModStatus, Finance, PendingPayout, ProviderMix, Dispute, LedgerTxn, LedgerType, TimelineEntry, FeaturedSlot, PushItem, CuratedPlaylist, AdminOverview, AttentionItem, RevenueArtist, PayMethod, Health, HealthMetric, Incident, AuditEntry, AuditType, SupportTicket, SupportMessage, TicketStatus, TicketPriority, RiskSignal, RiskLevel, RiskStatus, ComplianceRequest, ComplianceType, ComplianceStatus, PlatformSettings } from '../admin-data'
+import { relativeTimeAgo, dayMonthYear, formatDuration, relativeTime, toCedis, monthDay, dueLabel } from '../format'
 
 export interface ArtistWire {
   id: string
@@ -697,6 +697,8 @@ export interface AdminUserRowWire {
   joined: string
   lastActive: string
   status: string
+  /** Console role, or null/absent when the account is not an admin member (GAP-10). */
+  adminRole?: string | null
 }
 export interface UserCountsWire { all: number; fans: number; artists: number; verified: number; suspended: number }
 export interface PagedUsersWire {
@@ -739,9 +741,12 @@ export function toAdminUserRow(w: AdminUserRowWire, now?: number): AdminUserRow 
     email: w.email,
     role: w.role as UserRole,
     verified: w.verified,
-    joined: monthYear(w.joined),
+    // GAP-16: was monthYear() — "Aug 2026" with no day. Support work keys off an exact join date
+    // (matching a receipt, correlating a signup with a complaint), and a month alone cannot do it.
+    joined: dayMonthYear(w.joined),
     lastActive: relativeTimeAgo(w.lastActive, now),
     status: w.status as UserStatus,
+    adminRole: (w.adminRole as AdminMemberRole | null) ?? null,
   }
 }
 

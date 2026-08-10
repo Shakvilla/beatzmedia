@@ -611,8 +611,22 @@ describe('admin users mappers', () => {
     const r = toAdminUserRow(rowWire, NOW)
     expect(r).toEqual({
       id: 'u1', name: 'Ama Boateng', initial: 'AB', email: 'ama@x.com',
-      role: 'artist', verified: true, joined: 'Mar 2024', lastActive: '2h ago', status: 'active',
+      role: 'artist', verified: true, joined: '15 Mar 2024', lastActive: '2h ago', status: 'active',
+      adminRole: null,
     })
+  })
+
+  /**
+   * GAP-10. The list derived a role from `is_artist` alone, so every administrator — including the
+   * super-admin running the console — was listed as "Fan" on the one screen that enumerates
+   * accounts. The console role rides alongside the fan/artist role rather than replacing it: an
+   * admin who is also an artist is exactly the case an operator needs to see.
+   */
+  it('toAdminUserRow carries the console role, and defaults it to null', () => {
+    expect(toAdminUserRow({ ...rowWire, adminRole: 'moderator' }, NOW).adminRole).toBe('moderator')
+    expect(toAdminUserRow({ ...rowWire, adminRole: null }, NOW).adminRole).toBeNull()
+    // A server that predates the field must not produce `undefined` in the row.
+    expect(toAdminUserRow(rowWire, NOW).adminRole).toBeNull()
   })
 
   it('toUsersList maps items + counts', () => {
@@ -623,7 +637,7 @@ describe('admin users mappers', () => {
     const list = toUsersList(wire, NOW)
     expect(list.users).toHaveLength(1)
     expect(list.users[0].name).toBe('Ama Boateng')
-    expect(list.users[0].joined).toBe('Mar 2024')
+    expect(list.users[0].joined).toBe('15 Mar 2024')
     expect(list.users[0].lastActive).toBe('2h ago')
     expect(list.counts).toEqual({ all: 10, fans: 7, artists: 3, verified: 2, suspended: 1 })
   })
@@ -644,7 +658,7 @@ describe('admin users mappers', () => {
     }
     const d = toUserDetail(wire, NOW)
     expect(d.summary.id).toBe('u1')
-    expect(d.summary.joined).toBe('Mar 2024')
+    expect(d.summary.joined).toBe('15 Mar 2024')
     expect(d.actionLog).toEqual([{ id: 'l1', action: 'Verified artist', by: 'Admin', time: '1h ago' }])
     // Passed through untouched — the mapper does not interpret them, so whatever the API sends is
     // what the page sees.

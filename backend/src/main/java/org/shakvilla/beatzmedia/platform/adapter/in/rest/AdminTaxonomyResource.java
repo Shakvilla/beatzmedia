@@ -43,11 +43,29 @@ public class AdminTaxonomyResource {
     this.jwt = jwt;
   }
 
-  /** Every term of a kind, active and inactive, each with the number of items using it. */
+  /**
+   * Every term, active and inactive, each with the number of items using it.
+   *
+   * <p>{@code kind} is optional (GAP-11). Omitting it returns every kind, ordered by kind and then
+   * by the kind's own ordering, rather than the {@code 422 Unknown taxonomy kind: null} it used to
+   * answer. There was no "list everything" call at all, so the console had to issue one request per
+   * kind and the bare endpoint read as broken when probed. An absent filter meaning "no filter" is
+   * also what every other admin list here already does.
+   *
+   * <p>A <em>blank</em> kind is treated as absent for the same reason: {@code ?kind=} is what an
+   * unset UI filter serializes to, and rejecting it would reintroduce the same surprise one level
+   * down. A kind that is present but unrecognised is still a 422 — that is a caller error, not an
+   * absent filter.
+   */
   @GET
   @RolesAllowed({"super-admin", "finance", "moderator", "editor", "support"})
   public List<AdminTaxonomyTermDto> list(@QueryParam("kind") String kind) {
-    return taxonomy.listAll(TaxonomyKind.fromWireValue(kind)).stream()
+    List<TaxonomyKind> kinds =
+        kind == null || kind.isBlank()
+            ? List.of(TaxonomyKind.values())
+            : List.of(TaxonomyKind.fromWireValue(kind));
+    return kinds.stream()
+        .flatMap(k -> taxonomy.listAll(k).stream())
         .map(t -> AdminTaxonomyTermDto.from(t, taxonomy.usageCount(t.id())))
         .toList();
   }

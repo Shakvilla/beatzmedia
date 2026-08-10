@@ -5,7 +5,10 @@
 controls the admin console claims to own.
 **Method:** Static wiring audit + authenticated endpoint sweep + manual UI walkthrough of every page,
 against a near-empty database (1 release, 2 accounts, 16 store items).
-**Status:** Documentation only. Nothing in this report has been fixed.
+**Status:** Live document. Findings are updated in place as they are fixed — each carries its own
+**Status** line. Two entries (GAP-12, and the `topResult` half of GAP-27) record corrections to
+findings that were wrong when first written; they are struck through rather than deleted, so the
+report is not quietly edited to look more accurate than it was.
 
 ---
 
@@ -535,23 +538,56 @@ response is to toggle again — which now writes the wrong thing. Ruled out brow
 
 ## 4. Medium
 
-### GAP-09 · Settings silently accepts unknown flag keys
+### GAP-09 · Settings silently accepts unknown flag keys — and disables every flag
 `PUT /v1/admin/settings` with `flags: { PODCASTS: false }` (enum-case instead of the wire's camelCase
-`podcasts`) returns **200 OK** and changes nothing. A typo'd or renamed key is indistinguishable from
-success. Should be `422` on unrecognised keys.
+`podcasts`) returns **200 OK**.
+
+**Correction — this entry understated it.** It said the call "changes nothing". It does the opposite.
+The request reused the response's `Flags` record, whose fields are primitive `boolean`. Quarkus
+disables Jackson's fail-on-unknown-properties, so the unrecognised key was dropped in silence and
+every field fell back to `false`; `SaveSettingsService` then wrote all five flags unconditionally. So
+that call **disabled podcasts, events, tipping, artist signups and fan messaging platform-wide** and
+reported success. A partial body — sending only the flag being toggled, the natural thing for a
+client to do — had the same effect.
+
+**Status.** Fixed. Every flag key is now required (`@NotNull Boolean`), so a misspelled key and an
+omitted one are the same 422 naming the field. Requiring all five rather than defaulting the missing
+ones is deliberate: a flag is a kill switch, and inferring "off" for one the caller never mentioned
+is the failure being fixed. Covered by `SettingsFlagKeysIT`, which reads the flags back after the
+rejected call to prove nothing moved.
 
 ### GAP-10 · Admin users are listed as "Fan"
 `/admin/users` shows `admin@beatzclik.com` with **ROLE = Fan**. The list derives role from
 `is_artist` only and ignores `admin_member`. Admins are invisible as admins on the one screen that
 enumerates accounts.
 
+**Status.** Fixed. `AdminUserRow` gains an `adminRole` field, shown as a second pill beside the
+fan/artist one rather than replacing it — the two are orthogonal, and an admin who is also an artist
+is exactly the case an operator needs to see. The mutation responses (verify/suspend/reactivate) are
+built from identity's account view, which does not carry the role, so they look it up explicitly;
+without that, suspending an administrator returned a row claiming they were not one. Covered by
+`AdminRoleVisibleInUserListIT`, which asserts the negative case too — a field that is always
+populated would pass a positive-only test while being just as wrong.
+
 ### GAP-11 · `GET /v1/admin/taxonomy` returns 422 without a `kind`
 There is no "list all terms" for admins; the bare call is a validation error rather than the full
 set. Forces the page into one request per kind and makes the endpoint feel broken when probed.
 
-### GAP-12 · Admin catalog rows carry no artist name
-`GET /v1/admin/catalog` items have no `artistName` field. A moderator approving or taking down a
-release cannot see whose release it is from the list.
+**Status.** Fixed. An absent — or blank, which is what an unset UI filter serializes to — `kind` now
+returns every kind, matching what every other admin list already does. A kind that is present but
+unrecognised is still a 422: that is a caller error, not an absent filter. Covered by
+`AdminTaxonomyListAllIT`.
+
+### GAP-12 · ~~Admin catalog rows carry no artist name~~ — **NOT A DEFECT. My error.**
+
+The original entry claimed `GET /v1/admin/catalog` items have no artist name. **That was wrong.**
+`CatalogItemRowView` has carried an `artist` field since WU-ADM-3 (#107), populated from
+`row.artistName()` in `CatalogItemMapper`, and the catalog list renders an ARTIST column — confirmed
+in the browser on a real release.
+
+I recorded the finding from the field *name* (`artistName`) rather than the wire name (`artist`) and
+never checked the rendered page for this one. Retained rather than deleted so the report is not
+quietly edited to look more accurate than it was.
 
 ### GAP-17 · Every admin role can act on support tickets
 Building the role matrix surfaced this: `assign`, `reply` and `resolve` on
@@ -574,8 +610,16 @@ cannot do the thing it depicts.
 ## 5. Low
 
 - **GAP-14** — Editorial shows a hardcoded `"Drag to reorder · live in 2h"`. The "2h" is a literal.
-- **GAP-15** — `Export` buttons on Audit and Users were not exercised (see §7).
+  **Worse than recorded, and fixed:** *both* halves were false. There is no drag-and-drop anywhere on
+  the page — ordering is the Move up / Move down actions in each row's menu — and a featured slot has
+  no scheduled go-live time at all (`FeaturedSlot` is `{ id, title, note, sponsored }`), so the "2h"
+  was not a stale countdown but an invented one. Now reads "Use each row's menu to reorder · changes
+  go live on save".
+- **GAP-15** — ~~`Export` buttons on Audit and Users were not exercised~~ — **CLOSED**, superseded by
+  GAP-19: they were clicked, they do nothing, and they claim success.
 - **GAP-16** — "Joined" renders as `Aug 2026` with no day; ambiguous for support work.
+  **Fixed:** now `15 Mar 2024`, formatted in UTC so the label does not shift with the viewer's
+  timezone. `monthYear()` had no other caller and was removed with its tests.
 
 ---
 

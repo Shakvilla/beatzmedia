@@ -23,4 +23,9 @@ public record AdminUserRowView(
     boolean verified,
     Instant joined,
     Instant lastActive,
-    String status) {}
+    String status,
+    /**
+     * Console role when this account is an admin member, else {@code null} (GAP-10). Orthogonal to
+     * {@code role}: an admin is still a fan or an artist underneath.
+     */
+    String adminRole) {}

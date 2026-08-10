@@ -4,7 +4,7 @@ import org.shakvilla.beatzmedia.admin.application.port.in.AdminUserRowView;
 
 /**
  * Response DTO matching {@code AdminUserRow} in {@code Frontend/src/lib/admin-data.ts}: {@code {
- * id, name, initial, email, role, verified, joined, lastActive, status } }. {@code joined}/{@code
+ * id, name, initial, email, role, verified, joined, lastActive, status, adminRole } }. {@code joined}/{@code
  * lastActive} are real ISO-8601 timestamps ({@code createdAt}/{@code updatedAt}) — the frontend
  * mock's relative-ish strings ("2m ago") are mock flavor text, not part of the wire contract (same
  * resolution as every other WU this session that serializes real timestamps as ISO-8601). Admin
@@ -19,7 +19,14 @@ public record AdminUserRowDto(
     boolean verified,
     String joined,
     String lastActive,
-    String status) {
+    String status,
+    /**
+     * Console role ({@code "super-admin"|"finance"|"moderator"|"editor"|"support"}) when this
+     * account is an admin member, else {@code null} (GAP-10). Additive: the field is new, every
+     * pre-existing field is unchanged, and a client that ignores it sees exactly what it saw
+     * before.
+     */
+    String adminRole) {
 
   public static AdminUserRowDto from(AdminUserRowView view) {
     return new AdminUserRowDto(
@@ -31,6 +38,7 @@ public record AdminUserRowDto(
         view.verified(),
         view.joined().toString(),
         view.lastActive().toString(),
-        view.status());
+        view.status(),
+        view.adminRole());
   }
 }

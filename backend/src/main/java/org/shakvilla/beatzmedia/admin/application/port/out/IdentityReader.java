@@ -57,6 +57,16 @@ public interface IdentityReader {
   UserCounts countUsers();
 
   /**
+   * The account's console role, or empty when the account is not an admin member (GAP-10).
+   *
+   * <p>Exists for the mutation responses (verify / suspend / reactivate), which are built from
+   * identity's {@code AccountAdminView} and so cannot carry the role the way {@link #listUsers} and
+   * {@link #findUser} do. Without it, suspending an administrator would return a row claiming they
+   * are not one.
+   */
+  Optional<String> adminRoleOf(String accountId);
+
+  /**
    * Read-model row for one account, shared by the list and detail endpoints. Deliberately admin's
    * own shape (not identity's {@code Account} domain type or {@code AccountEntity}) — the reader
    * adapter maps identity's JPA entity into this row so the application layer never depends on
@@ -70,7 +80,19 @@ public interface IdentityReader {
       boolean verified,
       String status,
       Instant createdAt,
-      Instant updatedAt) {}
+      Instant updatedAt,
+      /**
+       * The account's console role ({@code "super-admin"|"finance"|"moderator"|"editor"|
+       * "support"}), or {@code null} for the overwhelming majority of accounts that are not console
+       * members.
+       *
+       * <p>Added for GAP-10: the user list derived its role from {@code isArtist}
+       * alone, so every administrator — including the super-admin running the console — was listed
+       * as "Fan" on the one screen that enumerates accounts. Kept as a separate field rather than
+       * folded into the fan/artist role, because it is orthogonal: an admin is still a fan or an
+       * artist underneath, and collapsing the two would trade one blind spot for another.
+       */
+      String adminRole) {}
 
   /** Global user counts backing {@code PagedUsers.counts}. */
   record UserCounts(int all, int fans, int artists, int verified, int suspended) {}
