@@ -10,6 +10,7 @@ import jakarta.transaction.Transactional;
 
 import org.jboss.logging.Logger;
 import org.shakvilla.beatzmedia.catalog.application.port.in.ProjectReleaseAlbum;
+import org.shakvilla.beatzmedia.catalog.application.port.out.AlbumSearchProjection;
 import org.shakvilla.beatzmedia.catalog.application.port.out.CatalogRepository;
 import org.shakvilla.beatzmedia.catalog.domain.Album;
 import org.shakvilla.beatzmedia.catalog.domain.AlbumId;
@@ -42,11 +43,14 @@ public class ProjectReleaseAlbumService implements ProjectReleaseAlbum {
   private static final Logger LOG = Logger.getLogger(ProjectReleaseAlbumService.class);
 
   private final CatalogRepository catalog;
+  private final AlbumSearchProjection search;
   private final Clock clock;
 
   @Inject
-  public ProjectReleaseAlbumService(CatalogRepository catalog, Clock clock) {
+  public ProjectReleaseAlbumService(
+      CatalogRepository catalog, AlbumSearchProjection search, Clock clock) {
     this.catalog = catalog;
+    this.search = search;
     this.clock = clock;
   }
 
@@ -107,13 +111,19 @@ public class ProjectReleaseAlbumService implements ProjectReleaseAlbum {
             release.getListPriceMinor());
 
     catalog.saveAlbum(album);
+    // The album row and its search document are written together, by the one component that owns
+    // both. Leaving the document to the search observer would have raced it: two AFTER_SUCCESS
+    // observers on the same event, unordered by CDI. See AlbumSearchProjection (GAP-27).
+    search.index(album);
     LOG.infof("album projection: release %s projected with %d track(s)", releaseId, trackIds.size());
   }
 
   @Override
   @Transactional(Transactional.TxType.REQUIRES_NEW)
   public void remove(String releaseId) {
-    catalog.deleteAlbum(new AlbumId(releaseId));
+    AlbumId albumId = new AlbumId(releaseId);
+    catalog.deleteAlbum(albumId);
+    search.remove(albumId);
   }
 
   /**
