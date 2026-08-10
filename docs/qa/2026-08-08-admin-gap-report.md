@@ -398,6 +398,74 @@ outage.**
 
 ## 3. High — operationally dangerous
 
+### GAP-26 · Row action menus in five admin tables are clipped and unclickable
+
+*Found 2026-08-09 while verifying the GAP-05 fix in the browser, not during the original passes.*
+
+Clicking **Take down** in the catalog row menu closed the menu and issued no request. The menu
+looked correct in a screenshot; it simply was not there to be hit.
+
+Every admin table wraps its rows in `overflow-x-auto` so narrow screens can scroll sideways. Per
+CSS, an `overflow-x` other than `visible` forces the *computed* `overflow-y` from `visible` to
+`auto` — so that wrapper clips vertically too, silently. The dropdown was an `absolute` child of the
+row, so anything hanging below the last row was cut away, and the `fixed inset-0` click-outside
+backdrop covered whatever remained. `document.elementFromPoint` at the centre of "Take down"
+returned the backdrop, not the button.
+
+**Impact.** The last row of every affected table always has an unusable action menu. On a short
+table it is total: with one release in the catalog, no menu item worked at all.
+
+**Affected.** `admin.catalog.index.tsx`, `admin.users.index.tsx`, `admin.moderation.tsx`,
+`admin.compliance.tsx`, `admin.trust.tsx` — five copies of the same markup, four near-identical
+`MenuItem` definitions.
+
+**Why the earlier passes missed it.** Both a screenshot and a DOM/accessibility-tree read show the
+menu present and correctly labelled. Only hit-testing — or an actual click with its side effect
+checked — exposes it. Worth keeping as the standing lesson: *rendered* is not *clickable*.
+
+**Status.** Fixed — the panel portals to `document.body` and positions `fixed` against the trigger's
+viewport rect, flipping above when there is no room below. Shared `RowMenu`/`MenuItem` in
+`Frontend/src/components/admin/row-menu.tsx`.
+
+---
+
+### GAP-27 · A taken-down release stays in the fan search index
+
+*Found 2026-08-09 while verifying GAP-05/06 end to end.*
+
+Taking a release down hides its **track** search document (`visible = f`) but leaves the **album**
+document untouched — same `indexed_at`, still `visible = t`.
+
+Observed on a taken-down release:
+
+```
+entity_type | visible |          indexed_at
+------------+---------+-------------------------------
+ ALBUM      | t       | 2026-08-09 23:50:38.982993+00   <- not reindexed
+ TRACK      | f       | 2026-08-09 23:57:42.651077+00
+```
+
+```
+GET /v1/search?q=Test  ->  topResult: { entityType: "ALBUM", title: "Test", ... }
+GET /v1/albums/{id}    ->  404 ALBUM_NOT_FOUND
+```
+
+**Impact.** A release pulled for a copyright claim or a policy violation is still returned by public
+search, as the *top result*, and following it dead-ends on a 404. The takedown looks effective in
+the admin console while the content remains discoverable.
+
+The album projection is left half-torn-down too: the takedown detaches the track
+(`track.album_id = NULL`) but leaves the orphaned `album` row. That row is inert — album detail
+404s because it has no tracks — but it is stale state that reinstate happens to repair rather than
+state that takedown correctly cleared.
+
+Reinstate restores everything correctly (`status = live`, track reattached, album detail 200), so
+this is specific to the takedown path.
+
+**Not fixed.** Belongs in the catalog/search module, not the frontend.
+
+---
+
 ### GAP-05 · Takedown and flag fire instantly, with a canned reason
 
 From the catalog list, **Take down** executes on a single click. No confirmation dialog, no reason
