@@ -581,16 +581,22 @@ the application layer. Money/side-effect POSTs (finance) require `Idempotency-Ke
 |---|---|---|---|---|---|---|---|
 | GET | `/admin/support/tickets?status=&q=` | any admin (support+) | — | `SupportTicket[]` (bare array, full thread) | 200 | `422` | 08.1 |
 | GET | `/admin/support/tickets/:id` | any admin | — | `SupportTicket` (thread) | 200 | `404` | 08.1 |
-| POST | `/admin/support/tickets/:id/reply` | any admin | `{ text }` | `SupportMessage` | 201 | `422 VALIDATION`, `404` | 08.1 |
-| POST | `/admin/support/tickets/:id/assign` | any admin | `{ assigneeId }` | `SupportTicket` | 200 | `404` | 08.1 |
-| POST | `/admin/support/tickets/:id/resolve` | any admin | — | `SupportTicket` | 200 | `404`, `409 ILLEGAL_TRANSITION` | 08.1 |
+| POST | `/admin/support/tickets/:id/reply` | **support, super-admin** | `{ text }` | `SupportMessage` | 201 | `422 VALIDATION`, `403`, `404` | 08.1 |
+| POST | `/admin/support/tickets/:id/assign` | **support, super-admin** | `{ assigneeId }` | `SupportTicket` | 200 | `403`, `404` | 08.1 |
+| POST | `/admin/support/tickets/:id/resolve` | **support, super-admin** | — | `SupportTicket` | 200 | `403`, `404`, `409 ILLEGAL_TRANSITION` | 08.1 |
 
 > **WU-ADM-7 as-built.** `GET /admin/support/tickets` returns a **bare array** (not a `{ items,
 > page, size, total }` envelope) of full `SupportTicket` objects including `messages` — this
 > mirrors `Frontend/src/lib/admin-data.ts`'s `getSupportTickets()` mock and `admin.support.tsx`,
-> which renders a selected list item's thread with no extra fetch. RBAC: `@RolesAllowed` accepts
-> all five admin roles (support is `RW` for every role per §8's matrix); no additional
-> application-layer narrowing is needed (unlike compliance/settings, which are super-admin only).
+> which renders a selected list item's thread with no extra fetch. RBAC: **reads accept all five
+> admin roles; `reply`/`assign`/`resolve` are `support` + `super-admin` only (GAP-17).** Every role
+> could originally act, which made support the loosest grant in the console — and it is the one
+> surface that speaks to a fan *in the platform's voice*, so a `finance` or `editor` admin could
+> answer a customer on BeatzClik's behalf. Catalog already had the shape right: `support` may read
+> it, only `moderator` may act on it. Reads stay wide deliberately — looking a ticket up is how a
+> finance admin corroborates a refund complaint or an editor traces a takedown appeal, and narrowing
+> that would break real work to fix a problem that only exists on the write path. Note method-level
+> `@RolesAllowed` **replaces** the class-level grant rather than adding to it.
 > `requesterRef` resolves to a display name via the `IdentityReader` output port (reads the
 > identity module's `account` JPA entity in-process — no cross-module FK, mirrors
 > `library.CatalogReaderAdapter`). Audit entries use `AuditType.USER` (the wire `AuditType` union
