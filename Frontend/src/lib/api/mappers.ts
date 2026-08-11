@@ -1360,7 +1360,7 @@ export interface PlatformSettingsWire {
   payoutMinimum: number
   defaultCurrency: string
   maintenanceMode: boolean
-  providers: { momo: boolean; vodafone: boolean; airteltigo: boolean; card: boolean; bank: boolean }
+  providers: { mtn: boolean; telecel: boolean; airteltigo: boolean; card: boolean; bank: boolean }
   flags: { artistSignups: boolean; podcasts: boolean; events: boolean; tipping: boolean; fanMessaging: boolean }
 }
 

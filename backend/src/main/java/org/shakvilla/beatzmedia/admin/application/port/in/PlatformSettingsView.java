@@ -25,8 +25,17 @@ public record PlatformSettingsView(
     Flags flags) {
 
   /** Payment-provider enablement toggles — matches {@code providers{ momo, vodafone, airteltigo, card, bank }}. */
+  /**
+   * Per-rail payment enablement (GAP-13). Real and persisted as of this change — previously the
+   * whole object was accepted and thrown away.
+   *
+   * <p>Keys match payments' {@code Provider} enum exactly. They used to be {@code momo} and
+   * {@code vodafone}; {@code momo} was labelled "MTN MoMo" so it always meant MTN specifically, and
+   * {@code vodafone} named a brand that ceased to exist in 2023 — checkout and payouts already said
+   * Telecel, leaving the admin console the only surface still using the old name.
+   */
   public record Providers(
-      boolean momo, boolean vodafone, boolean airteltigo, boolean card, boolean bank) {}
+      boolean mtn, boolean telecel, boolean airteltigo, boolean card, boolean bank) {}
 
   /** Feature flags — matches {@code flags{ artistSignups, podcasts, events, tipping, fanMessaging }}. */
   public record Flags(

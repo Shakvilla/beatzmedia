@@ -22,7 +22,12 @@ public class FakeFeatureFlags implements FeatureFlags {
 
   @Override
   public boolean isEnabled(FeatureKey key) {
-    return flags.getOrDefault(key, true);
+    return isEnabledOrDefault(key, true);
+  }
+
+  @Override
+  public boolean isEnabledOrDefault(FeatureKey key, boolean whenAbsent) {
+    return flags.getOrDefault(key, whenAbsent);
   }
 
   @Override
@@ -38,5 +43,17 @@ public class FakeFeatureFlags implements FeatureFlags {
   /** Test helper: enable a specific feature. */
   public void enable(FeatureKey key) {
     flags.put(key, true);
+  }
+
+  /**
+   * Test helper: remove a flag entirely, so it has no row at all.
+   *
+   * <p>Distinct from {@link #disable} on purpose. "Stored as false" and "never stored" are the same
+   * thing to {@code isEnabled}, and deliberately different to {@code isEnabledOrDefault} — which is
+   * what makes the payment rails fail-closed (GAP-13). Without this helper a test cannot tell the
+   * two apart, which is exactly the case worth covering.
+   */
+  public void remove(FeatureKey key) {
+    flags.remove(key);
   }
 }

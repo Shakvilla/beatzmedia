@@ -37,9 +37,16 @@ public class FeatureFlagsAdapter implements FeatureFlags {
 
   @Override
   public boolean isEnabled(FeatureKey key) {
-    ensureCacheLoaded();
     // Default to true for unknown flags (fail-open for non-security features).
-    return flagCache.getOrDefault(key.name(), true);
+    return isEnabledOrDefault(key, true);
+  }
+
+  @Override
+  public boolean isEnabledOrDefault(FeatureKey key, boolean whenAbsent) {
+    ensureCacheLoaded();
+    // The cache holds exactly the rows that exist, so a miss here means "no row" — which is the
+    // distinction payment rails need and isEnabled() cannot express (GAP-13).
+    return flagCache.getOrDefault(key.name(), whenAbsent);
   }
 
   @Override

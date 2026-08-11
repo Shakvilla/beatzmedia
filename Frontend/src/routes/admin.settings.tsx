@@ -43,6 +43,8 @@ function AdminSettings() {
 
   const setS = (fn: (p: PlatformSettings) => PlatformSettings) => setDraft((p) => (p ? fn(p) : data ? fn(data) : null))
   const setFlag = (k: keyof PlatformSettings['flags'], v: boolean) => setS((p) => ({ ...p, flags: { ...p.flags, [k]: v } }))
+  const setProvider = (k: keyof PlatformSettings['providers'], v: boolean) =>
+    setS((p) => ({ ...p, providers: { ...p.providers, [k]: v } }))
 
   const save = async () => {
     if (!s || inFlight.current) return
@@ -146,13 +148,23 @@ function AdminSettings() {
             <ToggleRow label="Maintenance mode" desc="Take the apps offline with a maintenance notice." checked={s.maintenanceMode} onChange={(v) => setS((p) => ({ ...p, maintenanceMode: v }))} last />
           </Section>
 
-          {/* Payment providers */}
-          <Section title="Payment providers" desc="Which methods fans can pay with. Not yet configurable — every method is currently enabled platform-wide.">
-            <ToggleRow label="MTN MoMo" checked={s.providers.momo} onChange={() => {}} disabled />
-            <ToggleRow label="Vodafone Cash" checked={s.providers.vodafone} onChange={() => {}} disabled />
-            <ToggleRow label="AirtelTigo Money" checked={s.providers.airteltigo} onChange={() => {}} disabled />
-            <ToggleRow label="Card" checked={s.providers.card} onChange={() => {}} disabled />
-            <ToggleRow label="Bank transfer" checked={s.providers.bank} onChange={() => {}} disabled last />
+          {/*
+            GAP-13: these were rendered `disabled` with the caption "Not yet configurable" — honest,
+            but a control that could not do the thing it depicted. They are real now: switching one
+            off stops new charges on that rail immediately, and the removal is named in the audit
+            entry so "why did MoMo stop working on the 14th?" has an answer.
+
+            "Vodafone Cash" is now "Telecel Cash" — the brand changed in 2023, and checkout and
+            payouts already said Telecel. The admin console was the last place still using the old
+            name, which meant an operator disabling "Vodafone" was toggling a rail the rest of the
+            system called something else.
+          */}
+          <Section title="Payment providers" desc="Which methods fans can pay with. Switching one off stops new charges on that rail immediately; payouts are unaffected.">
+            <ToggleRow label="MTN MoMo" checked={s.providers.mtn} onChange={(v) => setProvider('mtn', v)} />
+            <ToggleRow label="Telecel Cash" checked={s.providers.telecel} onChange={(v) => setProvider('telecel', v)} />
+            <ToggleRow label="AirtelTigo Money" checked={s.providers.airteltigo} onChange={(v) => setProvider('airteltigo', v)} />
+            <ToggleRow label="Card" checked={s.providers.card} onChange={(v) => setProvider('card', v)} />
+            <ToggleRow label="Bank transfer" checked={s.providers.bank} onChange={(v) => setProvider('bank', v)} last />
           </Section>
 
           {/* Feature flags */}

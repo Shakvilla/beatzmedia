@@ -69,6 +69,7 @@ public class DomainExceptionMapper implements ExceptionMapper<DomainException> {
               NOT_STACKABLE,
               CART_EMPTY,
               CHECKOUT_KIND_UNSUPPORTED,
+              PROVIDER_DISABLED,
               INSUFFICIENT_BALANCE,
               KYC_BLOCKED,
               PAYOUT_METHOD_IN_USE,

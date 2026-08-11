@@ -629,6 +629,29 @@ Settings renders MTN MoMo / Vodafone Cash / AirtelTigo / Card / Bank transfer wi
 *"Not yet configurable — every method is currently enabled platform-wide."* Honest, but it is UI that
 cannot do the thing it depicts.
 
+**Status.** Built. The toggles are real: switching one off stops new charges on that rail
+immediately (409 `PROVIDER_DISABLED`), and the removal is named in the audit entry so *"why did MoMo
+stop working on the 14th?"* has an answer. Design and the four decisions behind it:
+`docs/superpowers/specs/2026-08-11-gap-13-per-provider-payment-enablement-design.md`; rationale in
+ADR-32.
+
+Three things worth carrying forward from building it:
+
+1. **The vocabularies did not match.** Settings said `momo`/`vodafone`; the domain says
+   `mtn`/`telecel`. *Vodafone Ghana became Telecel in 2023* — checkout and payouts already knew, and
+   the admin console was the last surface still using the dead brand. Renamed.
+2. **Flag semantics were actively wrong for money.** `FeatureFlags.isEnabled` answers **true** for a
+   key with no row. A rail whose flag never seeded would have kept charging while the console showed
+   it off. The rails are now read fail-closed through a payments-owned port, and a missing row stops
+   the app booting — so both bad outcomes become "does not start" rather than a silent one.
+3. **The rename recreated GAP-09 on a more dangerous object.** `Providers` was a primitive-`boolean`
+   record, so a client still sending `momo`/`vodafone` got **200 OK while switching MTN and Telecel
+   off platform-wide**. Found because three integration tests were that stale client and every charge
+   started returning 409. Every provider key is now required, so a stale body is a 422.
+
+**Payouts are deliberately untouched.** Disabling a rail must not strand balances a creator has
+already earned.
+
 ---
 
 ## 5. Low

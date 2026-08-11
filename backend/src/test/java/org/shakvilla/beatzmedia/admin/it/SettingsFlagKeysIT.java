@@ -84,6 +84,36 @@ class SettingsFlagKeysIT {
         .then().statusCode(422);
   }
 
+  /**
+   * GAP-13 — the same hazard as the flags above, on the payment rails.
+   *
+   * <p>Renaming {@code momo}/{@code vodafone} to {@code mtn}/{@code telecel} made every existing
+   * caller stale overnight. Before {@code ProvidersRequest} required each key, a client still
+   * sending the old names got {@code 200 OK} while <strong>switching MTN and Telecel off
+   * platform-wide</strong> — payments stopping on Ghana's two largest rails, reported as success.
+   *
+   * <p>Found the hard way: three integration tests were that stale client, and every charge in
+   * {@code PaymentIntentResourceIT} started returning {@code 409 PROVIDER_DISABLED}.
+   */
+  @Test
+  void staleProviderKeysAreRejectedRatherThanDisablingTheRails() {
+    String token = superAdminToken();
+
+    given().header("Authorization", "Bearer " + token)
+        .contentType(ContentType.JSON)
+        .body(bodyWithProviders("{\"momo\":true,\"vodafone\":true,\"airteltigo\":true,"
+            + "\"card\":true,\"bank\":true}"))
+        .when().put(URL)
+        .then().statusCode(422);
+
+    // The decisive part: the rejected call must not have switched anything off.
+    given().header("Authorization", "Bearer " + token)
+        .when().get(URL)
+        .then().statusCode(200)
+        .body("providers.mtn", equalTo(true))
+        .body("providers.telecel", equalTo(true));
+  }
+
   // ================================ helpers =====================================
 
   private String fullBody(boolean allOn) {
@@ -93,11 +123,21 @@ class SettingsFlagKeysIT {
         """.formatted(allOn));
   }
 
+  private String bodyWithProviders(String providersJson) {
+    return """
+        {"platformFeePct":30,"payoutDay":"Friday","payoutMinimum":10.00,
+         "defaultCurrency":"GHS","maintenanceMode":false,
+         "providers":%s,
+         "flags":{"artistSignups":true,"podcasts":true,"events":true,
+                  "tipping":true,"fanMessaging":false}}
+        """.formatted(providersJson);
+  }
+
   private String bodyWithFlags(String flagsJson) {
     return """
         {"platformFeePct":30,"payoutDay":"Friday","payoutMinimum":10.00,
          "defaultCurrency":"GHS","maintenanceMode":false,
-         "providers":{"momo":true,"vodafone":true,"airteltigo":true,
+         "providers":{"mtn":true,"telecel":true,"airteltigo":true,
                       "card":true,"bank":true},
          "flags":%s}
         """.formatted(flagsJson);
