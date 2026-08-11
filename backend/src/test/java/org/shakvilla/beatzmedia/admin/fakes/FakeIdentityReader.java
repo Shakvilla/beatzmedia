@@ -49,6 +49,15 @@ public class FakeIdentityReader implements IdentityReader {
     return Optional.ofNullable(names.get(accountId));
   }
 
+  /**
+   * Console role per account, read back by {@link #adminRoleOf}. Seeded from the account rows
+   * themselves so a test states the role in one place (GAP-10).
+   */
+  @Override
+  public Optional<String> adminRoleOf(String accountId) {
+    return Optional.ofNullable(accounts.get(accountId)).map(AccountRow::adminRole);
+  }
+
   @Override
   public int countActiveAccounts() {
     return activeAccounts;

@@ -77,14 +77,14 @@ class UserAdministrationServiceTest {
 
     listUsersService = new ListUsersService(identityReader);
     getUserService = new GetUserService(identityReader, auditReader);
-    verifyUserService = new VerifyUserService(accountAdminPort, auditWriter, ids, clock);
-    suspendUserService = new SuspendUserService(accountAdminPort, auditWriter, ids, clock);
-    reactivateUserService = new ReactivateUserService(accountAdminPort, auditWriter, ids, clock);
+    verifyUserService = new VerifyUserService(accountAdminPort, auditWriter, ids, clock, identityReader);
+    suspendUserService = new SuspendUserService(accountAdminPort, auditWriter, ids, clock, identityReader);
+    reactivateUserService = new ReactivateUserService(accountAdminPort, auditWriter, ids, clock, identityReader);
     impersonateUserService = new ImpersonateUserService(accountAdminPort, auditWriter, ids, clock);
     exportUserDataService = new ExportUserDataService(identityReader, auditWriter, ids, clock);
 
     identityReader.seedAccount(new AccountRow(
-        TARGET_ID, "Ama Boateng", "ama@example.com", false, false, "active", NOW, NOW));
+        TARGET_ID, "Ama Boateng", "ama@example.com", false, false, "active", NOW, NOW, null));
     accountAdminPort.seed(new AccountMutationResult(
         TARGET_ID, "Ama Boateng", "ama@example.com", false, false, "active", NOW, NOW));
   }
@@ -94,9 +94,9 @@ class UserAdministrationServiceTest {
   @Test
   void list_returns_items_and_real_whole_table_counts() {
     identityReader.seedAccount(new AccountRow(
-        "account-artist", "Black Sherif", "team@blacksherif.com", true, true, "active", NOW, NOW));
+        "account-artist", "Black Sherif", "team@blacksherif.com", true, true, "active", NOW, NOW, null));
     identityReader.seedAccount(new AccountRow(
-        "account-suspended", "Yaw Mensah", "yaw@example.com", false, false, "suspended", NOW, NOW));
+        "account-suspended", "Yaw Mensah", "yaw@example.com", false, false, "suspended", NOW, NOW, null));
 
     PagedUsersView result = listUsersService.list(new UserQuery(null, null), PageRequest.defaults());
 
@@ -111,7 +111,7 @@ class UserAdministrationServiceTest {
   @Test
   void list_filters_by_artists() {
     identityReader.seedAccount(new AccountRow(
-        "account-artist", "Black Sherif", "team@blacksherif.com", true, true, "active", NOW, NOW));
+        "account-artist", "Black Sherif", "team@blacksherif.com", true, true, "active", NOW, NOW, null));
 
     PagedUsersView result =
         listUsersService.list(new UserQuery(null, UserFilter.ARTISTS), PageRequest.defaults());

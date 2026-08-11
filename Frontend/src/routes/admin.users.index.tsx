@@ -1,7 +1,7 @@
 import { createFileRoute, useNavigate } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { Search, Download, BadgeCheck, Ban, RotateCcw, Eye, Check } from 'lucide-react'
+import { Search, Download, BadgeCheck, Ban, RotateCcw, Eye, Check, Shield } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
 import type { AdminUserRow, UserStatus } from '../lib/admin-data'
@@ -120,13 +120,13 @@ function AdminUsers() {
       {/* Table */}
       <section className={cn(CARD, 'p-2 sm:p-4')}>
         <div className="overflow-x-auto">
-          <div className="min-w-[820px]">
+          <div className="min-w-[860px]">
             <div className="flex items-center gap-4 px-3 pb-2 border-b border-gray-200 dark:border-white/10 text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-gray-500">
               <span className="w-5 shrink-0"><Checkbox checked={allShownSelected} onChange={toggleAll} /></span>
               <span className="flex-1">User</span>
               <span className="w-40 shrink-0">Email</span>
-              <span className="w-28 shrink-0">Role</span>
-              <span className="w-20 shrink-0">Joined</span>
+              <span className="w-40 shrink-0">Role</span>
+              <span className="w-28 shrink-0">Joined</span>
               <span className="w-24 shrink-0">Last active</span>
               <span className="w-24 shrink-0">Status</span>
               <span className="w-8 shrink-0" />
@@ -166,11 +166,29 @@ function Checkbox({ checked, onChange }: { checked: boolean; onChange: () => voi
   )
 }
 
+/*
+  GAP-10: this read the role from `is_artist` alone, so every administrator — including the
+  super-admin running the console — was listed as "Fan" on the one screen that enumerates accounts.
+
+  The console role is shown *alongside* the fan/artist role rather than replacing it: the two are
+  orthogonal, and an admin who is also an artist is exactly the case an operator needs to see.
+*/
 function RolePill({ user }: { user: AdminUserRow }) {
-  if (user.role === 'artist' && user.verified) {
-    return <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-beatz-green/15 text-beatz-green">Artist <BadgeCheck size={12} /></span>
-  }
-  return <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-300 capitalize">{user.role}</span>
+  return (
+    <span className="inline-flex items-center gap-1.5 flex-wrap">
+      {user.role === 'artist' && user.verified ? (
+        <span className="inline-flex items-center gap-1 px-2.5 py-1 rounded-full text-xs font-bold bg-beatz-green/15 text-beatz-green">Artist <BadgeCheck size={12} /></span>
+      ) : (
+        <span className="px-2.5 py-1 rounded-full text-xs font-bold bg-gray-100 dark:bg-white/10 text-gray-600 dark:text-gray-300 capitalize">{user.role}</span>
+      )}
+      {user.adminRole && (
+        <span title={`Console role: ${user.adminRole}`}
+          className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wide bg-beatz-blue/15 text-beatz-blue">
+          <Shield size={10} /> {user.adminRole}
+        </span>
+      )}
+    </span>
+  )
 }
 
 function StatusPill({ status }: { status: UserStatus }) {
@@ -194,8 +212,8 @@ function UserRow({ user: u, selected, onSelect, onView, onVerify, onSuspend, onR
         <span className="text-sm font-bold text-beatz-dark-bg dark:text-white truncate">{u.name}</span>
       </div>
       <span className="w-40 shrink-0 text-sm text-gray-500 dark:text-gray-300 truncate">{u.email}</span>
-      <span className="w-28 shrink-0"><RolePill user={u} /></span>
-      <span className="w-20 shrink-0 text-sm text-gray-500 dark:text-gray-300">{u.joined}</span>
+      <span className="w-40 shrink-0"><RolePill user={u} /></span>
+      <span className="w-28 shrink-0 text-sm text-gray-500 dark:text-gray-300">{u.joined}</span>
       <span className="w-24 shrink-0 text-sm text-gray-500 dark:text-gray-300">{u.lastActive}</span>
       <span className="w-24 shrink-0"><StatusPill status={u.status} /></span>
       <div className="w-8 shrink-0 flex justify-end">
