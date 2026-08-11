@@ -1202,14 +1202,17 @@ export interface HealthWire {
 }
 
 /**
- * The backend currently returns a hardcoded honest-empty payload (`status:"normal"` and three
- * empty arrays) — there is no APM, incident tracker, or listener telemetry behind it yet. An
- * unrecognised status maps to `degraded` rather than `normal`, so a future real status can never
- * be silently reported as healthy.
+ * `status` and `metrics` are real as of GAP-04: derived from the platform's readiness checks, one
+ * metric row per check. `listeners`/`incidents` are still honest-empty — no telemetry or incident
+ * tracker exists behind them.
+ *
+ * An unrecognised status maps to `degraded`, never `normal`, so a status this client does not
+ * understand can never be silently reported as healthy. `unknown` is passed through as itself
+ * rather than being coerced, because "nothing is being measured" is a distinct thing to say.
  */
 export function toHealth(w: HealthWire): Health {
   return {
-    status: w.status === 'normal' ? 'normal' : 'degraded',
+    status: w.status === 'normal' ? 'normal' : w.status === 'unknown' ? 'unknown' : 'degraded',
     metrics: w.metrics.map((m): HealthMetric => ({ label: m.label, value: m.value, sub: m.sub })),
     listeners: w.listeners,
     incidents: w.incidents.map(
