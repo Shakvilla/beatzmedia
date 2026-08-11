@@ -550,13 +550,40 @@ response is to toggle again — which now writes the wrong thing. Ruled out brow
 
 ---
 
-### GAP-08 · Three built endpoints have no UI at all
+### GAP-08 · ~~Three built endpoints have no UI at all~~ — **STALE WHEN TRIAGED. All three were wrong by the time I acted on it.**
 
-| Endpoint | Consequence |
-|---|---|
-| `POST /users/{id}/data-export` | GDPR/DSAR export unreachable — and the Compliance page exists to service exactly these requests |
-| `POST /users/{id}/impersonate` | Support cannot reproduce a user's state |
-| `GET /support/tickets/{id}` | Ticket detail; inbox says "Select a ticket." but no drill-in exists |
+Written 2026-08-08 against the then-unreachable user detail page. **PR #193 landed after, revived
+that route and wired every action on it** — so by the time this entry was picked up, two of the
+three were already called, and the third never needed calling.
+
+| Endpoint | What the entry claimed | What was actually true |
+|---|---|---|
+| `POST /users/{id}/data-export` | unreachable | **Wired** — "Export data (GDPR)" calls it |
+| `POST /users/{id}/impersonate` | unreachable | **Wired** — "Log in as user" calls it and reports the token was issued and audited |
+| `GET /support/tickets/{id}` | "inbox says *Select a ticket.* but no drill-in exists" | **Never a UI gap.** The inbox renders the full thread inline; `GET /admin/support/tickets` returns a bare array of full tickets *including messages*, an explicit design choice recorded in the admin ADD. The endpoint is redundant, not unwired |
+
+I recorded the ticket-detail item from a label on screen without checking whether the thread rendered
+beside it — the same mistake as GAP-12, which I made from a field name without checking the page.
+
+**What acting on this entry did find**, which is the part worth keeping:
+
+1. **The DSAR button was lying.** It toasted *"Data export started"*. `ExportUserDataService` is an
+   honest stub — it verifies the account, mints a job id and audits the request, and its own javadoc
+   states there is no DSAR queue or worker to process it. Nothing runs; no file is produced. That is
+   **GAP-19's pattern surviving inside the PR meant to eliminate it**, on a statutory obligation
+   where someone may rely on it to answer a regulator inside a deadline. Now reads *"DSAR request
+   logged — no file is produced yet"*, and the menu item is renamed to match.
+2. **"Select a ticket."** showed when the filtered list was *empty* — an instruction the operator
+   could not follow, and the thing that misled me into filing the ticket-detail item. Now says
+   whether there are no tickets at all or none matching the filter.
+3. **Impersonation could not actually be used.** The handler was scrupulously honest — it reported
+   only that a token had been *issued and audited*, with a comment explaining why the session was not
+   swapped. That deferral is now closed: see below.
+
+**Status.** The session swap is built. Confirmation dialog → swap → persistent banner with time
+remaining → Exit restores the operator's own session. The token is never rendered: it is a live
+bearer credential the backend deliberately keeps out of the audit log, so putting it on screen would
+undo that care.
 
 ---
 
@@ -660,8 +687,12 @@ strength and directly contradicts the older pattern of rendering invented totals
 database. GAP-04 is the one place this discipline breaks.
 
 **The console is read-heavy and action-light in practice.** Of 61 endpoints, the destructive ones are
-reachable in one click (GAP-05) while the corrective ones are unreachable entirely (GAP-06, GAP-08).
-The balance is backwards.
+reachable in one click (GAP-05) while the corrective ones are unreachable entirely (GAP-06). The
+balance is backwards.
+
+*Amended: this originally cited GAP-08 alongside GAP-06. GAP-08 turned out to be stale — those
+endpoints were already wired by PR #193 before the observation was acted on. GAP-06 (reinstate with
+no caller) stands, and was the real instance of this pattern.*
 
 ---
 
@@ -697,7 +728,9 @@ Listed so this report is not mistaken for full coverage.
    needs a creator with a ready balance, which this database has never had.
 5. **Disputes** — no dispute rows exist, and I did not fabricate one; refund/escalate/reject are
    unexercised end to end.
-6. **Impersonation** — no UI (GAP-08), not exercised via API.
+6. ~~**Impersonation** — no UI (GAP-08), not exercised via API.~~ **CLOSED.** The UI existed
+   (issuing a token honestly, without applying it); the session swap is now built, and the
+   stash-and-restore is unit-tested both directions. Still to be driven end to end in a browser.
 7. **Overview "Needs attention"** — empty throughout, but nothing was ever in a state that should
    populate it, so I still cannot say whether it works.
 8. **Suspension against a live session.** Suspension is enforced at login, but there is **no token
