@@ -19,11 +19,28 @@ export function ImpersonationBanner() {
   const navigate = useNavigate()
   const [now, setNow] = useState(() => Date.now())
 
-  // Tick only while the banner is up; no timer runs in the normal case.
+  /*
+    Tick only while the banner is up; no timer runs in the normal case.
+
+    The `visibilitychange` re-sync is not belt-and-braces. Browsers throttle setInterval on a hidden
+    tab, so the countdown freezes at whatever it last rendered — observed live: the banner held at
+    "3:24 left" while the real remaining time fell to 2:59. Each tick reads the clock, so it corrects
+    itself within a second of the tab coming back, but that second is exactly when an operator
+    glances at the banner after switching windows. Re-reading on the visibility change makes it right
+    before they look rather than just after.
+
+    The session's actual lifetime never depended on this: the server rejects the expired token, and
+    the 401 handler restores the operator's own session.
+  */
   useEffect(() => {
     if (!impersonation) return
-    const id = setInterval(() => setNow(Date.now()), 1000)
-    return () => clearInterval(id)
+    const sync = () => setNow(Date.now())
+    const id = setInterval(sync, 1000)
+    document.addEventListener('visibilitychange', sync)
+    return () => {
+      clearInterval(id)
+      document.removeEventListener('visibilitychange', sync)
+    }
   }, [impersonation])
 
   if (!impersonation) return null
