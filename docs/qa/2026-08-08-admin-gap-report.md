@@ -454,15 +454,25 @@ GET /v1/albums/{id}    ->  404 ALBUM_NOT_FOUND
 search, as the *top result*, and following it dead-ends on a 404. The takedown looks effective in
 the admin console while the content remains discoverable.
 
-The album projection is left half-torn-down too: the takedown detaches the track
-(`track.album_id = NULL`) but leaves the orphaned `album` row. That row is inert — album detail
-404s because it has no tracks — but it is stale state that reinstate happens to repair rather than
-state that takedown correctly cleared.
+**Correction to an earlier draft of this entry.** It said takedown also leaves an orphaned `album`
+row behind. That was wrong — `ProjectReleaseAlbumService.remove` deletes the row correctly, which is
+*why* `/v1/albums/:id` 404s. The album row was never the problem; the search document outliving it
+was.
+
+**Where it surfaces.** `SearchService` hydrates the grouped `albums` list from the `album` table and
+drops hits it cannot resolve, so a deleted album quietly vanishes from that list. `topResult` is
+mapped straight off the search hit with no hydration — so the stale document surfaces there, as the
+single most prominent result on the page. Nothing self-corrected: `AlbumIndexSource` loads from the
+`album` table, so once the row is gone the backfill can never see the document again, and indexing
+is upsert-only.
 
 Reinstate restores everything correctly (`status = live`, track reattached, album detail 200), so
-this is specific to the takedown path.
+this was specific to the takedown path.
 
-**Not fixed.** Belongs in the catalog/search module, not the frontend.
+**Status.** Fixed — `ProjectReleaseAlbumService` now writes the album's search document alongside
+its row, through the new catalog outbound port `AlbumSearchProjection`. Covered by
+`ReleaseTakedownSearchIT`, which drives the real admin endpoints and asserts on both
+`search_document` and `/v1/search`.
 
 ---
 
