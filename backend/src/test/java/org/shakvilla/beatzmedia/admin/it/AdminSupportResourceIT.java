@@ -286,21 +286,59 @@ class AdminSupportResourceIT {
         .then().statusCode(403);
   }
 
-  // ---- Full RBAC matrix: every admin role can act on support tickets (admin ADD §8) ----
+  // ---- RBAC: acting on a ticket is support + super-admin; reading it is every role (GAP-17) ----
 
+  /**
+   * This asserted the opposite — that all five roles could resolve a ticket.
+   *
+   * <p>That was the loosest grant in the console, on the one surface that speaks to a fan in the
+   * platform's voice: a {@code finance} or {@code editor} admin could answer a customer on
+   * BeatzClik's behalf. Catalog already had the shape right — {@code support} may read it, only
+   * {@code moderator} may act on it.
+   */
   @Test
-  void every_admin_role_can_resolve_a_ticket() {
-    for (String role : new String[] {"super-admin", "finance", "moderator", "editor", "support"}) {
+  void onlySupportAndSuperAdminCanResolveATicket() {
+    for (String role : new String[] {"super-admin", "support"}) {
       long n = System.nanoTime();
       String requesterAccount = signUpFan("rbac-fan-" + role + "-" + n + "@example.com");
       String ticketId = seedTicket(n, "RBAC subject " + role, requesterAccount, "open", "normal");
-      String token = adminToken(role, n);
 
       given()
-          .header("Authorization", "Bearer " + token)
+          .header("Authorization", "Bearer " + adminToken(role, n))
           .when().post(TICKETS_URL + "/" + ticketId + "/resolve")
           .then().statusCode(200)
           .body("status", equalTo("resolved"));
+    }
+
+    for (String role : new String[] {"finance", "moderator", "editor"}) {
+      long n = System.nanoTime();
+      String requesterAccount = signUpFan("rbac-denied-" + role + "-" + n + "@example.com");
+      String ticketId = seedTicket(n, "RBAC denied " + role, requesterAccount, "open", "normal");
+
+      given()
+          .header("Authorization", "Bearer " + adminToken(role, n))
+          .when().post(TICKETS_URL + "/" + ticketId + "/resolve")
+          .then().statusCode(403);
+    }
+  }
+
+  /**
+   * Reads stay open to every admin role, deliberately. Looking a ticket up is how a finance admin
+   * corroborates a refund complaint or an editor traces a takedown appeal; narrowing that would
+   * break real work to fix a problem that only exists on the write path. Asserted explicitly so a
+   * later tightening of the class-level annotation cannot take reads with it by accident.
+   */
+  @Test
+  void everyAdminRoleCanStillReadTickets() {
+    for (String role : new String[] {"super-admin", "finance", "moderator", "editor", "support"}) {
+      long n = System.nanoTime();
+      String requesterAccount = signUpFan("rbac-read-" + role + "-" + n + "@example.com");
+      String ticketId = seedTicket(n, "RBAC read " + role, requesterAccount, "open", "normal");
+
+      given()
+          .header("Authorization", "Bearer " + adminToken(role, n))
+          .when().get(TICKETS_URL + "/" + ticketId)
+          .then().statusCode(200);
     }
   }
 
