@@ -7,6 +7,7 @@ import { MobileNav } from './mobile-nav'
 import { Header } from './header'
 import { PlayerBar } from './player-bar'
 import { QueueDrawer } from '../music/queue-drawer'
+import { ImpersonationBanner } from './impersonation-banner'
 import { useAuth } from '../../features/auth/auth-context'
 import { fanPreferencesQuery } from '../../lib/api/queries/fan-preferences'
 
@@ -75,20 +76,33 @@ export function AppShell() {
   const fullScreenRoutes = ['/lyrics', ...AUTH_ROUTES, '/onboarding', '/studio', '/admin']
   const isFullScreen = fullScreenRoutes.some(route => location.pathname.startsWith(route))
 
+  /*
+    Column, not row: the impersonation banner is a full-width bar ABOVE the sidebar + main row.
+    Dropping it in as a sibling of <Sidebar> made it a flex item in the row, where a `sticky top-0`
+    bar renders as a narrow column beside the nav. The inner div restores the original row layout,
+    so nothing else about the shell changes.
+
+    The banner sits outside the `isFullScreen` guard on purpose: an operator must not lose sight of
+    acting as someone else just because they opened a full-screen player.
+  */
   return (
-    <div className="flex h-screen bg-beatz-light-bg dark:bg-beatz-dark-bg text-beatz-dark-bg dark:text-white overflow-hidden font-sans transition-colors duration-300">
-      {!isFullScreen && <Sidebar />}
+    <div className="flex flex-col h-screen bg-beatz-light-bg dark:bg-beatz-dark-bg text-beatz-dark-bg dark:text-white overflow-hidden font-sans transition-colors duration-300">
+      <ImpersonationBanner />
 
-      {/* Main Content */}
-      <main className="flex-1 flex flex-col relative overflow-hidden">
-        {!isFullScreen && <Header />}
+      <div className="flex flex-1 min-h-0 overflow-hidden">
+        {!isFullScreen && <Sidebar />}
 
-        <div className={`flex-1 overflow-y-auto bg-beatz-light-bg dark:bg-[#121212] transition-colors duration-300 no-scrollbar relative z-10 ${!isFullScreen ? 'pb-44 md:pb-28' : ''}`}>
-          <div className={`${!isFullScreen ? 'px-4 md:px-8 pt-20 pb-8 max-w-8xl mx-auto' : 'h-full'}`}>
-            <Outlet />
+        {/* Main Content */}
+        <main className="flex-1 flex flex-col relative overflow-hidden">
+          {!isFullScreen && <Header />}
+
+          <div className={`flex-1 overflow-y-auto bg-beatz-light-bg dark:bg-[#121212] transition-colors duration-300 no-scrollbar relative z-10 ${!isFullScreen ? 'pb-44 md:pb-28' : ''}`}>
+            <div className={`${!isFullScreen ? 'px-4 md:px-8 pt-20 pb-8 max-w-8xl mx-auto' : 'h-full'}`}>
+              <Outlet />
+            </div>
           </div>
-        </div>
-      </main>
+        </main>
+      </div>
 
       {!isFullScreen && <PlayerBar />}
 

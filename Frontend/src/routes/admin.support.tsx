@@ -111,7 +111,15 @@ function AdminSupport() {
         {/* Conversation */}
         <section className={cn(CARD, 'flex flex-col min-h-[420px]')}>
           {!active ? (
-            <div className="flex-1 flex items-center justify-center text-sm text-gray-400 dark:text-gray-500">Select a ticket.</div>
+            /*
+              `active` falls back to `list[0]`, so it is only ever absent when the filtered list is
+              empty — i.e. exactly when there is nothing to select. "Select a ticket." read as an
+              instruction the operator could not follow, and (during QA) as evidence of a missing
+              drill-in that does not exist: the thread renders right here, inline.
+            */
+            <div className="flex-1 flex items-center justify-center text-sm text-gray-400 dark:text-gray-500">
+              {tickets.length === 0 ? 'No support tickets yet.' : 'No tickets match this filter.'}
+            </div>
           ) : (
             <>
               <div className="flex items-center justify-between gap-3 p-5 border-b border-gray-100 dark:border-white/5 flex-wrap">
