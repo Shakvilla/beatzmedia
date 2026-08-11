@@ -77,6 +77,12 @@ class AdminRoleMatrixIT {
   private static final Set<String> FIN_SUPER = Set.of(FINANCE, SUPER);
   private static final Set<String> ED_SUPER = Set.of(EDITOR, SUPER);
   private static final Set<String> ED_SUPER_SUPPORT = Set.of(EDITOR, SUPER, SUPPORT);
+  /**
+   * Support ticket <em>mutations</em> (GAP-17). Reads stay {@link #EVERY_ADMIN}: looking a ticket up
+   * is how a finance admin corroborates a refund complaint or an editor traces a takedown appeal.
+   * Acting on one speaks to a fan in the platform's voice, which is a narrower job.
+   */
+  private static final Set<String> SUPPORT_SUPER = Set.of(SUPPORT, SUPER);
 
   /**
    * The expected matrix, transcribed from the {@code @RolesAllowed} annotations on the resources.
@@ -138,11 +144,11 @@ class AdminRoleMatrixIT {
 
     r.add(new Rule("GET", "/v1/admin/support/tickets", EVERY_ADMIN));
     r.add(new Rule("GET", "/v1/admin/support/tickets/" + NO_ID, EVERY_ADMIN));
-    r.add(new Rule("POST", "/v1/admin/support/tickets/" + NO_ID + "/assign", EVERY_ADMIN,
+    r.add(new Rule("POST", "/v1/admin/support/tickets/" + NO_ID + "/assign", SUPPORT_SUPER,
         "{\"assigneeId\":\"qa\"}"));
-    r.add(new Rule("POST", "/v1/admin/support/tickets/" + NO_ID + "/reply", EVERY_ADMIN,
+    r.add(new Rule("POST", "/v1/admin/support/tickets/" + NO_ID + "/reply", SUPPORT_SUPER,
         "{\"text\":\"qa\"}"));
-    r.add(new Rule("POST", "/v1/admin/support/tickets/" + NO_ID + "/resolve", EVERY_ADMIN, "{}"));
+    r.add(new Rule("POST", "/v1/admin/support/tickets/" + NO_ID + "/resolve", SUPPORT_SUPER, "{}"));
 
     r.add(new Rule("GET", "/v1/admin/users", EVERY_ADMIN));
     r.add(new Rule("GET", "/v1/admin/users/" + NO_ID, EVERY_ADMIN));
