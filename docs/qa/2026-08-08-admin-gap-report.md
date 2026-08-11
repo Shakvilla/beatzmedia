@@ -397,6 +397,30 @@ outage.**
 
 **Impact.** Worse than having no health page, because it manufactures false confidence.
 
+**Status.** Fixed. `status` and `metrics` are derived from the platform's own readiness checks — the
+same ones behind `/q/health/ready`, which the Compose smoke test already gates on. Nothing new is
+measured and nothing is invented: this is a signal the app has always published and the console
+never read. Each check becomes a metric row, so the page states *what it measured*.
+
+The important part is a **third state**. The old shape could only say `normal` or `degraded`, which
+forced "nothing is being measured" to be reported as one of them — and it chose healthy. `unknown`
+now exists for no-checks-registered or probe-failed, and the page renders it as a neutral **"Not
+monitored"**, not green. Collapsing it back into `normal` would recreate this gap exactly; coercing
+it to `degraded` would be a different lie, claiming a fault nobody observed.
+
+`listeners` and `incidents` stay honest-empty — there is still no telemetry or incident tracker, and
+this change did not invent one.
+
+Two things worth recording:
+
+- The existing tests **asserted the bug as the specification** — `GetHealthServiceTest` required
+  `status == "normal"` with three empty lists, and `AdminOverviewResourceIT` required `metrics` to be
+  *empty*. Both are rewritten. This is the second time in this batch that the test which broke was one
+  pinning fabricated behaviour in place (see GAP-17).
+- Verified by mutation: restoring the literal fails both ITs on the **metrics** assertions, while
+  `status == "normal"` keeps passing — the old code hardcoded that value, so a status-only test would
+  have sailed through the bug. That is how it survived every prior CI run.
+
 ---
 
 ## 3. High — operationally dangerous

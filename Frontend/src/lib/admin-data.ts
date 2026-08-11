@@ -309,8 +309,15 @@ export function getAuditLog(): AuditEntry[] {
 export interface HealthMetric { label: string; value: string; sub: string }
 export interface Incident { id: string; title: string; date: string; status: 'resolved' | 'open' }
 
+/**
+ * `unknown` means no readiness checks are registered, or the probe itself failed — i.e. nothing is
+ * being measured (GAP-04). It is deliberately not folded into `normal`: the previous two-state
+ * shape forced "no evidence" to be reported as one or the other, and it chose healthy.
+ */
+export type HealthStatus = 'normal' | 'degraded' | 'unknown'
+
 export interface Health {
-  status: 'normal' | 'degraded'
+  status: HealthStatus
   metrics: HealthMetric[]
   listeners: number[]
   incidents: Incident[]

@@ -957,13 +957,31 @@ describe('admin overview mapper', () => {
 })
 
 describe('health mapper', () => {
-  it('maps the honest-empty payload the backend always returns', () => {
-    const h = toHealth({ status: 'normal', metrics: [], listeners: [], incidents: [] })
-    expect(h).toEqual({ status: 'normal', metrics: [], listeners: [], incidents: [] })
+  it('carries readiness checks through as metric rows', () => {
+    const h = toHealth({
+      status: 'normal',
+      metrics: [{ label: 'Database connections health check', value: 'UP', sub: 'readiness check' }],
+      listeners: [],
+      incidents: [],
+    })
+    expect(h.status).toBe('normal')
+    expect(h.metrics).toEqual([
+      { label: 'Database connections health check', value: 'UP', sub: 'readiness check' },
+    ])
   })
 
-  it('narrows an unknown status to degraded rather than trusting it', () => {
+  it('narrows a status it does not recognise to degraded rather than trusting it', () => {
     expect(toHealth({ status: 'something-else', metrics: [], listeners: [], incidents: [] }).status).toBe('degraded')
+  })
+
+  /**
+   * GAP-04. `unknown` means nothing is being measured — no readiness checks registered, or the
+   * probe itself failed. Coercing it to `normal` is the original bug; coercing it to `degraded`
+   * would be a different lie (claiming a fault nobody observed). It has to survive as itself so the
+   * page can say "Not monitored".
+   */
+  it('passes unknown through as itself, neither normal nor degraded', () => {
+    expect(toHealth({ status: 'unknown', metrics: [], listeners: [], incidents: [] }).status).toBe('unknown')
   })
 })
 
