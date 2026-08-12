@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useState } from 'react'
-import { useSuspenseQuery, useSuspenseQueries } from '@tanstack/react-query'
+import { useQuery, useSuspenseQuery, useSuspenseQueries } from '@tanstack/react-query'
 import { Play, Pause, Check, Plus, Mic } from 'lucide-react'
 import { Card, CardContent, CardImage, CardSubtitle, CardTitle } from '../components/ui/card'
 import { MediaRail } from '../features/discover/components/media-rail'
@@ -11,6 +11,7 @@ import { useCart } from '../features/cart/cart-context'
 import { useCollection } from '../features/collection/collection-context'
 import { useToast } from '../components/ui/toast-provider'
 import { podcastsListQuery, podcastEpisodesQuery } from '../lib/api/queries/podcasts'
+import { taxonomyQuery } from '../lib/api/queries/taxonomy'
 import type { Podcast, PodcastCategory, PodcastEpisode, Track } from '../types'
 import { cn } from '../utils/cn'
 
@@ -30,17 +31,8 @@ export const Route = createFileRoute('/podcasts')({
 const RAIL_ITEM = 'snap-start shrink-0 w-44 sm:w-48 lg:w-52'
 type Filter = 'All' | PodcastCategory
 
-/** Static enumeration of the `PodcastCategory` union — used for the filter chips. */
-const podcastCategories: PodcastCategory[] = [
-  'News & Politics',
-  'Comedy',
-  'Business',
-  'Sports',
-  'Culture',
-  'Tech',
-  'Health',
-  'Storytelling',
-]
+// The filter chips used to be this hardcoded array, mirroring a CHECK constraint. Categories are
+// admin-managed now, so the chips come from the taxonomy — see `categories` in the component below.
 
 /**
  * There's no bulk "recent episodes across shows" endpoint, so the trending rail is
@@ -71,6 +63,12 @@ function PodcastsComponent() {
   const { isShowFollowed, toggleFollowedShow } = useCollection()
   const { toast } = useToast()
   const [category, setCategory] = useState<Filter>('All')
+
+  // Filter chips come from the admin-managed taxonomy. Not a Suspense query: the chips are a
+  // refinement, so the page should render its shows immediately rather than block on them, and an
+  // outage costs the filters, not the content.
+  const { data: categoryTerms = [] } = useQuery(taxonomyQuery('podcast_category'))
+  const categories: PodcastCategory[] = categoryTerms.map((t) => t.label)
 
   const { data: allShows } = useSuspenseQuery(podcastsListQuery())
   const topShows = rankByPopularity(allShows)
@@ -159,7 +157,7 @@ function PodcastsComponent() {
 
       {/* Category filter */}
       <div className="flex items-center gap-2 flex-wrap">
-        {(['All', ...podcastCategories] as Filter[]).map((cat) => (
+        {(['All', ...categories] as Filter[]).map((cat) => (
           <button
             key={cat}
             onClick={() => setCategory(cat)}

@@ -1,6 +1,6 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useState, useRef } from 'react'
-import { MoreHorizontal, Ban, Check, Eye } from 'lucide-react'
+import { Ban, Check, Eye } from 'lucide-react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
@@ -9,6 +9,7 @@ import { riskBoardQuery, apiReviewSignal, apiClearSignal, apiBanSignal } from '.
 import { AdminLoadError } from '../components/admin/load-error'
 import { Modal } from '../components/ui/modal'
 import { usePaged, Pagination } from '../components/admin/pagination'
+import { RowMenu, MenuItem } from '../components/admin/row-menu'
 
 export const Route = createFileRoute('/admin/trust')({
   component: AdminTrust,
@@ -122,7 +123,6 @@ function LevelPill({ level }: { level: RiskLevel }) {
 }
 
 function SignalRow({ signal: s, disabled, onReview, onBan, onClear }: { signal: RiskSignal; disabled?: boolean; onReview: () => void; onBan: () => void; onClear: () => void }) {
-  const [menuOpen, setMenuOpen] = useState(false)
   const closed = s.status !== 'open'
   return (
     <div className={cn('flex items-center gap-4 px-2 py-3.5 border-b border-dashed border-gray-200 dark:border-white/5 last:border-0 transition-opacity', closed && 'opacity-50')}>
@@ -137,33 +137,19 @@ function SignalRow({ signal: s, disabled, onReview, onBan, onClear }: { signal: 
         ) : (
           <>
             <button onClick={onReview} disabled={disabled} className="h-8 px-3 rounded-full text-beatz-green text-xs font-bold hover:bg-beatz-green/10 transition-colors">Review</button>
-            <div className="relative">
-              <button onClick={() => setMenuOpen((o) => !o)} aria-label="Actions" className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-beatz-dark-bg dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"><MoreHorizontal size={18} /></button>
-              {menuOpen && (
+            <RowMenu>
+              {(close) => (
                 <>
-                  <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
-                  <div className="absolute right-0 top-9 z-50 w-40 py-1 rounded-xl bg-white dark:bg-beatz-dark-surface-2 border border-gray-200 dark:border-white/10 shadow-xl">
-                    <MenuItem icon={Eye} label="Investigate" disabled={disabled} onClick={() => { onReview(); setMenuOpen(false) }} />
-                    <MenuItem icon={Check} label="Clear" disabled={disabled} onClick={() => { onClear(); setMenuOpen(false) }} />
-                    <MenuItem icon={Ban} label="Ban subject" danger disabled={disabled} onClick={() => { onBan(); setMenuOpen(false) }} />
-                  </div>
+                  <MenuItem icon={Eye} label="Investigate" disabled={disabled} onClick={() => { onReview(); close() }} />
+                  <MenuItem icon={Check} label="Clear" disabled={disabled} onClick={() => { onClear(); close() }} />
+                  <MenuItem icon={Ban} label="Ban subject" danger disabled={disabled} onClick={() => { onBan(); close() }} />
                 </>
               )}
-            </div>
+            </RowMenu>
           </>
         )}
       </div>
     </div>
-  )
-}
-
-function MenuItem({ icon: Icon, label, onClick, disabled, danger }: { icon: typeof Eye; label: string; onClick: () => void; disabled?: boolean; danger?: boolean }) {
-  return (
-    <button onClick={onClick} disabled={disabled}
-      className={cn('w-full flex items-center gap-2.5 px-3 py-2 text-sm font-medium transition-colors',
-        disabled ? 'text-gray-300 dark:text-gray-600 cursor-not-allowed' : danger ? 'text-beatz-red hover:bg-beatz-red/10' : 'text-beatz-dark-bg dark:text-white hover:bg-gray-100 dark:hover:bg-white/5')}>
-      <Icon size={15} /> {label}
-    </button>
   )
 }
 

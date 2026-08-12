@@ -76,6 +76,28 @@ never knows which rail it is talking to.
 
 ## 3. Domain model
 
+> **Per-rail enablement (GAP-13, ADR-32).** `Provider` is gated for **charges** by the outbound port
+> `PaymentProviderPolicy`, backed by one `feature_flag` row per rail (`PROVIDER_MTN`,
+> `PROVIDER_TELECEL`, `PROVIDER_AIRTELTIGO`, `PROVIDER_CARD`, `PROVIDER_BANK`, seeded enabled in
+> V978).
+>
+> - **Fail-closed.** A rail with no flag row reads as *disabled*, via
+>   `FeatureFlags.isEnabledOrDefault(key, false)`. The plain `isEnabled` answers **true** for an
+>   unknown key — right for product flags, catastrophic here, since a rail whose row never seeded
+>   would keep taking money while the console showed it off. A flag store that throws also refuses.
+> - **Missing rows stop the boot.** `PaymentProviderFlagsCheck` refuses to start when a row is
+>   absent, so a migration that did not run surfaces at deploy instead of as silently declined
+>   checkouts.
+> - **Checked before the idempotency lock.** `InitiateChargeService` refuses first, so a rejected
+>   charge does not consume the caller's `Idempotency-Key`; a retry once the rail is back charges
+>   normally rather than hitting `IDEMPOTENCY_KEY_CONFLICT`.
+> - **Charges only — never payouts.** `PayoutDisburser` does not consult this port. Gating payouts
+>   would strand balances a creator has already earned, which is a different (and worse) decision
+>   than declining to take new money.
+> - `GET /v1/payments/providers` publishes the enabled set so checkout does not offer a rail that
+>   would be refused. It is a convenience, not the control.
+
+
 | Name | Kind | Key fields | Notes |
 |---|---|---|---|
 | `PaymentIntent` | Aggregate root | `id`, `orderRef`, `amount` (Money), `provider`, `providerRef`, `status`, `idempotencyKey` | Lifecycle pending→settled/failed/timeout (INV-1). |

@@ -34,7 +34,7 @@ public final class Episode {
   private String description;
   private final String audioKey;
   private String coverUrl;
-  private final int durationSec;
+  private int durationSec;
   private EpisodeStatus status;
   private boolean premium;
   private long priceMinor;
@@ -202,6 +202,23 @@ public final class Episode {
 
   public void renameShow(ShowId showId) {
     this.showId = showId;
+  }
+
+  /**
+   * Records the duration ffprobe measured once transcoding finished.
+   *
+   * <p>An episode is created with {@code durationSec = 0} because the upload responds before the
+   * worker has probed the file. Nothing ever wrote the real value back — studio had no MediaReady
+   * observer — so every episode kept a 0 duration, which the fan-facing
+   * {@code podcast_episode_duration_sec_check} constraint then rejected outright.
+   *
+   * <p>Idempotent and non-destructive: a re-fired MediaReady with the same value is a no-op, and a
+   * zero or negative reading never overwrites a duration already known.
+   */
+  public void markMediaReady(int measuredDurationSec) {
+    if (measuredDurationSec > 0) {
+      this.durationSec = measuredDurationSec;
+    }
   }
 
   public void updateTitle(String title) {

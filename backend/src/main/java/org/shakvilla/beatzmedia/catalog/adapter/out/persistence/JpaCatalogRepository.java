@@ -23,7 +23,6 @@ import org.shakvilla.beatzmedia.catalog.domain.Album;
 import org.shakvilla.beatzmedia.catalog.domain.AlbumId;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistProfile;
-import org.shakvilla.beatzmedia.catalog.domain.BrowseCategory;
 import org.shakvilla.beatzmedia.catalog.domain.InviteOutcome;
 import org.shakvilla.beatzmedia.catalog.domain.LyricLine;
 import org.shakvilla.beatzmedia.catalog.domain.Lyrics;
@@ -58,6 +57,25 @@ import org.shakvilla.beatzmedia.platform.domain.PageRequest;
 @ApplicationScoped
 public class JpaCatalogRepository implements CatalogRepository {
 
+  /**
+   * JPQL predicate: this track belongs to a release that is actually LIVE.
+   *
+   * <p><strong>Why it has to exist.</strong> {@code track.status = 'ready'} means "the audio
+   * finished transcoding", not "this is published" — and since the MediaReady projection was added
+   * the two are no longer the same thing. A track reaches {@code ready} the moment ffmpeg is done,
+   * which happens while its release is still a {@code draft} (or, for an abandoned wizard run,
+   * while it has no release at all). Filtering on {@code status = 'ready'} alone therefore put
+   * unpublished uploads straight into the fan-facing home rails and search.
+   *
+   * <p>{@code release_track} is the authoritative link: {@code track.release_id} is never populated
+   * by anything. A track with no {@code release_track} row is NOT published — the previous rule
+   * treated a missing release as "always visible", which is exactly what leaked an in-progress
+   * upload to every fan.
+   */
+  private static final String PUBLISHED =
+      "EXISTS (SELECT 1 FROM ReleaseTrackEntity rt, ReleaseEntity r"
+          + " WHERE rt.trackId = t.id AND r.id = rt.pk.releaseId AND r.status = 'live')";
+
   private final EntityManager em;
 
   @Inject
@@ -80,11 +98,19 @@ public class JpaCatalogRepository implements CatalogRepository {
     return Optional.of(toDomain(e, showEntities));
   }
 
+  /**
+   * The artist's PUBLIC track list — this backs the fan-facing artist page.
+   *
+   * <p>It previously filtered on nothing but {@code artistId}, so a half-finished upload appeared
+   * on the artist's public page the moment the row was inserted, still {@code uploading}. Both
+   * gates are needed: {@code ready} for playability, {@code PUBLISHED} for permission to be seen.
+   */
   @Override
   public List<Track> tracksByArtist(ArtistId id) {
     List<TrackEntity> entities =
         em.createQuery(
-                "SELECT t FROM TrackEntity t WHERE t.artistId = :aid ORDER BY t.plays DESC",
+                "SELECT t FROM TrackEntity t WHERE t.artistId = :aid AND t.status = 'ready' AND "
+                    + PUBLISHED + " ORDER BY t.plays DESC",
                 TrackEntity.class)
             .setParameter("aid", id.value())
             .getResultList();
@@ -108,6 +134,55 @@ public class JpaCatalogRepository implements CatalogRepository {
       return Optional.empty();
     }
     return Optional.of(mapAlbumsWithBatchedTrackIds(List.of(e)).get(0));
+  }
+
+  @Override
+  @Transactional
+  public void saveAlbum(Album album) {
+    AlbumEntity entity = em.find(AlbumEntity.class, album.getId().value());
+    if (entity == null) {
+      entity = new AlbumEntity();
+      entity.id = album.getId().value();
+    }
+    entity.title = album.getTitle();
+    entity.artistId = album.getArtistId().value();
+    entity.artistName = album.getArtistName();
+    entity.year = album.getYear();
+    entity.coverImage = album.getCoverImage();
+    entity.genres = album.getGenres().toArray(new String[0]);
+    entity.listPriceMinor = album.getListPriceMinor();
+    em.merge(entity);
+
+    // Flush before the bulk updates below. A JPQL bulk UPDATE is issued as immediate SQL and does
+    // NOT trigger a flush of pending managed changes, so without this the track update runs before
+    // the album INSERT and fails on track_album_id_fkey — the album it points at does not exist yet.
+    em.flush();
+
+    // An album's track list lives on the tracks, so the row alone would render as an empty album.
+    // Detach first, then re-attach exactly what the album claims, so a re-projection after tracks
+    // were removed from the release does not leave the old ones behind.
+    em.createQuery("UPDATE TrackEntity t SET t.albumId = NULL WHERE t.albumId = :albumId")
+        .setParameter("albumId", album.getId().value())
+        .executeUpdate();
+    if (!album.getTrackIds().isEmpty()) {
+      em.createQuery("UPDATE TrackEntity t SET t.albumId = :albumId WHERE t.id IN :ids")
+          .setParameter("albumId", album.getId().value())
+          .setParameter("ids", album.getTrackIds())
+          .executeUpdate();
+    }
+  }
+
+  @Override
+  @Transactional
+  public void deleteAlbum(AlbumId id) {
+    // track.album_id is a foreign key; the tracks themselves outlive the album.
+    em.createQuery("UPDATE TrackEntity t SET t.albumId = NULL WHERE t.albumId = :albumId")
+        .setParameter("albumId", id.value())
+        .executeUpdate();
+    AlbumEntity entity = em.find(AlbumEntity.class, id.value());
+    if (entity != null) {
+      em.remove(entity);
+    }
   }
 
   @Override
@@ -199,20 +274,11 @@ public class JpaCatalogRepository implements CatalogRepository {
   // ---- WU-CAT-2: home feed + browse ----
 
   @Override
-  public List<BrowseCategory> browseCategories() {
-    return em.createQuery(
-            "SELECT b FROM BrowseCategoryEntity b ORDER BY b.id", BrowseCategoryEntity.class)
-        .getResultList()
-        .stream()
-        .map(e -> new BrowseCategory(e.id, e.title, e.colorClass))
-        .toList();
-  }
-
-  @Override
   public List<Track> trendingTracks(int limit) {
     List<TrackEntity> entities =
         em.createQuery(
-                "SELECT t FROM TrackEntity t WHERE t.status = 'ready' ORDER BY t.plays DESC",
+                "SELECT t FROM TrackEntity t WHERE t.status = 'ready' AND " + PUBLISHED
+                    + " ORDER BY t.plays DESC",
                 TrackEntity.class)
             .setMaxResults(limit)
             .getResultList();
@@ -223,7 +289,8 @@ public class JpaCatalogRepository implements CatalogRepository {
   public List<Track> top10Tracks(int limit) {
     List<TrackEntity> entities =
         em.createQuery(
-                "SELECT t FROM TrackEntity t WHERE t.status = 'ready' ORDER BY t.plays DESC",
+                "SELECT t FROM TrackEntity t WHERE t.status = 'ready' AND " + PUBLISHED
+                    + " ORDER BY t.plays DESC",
                 TrackEntity.class)
             .setMaxResults(limit)
             .getResultList();
@@ -468,6 +535,7 @@ public class JpaCatalogRepository implements CatalogRepository {
     e.updatedAt = release.getUpdatedAt();
     e.genre = release.getGenre();
     e.description = release.getDescription();
+    e.coverImage = release.getCoverImage();
     em.merge(e);
 
     // Upsert release_track rows. Remove existing managed entities (rather than a bulk JPQL
@@ -788,15 +856,18 @@ public class JpaCatalogRepository implements CatalogRepository {
   @Override
   public List<IndexableTrack> allTracksForIndex() {
     // track.release_id is never written by anything (saveTrack omits it; no migration backfills
-    // it), so it cannot be used to gate visibility. The authoritative track -> release link is the
-    // release_track join table (same rationale as markReleaseTracksReady above). A track is hidden
-    // only when it has a release_track row whose release exists and is not 'live'; a track with no
-    // release_track row at all (e.g. every dev-seed track) is always visible.
-    Set<String> hiddenTrackIds =
+    // it), so the authoritative track -> release link is the release_track join table.
+    //
+    // VISIBILITY IS NOW OPT-IN. This used to hide only tracks whose release existed and was not
+    // 'live', which meant a track with NO release row was "always visible" — a rule written for
+    // dev-seed tracks that had no release. Uploads create the track before the release is
+    // finalized, so that default published every in-progress upload into search. Visible now
+    // requires a release_track row pointing at a LIVE release; anything else is hidden.
+    Set<String> publishedTrackIds =
         new HashSet<>(
             em.createQuery(
                     "SELECT rt.trackId FROM ReleaseTrackEntity rt, ReleaseEntity r "
-                        + "WHERE r.id = rt.pk.releaseId AND r.status <> 'live'",
+                        + "WHERE r.id = rt.pk.releaseId AND r.status = 'live'",
                     String.class)
                 .getResultList());
 
@@ -809,7 +880,7 @@ public class JpaCatalogRepository implements CatalogRepository {
             .getResultList();
 
     return mapTracksWithBatchedCredits(entities).stream()
-        .map(t -> new IndexableTrack(t, !hiddenTrackIds.contains(t.getId().value())))
+        .map(t -> new IndexableTrack(t, publishedTrackIds.contains(t.getId().value())))
         .toList();
   }
 
@@ -885,10 +956,14 @@ public class JpaCatalogRepository implements CatalogRepository {
     List<ReleaseTrack> tracks = trackEntities.stream()
         .map(rt -> new ReleaseTrack(rt.trackId, rt.pk.position, rt.priceMinor))
         .toList();
-    return Release.reconstitute(
+    Release release = Release.reconstitute(
         e.id, e.artistId, e.title, ReleaseType.valueOf(e.type), ReleaseStatus.valueOf(e.status),
         Visibility.fromDbValue(e.visibility), e.scheduledAt, e.wentLiveAt, e.listPriceMinor,
         e.createdAt, e.updatedAt, tracks, e.genre, e.description, splits);
+    // Set outside the factory: cover art arrives by upload after the draft exists, so widening four
+    // reconstitute/create overloads for it would ripple through every call site for no gain.
+    release.setCoverImage(e.coverImage);
+    return release;
   }
 
   // ---- Batch-mapping helpers ----

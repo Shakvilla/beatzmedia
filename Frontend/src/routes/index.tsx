@@ -6,7 +6,8 @@ import { MediaRail } from '../features/discover/components/media-rail'
 import { ArtistCircle } from '../features/discover/components/artist-circle'
 import { FeaturedCarousel } from '../features/discover/components/featured-carousel'
 import { usePlayer } from '../features/player/player-context'
-import { homeQuery, browseCategoriesQuery } from '../lib/api/queries/catalog'
+import { homeQuery } from '../lib/api/queries/catalog'
+import { taxonomyQuery } from '../lib/api/queries/taxonomy'
 import { formatCount } from '../lib/format'
 import { useAuth } from '../features/auth/auth-context'
 
@@ -14,7 +15,7 @@ export const Route = createFileRoute('/')({
   loader: async ({ context: { queryClient } }) => {
     await Promise.all([
       queryClient.ensureQueryData(homeQuery()),
-      queryClient.ensureQueryData(browseCategoriesQuery()),
+      queryClient.ensureQueryData(taxonomyQuery('genre')),
     ])
   },
   component: HomeComponent,
@@ -34,7 +35,8 @@ function HomeComponent() {
   const { account } = useAuth()
   const firstName = (account?.name ?? 'there').split(' ')[0]
   const { data: home } = useSuspenseQuery(homeQuery())
-  const { data: browseCategories } = useSuspenseQuery(browseCategoriesQuery())
+  // Browse tiles are the genres, with their colours from the taxonomy (V973).
+  const { data: browseCategories } = useSuspenseQuery(taxonomyQuery('genre'))
   const trending = home.trending
   const top10 = home.top10
   const featuredAlbums = home.featuredAlbums
@@ -195,10 +197,10 @@ function HomeComponent() {
             <Link
               key={category.id}
               to="/search"
-              search={{ q: category.title }}
-              className={`relative overflow-hidden rounded-xl p-4 aspect-[2/1] flex items-start ${category.colorClass} shadow-md hover:scale-[1.02] transition-transform duration-300 group`}
+              search={{ q: category.label }}
+              className={`relative overflow-hidden rounded-xl p-4 aspect-[2/1] flex items-start ${category.colorClass ?? 'bg-gradient-to-br from-gray-600 to-gray-400'} shadow-md hover:scale-[1.02] transition-transform duration-300 group`}
             >
-              <h3 className="text-white font-bold text-lg lg:text-xl relative z-10">{category.title}</h3>
+              <h3 className="text-white font-bold text-lg lg:text-xl relative z-10">{category.label}</h3>
               <div className="absolute -right-3 -bottom-3 w-16 h-16 bg-black/20 rounded-lg rotate-[25deg] shadow-lg group-hover:scale-110 transition-transform duration-300" />
             </Link>
           ))}

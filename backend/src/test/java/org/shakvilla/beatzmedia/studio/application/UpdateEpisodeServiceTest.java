@@ -48,7 +48,8 @@ class UpdateEpisodeServiceTest {
   @BeforeEach
   void setUp() {
     repo = new FakeStudioRepository();
-    repo.withShow(PodcastShow.create(new ShowId("sh-1"), ARTIST, "Show", "Comedy", NOW));
+    repo.withShow(PodcastShow.create(new ShowId("sh-1"), ARTIST, "Show", "Comedy", null, null,
+        NOW));
     clock = FakeClock.at(NOW);
     auditWriter = new FakeAuditWriter();
     publishedEvent = new RecordingEvent<>();

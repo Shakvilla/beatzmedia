@@ -2,7 +2,6 @@ import { createFileRoute } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { Search, Download, User, ListMusic, Wallet, Flag, SlidersHorizontal, Radio, Clock, type LucideIcon } from 'lucide-react'
 import { cn } from '../utils/cn'
-import { useToast } from '../components/ui/toast-provider'
 import { useQuery } from '@tanstack/react-query'
 import type { AuditEntry, AuditType } from '../lib/admin-data'
 import { auditQuery, AUDIT_PAGE_SIZE } from '../lib/api/queries/admin-overview'
@@ -27,7 +26,6 @@ const TYPE_META: Record<AuditType, { label: string; icon: LucideIcon }> = {
 const TYPES: (AuditType | 'all')[] = ['all', 'user', 'catalog', 'finance', 'moderation', 'editorial', 'settings']
 
 function AdminAudit() {
-  const { toast } = useToast()
   const [type, setType] = useState<AuditType | 'all'>('all')
   const [query, setQuery] = useState('')
   const [debouncedQ, setDebouncedQ] = useState('')
@@ -53,7 +51,12 @@ function AdminAudit() {
           <h1 className="text-display text-beatz-dark-bg dark:text-white">Audit log</h1>
           <span className="text-sm text-gray-500 dark:text-gray-300">Every privileged admin action, with actor and time</span>
         </div>
-        <button onClick={() => toast('Exporting audit log as CSV', 'success')} className="h-11 px-4 rounded-full bg-gray-100 dark:bg-white/10 text-beatz-dark-bg dark:text-white text-sm font-bold flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors">
+        {/*
+          Disabled rather than removed: an auditable export is a real requirement, it just has no
+          endpoint. This reported success and produced no file, which is the worst outcome for an
+          audit trail — an operator would believe they held a record they never received.
+        */}
+        <button disabled title="Audit export isn't available yet." className="h-11 px-4 rounded-full bg-gray-100 dark:bg-white/10 text-gray-400 dark:text-gray-500 text-sm font-bold flex items-center gap-2 cursor-not-allowed">
           <Download size={16} /> Export
         </button>
       </div>

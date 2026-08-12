@@ -12,8 +12,11 @@ import java.math.BigDecimal;
  *
  * <p><strong>flags</strong> ({@code artistSignups/podcasts/events/tipping/fanMessaging}) are all real
  * platform-kernel feature flags ({@code FeatureKey}s, seeded in V2). <strong>providers</strong>
- * ({@code momo/vodafone/airteltigo/card/bank}) are honest-static ({@code true} — no per-provider
- * enablement subsystem exists), a documented carryover (admin ADD as-built).
+ * ({@code mtn/telecel/airteltigo/card/bank}) are equally real as of GAP-13: each is a
+ * {@code PROVIDER_*} {@code FeatureKey} seeded in V978, and switching one off stops charges on that
+ * rail. They were previously honest-static {@code true} — accepted and thrown away — and this
+ * javadoc said so; it is called out because the wrong version of this sentence would tell a reader
+ * these values are decorative when they now decide whether money moves.
  */
 public record PlatformSettingsView(
     int platformFeePct,
@@ -24,9 +27,18 @@ public record PlatformSettingsView(
     Providers providers,
     Flags flags) {
 
-  /** Payment-provider enablement toggles — matches {@code providers{ momo, vodafone, airteltigo, card, bank }}. */
+  /**
+   * Per-rail payment enablement (GAP-13) — matches {@code providers{ mtn, telecel, airteltigo, card,
+   * bank }}. Real and persisted as of this change — previously the whole object was accepted and
+   * thrown away.
+   *
+   * <p>Keys match payments' {@code Provider} enum exactly. They used to be {@code momo} and
+   * {@code vodafone}; {@code momo} was labelled "MTN MoMo" so it always meant MTN specifically, and
+   * {@code vodafone} named a brand that ceased to exist in 2023 — checkout and payouts already said
+   * Telecel, leaving the admin console the only surface still using the old name.
+   */
   public record Providers(
-      boolean momo, boolean vodafone, boolean airteltigo, boolean card, boolean bank) {}
+      boolean mtn, boolean telecel, boolean airteltigo, boolean card, boolean bank) {}
 
   /** Feature flags — matches {@code flags{ artistSignups, podcasts, events, tipping, fanMessaging }}. */
   public record Flags(

@@ -33,9 +33,9 @@ import org.shakvilla.beatzmedia.platform.domain.ValidationException;
  * (tip fee, bundle discount, service fee) are preserved from the current settings — they are not on
  * the frontend {@code PlatformSettings} contract.
  *
- * <p><strong>Honest-static inputs.</strong> {@code providers.*} is accepted but not persisted (no
- * per-provider enablement subsystem) — documented in {@link PlatformSettingsView}. All five {@code
- * flags.*} (including {@code fanMessaging}) are real and persisted.
+ * <p><strong>Everything on this screen is now real.</strong> All five {@code flags.*} (including
+ * {@code fanMessaging}) and, as of GAP-13, all five {@code providers.*} are persisted. The provider
+ * object was previously accepted and silently discarded.
  */
 @ApplicationScoped
 public class SaveSettingsService implements SaveSettings {
@@ -89,10 +89,38 @@ public class SaveSettingsService implements SaveSettings {
     featureFlags.set(FeatureKey.TIPPING, input.flags().tipping());
     featureFlags.set(FeatureKey.FAN_MESSAGING, input.flags().fanMessaging());
 
-    String reason =
+    // And the payment rails (GAP-13). Disabling one stops new charges on it immediately;
+    // PaymentProviderPolicy reads these fail-closed at charge time.
+    featureFlags.set(FeatureKey.PROVIDER_MTN, input.providers().mtn());
+    featureFlags.set(FeatureKey.PROVIDER_TELECEL, input.providers().telecel());
+    featureFlags.set(FeatureKey.PROVIDER_AIRTELTIGO, input.providers().airteltigo());
+    featureFlags.set(FeatureKey.PROVIDER_CARD, input.providers().card());
+    featureFlags.set(FeatureKey.PROVIDER_BANK, input.providers().bank());
+
+    /*
+      The audit reason records a fee change and, as of GAP-13, any rail switched off. Turning off a
+      payment method is the kind of change someone asks about afterwards ("why did MoMo stop
+      working on the 14th?"), and an audit row that says only "Updated platform settings" cannot
+      answer it. Rails left ON are not listed: the interesting event is the removal.
+    */
+    String disabled =
+        java.util.stream.Stream.of(
+                input.providers().mtn() ? null : "mtn",
+                input.providers().telecel() ? null : "telecel",
+                input.providers().airteltigo() ? null : "airteltigo",
+                input.providers().card() ? null : "card",
+                input.providers().bank() ? null : "bank")
+            .filter(java.util.Objects::nonNull)
+            .reduce((a, b) -> a + ", " + b)
+            .map(list -> "providers disabled: " + list)
+            .orElse(null);
+
+    String feeChange =
         current.platformFeePct() != newFeePct
             ? "platformFeePct: " + current.platformFeePct() + " -> " + newFeePct
             : null;
+    String reason =
+        feeChange == null ? disabled : disabled == null ? feeChange : feeChange + "; " + disabled;
     auditWriter.append(
         new AuditEntry(
             idGenerator.newId(),
@@ -104,7 +132,18 @@ public class SaveSettingsService implements SaveSettings {
             reason,
             clock.now()));
 
-    return GetSettingsService.toView(saved, featureFlags);
+    // Built from what was just written, not re-read through FeatureFlags: the flag cache reloads in
+    // a new transaction and cannot see these still-uncommitted writes, so re-reading here returned
+    // the previous values — the save appeared not to have taken.
+    return GetSettingsService.toView(
+        saved,
+        new PlatformSettingsView.Flags(
+            input.flags().artistSignups(),
+            input.flags().podcasts(),
+            input.flags().events(),
+            input.flags().tipping(),
+            input.flags().fanMessaging()),
+        input.providers());
   }
 
   private static Currency parseCurrency(String value) {

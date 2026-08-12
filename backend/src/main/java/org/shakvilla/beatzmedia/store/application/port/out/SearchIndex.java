@@ -4,7 +4,6 @@ import java.util.Optional;
 
 import org.shakvilla.beatzmedia.platform.domain.Page;
 import org.shakvilla.beatzmedia.platform.domain.PageRequest;
-import org.shakvilla.beatzmedia.store.domain.Genre;
 import org.shakvilla.beatzmedia.store.domain.StoreItem;
 import org.shakvilla.beatzmedia.store.domain.StoreItemId;
 import org.shakvilla.beatzmedia.store.domain.StoreItemType;
@@ -25,7 +24,7 @@ public interface SearchIndex {
 
   /** Free-text query, optionally narrowed by type/genre and ordered by {@link StoreSort}. */
   Page<StoreItemId> query(
-      String text, Optional<StoreItemType> type, Optional<Genre> genre, StoreSort sort, PageRequest page);
+      String text, Optional<StoreItemType> type, Optional<String> genre, StoreSort sort, PageRequest page);
 
   /** Upsert a document for this item; idempotent on the item id (INV-SRCH-1). */
   void index(StoreItem item);

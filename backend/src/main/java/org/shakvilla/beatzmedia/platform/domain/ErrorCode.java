@@ -49,6 +49,12 @@ public enum ErrorCode {
   // ---- Catalog codes (WU-CAT-9) — collaborator split invites ----
   SPLIT_INVITE_NOT_FOUND,
   SPLIT_INVITE_GONE,
+  /**
+   * A password-reset token could not be redeemed. Deliberately returned for all three failure
+   * modes — unknown, already used, and expired — so the response never reveals which, and a
+   * harvested token cannot be probed for validity.
+   */
+  RESET_TOKEN_INVALID,
   // ---- Catalog codes (WU-CAT-5) ----
   TRACK_NOT_IN_RELEASE,
   DUPLICATE_TRACK_REF,
@@ -73,6 +79,12 @@ public enum ErrorCode {
   CART_EMPTY,
   CHECKOUT_KIND_UNSUPPORTED,
   CHARGE_AMOUNT_EXCEEDED,
+  /**
+   * The requested payment rail is switched off platform-wide (GAP-13). A 409, not a 422: the
+   * request is well-formed and would have been valid a moment ago — it is the platform's current
+   * state that refuses it.
+   */
+  PROVIDER_DISABLED,
   // ---- Playback codes (WU-PLY-1) ----
   MEDIA_UNAVAILABLE,
   // ---- Podcasts codes (WU-POD-2) — tipping ----

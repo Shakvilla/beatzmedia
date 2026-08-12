@@ -34,6 +34,12 @@ import { NotificationsProvider } from './features/notifications/notifications-co
 import { PlayerProvider } from './features/player/player-context'
 import { CartProvider } from './features/cart/cart-context'
 import { CollectionProvider } from './features/collection/collection-context'
+import { installImageFallback } from './lib/image-fallback'
+
+// Any image that fails to load falls back to the placeholder instead of the browser's broken-image
+// glyph. Installed once here rather than as an onError on each of the ~60 <img> tags, since image
+// error events reach a capture-phase listener on document and this also covers images added later.
+installImageFallback()
 
 // Initialize the root
 createRoot(document.getElementById('root')!).render(

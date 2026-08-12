@@ -1,9 +1,11 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useRef } from 'react'
+import { useQuery } from '@tanstack/react-query'
 import { UploadCloud, CalendarClock } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useReleaseDraft } from '../features/studio/release-draft-context'
-import { releaseTypes, studioGenres } from '../lib/studio-data'
+import { taxonomyQuery } from '../lib/api/queries/taxonomy'
+import { releaseTypes } from '../lib/studio-data'
 import { useCreatorIdentity } from '../features/studio/use-creator-identity'
 import type { Genre } from '../types'
 
@@ -16,13 +18,20 @@ const INPUT =
   'w-full h-12 rounded-xl bg-white dark:bg-white/5 border border-gray-200 dark:border-white/10 px-4 text-sm text-beatz-dark-bg dark:text-white placeholder:text-gray-400 dark:placeholder:text-white/25 focus:outline-none focus:border-beatz-green/60 focus:ring-1 focus:ring-beatz-green/30 transition-all'
 
 function ReleaseDetailsStep() {
-  const { draft, setField } = useReleaseDraft()
+  const { draft, setField, setCoverFile } = useReleaseDraft()
   const creator = useCreatorIdentity()
   const fileRef = useRef<HTMLInputElement>(null)
 
+  // Genres come from the admin-managed taxonomy, not the old `studioGenres` constant. The backend
+  // validates the submitted label against the same list, so a stale client cannot save a genre the
+  // server would reject.
+  const { data: genres = [] } = useQuery(taxonomyQuery('genre'))
+
   const onCover = (e: React.ChangeEvent<HTMLInputElement>) => {
     const file = e.target.files?.[0]
-    if (file) setField('coverImage', URL.createObjectURL(file))
+    // Hands the FILE to the context, which keeps it for upload at submit and derives the preview.
+    // Setting only the object URL is what left every release without real cover art.
+    if (file) setCoverFile(file)
   }
 
   return (
@@ -106,9 +115,17 @@ function ReleaseDetailsStep() {
               onChange={(e) => setField('genre', e.target.value as Genre | '')}
             >
               <option value="">Select a genre</option>
-              {studioGenres.map((g) => (
-                <option key={g} value={g}>{g}</option>
+              {genres.map((g) => (
+                <option key={g.id} value={g.label}>{g.label}</option>
               ))}
+              {/*
+                A draft saved before a genre was deactivated still carries it. Without this the
+                select would silently fall back to "Select a genre" and the artist would lose the
+                value on the next save — so keep showing it, marked.
+              */}
+              {draft.genre && !genres.some((g) => g.label === draft.genre) && (
+                <option value={draft.genre}>{draft.genre} (no longer offered)</option>
+              )}
             </select>
           </Field>
         </div>

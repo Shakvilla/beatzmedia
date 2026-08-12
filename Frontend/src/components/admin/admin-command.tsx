@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useNavigate } from '@tanstack/react-router'
+import { useQuery } from '@tanstack/react-query'
 import { Search, CornerDownLeft, User, Disc3, type LucideIcon } from 'lucide-react'
 import { cn } from '../../utils/cn'
-import { getAdminUsers, getCatalog } from '../../lib/admin-data'
+import { usersQuery } from '../../lib/api/queries/admin-users'
+import { catalogQuery } from '../../lib/api/queries/admin-catalog'
 
 interface NavItem { to: string; icon: LucideIcon; label: string }
 
@@ -17,6 +19,22 @@ interface Result {
 /** Global command-palette search across sections, users and catalog. */
 export function AdminCommand({ open, onClose, sections }: { open: boolean; onClose: () => void; sections: NavItem[] }) {
   const navigate = useNavigate()
+
+  /**
+   * These came from `getAdminUsers()` and `getCatalog()` in `admin-data.ts` — hardcoded arrays.
+   * Against a database holding two accounts and one release, searching "Kojo" returned two users
+   * who do not exist and "Abdul" — a real, active artist — returned "No results". The one search
+   * box spanning the console invented records and could not find the real ones. Worse, selecting a
+   * fabricated result navigated to an id with no row behind it.
+   *
+   * Fetched only while the palette is open: this is a global component mounted on every admin
+   * screen, and it should not pull the user and catalog lists on pages that never search them.
+   */
+  const { data: usersData } = useQuery({ ...usersQuery(), enabled: open })
+  const { data: catalogData } = useQuery({ ...catalogQuery('all'), enabled: open })
+  const users = usersData?.users ?? []
+  const catalog = catalogData?.items ?? []
+
   const [q, setQ] = useState('')
   const [active, setActive] = useState(0)
   const listRef = useRef<HTMLDivElement>(null)
@@ -34,16 +52,23 @@ export function AdminCommand({ open, onClose, sections }: { open: boolean; onClo
       .filter((s) => !needle || s.label.toLowerCase().includes(needle))
       .map((s) => ({ key: `s-${s.to}`, label: s.label, sub: 'Section', icon: s.icon, go: () => navigate({ to: s.to }) }))
     if (!needle) return sectionR
-    const userR: Result[] = getAdminUsers()
+    const userR: Result[] = users
       .filter((u) => `${u.name} ${u.email}`.toLowerCase().includes(needle))
       .slice(0, 5)
       .map((u) => ({ key: `u-${u.id}`, label: u.name, sub: `User · ${u.email}`, icon: User, go: () => navigate({ to: '/admin/users/$userId', params: { userId: u.id } }) }))
-    const catalogR: Result[] = getCatalog()
+    const catalogR: Result[] = catalog
       .filter((c) => `${c.title} ${c.artist}`.toLowerCase().includes(needle))
       .slice(0, 5)
       .map((c) => ({ key: `c-${c.id}`, label: c.title, sub: `Release · ${c.artist}`, icon: Disc3, go: () => navigate({ to: '/admin/catalog/$itemId', params: { itemId: c.id } }) }))
     return [...sectionR, ...userR, ...catalogR]
-  }, [q, sections, navigate])
+    // `users` and `catalog` MUST stay in this list. They arrive asynchronously — the queries only
+    // fire once the palette opens — while `sections` is a module-level constant and `navigate` is
+    // stable, so `q` was the only dependency that ever changed. An operator who opened the palette
+    // and typed a name faster than the fetch resolved got the memo computed against two empty
+    // arrays, and nothing recomputed it when the data landed: "No results for 'Abdul'" for a real,
+    // active account. That is the exact symptom GAP-24 was raised for, reintroduced by GAP-24's own
+    // fix, because the deps were written when the data was synchronous.
+  }, [q, sections, navigate, users, catalog])
 
   // Reset / clamp the highlighted row whenever the result set changes.
   useEffect(() => { setActive(0) }, [q])

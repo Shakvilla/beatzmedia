@@ -433,7 +433,27 @@ stateDiagram-v2
     never been indexed and has no stale document to strand.
   - **Playlists** — always indexed; `visible = is_public` (private playlists ARE indexed, with
     `visible = false`).
-  - **Artists, albums** — always indexed; always `visible = true`.
+  - **Artists** — always indexed; always `visible = true`.
+  - **Albums** — indexed `visible = true` for as long as the album exists, and **hard-deleted from the
+    index when the album is** (GAP-27). An album row exists only while its release is live:
+    `ProjectReleaseAlbumService` writes it on `ReleaseWentLive` and deletes it on `ContentTakenDown`.
+    That service now writes the search document alongside the row, through the catalog outbound port
+    `AlbumSearchProjection`.
+    - *Why a hard delete, when a taken-down track is soft-hidden.* The soft hide exists so the
+      backfill keeps a stale document reconcilable. That reasoning does not carry over: `AlbumIndexSource`
+      loads from the `album` table, so once the row is deleted the backfill can never see the document
+      again. A soft-hidden album document would be permanently unreconcilable — and, before this change,
+      it was not even hidden: takedown deleted the row and left the document `visible = true`, so
+      `/v1/search` kept returning the release while `/v1/albums/:id` answered 404.
+    - *Why the projection owns this and not `ReleaseSearchProjectionObserver`.* Both events are observed
+      by two independent `AFTER_SUCCESS` observers whose order CDI does not define. An observer that
+      indexed the album could run before the album row was written and find nothing to index. The
+      component that writes the row writes the document.
+    - *Why `topResult` is the surface that leaked.* `SearchService` hydrates the grouped `albums` list
+      from the `album` table and drops unresolvable hits, so a deleted album quietly disappeared from it.
+      `topResult` is mapped straight off the search hit with no hydration — so the stale document
+      surfaced there, as the most prominent result on the page. A test asserting only on `albums` would
+      not have caught this.
 - **Anti-manipulation in ranking (LLFR-SEARCH-01.2 / SEARCH-01.2).** `popularity` is supplied by
   `PopularityUpdated` events sourced from de-duped, **non-bot** play counts; `playback` rate-limits and
   flags plays and `risk` excludes flagged actors *before* the count reaches `search` (§6.3.2/§9). The

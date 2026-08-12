@@ -18,6 +18,7 @@ import org.shakvilla.beatzmedia.platform.application.port.out.FeatureFlags;
 import org.shakvilla.beatzmedia.platform.application.port.out.PlatformSettingsProvider;
 import org.shakvilla.beatzmedia.platform.domain.ApiError;
 import org.shakvilla.beatzmedia.platform.domain.ErrorCode;
+import org.shakvilla.beatzmedia.platform.domain.FeatureKey;
 
 /**
  * JAX-RS filter that enforces platform-level rules before any resource dispatches:
@@ -65,12 +66,15 @@ public class PlatformEnforcementFilter implements ContainerRequestFilter {
     // 2. Feature flag check: method annotation overrides class annotation.
     RequiresFeature featureAnnotation = resolveFeatureAnnotation(resourceInfo);
     if (featureAnnotation != null) {
-      if (!featureFlags.isEnabled(featureAnnotation.value())) {
-        ctx.abortWith(buildError(
-            Response.Status.FORBIDDEN,
-            ErrorCode.FEATURE_DISABLED,
-            "Feature is currently disabled: " + featureAnnotation.value().name(),
-            null));
+      for (FeatureKey required : featureAnnotation.value()) {
+        if (!featureFlags.isEnabled(required)) {
+          ctx.abortWith(buildError(
+              Response.Status.FORBIDDEN,
+              ErrorCode.FEATURE_DISABLED,
+              "Feature is currently disabled: " + required.name(),
+              null));
+          return;
+        }
       }
     }
   }

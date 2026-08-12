@@ -36,7 +36,8 @@ class ListStudioEpisodesServiceTest {
 
   @Test
   void list_decoratesEpisodesWithShowTitle() {
-    repo.withShow(PodcastShow.create(new ShowId("sh-1"), ARTIST, "Konongo Diaries", "Storytelling", NOW));
+    repo.withShow(PodcastShow.create(new ShowId("sh-1"), ARTIST, "Konongo Diaries", "Storytelling", null, null,
+        NOW));
     Episode e1 = Episode.createDraft(
         new EpisodeId("ep-1"), new ShowId("sh-1"), ARTIST, "Ep 1", "desc", "audio-key", null, 120,
         false, 0L, Currency.GHS, false, NOW, null, null);

@@ -65,17 +65,27 @@ export function relativeTimeAgo(iso: string, now?: number): string {
   return r === '' || r === 'just now' ? r : `${r} ago`
 }
 
-/** ISO-8601 → "Mon YYYY" (e.g. "Mar 2024"), matching the admin "joined" column. Empty string on unparseable. */
-export function monthYear(iso: string): string {
+/**
+ * ISO-8601 → `"D Mon YYYY"` (e.g. `"15 Mar 2024"`), the admin "joined" column. Empty string on
+ * unparseable, so a bad timestamp never renders "Invalid Date".
+ *
+ * <p>Replaces the previous month-and-year-only format (GAP-16), which rendered a join date as
+ * `"Aug 2026"`. Support work keys off the exact day — matching a receipt, correlating a signup with
+ * a complaint — and a month alone cannot do it. UTC so the label does not shift with the viewer's
+ * timezone; a join date that reads differently for two admins is worse than one that is an hour off.
+ */
+export function dayMonthYear(iso: string): string {
   const ms = Date.parse(iso)
   if (!Number.isFinite(ms)) return ''
-  return new Intl.DateTimeFormat('en-US', { month: 'short', year: 'numeric' }).format(new Date(ms))
+  return new Date(ms).toLocaleDateString('en-GB', {
+    day: 'numeric', month: 'short', year: 'numeric', timeZone: 'UTC',
+  })
 }
 
 /**
  * Formats an ISO-8601 timestamp as the admin screens' short date label, e.g. `"Apr 22"`.
  * Returns `''` for an unparseable value so a bad timestamp never renders "Invalid Date".
- * (`monthYear` above yields `"Apr 2026"`; the finance ledger and dispute screens want day precision.)
+ * (`dayMonthYear` above carries the year too; the finance ledger and dispute screens do not want it.)
  */
 export function monthDay(iso: string): string {
   const ms = Date.parse(iso)

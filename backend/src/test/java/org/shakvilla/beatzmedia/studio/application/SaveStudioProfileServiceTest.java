@@ -9,6 +9,7 @@ import java.util.List;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.shakvilla.beatzmedia.platform.fakes.FakeClock;
+import org.shakvilla.beatzmedia.platform.fakes.FakeTaxonomyRepository;
 import org.shakvilla.beatzmedia.studio.application.port.in.SaveStudioProfileCommand;
 import org.shakvilla.beatzmedia.studio.application.port.in.StudioLinks;
 import org.shakvilla.beatzmedia.studio.application.port.in.StudioProfileView;
@@ -32,7 +33,7 @@ class SaveStudioProfileServiceTest {
   @Test
   void save_happyPath_persistsAndReturnsView() {
     FakeStudioRepository repo = new FakeStudioRepository();
-    SaveStudioProfileService service = new SaveStudioProfileService(repo, FakeClock.fixed());
+    SaveStudioProfileService service = new SaveStudioProfileService(repo, FakeClock.fixed(), FakeTaxonomyRepository.withDefaults());
 
     SaveStudioProfileCommand cmd = new SaveStudioProfileCommand(
         "Black Sherif", "@blacko", "Konongo, Ghana", List.of("Drill", "Hiplife"), "bio",
@@ -52,7 +53,7 @@ class SaveStudioProfileServiceTest {
         new ArtistId("other-artist"), "@blacko", "Other", null, List.of(), null, null, null,
         ProfileLinks.empty(), List.of(), null, null, List.of(), Instant.now());
     FakeStudioRepository repo = new FakeStudioRepository().withProfile(otherArtistProfile);
-    SaveStudioProfileService service = new SaveStudioProfileService(repo, FakeClock.fixed());
+    SaveStudioProfileService service = new SaveStudioProfileService(repo, FakeClock.fixed(), FakeTaxonomyRepository.withDefaults());
 
     SaveStudioProfileCommand cmd = new SaveStudioProfileCommand(
         "Black Sherif", "@blacko", null, List.of(), null, null, null, EMPTY_LINKS, List.of(), null,
@@ -65,7 +66,7 @@ class SaveStudioProfileServiceTest {
   @Test
   void save_usernameCaseInsensitiveCollision_throwsUsernameTaken() {
     FakeStudioRepository repo = new FakeStudioRepository();
-    SaveStudioProfileService service = new SaveStudioProfileService(repo, FakeClock.fixed());
+    SaveStudioProfileService service = new SaveStudioProfileService(repo, FakeClock.fixed(), FakeTaxonomyRepository.withDefaults());
     service.save(
         new ArtistId("artist-1"),
         new SaveStudioProfileCommand(
@@ -83,7 +84,7 @@ class SaveStudioProfileServiceTest {
   @Test
   void save_reSaveSameUsernameBySameArtist_allowed() {
     FakeStudioRepository repo = new FakeStudioRepository();
-    SaveStudioProfileService service = new SaveStudioProfileService(repo, FakeClock.fixed());
+    SaveStudioProfileService service = new SaveStudioProfileService(repo, FakeClock.fixed(), FakeTaxonomyRepository.withDefaults());
     SaveStudioProfileCommand cmd = new SaveStudioProfileCommand(
         "Black Sherif", "blacko", null, List.of(), null, null, null, EMPTY_LINKS, List.of(), null,
         null, List.of());
@@ -98,7 +99,7 @@ class SaveStudioProfileServiceTest {
   @Test
   void save_unknownGenre_throwsInvalidGenre() {
     FakeStudioRepository repo = new FakeStudioRepository();
-    SaveStudioProfileService service = new SaveStudioProfileService(repo, FakeClock.fixed());
+    SaveStudioProfileService service = new SaveStudioProfileService(repo, FakeClock.fixed(), FakeTaxonomyRepository.withDefaults());
 
     SaveStudioProfileCommand cmd = new SaveStudioProfileCommand(
         "Black Sherif", "blacko", null, List.of("Dubstep"), null, null, null, EMPTY_LINKS,
