@@ -40,6 +40,7 @@ class MediaAssetMapper {
         ObjectKey.fromStorageString(e.originalKey),
         e.fullKey != null ? ObjectKey.fromStorageString(e.fullKey) : null,
         e.previewKey != null ? ObjectKey.fromStorageString(e.previewKey) : null,
+        null,
         e.createdAt,
         e.contentHash);
   }

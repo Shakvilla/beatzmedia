@@ -17,6 +17,7 @@ public class MediaAsset {
   private final ObjectKey originalKey;
   private ObjectKey fullKey;
   private ObjectKey previewKey;
+  private ObjectKey losslessKey;
   private final Instant createdAt;
   private final String contentHash;
 
@@ -30,6 +31,7 @@ public class MediaAsset {
       ObjectKey originalKey,
       ObjectKey fullKey,
       ObjectKey previewKey,
+      ObjectKey losslessKey,
       Instant createdAt,
       String contentHash) {
     this.id = id;
@@ -40,6 +42,7 @@ public class MediaAsset {
     this.originalKey = originalKey;
     this.fullKey = fullKey;
     this.previewKey = previewKey;
+    this.losslessKey = losslessKey;
     this.createdAt = createdAt;
     this.contentHash = contentHash;
   }
@@ -58,7 +61,7 @@ public class MediaAsset {
       String contentHash) {
     return new MediaAsset(
         id, ownerRef, kind, MediaStatus.UPLOADING, durationSec,
-        originalKey, null, null, now, contentHash);
+        originalKey, null, null, null, now, contentHash);
   }
 
   // ---- State-machine transitions ----
@@ -103,6 +106,21 @@ public class MediaAsset {
     this.status = MediaStatus.READY;
   }
 
+  /**
+   * Attach the lossless rendition. Separate from {@link #markReady} on purpose: READY means
+   * playable, and playback must not wait on a FLAC transcode that only downloads need.
+   */
+  public void markLosslessReady(ObjectKey losslessKey) {
+    if (losslessKey == null) {
+      throw new IllegalArgumentException("losslessKey must not be null");
+    }
+    this.losslessKey = losslessKey;
+  }
+
+  public ObjectKey getLosslessKey() {
+    return losslessKey;
+  }
+
   /** Move to ERROR (transcode/probe failure). */
   public void markError() {
     this.status = MediaStatus.ERROR;
@@ -122,6 +140,13 @@ public class MediaAsset {
         throw new IllegalStateException("fullKey is null for asset " + id.value());
       }
       return fullKey;
+    }
+    if (variant == DeliveryVariant.LOSSLESS) {
+      if (losslessKey == null) {
+        // Deliberately not a fallback to fullKey — see DeliveryVariant.LOSSLESS.
+        throw new IllegalStateException("losslessKey is null for asset " + id.value());
+      }
+      return losslessKey;
     }
     // PREVIEW: always return the preview key (30s clip)
     if (previewKey == null) {

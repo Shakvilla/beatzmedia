@@ -67,7 +67,7 @@ class TranscodeResultHandlingTest {
         MediaStatus.TRANSCODING,
         0,
         new ObjectKey("orig", "originals/audio/transcode-001"),
-        null, null,
+        null, null, null,
         Instant.parse("2026-01-01T00:00:00Z"),
         "hash-t1");
     repository.save(asset);
@@ -163,7 +163,7 @@ class TranscodeResultHandlingTest {
         MediaStatus.ERROR,
         0,
         new ObjectKey("orig", "originals/audio/retry-001"),
-        null, null,
+        null, null, null,
         Instant.parse("2026-01-01T00:00:00Z"),
         "hash-retry");
     repository.save(asset);

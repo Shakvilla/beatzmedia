@@ -7,5 +7,11 @@ package org.shakvilla.beatzmedia.media.domain;
  */
 public enum DeliveryVariant {
   FULL,
-  PREVIEW
+  PREVIEW,
+  /**
+   * The {@code lossless.flac} rendition — the download payload, owners only, and only when the
+   * grant permits it. Separate from FULL because FULL is AAC 128k: serving it as "the download"
+   * would hand over a lossy file on a platform selling lossless masters.
+   */
+  LOSSLESS
 }

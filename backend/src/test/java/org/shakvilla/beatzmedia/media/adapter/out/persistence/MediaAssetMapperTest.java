@@ -67,6 +67,7 @@ class MediaAssetMapperTest {
         new ObjectKey("beatz-media-originals", "originals/audio/map-002"),
         new ObjectKey("beatz-media-delivery", "delivery/map-002/full.m4a"),
         new ObjectKey("beatz-media-delivery", "delivery/map-002/preview.m4a"),
+        null,
         NOW,
         "hash-ready");
 
