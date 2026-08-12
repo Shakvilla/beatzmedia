@@ -9,8 +9,13 @@
 # backend/docs/sdlc/branching-and-pr.md §4:
 #   build, unit-tests, integration-tests, contract-test, archunit,
 #   coverage-gate, spotless-lint, security-scan (security.yml),
-#   migration-test, compose-smoke
+#   migration-test, compose-smoke, frontend
 # Do not rename without updating that doc.
+#
+# NOTE: `frontend` runs on every PR from the moment this lands, but it only
+# BLOCKS a merge once it is added to the required status checks in branch
+# protection — a repo setting, not something this file can express. Until then
+# it reports without gating. See backend/docs/sdlc/branching-and-pr.md §4.
 name: ci
 
 on:
@@ -314,3 +319,42 @@ jobs:
         if: ${{ always() }}
         working-directory: backend
         run: docker compose down -v
+
+  # ---------------------------------------------------------------------------
+  # frontend — typecheck + unit tests for the SPA in Frontend/.
+  #
+  # Added because the frontend had NO CI at all: 226 source files and 348 tests
+  # ran only on whoever remembered to run them locally, while the backend was
+  # gated by 16 checks. CLAUDE.md calls the SPA "the functional spec" the backend
+  # implements, so it was the least-guarded half of the contract. See issue #211.
+  #
+  # `npm run build` is the real typecheck gate — it runs `tsc -b`, which uses the
+  # per-package tsconfigs. A bare `tsc --noEmit` at the root is looser and misses
+  # import-path and noImplicitAny errors, so do not "simplify" this to that.
+  # It also catches things vitest cannot: vitest does not typecheck, so a wire-type
+  # mismatch passes 348 green tests and fails here (that is how GAP-28 was caught).
+  #
+  # Lint is deliberately NOT run yet — there are ~219 pre-existing findings, 196 of
+  # them one HMR-hygiene rule. Turning it on is tracked separately in #211 so this
+  # job can land now rather than waiting on a cleanup.
+  # ---------------------------------------------------------------------------
+  frontend:
+    name: frontend
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          # Read from Frontend/.nvmrc so CI and local developers cannot drift.
+          node-version-file: Frontend/.nvmrc
+          cache: npm
+          cache-dependency-path: Frontend/package-lock.json
+      - name: Install (clean, lockfile-exact)
+        working-directory: Frontend
+        run: npm ci
+      - name: Typecheck + build
+        working-directory: Frontend
+        run: npm run build
+      - name: Unit tests
+        working-directory: Frontend
+        run: npx vitest run --reporter=default
