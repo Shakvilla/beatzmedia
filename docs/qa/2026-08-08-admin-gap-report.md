@@ -863,6 +863,46 @@ Listed so this report is not mistaken for full coverage.
 
 ---
 
+## 7b. Retest — 2026-08-12
+
+Every fix re-verified against a clean-master stack (schema 977) with a live admin session, driving
+the real UI and checking the database rather than the toast. Three new defects came out of it —
+GAP-28, GAP-29, GAP-30 — each written up above.
+
+| Gap | How it was verified | Result |
+|---|---|---|
+| GAP-01 | both detail routes opened directly | render |
+| GAP-02 | flags set false in the DB, waited out the 30s cache, curled the endpoints | `403 FEATURE_DISABLED` on `/v1/podcasts` and `/v1/events`; flags restored |
+| GAP-03 | `audit_entry` after each live action | `actor_name = Admin` on every row |
+| GAP-04 | `GET /v1/admin/health` | one real readiness check, `status` derived from it, no `<default>: UP` noise |
+| GAP-05 | clicked Take down in the row menu | modal, 5 reason chips, confirm genuinely `disabled` until one is picked; audit recorded `TAKEDOWN_RELEASE / Copyright claim` |
+| GAP-06 | detail page while taken down | button reads **Reinstate**; clicking it returned the release to `live` |
+| GAP-07 | PUT → GET → PUT → GET on `fanMessaging` | every PUT returned what it wrote; the second toggle straight after a save landed correctly |
+| GAP-09 | `PUT /settings` with `flags: { PODCASTS: false }` | `422 VALIDATION`; **flags unchanged** |
+| GAP-10 | `GET /v1/admin/users` + the console's own pill | `adminRole: super-admin` / `null`; pill reads SUPER-ADMIN |
+| GAP-11 | taxonomy with no / blank / bogus / real `kind` | 200 (22 terms, 3 kinds) / 200 / **422** / 200 (9) |
+| GAP-16 | user detail header | "joined 8 Aug 2026" |
+| GAP-17 | `AdminRoleMatrixIT` + `AdminSupportResourceIT` | 20 tests green. **Not verified live** — no support-role account exists in this database, so only the negative case's test coverage was checked, not the running behaviour |
+| GAP-19/21 | every `Download`-icon control classified in source | five listed exports disabled; three unlisted ones found → GAP-30 |
+| GAP-22 | `album` table after publish | album row projected, `genres={Afrobeats}` |
+| GAP-23 | triggered a reset, read Mailpit | mail delivered with a single-use link; token is two UUIDv7s from `SecureRandom` (148 bits), SHA-256 stored, 30-minute expiry |
+| GAP-25 | `/v1/tracks/:id/lyrics` + the query factory | 404 → `[]`; the placeholder generator is unreferenced |
+| GAP-26 | `elementFromPoint` at each open menu item's own centre | every item returns its **own** button, not the `fixed inset-0 z-40` backdrop |
+| GAP-27 | took the release down, read `search_document` | TRACK `visible=f` **and the ALBUM document removed**, album projection dropped; reinstating rebuilt all three |
+| GAP-08 | impersonated, then exited | banner with live countdown, `/v1/me` returned the artist, Exit restored the **exact** admin token (SHA-256 compared inside the page) and cleaned up both storage keys |
+
+**Not re-verified:** GAP-13 (PR #206, unmerged), GAP-20 (`compliance_request` is empty in this
+database, so overdue derivation was only read in source), GAP-24's live palette behaviour beyond the
+regression test.
+
+**Two observations, neither a defect.** The one release carries `release_track.position = 0` and
+`price_minor = 0`, and has no `split_entry` rows — the console reports all three faithfully, so this
+is a question about the release-creation path, not the admin surface. Separately, `feature_flag`
+still holds five orphan `PROVIDER_*` rows from V978, which master's `FeatureKey` does not define;
+nothing on master reads them.
+
+---
+
 ## 8. Suggested triage order
 
 0. **GAP-23** — no password-reset mail is sent anywhere. Nobody can recover an account, and every
