@@ -90,6 +90,23 @@ public final class Track {
         image, ownership, priceMinor, plays, audioUrl, credits, quality, year, READY_STATUS);
   }
 
+  /**
+   * Returns a copy carrying the release's cover art.
+   *
+   * <p>Uploaded tracks are stamped with a hardcoded {@code /images/placeholder.jpg} because the
+   * artwork is not known at upload time. That placeholder is what fans saw on the track row, the
+   * artist page and in search — for every track ever uploaded, since no cover could be stored at
+   * all until V975. Idempotent: the same URL returns the same instance and costs no write.
+   */
+  public Track withImage(String newImage) {
+    if (newImage == null || newImage.isBlank() || newImage.equals(image)) {
+      return this;
+    }
+    return new Track(
+        id, title, artistId, artistName, albumId, albumTitle, durationSec,
+        newImage, ownership, priceMinor, plays, audioUrl, credits, quality, year, status);
+  }
+
   public TrackId getId() {
     return id;
   }

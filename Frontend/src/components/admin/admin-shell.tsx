@@ -1,6 +1,6 @@
 import { Link, Outlet, useLocation } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
-import { LayoutDashboard, Users, ListMusic, Flag, Wallet, Radio, Activity, ScrollText, SlidersHorizontal, ShieldAlert, LifeBuoy, Scale, Search, ArrowLeft, Menu, X, ShieldCheck, type LucideIcon } from 'lucide-react'
+import { LayoutDashboard, Users, ListMusic, Flag, Wallet, Radio, Activity, ScrollText, SlidersHorizontal, ShieldAlert, LifeBuoy, Scale, Search, ArrowLeft, Menu, X, ShieldCheck, Tags, type LucideIcon } from 'lucide-react'
 import { cn } from '../../utils/cn'
 import { useAdminIdentity } from '../../features/admin/use-admin-identity'
 import { AdminCommand } from './admin-command'
@@ -16,6 +16,7 @@ const NAV: { to: string; icon: LucideIcon; label: string }[] = [
   { to: '/admin/trust', icon: ShieldAlert, label: 'Trust & safety' },
   { to: '/admin/support', icon: LifeBuoy, label: 'Support' },
   { to: '/admin/compliance', icon: Scale, label: 'Compliance' },
+  { to: '/admin/taxonomy', icon: Tags, label: 'Genres & categories' },
   { to: '/admin/audit', icon: ScrollText, label: 'Audit log' },
   { to: '/admin/settings', icon: SlidersHorizontal, label: 'Settings' },
 ]

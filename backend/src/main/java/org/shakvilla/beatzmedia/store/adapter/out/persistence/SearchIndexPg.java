@@ -21,7 +21,6 @@ import org.shakvilla.beatzmedia.search.domain.SearchFilters;
 import org.shakvilla.beatzmedia.search.domain.SearchQuery;
 import org.shakvilla.beatzmedia.search.domain.SearchResults;
 import org.shakvilla.beatzmedia.store.application.port.out.SearchIndex;
-import org.shakvilla.beatzmedia.store.domain.Genre;
 import org.shakvilla.beatzmedia.store.domain.StoreItem;
 import org.shakvilla.beatzmedia.store.domain.StoreItemId;
 import org.shakvilla.beatzmedia.store.domain.StoreItemType;
@@ -49,9 +48,9 @@ public class SearchIndexPg implements SearchIndex {
 
   @Override
   public Page<StoreItemId> query(
-      String text, Optional<StoreItemType> type, Optional<Genre> genre, StoreSort sort, PageRequest page) {
+      String text, Optional<StoreItemType> type, Optional<String> genre, StoreSort sort, PageRequest page) {
     SearchFilters filters =
-        new SearchFilters(type.map(StoreItemType::name), genre.map(Genre::wireValue), toSearchSort(sort));
+        new SearchFilters(type.map(StoreItemType::name), genre, toSearchSort(sort));
     SearchQuery searchQuery =
         new SearchQuery(text, org.shakvilla.beatzmedia.search.domain.SearchScope.STORE_ITEM, filters, page);
     SearchResults results = queryService.search(searchQuery);
@@ -69,7 +68,7 @@ public class SearchIndexPg implements SearchIndex {
         BigDecimal.valueOf(item.priceMinor()).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP));
     payload.put("price_currency", item.currency().name());
     payload.put("type", item.type().name());
-    item.genre().ifPresent(g -> payload.put("genre", g.wireValue()));
+    item.genre().ifPresent(g -> payload.put("genre", g));
     item.quality().ifPresent(q -> payload.put("quality", q));
 
     IndexDocument document =

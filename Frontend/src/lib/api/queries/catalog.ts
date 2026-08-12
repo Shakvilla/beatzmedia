@@ -6,13 +6,11 @@ import {
   toTrack,
   toAlbum,
   toAlbumTracks,
-  toBrowseCategory,
   toLyricLines,
   toPlaylist,
   type ArtistWire,
   type TrackWire,
   type AlbumWire,
-  type BrowseCategoryWire,
   type LyricsWire,
   type PlaylistWire,
 } from '../mappers'
@@ -47,15 +45,6 @@ export function homeQuery() {
   })
 }
 
-export function browseCategoriesQuery() {
-  return queryOptions({
-    queryKey: ['browse-categories'],
-    queryFn: async () => {
-      const wire = await apiFetch<BrowseCategoryWire[]>('/browse-categories')
-      return wire.map(toBrowseCategory)
-    },
-  })
-}
 
 export function artistQuery(id: string) {
   return queryOptions({

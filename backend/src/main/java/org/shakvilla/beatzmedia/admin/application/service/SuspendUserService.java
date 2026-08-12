@@ -7,6 +7,7 @@ import jakarta.transaction.Transactional;
 import org.shakvilla.beatzmedia.admin.application.port.in.AdminUserRowView;
 import org.shakvilla.beatzmedia.admin.application.port.in.SuspendUser;
 import org.shakvilla.beatzmedia.admin.application.port.out.AccountAdminPort;
+import org.shakvilla.beatzmedia.admin.application.port.out.IdentityReader;
 import org.shakvilla.beatzmedia.audit.application.port.out.AuditWriter;
 import org.shakvilla.beatzmedia.audit.domain.AuditEntry;
 import org.shakvilla.beatzmedia.audit.domain.AuditType;
@@ -29,15 +30,17 @@ public class SuspendUserService implements SuspendUser {
   private final AuditWriter auditWriter;
   private final IdGenerator idGenerator;
   private final Clock clock;
+  private final IdentityReader identityReader;
 
   @Inject
   public SuspendUserService(
       AccountAdminPort accountAdminPort, AuditWriter auditWriter, IdGenerator idGenerator,
-      Clock clock) {
+      Clock clock, IdentityReader identityReader) {
     this.accountAdminPort = accountAdminPort;
     this.auditWriter = auditWriter;
     this.idGenerator = idGenerator;
     this.clock = clock;
+    this.identityReader = identityReader;
   }
 
   @Override
@@ -55,6 +58,8 @@ public class SuspendUserService implements SuspendUser {
         reason,
         clock.now()));
 
-    return AdminUserMapper.toView(result);
+    // The console role comes from admin_member, which identity's mutation view does not carry;
+    // without this the response would claim a suspended administrator is not one (GAP-10).
+    return AdminUserMapper.toView(result, identityReader.adminRoleOf(result.id()).orElse(null));
   }
 }

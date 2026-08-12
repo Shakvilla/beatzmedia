@@ -15,6 +15,7 @@ import org.shakvilla.beatzmedia.identity.application.port.in.AuthResult;
 import org.shakvilla.beatzmedia.identity.application.port.in.Login;
 import org.shakvilla.beatzmedia.identity.application.port.in.Logout;
 import org.shakvilla.beatzmedia.identity.application.port.in.RegisterFan;
+import org.shakvilla.beatzmedia.identity.application.port.in.ResetPassword;
 import org.shakvilla.beatzmedia.identity.application.port.in.SocialLogin;
 import org.shakvilla.beatzmedia.identity.domain.AccountId;
 import org.shakvilla.beatzmedia.identity.domain.SocialProvider;
@@ -40,6 +41,7 @@ public class AuthResource {
   private final Login loginPort;
   private final SocialLogin socialLoginPort;
   private final Logout logoutPort;
+  private final ResetPassword resetPasswordPort;
   private final JsonWebToken jwt;
 
   @Inject
@@ -48,12 +50,36 @@ public class AuthResource {
       Login loginPort,
       SocialLogin socialLoginPort,
       Logout logoutPort,
+      ResetPassword resetPasswordPort,
       JsonWebToken jwt) {
     this.registerFanPort = registerFanPort;
     this.loginPort = loginPort;
     this.socialLoginPort = socialLoginPort;
     this.logoutPort = logoutPort;
+    this.resetPasswordPort = resetPasswordPort;
     this.jwt = jwt;
+  }
+
+  /**
+   * POST /v1/auth/password/reset — redeem a reset token and set a new password. Public: the token
+   * from the emailed link is the caller's only credential, so requiring auth here would make the
+   * endpoint useless to the very users who need it.
+   *
+   * <p>Lives on {@code /auth} rather than {@code /me} because the caller is by definition not
+   * signed in. Its sibling, the *request* endpoint, remains at {@code /me/password/reset} where the
+   * contract already places it.
+   *
+   * <p>410 for an unknown, spent or expired token (indistinguishable by design); 422
+   * {@code WEAK_PASSWORD}; 403 {@code ACCOUNT_SUSPENDED}.
+   */
+  @POST
+  @Path("/password/reset")
+  @PermitAll
+  @Consumes(MediaType.APPLICATION_JSON)
+  public Response resetPassword(@Valid PasswordResetConfirmRequest request) {
+    resetPasswordPort.reset(
+        new ResetPassword.ResetPasswordCommand(request.token(), request.password()));
+    return Response.noContent().build();
   }
 
   /** POST /v1/auth/signup — LLFR-IDENTITY-01.1. Returns 201 with token + account. */

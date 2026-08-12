@@ -1,12 +1,12 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { ArrowLeft, Disc3, Check, Flag, ShieldX, Clock, Play } from 'lucide-react'
+import { ArrowLeft, Disc3, Check, Flag, ShieldX, RotateCcw, Clock, Play } from 'lucide-react'
 import { cn } from '../utils/cn'
-import { Modal } from '../components/ui/modal'
 import { useToast } from '../components/ui/toast-provider'
 import { type CatalogStatus } from '../lib/admin-data'
-import { catalogItemQuery, apiApproveCatalog, apiFlagCatalog, apiTakedownCatalog } from '../lib/api/queries/admin-catalog'
+import { catalogItemQuery, apiApproveCatalog, apiFlagCatalog, apiTakedownCatalog, apiReinstateCatalog } from '../lib/api/queries/admin-catalog'
+import { TakedownModal } from '../components/admin/takedown-modal'
 import { AdminLoadError } from '../components/admin/load-error'
 import { ApiError } from '../lib/api/errors'
 
@@ -63,6 +63,7 @@ function AdminCatalogDetail() {
   const approve = () => runAction(() => apiApproveCatalog(item.id), 'Approved & published', 'Could not approve release')
   const flag = () => runAction(async () => { await apiFlagCatalog(item.id); await invalidateModeration() }, 'Flagged for review', 'Could not flag release')
   const takedown = (reason: string) => runAction(() => apiTakedownCatalog(item.id, reason), `Taken down · ${reason}`, 'Could not take down release')
+  const reinstate = () => runAction(() => apiReinstateCatalog(item.id), 'Reinstated — live again', 'Could not reinstate release')
 
   const reviewable = item.status === 'pending' || item.status === 'flagged'
 
@@ -85,8 +86,16 @@ function AdminCatalogDetail() {
           </div>
           <div className="flex items-center gap-2">
             {reviewable && <button onClick={approve} className="h-10 px-4 rounded-full bg-beatz-green text-black text-sm font-bold hover:scale-105 transition-transform"><span className="flex items-center gap-2"><Check size={15} /> Approve</span></button>}
-            {item.status !== 'flagged' && <button onClick={flag} className="h-10 px-4 rounded-full bg-gray-100 dark:bg-white/10 text-beatz-dark-bg dark:text-white text-sm font-bold flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors"><Flag size={15} /> Flag</button>}
-            <button onClick={() => setTakedownOpen(true)} className="h-10 px-4 rounded-full bg-beatz-red/10 text-beatz-red text-sm font-bold flex items-center gap-2 hover:bg-beatz-red/20 transition-colors"><ShieldX size={15} /> Take down</button>
+            {item.status !== 'flagged' && item.status !== 'takedown' && <button onClick={flag} className="h-10 px-4 rounded-full bg-gray-100 dark:bg-white/10 text-beatz-dark-bg dark:text-white text-sm font-bold flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors"><Flag size={15} /> Flag</button>}
+            {/*
+              Reinstate replaces Take down once a release is down. The endpoint existed, guarded
+              and tested, with nothing calling it — so a takedown could not be undone from the
+              console. It re-fires ReleaseWentLive, so the search index and album projection are
+              rebuilt; a direct database edit would leave both stale.
+            */}
+            {item.status === 'takedown'
+              ? <button onClick={reinstate} className="h-10 px-4 rounded-full bg-beatz-green/10 text-beatz-green text-sm font-bold flex items-center gap-2 hover:bg-beatz-green/20 transition-colors"><RotateCcw size={15} /> Reinstate</button>
+              : <button onClick={() => setTakedownOpen(true)} className="h-10 px-4 rounded-full bg-beatz-red/10 text-beatz-red text-sm font-bold flex items-center gap-2 hover:bg-beatz-red/20 transition-colors"><ShieldX size={15} /> Take down</button>}
           </div>
         </div>
       </div>
@@ -99,7 +108,13 @@ function AdminCatalogDetail() {
             {item.tracks.map((t) => (
               <div key={t.position} className="flex items-center gap-3 py-2.5 border-b border-dashed border-gray-200 dark:border-white/5 last:border-0 group">
                 <span className="w-5 text-sm font-mono text-gray-400 dark:text-gray-500 shrink-0">{t.position}</span>
-                <button onClick={() => toast(`Previewing “${t.title}”`, 'info')} className="w-7 h-7 rounded-full bg-beatz-green/10 text-beatz-green flex items-center justify-center shrink-0 opacity-0 group-hover:opacity-100 transition-opacity"><Play size={12} fill="currentColor" /></button>
+                {/*
+                  Moderator preview needs the media pipeline (a stream URL per track) which this
+                  view does not have; it only ever toasted. Left visible but inert rather than
+                  claiming playback that never starts — a moderator deciding a takedown should not
+                  believe they have heard the track.
+                */}
+                <button disabled title="Track preview isn't available here yet." className="w-7 h-7 rounded-full bg-gray-100 dark:bg-white/10 text-gray-400 dark:text-gray-500 flex items-center justify-center shrink-0 opacity-0 group-hover:opacity-100 transition-opacity cursor-not-allowed"><Play size={12} fill="currentColor" /></button>
                 <span className="flex-1 text-sm font-bold text-beatz-dark-bg dark:text-white truncate">{t.title}</span>
                 <span className="text-xs font-mono text-gray-400 dark:text-gray-500 shrink-0">{t.isrc ?? '—'}</span>
                 <span className="w-12 text-right text-sm font-mono text-gray-500 dark:text-gray-300 shrink-0">{t.duration}</span>
@@ -113,8 +128,14 @@ function AdminCatalogDetail() {
           <section className={cn(CARD, 'flex flex-col gap-3')}>
             <h2 className="text-lg font-bold text-beatz-dark-bg dark:text-white">Metadata</h2>
             <Meta label="UPC" value={item.upc ?? '—'} />
-            <Meta label="Primary genre" value="Hiplife / Drill" />
-            <Meta label="Label" value={item.artist === 'Various' ? 'Beatzclik Compilations' : 'Independent'} />
+            {/*
+              Genre used to be the literal "Hiplife / Drill" and Label a guess off the artist name,
+              so every release read the same regardless of what it actually was — on the page a
+              moderator uses to decide approve-or-take-down. Genre now comes from release.genre;
+              Label is gone because the platform stores no label anywhere, and an em dash would
+              still imply it is a field we track.
+            */}
+            <Meta label="Primary genre" value={item.genre ?? '—'} />
             <Meta label="Tracks" value={`${item.tracks.length}`} last />
           </section>
 
@@ -164,22 +185,3 @@ function StatusPill({ status }: { status: CatalogStatus }) {
   return <span className={cn('px-2.5 py-1 rounded-full text-[10px] font-bold', cls)}>{status}</span>
 }
 
-function TakedownModal({ isOpen, title, onClose, onConfirm }: { isOpen: boolean; title: string; onClose: () => void; onConfirm: (reason: string) => void }) {
-  const [reason, setReason] = useState('')
-  const REASONS = ['Copyright claim', 'Metadata mismatch', 'Duplicate ISRC', 'Policy violation', 'Other']
-  return (
-    <Modal isOpen={isOpen} onClose={onClose} title={`Take down “${title}”`}>
-      <div className="flex flex-col gap-5">
-        <p className="text-sm text-white/70">The release will be removed from BeatzClik and the artist notified. A reason is required and logged.</p>
-        <div className="flex flex-wrap gap-2">
-          {REASONS.map((r) => <button key={r} onClick={() => setReason(r)} className={cn('h-9 px-3.5 rounded-full text-xs font-bold border transition-colors', reason === r ? 'border-beatz-red bg-beatz-red/10 text-beatz-red' : 'border-white/10 text-white/70 hover:border-white/20')}>{r}</button>)}
-        </div>
-        <input value={reason} onChange={(e) => setReason(e.target.value)} placeholder="Add a note…" className="w-full h-11 rounded-xl bg-white/5 border border-white/10 px-4 text-white placeholder:text-white/20 focus:outline-none focus:border-beatz-red/60" />
-        <div className="flex items-center gap-3">
-          <button onClick={onClose} className="flex-1 h-12 rounded-full bg-white/10 text-white font-bold hover:bg-white/15 transition-colors">Cancel</button>
-          <button onClick={() => reason.trim() && onConfirm(reason.trim())} disabled={!reason.trim()} className="flex-1 h-12 rounded-full bg-beatz-red text-white font-bold hover:bg-beatz-red-light transition-colors disabled:opacity-40">Take down</button>
-        </div>
-      </div>
-    </Modal>
-  )
-}

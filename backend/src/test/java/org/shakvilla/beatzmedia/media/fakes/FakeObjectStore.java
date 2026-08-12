@@ -5,6 +5,7 @@ import java.util.HashMap;
 import java.util.Map;
 
 import org.shakvilla.beatzmedia.media.application.port.out.ObjectStorePort;
+import org.shakvilla.beatzmedia.media.application.port.out.ObjectStorePort.StoredObject;
 import org.shakvilla.beatzmedia.media.domain.MediaAssetId;
 import org.shakvilla.beatzmedia.media.domain.MediaKind;
 import org.shakvilla.beatzmedia.media.domain.ObjectKey;
@@ -32,6 +33,15 @@ public class FakeObjectStore implements ObjectStorePort {
   @Override
   public boolean exists(ObjectKey key) {
     return store.containsKey(key.bucket() + "|" + key.key());
+  }
+
+  @Override
+  public StoredObject open(ObjectKey key) {
+    byte[] bytes = store.get(key.bucket() + "|" + key.key());
+    if (bytes == null) {
+      throw new IllegalStateException("No such object: " + key.key());
+    }
+    return new StoredObject(new java.io.ByteArrayInputStream(bytes), "image/png", bytes.length);
   }
 
   @Override

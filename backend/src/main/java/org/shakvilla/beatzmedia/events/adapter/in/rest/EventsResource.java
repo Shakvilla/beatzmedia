@@ -20,6 +20,8 @@ import org.shakvilla.beatzmedia.events.application.port.in.ListEvents;
 import org.shakvilla.beatzmedia.events.domain.EventCategory;
 import org.shakvilla.beatzmedia.events.domain.EventId;
 import org.shakvilla.beatzmedia.identity.domain.AccountId;
+import org.shakvilla.beatzmedia.platform.adapter.in.rest.RequiresFeature;
+import org.shakvilla.beatzmedia.platform.domain.FeatureKey;
 import org.shakvilla.beatzmedia.platform.domain.Page;
 import org.shakvilla.beatzmedia.platform.domain.PageRequest;
 import org.shakvilla.beatzmedia.platform.domain.ValidationException;
@@ -41,7 +43,7 @@ import org.shakvilla.beatzmedia.platform.domain.ValidationException;
  */
 @Path("/v1/events")
 @Produces(MediaType.APPLICATION_JSON)
-@PermitAll
+@PermitAll@RequiresFeature(FeatureKey.EVENTS)
 public class EventsResource {
 
   private final ListEvents listEvents;

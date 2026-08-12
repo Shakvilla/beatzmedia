@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { relativeTime, relativeTimeAgo, monthYear, monthDay, toCedis, dueLabel } from './format'
+import { relativeTime, relativeTimeAgo, dayMonthYear, monthDay, toCedis, dueLabel } from './format'
 
 describe('relativeTime', () => {
   const now = Date.parse('2025-01-01T12:00:00Z')
@@ -18,9 +18,12 @@ describe('relativeTimeAgo', () => {
   it('empty stays empty (no bare " ago")', () => expect(relativeTimeAgo('nope', now)).toBe(''))
 })
 
-describe('monthYear', () => {
-  it('formats mid-month ISO as Mon YYYY', () => expect(monthYear('2024-03-15T10:30:00Z')).toBe('Mar 2024'))
-  it('unparseable → empty string', () => expect(monthYear('nope')).toBe(''))
+describe('dayMonthYear', () => {
+  it('formats mid-month ISO as D Mon YYYY', () => expect(dayMonthYear('2024-03-15T10:30:00Z')).toBe('15 Mar 2024'))
+  // GAP-16: the old formatter dropped the day, so an admin could not tell a 1 August signup from a
+  // 31 August one. Pinned to UTC so the label does not shift with the viewer's timezone.
+  it('keeps the day near a timezone boundary', () => expect(dayMonthYear('2024-03-01T00:30:00Z')).toBe('1 Mar 2024'))
+  it('unparseable → empty string', () => expect(dayMonthYear('nope')).toBe(''))
 })
 
 describe('monthDay', () => {

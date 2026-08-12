@@ -12,6 +12,7 @@ import { useCreatorIdentity, initialsOf } from '../features/studio/use-creator-i
 import { artistTracksQuery } from '../lib/api/queries/catalog'
 import { studioProfileQuery, apiSaveStudioProfile } from '../lib/api/queries/studio'
 import { ApiError } from '../lib/api/errors'
+import { taxonomyQuery } from '../lib/api/queries/taxonomy'
 
 export const Route = createFileRoute('/studio/profile')({
   loader: ({ context: { queryClient } }) => queryClient.ensureQueryData(studioProfileQuery()),
@@ -37,7 +38,7 @@ function ProfileComponent() {
   })
 
   const [p, setP] = useState<StudioProfile>(storeProfile)
-  const [tagDraft, setTagDraft] = useState('')
+  const { data: allGenres = [] } = useQuery(taxonomyQuery('genre'))
   const avatarRef = useRef<HTMLInputElement>(null)
   const bannerRef = useRef<HTMLInputElement>(null)
   const pressRef = useRef<HTMLInputElement>(null)
@@ -49,11 +50,12 @@ function ProfileComponent() {
   const set = <K extends keyof StudioProfile>(key: K, value: StudioProfile[K]) => setP((prev) => ({ ...prev, [key]: value }))
   const setLink = (key: keyof StudioProfile['links'], value: string) => setP((prev) => ({ ...prev, links: { ...prev.links, [key]: value } }))
 
-  const addTag = () => {
-    const t = tagDraft.trim()
+  const addTag = (label: string) => {
+    const t = label.trim()
     if (t && !p.genres.includes(t)) set('genres', [...p.genres, t])
-    setTagDraft('')
   }
+  /** Only genres the artist has not already picked; the select is empty-but-labelled otherwise. */
+  const availableGenres = allGenres.filter((g) => !p.genres.includes(g.label))
   const removeTag = (t: string) => set('genres', p.genres.filter((g) => g !== t))
 
   const updateShow = (id: string, patch: Partial<StudioShow>) => set('shows', p.shows.map((s) => (s.id === id ? { ...s, ...patch } : s)))
@@ -164,7 +166,22 @@ function ProfileComponent() {
                     {g}<button onClick={() => removeTag(g)} aria-label={`Remove ${g}`} className="hover:bg-beatz-green/20 rounded-full p-0.5"><X size={13} /></button>
                   </span>
                 ))}
-                <input value={tagDraft} onChange={(e) => setTagDraft(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addTag() } }} onBlur={addTag} placeholder="+ Add genre" className="h-9 px-3 rounded-full bg-transparent border border-dashed border-gray-300 dark:border-white/20 text-sm text-beatz-dark-bg dark:text-white placeholder:text-gray-400 focus:outline-none focus:border-beatz-green/60 w-32" />
+                {/*
+                Was a free-text input, so an artist could type "afrobeats" or "Afro Beats" and only
+                discover on save that the server rejected it with INVALID_GENRE. It is now a picker
+                over the same admin-managed list the backend validates against, listing only genres
+                not already chosen — an invalid genre is no longer expressible.
+              */}
+              <select
+                value=""
+                onChange={(e) => { if (e.target.value) addTag(e.target.value) }}
+                disabled={availableGenres.length === 0}
+                className="h-9 px-3 rounded-full bg-transparent border border-dashed border-gray-300 dark:border-white/20 text-sm text-beatz-dark-bg dark:text-white focus:outline-none focus:border-beatz-green/60 cursor-pointer disabled:opacity-40 disabled:cursor-not-allowed">
+                <option value="">{availableGenres.length ? '+ Add genre' : 'All genres added'}</option>
+                {availableGenres.map((g) => (
+                  <option key={g.id} value={g.label}>{g.label}</option>
+                ))}
+              </select>
               </div>
             </Field>
             <Field label="Bio">

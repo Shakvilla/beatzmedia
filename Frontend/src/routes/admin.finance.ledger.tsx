@@ -2,7 +2,6 @@ import { createFileRoute, Link } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
 import { ArrowLeft, Search, Download } from 'lucide-react'
 import { cn } from '../utils/cn'
-import { useToast } from '../components/ui/toast-provider'
 import { useQuery } from '@tanstack/react-query'
 import type { LedgerTxn, LedgerType } from '../lib/admin-data'
 import { ledgerQuery, LEDGER_PAGE_SIZE } from '../lib/api/queries/admin-finance'
@@ -19,7 +18,6 @@ const signed = (n: number) => `${n < 0 ? '−' : ''}₵${Math.abs(n).toLocaleStr
 const TYPES: (LedgerType | 'all')[] = ['all', 'Sale', 'Royalty', 'Tip', 'Payout', 'Refund', 'Fee']
 
 function AdminLedger() {
-  const { toast } = useToast()
   const [type, setType] = useState<LedgerType | 'all'>('all')
   const [query, setQuery] = useState('')
   const [debouncedQ, setDebouncedQ] = useState('')
@@ -52,7 +50,8 @@ function AdminLedger() {
             <h1 className="text-display text-beatz-dark-bg dark:text-white">Ledger</h1>
             <span className="text-sm text-gray-500 dark:text-gray-300">Net in view · <span className={cn('font-bold font-mono', net < 0 ? 'text-beatz-red' : 'text-beatz-green')}>{signed(net)}</span></span>
           </div>
-          <button onClick={() => toast('Exporting ledger as CSV', 'success')} className="h-11 px-4 rounded-full bg-gray-100 dark:bg-white/10 text-beatz-dark-bg dark:text-white text-sm font-bold flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors">
+          {/* No ledger-export endpoint exists. Finance reconciliation will need one; it isn't there yet. */}
+          <button disabled title="Ledger export isn't available yet." className="h-11 px-4 rounded-full bg-gray-100 dark:bg-white/10 text-gray-400 dark:text-gray-500 text-sm font-bold flex items-center gap-2 cursor-not-allowed">
             <Download size={16} /> Export
           </button>
         </div>

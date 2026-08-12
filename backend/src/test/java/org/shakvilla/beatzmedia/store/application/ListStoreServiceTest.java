@@ -14,7 +14,6 @@ import org.shakvilla.beatzmedia.platform.domain.PageRequest;
 import org.shakvilla.beatzmedia.store.application.port.in.ListStore.StoreQuery;
 import org.shakvilla.beatzmedia.store.application.port.in.StoreItemView;
 import org.shakvilla.beatzmedia.store.application.service.ListStoreService;
-import org.shakvilla.beatzmedia.store.domain.Genre;
 import org.shakvilla.beatzmedia.store.domain.StoreItem;
 import org.shakvilla.beatzmedia.store.domain.StoreItemId;
 import org.shakvilla.beatzmedia.store.domain.StoreItemType;
@@ -28,7 +27,7 @@ import org.shakvilla.beatzmedia.store.fakes.FakeStoreRepository;
 @Tag("unit")
 class ListStoreServiceTest {
 
-  private static StoreItem track(String id, Genre genre, int popularity, String createdAt, long priceMinor) {
+  private static StoreItem track(String id, String genre, int popularity, String createdAt, long priceMinor) {
     return new StoreItem(
         new StoreItemId(id),
         StoreItemType.TRACK,
@@ -54,8 +53,8 @@ class ListStoreServiceTest {
   void list_noFilter_returnsAllItems() {
     FakeStoreRepository repo =
         new FakeStoreRepository()
-            .withItem(track("t1", Genre.AFROBEATS, 90, "2026-05-01T00:00:00Z", 400))
-            .withItem(track("t2", Genre.DRILL, 80, "2026-05-02T00:00:00Z", 500));
+            .withItem(track("t1", "Afrobeats", 90, "2026-05-01T00:00:00Z", 400))
+            .withItem(track("t2", "Drill", 80, "2026-05-02T00:00:00Z", 500));
     ListStoreService service = new ListStoreService(repo);
 
     Page<StoreItemView> page = service.list(StoreQuery.NONE, PageRequest.defaults());
@@ -66,7 +65,7 @@ class ListStoreServiceTest {
 
   @Test
   void list_typeFilter_returnsOnlyMatchingItems() {
-    FakeStoreRepository repo = new FakeStoreRepository().withItem(track("t1", Genre.AFROBEATS, 90, "2026-05-01T00:00:00Z", 400));
+    FakeStoreRepository repo = new FakeStoreRepository().withItem(track("t1", "Afrobeats", 90, "2026-05-01T00:00:00Z", 400));
     ListStoreService service = new ListStoreService(repo);
 
     Page<StoreItemView> page =
@@ -86,13 +85,13 @@ class ListStoreServiceTest {
   void list_genreFilter_returnsOnlyMatchingItems() {
     FakeStoreRepository repo =
         new FakeStoreRepository()
-            .withItem(track("t1", Genre.AFROBEATS, 90, "2026-05-01T00:00:00Z", 400))
-            .withItem(track("t2", Genre.DRILL, 80, "2026-05-02T00:00:00Z", 500));
+            .withItem(track("t1", "Afrobeats", 90, "2026-05-01T00:00:00Z", 400))
+            .withItem(track("t2", "Drill", 80, "2026-05-02T00:00:00Z", 500));
     ListStoreService service = new ListStoreService(repo);
 
     Page<StoreItemView> page =
         service.list(
-            new StoreQuery(Optional.empty(), Optional.of(Genre.DRILL), StoreSort.POPULAR),
+            new StoreQuery(Optional.empty(), Optional.of("Drill"), StoreSort.POPULAR),
             PageRequest.defaults());
 
     assertEquals(1, page.total());
@@ -103,8 +102,8 @@ class ListStoreServiceTest {
   void list_sortPopular_ordersByPopularityDescending() {
     FakeStoreRepository repo =
         new FakeStoreRepository()
-            .withItem(track("low", Genre.AFROBEATS, 10, "2026-05-01T00:00:00Z", 400))
-            .withItem(track("high", Genre.AFROBEATS, 99, "2026-05-01T00:00:00Z", 400));
+            .withItem(track("low", "Afrobeats", 10, "2026-05-01T00:00:00Z", 400))
+            .withItem(track("high", "Afrobeats", 99, "2026-05-01T00:00:00Z", 400));
     ListStoreService service = new ListStoreService(repo);
 
     Page<StoreItemView> page =
@@ -118,8 +117,8 @@ class ListStoreServiceTest {
   void list_sortNewest_ordersByCreatedAtDescending() {
     FakeStoreRepository repo =
         new FakeStoreRepository()
-            .withItem(track("old", Genre.AFROBEATS, 50, "2026-01-01T00:00:00Z", 400))
-            .withItem(track("new", Genre.AFROBEATS, 50, "2026-06-01T00:00:00Z", 400));
+            .withItem(track("old", "Afrobeats", 50, "2026-01-01T00:00:00Z", 400))
+            .withItem(track("new", "Afrobeats", 50, "2026-06-01T00:00:00Z", 400));
     ListStoreService service = new ListStoreService(repo);
 
     Page<StoreItemView> page =
@@ -133,8 +132,8 @@ class ListStoreServiceTest {
   void list_sortPriceAsc_ordersByPriceAscending() {
     FakeStoreRepository repo =
         new FakeStoreRepository()
-            .withItem(track("expensive", Genre.AFROBEATS, 50, "2026-01-01T00:00:00Z", 5000))
-            .withItem(track("cheap", Genre.AFROBEATS, 50, "2026-01-01T00:00:00Z", 400));
+            .withItem(track("expensive", "Afrobeats", 50, "2026-01-01T00:00:00Z", 5000))
+            .withItem(track("cheap", "Afrobeats", 50, "2026-01-01T00:00:00Z", 400));
     ListStoreService service = new ListStoreService(repo);
 
     Page<StoreItemView> page =
@@ -149,8 +148,8 @@ class ListStoreServiceTest {
   void list_sortPriceDesc_ordersByPriceDescending() {
     FakeStoreRepository repo =
         new FakeStoreRepository()
-            .withItem(track("expensive", Genre.AFROBEATS, 50, "2026-01-01T00:00:00Z", 5000))
-            .withItem(track("cheap", Genre.AFROBEATS, 50, "2026-01-01T00:00:00Z", 400));
+            .withItem(track("expensive", "Afrobeats", 50, "2026-01-01T00:00:00Z", 5000))
+            .withItem(track("cheap", "Afrobeats", 50, "2026-01-01T00:00:00Z", 400));
     ListStoreService service = new ListStoreService(repo);
 
     Page<StoreItemView> page =
@@ -165,7 +164,7 @@ class ListStoreServiceTest {
   void list_pagination_slicesResults() {
     FakeStoreRepository repo = new FakeStoreRepository();
     for (int i = 0; i < 5; i++) {
-      repo.withItem(track("t" + i, Genre.AFROBEATS, 50, "2026-01-01T00:00:00Z", 400));
+      repo.withItem(track("t" + i, "Afrobeats", 50, "2026-01-01T00:00:00Z", 400));
     }
     ListStoreService service = new ListStoreService(repo);
 

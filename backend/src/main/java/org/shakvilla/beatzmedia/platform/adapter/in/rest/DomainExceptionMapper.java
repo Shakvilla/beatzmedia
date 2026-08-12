@@ -69,6 +69,7 @@ public class DomainExceptionMapper implements ExceptionMapper<DomainException> {
               NOT_STACKABLE,
               CART_EMPTY,
               CHECKOUT_KIND_UNSUPPORTED,
+              PROVIDER_DISABLED,
               INSUFFICIENT_BALANCE,
               KYC_BLOCKED,
               PAYOUT_METHOD_IN_USE,
@@ -85,7 +86,7 @@ public class DomainExceptionMapper implements ExceptionMapper<DomainException> {
       case RATE_LIMITED -> Response.Status.TOO_MANY_REQUESTS.getStatusCode();
       case MAINTENANCE, MEDIA_UNAVAILABLE -> Response.Status.SERVICE_UNAVAILABLE.getStatusCode();
       case PAYLOAD_TOO_LARGE -> 413;
-      case SPLIT_INVITE_GONE -> Response.Status.GONE.getStatusCode();
+      case SPLIT_INVITE_GONE, RESET_TOKEN_INVALID -> Response.Status.GONE.getStatusCode();
       case INTERNAL -> Response.Status.INTERNAL_SERVER_ERROR.getStatusCode();
     };
   }

@@ -26,6 +26,8 @@ import jakarta.ws.rs.core.Response;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.jboss.resteasy.reactive.MultipartForm;
 import org.jboss.resteasy.reactive.multipart.FileUpload;
+import org.shakvilla.beatzmedia.platform.adapter.in.rest.RequiresFeature;
+import org.shakvilla.beatzmedia.platform.domain.FeatureKey;
 import org.shakvilla.beatzmedia.platform.domain.ValidationException;
 import org.shakvilla.beatzmedia.studio.application.port.in.CreateEpisode;
 import org.shakvilla.beatzmedia.studio.application.port.in.CreateEpisode.AudioUpload;
@@ -37,10 +39,12 @@ import org.shakvilla.beatzmedia.studio.application.port.in.EpisodeView;
 import org.shakvilla.beatzmedia.studio.application.port.in.ListStudioEpisodes;
 import org.shakvilla.beatzmedia.studio.application.port.in.ListStudioPodcastShows;
 import org.shakvilla.beatzmedia.studio.application.port.in.PodcastShowView;
+import org.shakvilla.beatzmedia.studio.application.port.in.SetShowCover;
 import org.shakvilla.beatzmedia.studio.application.port.in.UpdateEpisode;
 import org.shakvilla.beatzmedia.studio.application.port.in.UpdateEpisode.UpdateEpisodeCommand;
 import org.shakvilla.beatzmedia.studio.domain.ArtistId;
 import org.shakvilla.beatzmedia.studio.domain.EpisodeId;
+import org.shakvilla.beatzmedia.studio.domain.ShowId;
 
 /**
  * Thin REST resource for the Studio podcast shows/episodes endpoints (LLFR-STUDIO-02.1 – 02.4).
@@ -62,7 +66,7 @@ import org.shakvilla.beatzmedia.studio.domain.EpisodeId;
  */
 @Path("/v1/studio/podcasts")
 @Produces(MediaType.APPLICATION_JSON)
-@RolesAllowed("artist")
+@RolesAllowed("artist")@RequiresFeature(FeatureKey.PODCASTS)
 public class StudioPodcastResource {
 
   private final ListStudioPodcastShows listStudioPodcastShows;
@@ -71,6 +75,7 @@ public class StudioPodcastResource {
   private final CreateEpisode createEpisode;
   private final UpdateEpisode updateEpisode;
   private final DeleteEpisode deleteEpisode;
+  private final SetShowCover setShowCover;
   private final JsonWebToken jwt;
 
   @Inject
@@ -81,6 +86,7 @@ public class StudioPodcastResource {
       CreateEpisode createEpisode,
       UpdateEpisode updateEpisode,
       DeleteEpisode deleteEpisode,
+      SetShowCover setShowCover,
       JsonWebToken jwt) {
     this.listStudioPodcastShows = listStudioPodcastShows;
     this.createPodcastShow = createPodcastShow;
@@ -88,6 +94,7 @@ public class StudioPodcastResource {
     this.createEpisode = createEpisode;
     this.updateEpisode = updateEpisode;
     this.deleteEpisode = deleteEpisode;
+    this.setShowCover = setShowCover;
     this.jwt = jwt;
   }
 
@@ -106,9 +113,31 @@ public class StudioPodcastResource {
   @Consumes(MediaType.APPLICATION_JSON)
   public Response createShow(CreateShowBody body) {
     PodcastShowView view = createPodcastShow.create(
-        artistId(), new CreatePodcastShowCommand(body != null ? body.title() : null,
-            body != null ? body.category() : null));
+        artistId(),
+        new CreatePodcastShowCommand(
+            body != null ? body.title() : null,
+            body != null ? body.category() : null,
+            body != null ? body.image() : null,
+            body != null ? body.description() : null));
     return Response.status(Response.Status.CREATED).entity(view).build();
+  }
+
+  /**
+   * POST /v1/studio/podcasts/shows/:id/cover — multipart {@code image} part.
+   *
+   * <p>Returns {@code { "image": "/v1/media/images/{assetId}" }}, the stable URL now stored on the
+   * show. A show cannot publish an episode to fans without one, because the fan-facing
+   * {@code podcast.image} column is NOT NULL.
+   */
+  @POST
+  @Path("/shows/{id}/cover")
+  @Consumes(MediaType.MULTIPART_FORM_DATA)
+  public Response setShowCover(@PathParam("id") String id, @MultipartForm ShowCoverForm form) {
+    if (form == null || form.image == null) {
+      throw new ValidationException("'image' file part is required", "image");
+    }
+    String url = setShowCover.setCover(artistId(), new ShowId(id), toImageUpload(form.image));
+    return Response.ok(java.util.Map.of("image", url)).build();
   }
 
   // ---- Episodes ----
@@ -195,6 +224,26 @@ public class StudioPodcastResource {
     }
   }
 
+  /** Same hash-then-restream shape as {@link #toAudioUpload}: media needs the digest up front. */
+  private static SetShowCover.ImageUpload toImageUpload(FileUpload file) {
+    try (InputStream body = java.nio.file.Files.newInputStream(file.uploadedFile())) {
+      MessageDigest digest = MessageDigest.getInstance("SHA-256");
+      DigestInputStream digestBody = new DigestInputStream(body, digest);
+      byte[] buf = new byte[8192];
+      //noinspection StatementWithEmptyBody
+      while (digestBody.read(buf) != -1) {}
+      String contentHash = bytesToHex(digest.digest());
+      return new SetShowCover.ImageUpload(
+          file.fileName(),
+          file.contentType(),
+          file.size(),
+          java.nio.file.Files.newInputStream(file.uploadedFile()),
+          contentHash);
+    } catch (IOException | NoSuchAlgorithmException e) {
+      throw new IllegalStateException("Could not read the uploaded image", e);
+    }
+  }
+
   private static AudioUpload toAudioUpload(FileUpload file) {
     if (file == null) {
       return null;
@@ -227,7 +276,8 @@ public class StudioPodcastResource {
   // ---- Request DTOs (records) ----
 
   /** {@code CreateShowDto {title,category}} — Studio ADD §5.1. */
-  public record CreateShowBody(String title, String category) {}
+  /** {@code image} is the show cover — optional here, required before an episode can publish. */
+  public record CreateShowBody(String title, String category, String image, String description) {}
 
   /**
    * {@code CreateEpisodeDto} — Studio ADD §6. {@code showId} XOR {@code newShow}; {@code cover} is

@@ -145,6 +145,12 @@ public class JpaStudioRepository implements StudioRepository {
   }
 
   @Override
+  public Optional<Episode> findEpisodeById(EpisodeId id) {
+    EpisodeEntity e = em.find(EpisodeEntity.class, id.value());
+    return e == null ? Optional.empty() : Optional.of(PodcastEntityMapper.toDomain(e));
+  }
+
+  @Override
   public Optional<Episode> findEpisodeByIdempotencyKey(ArtistId artist, String idempotencyKey) {
     return em.createQuery(
             "SELECT e FROM EpisodeEntity e WHERE e.artistId = :artist"

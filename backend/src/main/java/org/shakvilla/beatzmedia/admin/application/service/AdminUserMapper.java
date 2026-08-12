@@ -24,10 +24,16 @@ final class AdminUserMapper {
         row.verified(),
         row.createdAt(),
         row.updatedAt(),
-        row.status());
+        row.status(),
+        row.adminRole());
   }
 
-  static AdminUserRowView toView(AccountMutationResult result) {
+  /**
+   * @param adminRole the account's console role, or {@code null} when it is not an admin member.
+   *     Passed in because the mutation result comes from identity's {@code AccountAdminView}, which
+   *     does not carry it — see {@code IdentityReader.adminRoleOf} (GAP-10).
+   */
+  static AdminUserRowView toView(AccountMutationResult result, String adminRole) {
     return new AdminUserRowView(
         result.id(),
         result.name(),
@@ -37,7 +43,8 @@ final class AdminUserMapper {
         result.verified(),
         result.createdAt(),
         result.updatedAt(),
-        result.status());
+        result.status(),
+        adminRole);
   }
 
   private static String roleOf(boolean isArtist) {

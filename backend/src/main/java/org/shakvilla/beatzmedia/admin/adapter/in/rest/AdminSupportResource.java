@@ -47,9 +47,17 @@ import org.shakvilla.beatzmedia.platform.domain.PageRequest;
  *   <li>POST /v1/admin/support/tickets/:id/resolve → 200 {@code SupportTicket}
  * </ul>
  *
- * <p><strong>RBAC (admin ADD §8).</strong> Support is {@code RW} for every admin role — inbound
- * {@code @RolesAllowed} accepts all five; the application layer does not additionally narrow
- * (support has no super-admin-only action, unlike settings/compliance).
+ * <p><strong>RBAC (admin ADD §8).</strong> <strong>Reads are open to all five admin roles; the
+ * three mutations are {@code support} + {@code super-admin} only</strong> (GAP-17).
+ *
+ * <p>Every role could previously assign, reply and resolve. That made support the loosest grant in
+ * the console — and it is the one surface that speaks to a fan <em>in the platform's voice</em>, so
+ * a {@code finance} or {@code editor} admin could answer a customer on BeatzClik's behalf. Catalog
+ * had the shape right already: {@code support} may read it, only {@code moderator} may act on it.
+ *
+ * <p>Read access stays wide on purpose. Looking up a ticket is how a finance admin corroborates a
+ * refund complaint or an editor traces a takedown appeal; narrowing reads would break real work to
+ * fix a problem that only exists on the write path.
  */
 @Path("/v1/admin/support/tickets")
 @Produces(MediaType.APPLICATION_JSON)
@@ -112,12 +120,18 @@ public class AdminSupportResource {
   }
 
   /** POST /v1/admin/support/tickets/:id/reply — LLFR-ADMIN-08.1. */
+  /**
+   * Method-level {@code @RolesAllowed} <em>replaces</em> the class-level grant, so this is the
+   * complete set for this endpoint — not an addition to the five above (GAP-17).
+   */
+  @RolesAllowed({"super-admin", "support"})
   @POST
   @Path("/{id}/reply")
   @Consumes(MediaType.APPLICATION_JSON)
   @Operation(summary = "Reply to a support ticket")
   @APIResponse(responseCode = "201", description = "Reply recorded")
   @APIResponse(responseCode = "422", description = "Blank reply text")
+  @APIResponse(responseCode = "403", description = "Requires support or super-admin")
   @APIResponse(responseCode = "404", description = "Ticket not found")
   public Response reply(@PathParam("id") String id, @Valid ReplyRequest request) {
     SupportMessageDto dto = SupportMessageDto.from(
@@ -126,6 +140,7 @@ public class AdminSupportResource {
   }
 
   /** POST /v1/admin/support/tickets/:id/assign — LLFR-ADMIN-08.1. */
+  @RolesAllowed({"super-admin", "support"})  // GAP-17 — see reply() above
   @POST
   @Path("/{id}/assign")
   @Consumes(MediaType.APPLICATION_JSON)
@@ -138,6 +153,7 @@ public class AdminSupportResource {
   }
 
   /** POST /v1/admin/support/tickets/:id/resolve — LLFR-ADMIN-08.1. */
+  @RolesAllowed({"super-admin", "support"})  // GAP-17 — see reply() above
   @POST
   @Path("/{id}/resolve")
   @Operation(summary = "Resolve a support ticket")

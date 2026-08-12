@@ -159,7 +159,8 @@ function PayoutsComponent() {
       <section className={cn(CARD, 'flex flex-col gap-5')}>
         <div className="flex items-center justify-between gap-4 flex-wrap">
           <h2 className="text-lg font-bold text-beatz-dark-bg dark:text-white">Transactions</h2>
-          <button onClick={() => toast('Exporting transactions as CSV', 'success')} className="h-9 px-4 rounded-full bg-gray-100 dark:bg-white/10 text-beatz-dark-bg dark:text-white text-xs font-bold flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors">
+          {/* No export endpoint exists for transactions — this reported success and produced no file. */}
+          <button disabled title="Transaction export isn't available yet." className="h-9 px-4 rounded-full bg-gray-100 dark:bg-white/10 text-gray-400 dark:text-gray-500 text-xs font-bold flex items-center gap-2 cursor-not-allowed">
             <Download size={14} /> Export CSV
           </button>
         </div>
