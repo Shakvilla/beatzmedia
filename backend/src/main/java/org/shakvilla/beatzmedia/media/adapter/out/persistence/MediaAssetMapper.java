@@ -25,13 +25,14 @@ class MediaAssetMapper {
     e.originalKey = domain.getOriginalKey().toStorageString();
     e.fullKey = domain.getFullKey() != null ? domain.getFullKey().toStorageString() : null;
     e.previewKey = domain.getPreviewKey() != null ? domain.getPreviewKey().toStorageString() : null;
+    e.losslessKey = domain.getLosslessKey() != null ? domain.getLosslessKey().toStorageString() : null;
     e.createdAt = domain.getCreatedAt();
     e.contentHash = domain.getContentHash();
     return e;
   }
 
   static MediaAsset toDomain(MediaAssetEntity e) {
-    return new MediaAsset(
+    MediaAsset asset = new MediaAsset(
         new MediaAssetId(e.id),
         OwnerRef.fromStorageString(e.ownerRef),
         MediaKind.valueOf(e.kind),
@@ -43,5 +44,9 @@ class MediaAssetMapper {
         null,
         e.createdAt,
         e.contentHash);
+    if (e.losslessKey != null) {
+      asset.markLosslessReady(ObjectKey.fromStorageString(e.losslessKey));
+    }
+    return asset;
   }
 }
