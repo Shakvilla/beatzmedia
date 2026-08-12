@@ -119,11 +119,36 @@ jobs:
       # itself with assumeTrue(ffmpegOnPath()), so without ffmpeg it reports "Tests run: 0" and
       # the suite goes green having proven nothing. That is how INV-3 went uncovered before.
       # Installing ffmpeg here is what makes the assertion actually execute; do not drop this step.
-      - name: Install ffmpeg (required for RealTranscodeIT / INV-3 coverage)
+      #
+      # It must be the SAME ffmpeg the runtime image ships. This step used to `apt-get install
+      # ffmpeg`, which is Ubuntu's build at whatever version the runner image carries — while
+      # production runs the statically-linked mwader/static-ffmpeg pinned in Dockerfile.jvm. So the
+      # test exercised a binary that never reaches production: when Dependabot bumped static-ffmpeg
+      # 8.1.2 -> 9.0 (#200), this gate went green without executing ffmpeg 9 even once. A test that
+      # runs the wrong binary is worse than one that skips, because it reports coverage it does not
+      # have.
+      #
+      # The tag is read out of the Dockerfile rather than repeated here, so the next bump updates
+      # both at once and they cannot drift apart again.
+      - name: Install ffmpeg (same build as the runtime image — RealTranscodeIT / INV-3 coverage)
         run: |
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends ffmpeg
+          set -euo pipefail
+          IMAGE=$(grep -oE 'mwader/static-ffmpeg:[^[:space:]]+' backend/src/main/docker/Dockerfile.jvm | head -1)
+          if [ -z "$IMAGE" ]; then
+            echo "::error::Could not read the static-ffmpeg tag from Dockerfile.jvm. Refusing to" \
+                 "fall back to a distro ffmpeg — that is the drift this step exists to prevent."
+            exit 1
+          fi
+          echo "Using $IMAGE (from Dockerfile.jvm)"
+          docker create --name ffmpeg-src "$IMAGE"
+          sudo docker cp ffmpeg-src:/ffmpeg  /usr/local/bin/ffmpeg
+          sudo docker cp ffmpeg-src:/ffprobe /usr/local/bin/ffprobe
+          docker rm ffmpeg-src
           ffprobe -version | head -1
+          # Fail loudly if the binary on PATH is not the one we just installed.
+          EXPECTED="${IMAGE##*:}"
+          ffprobe -version | head -1 | grep -q "version ${EXPECTED%%-*}" || {
+            echo "::error::ffprobe on PATH is not $IMAGE"; exit 1; }
       - name: Integration tests (failsafe + Testcontainers)
         working-directory: backend
         # -DskipITs=false activates failsafe via `verify`.

@@ -52,14 +52,28 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
-            <!-- Netty BOM pin (imported BEFORE quarkus-bom so it wins): quarkus-bom
-                 3.37.3 ships Netty 4.1.135.Final, against which Trivy flags a batch of
-                 HIGH advisories disclosed 2026-07 — CVE-2026-59901 (netty-codec Bzip2Decoder
-                 infinite loop), CVE-2026-55851 (netty-codec-haproxy), and CVE-2026-55831 /
-                 -55833 / -56745 (netty-codec-http). All are fixed in 4.1.136.Final. Netty is
-                 the reachable transport under Quarkus REST/gRPC, so this is a real patch, not
-                 a suppression. Importing the whole netty-bom keeps every netty-* module
-                 aligned. Remove once quarkus-bom ships Netty >= 4.1.136.Final. -->
+            <!-- Netty BOM pin (imported BEFORE quarkus-bom so it wins).
+
+                 Why it exists: quarkus-bom 3.37.3 shipped Netty 4.1.135.Final, against which
+                 Trivy flags a batch of HIGH advisories disclosed 2026-07 — CVE-2026-59901
+                 (netty-codec Bzip2Decoder infinite loop), CVE-2026-55851 (netty-codec-haproxy),
+                 and CVE-2026-55831 / -55833 / -56745 (netty-codec-http). Those are fixed from
+                 4.1.136.Final onwards. Netty is the reachable transport under Quarkus REST/gRPC,
+                 so this is a real patch, not a suppression. Importing the whole netty-bom keeps
+                 every netty-* module aligned.
+
+                 This pin has since been carried forward by Dependabot onto the 4.2 line
+                 (4.2.17.Final), which is a different minor line, not just a newer patch: the
+                 codec module was split (netty-codec-base, netty-codec-compression) and the
+                 buffer API reworked. Verified booting and serving under Quarkus.
+
+                 Before removing this: dropping the pin hands Netty's version back to quarkus-bom,
+                 which today would move us DOWN to the 4.1 line. That is only safe once quarkus-bom
+                 manages a version at least as new as the one pinned here — checking it merely
+                 clears 4.1.136.Final is no longer sufficient, and was the condition this comment
+                 used to state. -->
+            <!-- IMPORTANT: keep the version above in step with this rationale — a stale pin
+                 rationale reads as an arbitrary pin, and arbitrary pins get deleted. -->
             <dependency>
                 <groupId>io.netty</groupId>
                 <artifactId>netty-bom</artifactId>
