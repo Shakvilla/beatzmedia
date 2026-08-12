@@ -138,7 +138,16 @@ function CheckoutCompleteComponent() {
           <Link to="/library" className="h-12 px-8 rounded-full bg-beatz-green text-black font-bold flex items-center justify-center hover:scale-105 transition-transform">
             Go to library
           </Link>
-          <button className="h-12 px-8 rounded-full border border-gray-300 dark:border-white/20 text-beatz-dark-bg dark:text-white font-bold flex items-center justify-center gap-2 hover:bg-gray-100 dark:hover:bg-white/10 transition-colors">
+          {/*
+            This button had no onClick at all — it styled as enabled, and clicking it did nothing
+            and said nothing. On a buy-to-own platform this is the screen where "yours forever" is
+            promised, so a dead download control here reads as a broken purchase rather than a
+            missing feature.
+
+            No download endpoint exists anywhere in the API: media serves signed, time-boxed stream
+            URLs, and nothing bundles a purchase for download. Disabled and labelled until one does.
+          */}
+          <button disabled title="Downloads aren't available yet — your purchase is in your library." className="h-12 px-8 rounded-full border border-gray-200 dark:border-white/10 text-gray-400 dark:text-gray-500 font-bold flex items-center justify-center gap-2 cursor-not-allowed">
             <Download size={18} /> Download all
           </button>
         </div>

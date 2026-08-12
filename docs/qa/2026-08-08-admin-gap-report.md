@@ -667,6 +667,48 @@ to the frontend gate would have caught this one before it shipped.
 
 ---
 
+### GAP-30 · Three more controls that do nothing — the ones that stayed silent
+
+*Found 2026-08-12, retesting GAP-19/21.*
+
+All five placebo exports named in GAP-19/21 are now honestly disabled with tooltips — verified in
+source. But re-sweeping **by control** rather than by the old list turned up three the first pass
+never recorded:
+
+| Control | Where | What it did |
+|---|---|---|
+| **Export** → CSV / PDF report | `studio.analytics.tsx` | Toasted *"Exporting last 28 days as CSV"* — **success** — and produced no file. |
+| **Download all** | `checkout.complete.tsx` | **No `onClick` at all.** Styled as enabled. |
+| **Install desktop app** | `components/layout/sidebar.tsx` | **No `onClick` at all.** Present on every fan screen. |
+
+**Why the first sweep missed exactly these.** It was done by clicking, and it recorded what came
+back. A button that toasts a lie announces itself; a button with no handler produces *nothing* — no
+toast, no navigation, no network — and reads as "I must have missed the target" rather than "this
+control is dead". The sweep was biased toward controls that respond. The analytics export hid a
+third way: it toasts, but from behind a dropdown, so it costs two clicks to reach and one to
+discover.
+
+The re-sweep that found them enumerates every `Download`-icon control in the codebase and classifies
+each as disabled or live, which does not depend on noticing anything:
+
+```bash
+grep -rn "Download size" Frontend/src/routes Frontend/src/components
+```
+
+**"Download all" is the serious one.** It sits on the post-purchase screen of a **buy-to-own**
+platform, directly under the words *"yours forever"*. A dead control there does not read as a
+missing feature; it reads as a purchase that failed. And no download endpoint exists anywhere in the
+API — media serves signed, time-boxed *stream* URLs, and nothing bundles a purchase into a file. So
+the product's core promise has no delivery mechanism behind it. **That is a missing feature, not a
+defect, and it belongs in the triage list above GAP-22.**
+
+**Status.** Analytics export and Download all are disabled with honest tooltips, matching the
+treatment of the other five. *Install desktop app* was **removed**, not disabled: unlike the
+exports, it is not a real requirement waiting on an endpoint — there is no desktop app and nothing
+in the repo builds one, so a disabled control would still advertise a product that does not exist.
+
+---
+
 ## 4. Medium
 
 ### GAP-09 · Settings silently accepts unknown flag keys — and disables every flag

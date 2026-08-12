@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "@tanstack/react-router"
 import { useEffect, useState, type ReactNode } from "react"
-import { Home, Search as SearchIcon, Library, Mic, Download, Store, CalendarDays, ChevronsLeft, ChevronsRight, Plus, Heart, ListMusic, Disc3, type LucideIcon } from "lucide-react"
+import { Home, Search as SearchIcon, Library, Mic, Store, CalendarDays, ChevronsLeft, ChevronsRight, Plus, Heart, ListMusic, Disc3, type LucideIcon } from "lucide-react"
 import { useTheme } from "../theme-provider"
 import { cn } from "../../utils/cn"
 import { SidebarTooltip } from "../ui/sidebar-tooltip"
@@ -127,17 +127,13 @@ export function Sidebar() {
             {!collapsed && <span>Artist Studio</span>}
           </Link>
         </SidebarTooltip>
-        <SidebarTooltip label="Install desktop app" enabled={collapsed}>
-          <button
-            className={cn(
-              "flex items-center text-gray-600 dark:text-gray-300 hover:text-black dark:hover:text-white transition-colors text-sm",
-              collapsed ? "justify-center w-11 h-11 rounded-md hover:bg-gray-100 dark:hover:bg-white/10" : "gap-3 px-2 py-2",
-            )}
-          >
-            <Download size={18} />
-            {!collapsed && <span>Install desktop app</span>}
-          </button>
-        </SidebarTooltip>
+        {/*
+          "Install desktop app" was removed rather than disabled. It had no onClick — clicking it
+          did nothing and said nothing — and unlike the export buttons it is not a real requirement
+          waiting on an endpoint: there is no desktop app and nothing in the repo builds one. A
+          disabled control would still advertise a product that does not exist. Restore this when
+          there is something to install.
+        */}
       </div>
 
       <CreatePlaylistModal
