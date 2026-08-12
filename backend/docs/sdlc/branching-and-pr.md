@@ -160,6 +160,19 @@ be up to date before merging").
 | `security-scan`                 | Dependency + SAST scan; fail on new high/critical         | §11.7 |
 | `migration-test`               | Flyway forward-only apply on an empty DB                  | §11.3 |
 | `compose-smoke`                 | `docker compose up` boots healthy; `/q/health/ready` 200  | §11.4 |
+| `frontend`                      | SPA typecheck (`tsc -b` via `npm run build`) + `vitest run` | —   |
+
+> **`frontend` is new and not yet enforcing.** The job exists in `ci.yml` and runs on every PR, but a
+> job only blocks a merge once its name is added to the required status checks in the branch-
+> protection rule — a repository setting no file in this repo can express. Until someone adds it,
+> `frontend` reports and does not gate.
+>
+> It was added because the SPA had **no CI whatsoever**: 226 source files and 348 tests ran only
+> where a developer remembered to run them, while the backend carried the ten checks above.
+> `CLAUDE.md` calls the frontend "the functional spec" the backend implements, which made it the
+> least-guarded half of the contract. Lint is deliberately excluded for now (~219 pre-existing
+> findings, 196 of them a single HMR-hygiene rule) so the job could land without waiting on a
+> cleanup — tracked in issue #211.
 
 Additionally required: **PR title is a valid Conventional Commit** (a `commitlint`/title-check action)
 so the squash commit is well-formed, and **template completeness** (DoD boxes ticked) via a body-check
