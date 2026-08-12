@@ -1491,6 +1491,7 @@ principle established in studio ADD §15/§16 and admin ADD §13/§14:
 | `note` | **Honest `null`** | No free-text submission/flag-annotation field exists anywhere on `Release`/`ModerationCase`; `admin-data.ts`'s example notes ("submitted 2h ago", "duplicate ISRC") are illustrative UI copy, not a real persisted field. |
 | every track's `isrc` | **Honest `null`** | No ISRC column anywhere in `catalog` (`ReleaseTrack`/`ReleaseTrackEntity` carry only `trackId`/`position`/`priceMinor`) — checked directly, not guessed. |
 | `upc` | **Honest `null`** | Same — no UPC field anywhere on `Release`/`ReleaseEntity`. |
+| `genre` | **Real, nullable** | `release.genre`, already mapped on `ReleaseEntity` but not carried past the persistence adapter until GAP-28. Nullable because the column has no NOT NULL constraint: a release submitted without a genre must read as unknown rather than borrow a default. Added because the console printed a fixed literal ("Hiplife / Drill") beside every release on the surface a moderator uses to decide approve-or-take-down. |
 
 Both `note`/`isrc`/`upc` are Category B carryovers in the same sense WU-STU-3/4 and WU-ADM-1/2
 already established this convention: no backing subsystem exists to source real ISRC/UPC/rights-

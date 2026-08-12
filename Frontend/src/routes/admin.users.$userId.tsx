@@ -1,4 +1,4 @@
-import { createFileRoute, Link } from '@tanstack/react-router'
+import { createFileRoute, Link, useNavigate } from '@tanstack/react-router'
 import { useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
 import {
@@ -12,6 +12,7 @@ import { type UserStatus } from '../lib/admin-data'
 import { apiFetch } from '../lib/api/client'
 import { userDetailQuery, usersQuery, apiVerifyUser, apiSuspendUser, apiReactivateUser, apiExportUserData, apiImpersonateUser } from '../lib/api/queries/admin-users'
 import { AdminLoadError } from '../components/admin/load-error'
+import { useAuth } from '../features/auth/auth-context'
 
 export const Route = createFileRoute('/admin/users/$userId')({
   component: AdminUserDetail,
@@ -24,11 +25,14 @@ const cedis = (n: number) => `₵${n.toLocaleString('en-US', { minimumFractionDi
 function AdminUserDetail() {
   const { userId } = Route.useParams()
   const { toast } = useToast()
+  const navigate = useNavigate()
+  const { startImpersonation } = useAuth()
   const queryClient = useQueryClient()
   const { data, isPending, isError, refetch } = useQuery(userDetailQuery(userId))
 
   const [suspendOpen, setSuspendOpen] = useState(false)
   const [menuOpen, setMenuOpen] = useState(false)
+  const [impersonateOpen, setImpersonateOpen] = useState(false)
 
   if (isError) {
     return (
@@ -69,11 +73,24 @@ function AdminUserDetail() {
   }
   const verify = () => runAction(() => apiVerifyUser(user.id), `${user.name} verified`, 'Could not verify user')
 
+  /**
+   * Records a DSAR request against the account.
+   *
+   * <p>The toast said "Data export started". That was not true. {@code ExportUserDataService} is an
+   * honest stub — it verifies the account, mints a job id and audits the request, and its own
+   * javadoc states there is no DSAR queue or worker anywhere in this codebase to process it.
+   * Nothing runs; no file is produced.
+   *
+   * <p>That is GAP-19's pattern — a control reporting success while nothing happens — on a
+   * statutory obligation, where someone may rely on it to answer a regulator inside a deadline. The
+   * request and its audit entry are real and worth keeping. The claim that an export is under way
+   * is not.
+   */
   const exportData = async () => {
     try {
       await apiExportUserData(user.id)
-      toast(`Data export started for ${user.email}`, 'success')
-    } catch { toast('Could not start the data export', 'error') }
+      toast(`DSAR request logged for ${user.email} — no file is produced yet`, 'info')
+    } catch { toast('Could not record the data-export request', 'error') }
   }
 
   /**
@@ -88,15 +105,26 @@ function AdminUserDetail() {
   }
 
   /**
-   * Mints a short-lived impersonation token. Deliberately not applied to this browser session:
-   * swapping the operator's own token would sign them out of the console mid-investigation, and
-   * the mechanism for using it (a separate window/session) does not exist yet. Reporting that the
-   * token was issued is the truthful half we can deliver today.
+   * Swaps this browser session to the target account (GAP-08).
+   *
+   * <p>This previously minted the token and only reported that it had been issued — truthful, but
+   * the operator could not use it, because nothing applied it to the session. The stash-and-restore
+   * in `features/auth/impersonation.ts` is what makes the swap safe to leave: the operator's own
+   * token is kept, so Exit returns them here rather than to a login screen.
+   *
+   * <p>The token itself is never rendered. It is a live bearer credential, and the backend
+   * deliberately keeps it out of the audit log; putting it on screen would undo that care.
    */
   const impersonate = async () => {
+    setImpersonateOpen(false)
     try {
-      await apiImpersonateUser(user.id)
-      toast(`Impersonation token issued for ${user.name} — audited`, 'success')
+      const issued = await apiImpersonateUser(user.id)
+      await startImpersonation(issued.token, {
+        subjectId: user.id,
+        subjectName: user.name,
+        expiresAt: issued.expiresAt,
+      })
+      void navigate({ to: '/' })
     } catch { toast('Could not start an impersonation session', 'error') }
   }
   const reactivate = () => runAction(() => apiReactivateUser(user.id), 'Reactivated account', 'Could not reactivate user')
@@ -153,9 +181,15 @@ function AdminUserDetail() {
                       All four raised a toast and called nothing. Three had working, guarded
                       endpoints sitting behind them; the fourth has no backend at all.
                     */}
-                    <MenuItem icon={LogIn} label="Log in as user" onClick={() => { setMenuOpen(false); void impersonate() }} />
+                    {/*
+                      Impersonation goes through a confirmation step: it is the only control here
+                      that puts the operator inside someone else's account, where every destructive
+                      thing that account can do to itself is one click away.
+                    */}
+                    <MenuItem icon={LogIn} label="Log in as user" onClick={() => { setMenuOpen(false); setImpersonateOpen(true) }} />
                     <MenuItem icon={KeyRound} label="Send reset link" onClick={() => { setMenuOpen(false); void sendReset() }} />
-                    <MenuItem icon={Download} label="Export data (GDPR)" onClick={() => { setMenuOpen(false); void exportData() }} />
+                    {/* Renamed: it logs a request. No export runs — see exportData(). */}
+                    <MenuItem icon={Download} label="Log DSAR request" onClick={() => { setMenuOpen(false); void exportData() }} />
                   </div>
                 </>
               )}
@@ -273,7 +307,45 @@ function AdminUserDetail() {
 
       <SuspendModal isOpen={suspendOpen} name={user.name} onClose={() => setSuspendOpen(false)}
         onConfirm={(reason) => { setSuspendOpen(false); suspend(reason) }} />
+
+      <ImpersonateModal isOpen={impersonateOpen} name={user.name} email={user.email}
+        onClose={() => setImpersonateOpen(false)} onConfirm={() => void impersonate()} />
     </div>
+  )
+}
+
+/**
+ * Confirms an impersonation before the session swaps.
+ *
+ * <p>Unlike suspend, this asks for no reason: the backend audits the actor, the target and the
+ * token's expiry on its own, so a free-text field here would add a second, unverified account of
+ * something already recorded. What the dialog owes the operator is a clear statement of what is
+ * about to happen — that they leave the console, act as this person, and that anything they do
+ * lands on the real account.
+ */
+function ImpersonateModal({ isOpen, name, email, onClose, onConfirm }: {
+  isOpen: boolean; name: string; email: string; onClose: () => void; onConfirm: () => void
+}) {
+  return (
+    <Modal isOpen={isOpen} onClose={onClose} title={`Log in as ${name}`}>
+      <div className="flex flex-col gap-5">
+        <p className="text-sm text-white/70">
+          You will leave the console and browse BeatzClik as <span className="font-bold text-white">{name}</span> ({email}).
+          Anything you do lands on their real account.
+        </p>
+        <p className="text-sm text-white/70">
+          The session is short-lived and returns you here automatically when it expires. A banner
+          stays on screen the whole time, with an Exit button. This is audited.
+        </p>
+        <div className="flex items-center gap-3">
+          <button onClick={onClose} className="flex-1 h-12 rounded-full bg-white/10 text-white font-bold hover:bg-white/15 transition-colors">Cancel</button>
+          <button onClick={onConfirm}
+            className="flex-1 h-12 rounded-full bg-[#f6c644] text-black font-bold hover:brightness-110 transition-all">
+            Log in as {name}
+          </button>
+        </div>
+      </div>
+    </Modal>
   )
 }
 

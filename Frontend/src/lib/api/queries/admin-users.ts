@@ -44,8 +44,22 @@ export function apiExportUserData(id: string): Promise<void> {
 }
 
 /** `POST /v1/admin/users/:id/impersonate` — mint a short-lived impersonation token (super-admin). */
-export function apiImpersonateUser(id: string): Promise<{ token: string }> {
-  return apiFetch<{ token: string }>(`/admin/users/${id}/impersonate`, { method: 'POST' })
+/**
+ * `POST /admin/users/:id/impersonate` — mints a short-lived, scoped token for the target account.
+ * Super-admin only; the backend audits the target and the expiry, never the token itself.
+ *
+ * The response carries `expiresAt` and `scopes` too; the previous type declared only `token`, so
+ * the expiry the banner needs was being discarded at the type boundary (GAP-08).
+ */
+export function apiImpersonateUser(id: string): Promise<ImpersonationToken> {
+  return apiFetch<ImpersonationToken>(`/admin/users/${id}/impersonate`, { method: 'POST' })
+}
+
+export interface ImpersonationToken {
+  token: string
+  /** ISO-8601 instant at which the token stops being accepted. */
+  expiresAt: string
+  scopes: string[]
 }
 
 export function apiReactivateUser(id: string): Promise<void> {
