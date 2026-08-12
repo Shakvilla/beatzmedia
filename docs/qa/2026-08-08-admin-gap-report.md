@@ -869,6 +869,11 @@ Listed so this report is not mistaken for full coverage.
    invited admin is locked out. `notifications.SmtpMailer` already works and Mailpit is running, so
    this is wiring identity's `Mailer` port to a real adapter, not building one. Highest
    severity-to-effort ratio in this report.
+0. **GAP-30's download gap** — there is no way to download anything you have bought. Media serves
+   signed, time-boxed *stream* URLs and nothing bundles a purchase into a file, so on a **buy-to-own**
+   platform the core promise has no delivery mechanism. The dead "Download all" button is now
+   honestly disabled, which makes the absence visible rather than fixing it. Like GAP-22 this is a
+   missing feature rather than a defect — but it is the one the product is named for.
 0. **GAP-22** — nothing creates albums. Six fan-facing surfaces, including the "New releases" rail
    and the entire album detail route, are dead on any database without the dev seed. Decide whether
    publishing an `album`/`ep`/`mixtape` release should project an `album` row (the same projection
