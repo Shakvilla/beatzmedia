@@ -42,12 +42,19 @@ public class PaymentProviderFlagsCheck {
   }
 
   void onStart(@Observes StartupEvent event) {
+    verify();
+  }
+
+  /**
+   * Package-private so the guard itself can be tested. An {@code @Observes} method is only reachable
+   * through a container start, which makes "does this actually fire, and does it fail on a missing
+   * row?" impossible to assert directly — and this is the one check standing between a migration
+   * that did not apply and every charge on that rail being silently declined.
+   */
+  void verify() {
     List<Provider> missing =
         Arrays.stream(Provider.values())
-            // A row's presence is inferred by asking the same question with both defaults: only a
-            // key with no row answers differently each time.
-            .filter(p -> flags.isEnabledOrDefault(FeatureFlagPaymentProviderPolicy.keyFor(p), true)
-                != flags.isEnabledOrDefault(FeatureFlagPaymentProviderPolicy.keyFor(p), false))
+            .filter(p -> !flags.exists(FeatureFlagPaymentProviderPolicy.keyFor(p)))
             .toList();
 
     if (!missing.isEmpty()) {

@@ -50,6 +50,13 @@ public class FeatureFlagsAdapter implements FeatureFlags {
   }
 
   @Override
+  public boolean exists(FeatureKey key) {
+    ensureCacheLoaded();
+    // Same "the cache holds exactly the rows that exist" property as above, asked directly.
+    return flagCache.containsKey(key.name());
+  }
+
+  @Override
   @Transactional
   public void set(FeatureKey key, boolean enabled) {
     FeatureFlagEntity entity = repository.findById(key.name());

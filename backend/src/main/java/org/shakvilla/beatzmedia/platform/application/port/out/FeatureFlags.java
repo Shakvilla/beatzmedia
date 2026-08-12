@@ -30,6 +30,21 @@ public interface FeatureFlags {
   boolean isEnabledOrDefault(FeatureKey key, boolean whenAbsent);
 
   /**
+   * Whether a row exists for this key at all, regardless of its value.
+   *
+   * <p>For startup checks that must tell "deliberately switched off" from "never seeded" — the
+   * former is a normal operating state, the latter means a migration did not apply. {@code
+   * PaymentProviderFlagsCheck} refuses to boot on the second.
+   *
+   * <p>This used to be inferred by calling {@link #isEnabledOrDefault} twice with opposite defaults
+   * and comparing. That worked, but it encoded existence as a side effect of defaulting across two
+   * separate cache reads, so any later change to the defaulting path would have broken the boot
+   * guard silently — on the one check standing between a missing row and every charge on that rail
+   * being declined. Asking the question directly costs nothing and cannot drift.
+   */
+  boolean exists(FeatureKey key);
+
+  /**
    * Enable or disable a feature flag. Admin-only operation; callers are responsible for auditing
    * via {@code @Audited}. ADD §4.3.
    */

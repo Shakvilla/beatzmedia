@@ -101,28 +101,6 @@ public class AdminSettingsResource {
   }
 
   /**
-   * The feature-flag half of the request body, separate from the response's
-   * {@link PlatformSettingsView.Flags} so every key can be <strong>required</strong>.
-   *
-   * <p><strong>Why this exists (GAP-09).</strong> The request reused the response record, whose
-   * fields are primitive {@code boolean}. Quarkus disables Jackson's fail-on-unknown-properties, so
-   * a key the server did not recognise was dropped in silence and the corresponding field fell back
-   * to its default — {@code false}. {@code SaveSettingsService} then wrote all five flags
-   * unconditionally. So {@code PUT /v1/admin/settings} with {@code flags: { PODCASTS: false }} (the
-   * enum spelling instead of the wire's {@code podcasts}) returned {@code 200 OK} having
-   * <strong>disabled every feature on the platform</strong> — podcasts, events, tipping, artist
-   * signups and fan messaging — while reporting success.
-   *
-   * <p>The gap report recorded this as "returns 200 and changes nothing". That was too generous:
-   * the write happens, it just writes {@code false} everywhere. A partial body — sending only the
-   * one flag being toggled, which is the natural thing for a client to do — had the same effect.
-   *
-   * <p>Boxed {@code Boolean} plus {@code @NotNull} makes an absent key indistinguishable from a
-   * misspelled one, and both a {@code 422} naming the offending field. Requiring every key rather
-   * than defaulting the missing ones is deliberate: a flag is a kill switch, and quietly inferring
-   * "off" for one the caller never mentioned is exactly the failure being fixed.
-   */
-  /**
    * The payment-rail half of the request body, separate from the response's
    * {@link PlatformSettingsView.Providers} so every key can be <strong>required</strong>.
    *
@@ -154,6 +132,28 @@ public class AdminSettingsResource {
     }
   }
 
+  /**
+   * The feature-flag half of the request body, separate from the response's
+   * {@link PlatformSettingsView.Flags} so every key can be <strong>required</strong>.
+   *
+   * <p><strong>Why this exists (GAP-09).</strong> The request reused the response record, whose
+   * fields are primitive {@code boolean}. Quarkus disables Jackson's fail-on-unknown-properties, so
+   * a key the server did not recognise was dropped in silence and the corresponding field fell back
+   * to its default — {@code false}. {@code SaveSettingsService} then wrote all five flags
+   * unconditionally. So {@code PUT /v1/admin/settings} with {@code flags: { PODCASTS: false }} (the
+   * enum spelling instead of the wire's {@code podcasts}) returned {@code 200 OK} having
+   * <strong>disabled every feature on the platform</strong> — podcasts, events, tipping, artist
+   * signups and fan messaging — while reporting success.
+   *
+   * <p>The gap report recorded this as "returns 200 and changes nothing". That was too generous:
+   * the write happens, it just writes {@code false} everywhere. A partial body — sending only the
+   * one flag being toggled, which is the natural thing for a client to do — had the same effect.
+   *
+   * <p>Boxed {@code Boolean} plus {@code @NotNull} makes an absent key indistinguishable from a
+   * misspelled one, and both a {@code 422} naming the offending field. Requiring every key rather
+   * than defaulting the missing ones is deliberate: a flag is a kill switch, and quietly inferring
+   * "off" for one the caller never mentioned is exactly the failure being fixed.
+   */
   public record FlagsRequest(
       @NotNull Boolean artistSignups,
       @NotNull Boolean podcasts,

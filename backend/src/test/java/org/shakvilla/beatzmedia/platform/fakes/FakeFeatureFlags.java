@@ -31,6 +31,11 @@ public class FakeFeatureFlags implements FeatureFlags {
   }
 
   @Override
+  public boolean exists(FeatureKey key) {
+    return flags.containsKey(key);
+  }
+
+  @Override
   public void set(FeatureKey key, boolean enabled) {
     flags.put(key, enabled);
   }
