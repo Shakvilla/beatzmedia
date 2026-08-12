@@ -73,7 +73,7 @@ class AdminCatalogContractTest {
   @Test
   void catalog_item_detail_dto_has_tracklist_splits_actionLog_and_honest_null_isrc_upc_note() {
     CatalogItemDetailView view = new CatalogItemDetailView(
-        "r1", "Iron Boy", null, "Black Sherif", "album", "live", null,
+        "r1", "Iron Boy", null, "Black Sherif", "album", "live", null, "Afrobeats",
         List.of(new CatalogTrackView(1, "t1", "Track One", null, 180, 500)),
         List.of(new CatalogSplitView("t1", "Black Sherif", "Primary artist", 70, "confirmed")),
         List.of(new ActionLogEntryView("a1", "APPROVE_RELEASE", "admin-1", NOW)));
@@ -88,13 +88,29 @@ class AdminCatalogContractTest {
     assertTrue(names.contains("splits"));
     assertTrue(names.contains("actionLog"));
     assertTrue(names.contains("upc"));
-    assertEquals(10, names.size());
+    assertTrue(names.contains("genre"));
+    assertEquals(11, names.size());
 
     assertNull(dto.note(), "note is honest null (Category B)");
     assertNull(dto.upc(), "upc is honest null (Category B)");
     assertNull(dto.tracklist().get(0).isrc(), "isrc is honest null (Category B)");
+    assertEquals("Afrobeats", dto.genre(), "genre is real, carried from release.genre");
     assertEquals(1, dto.splits().size());
     assertEquals(1, dto.actionLog().size());
     assertEquals("APPROVE_RELEASE", dto.actionLog().get(0).action());
+  }
+
+  /**
+   * The moderation page printed a fixed "Hiplife / Drill" beside every release. A genre that is
+   * absent must read as absent rather than borrowing some other release's value — this is the
+   * surface a moderator uses to decide approve-or-take-down.
+   */
+  @Test
+  void catalog_item_detail_dto_serves_a_null_genre_rather_than_inventing_one() {
+    CatalogItemDetailView view = new CatalogItemDetailView(
+        "r2", "Untagged", null, "Nobody", "single", "in_review", null, null,
+        List.of(), List.of(), List.of());
+
+    assertNull(CatalogItemDetailDto.from(view).genre());
   }
 }

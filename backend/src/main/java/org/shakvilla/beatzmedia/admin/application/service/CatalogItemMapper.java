@@ -63,7 +63,7 @@ final class CatalogItemMapper {
         .map(s -> new CatalogSplitView(s.trackId(), s.name(), s.role(), s.percent(), s.confirmation()))
         .toList();
     return new CatalogItemDetailView(
-        row.id(), row.title(), null, row.artistName(), row.type(), row.status(), null, tracks,
-        splits, actionLog);
+        row.id(), row.title(), null, row.artistName(), row.type(), row.status(), null, row.genre(),
+        tracks, splits, actionLog);
   }
 }

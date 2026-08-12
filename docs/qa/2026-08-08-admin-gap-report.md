@@ -587,6 +587,43 @@ undo that care.
 
 ---
 
+### GAP-28 · The moderation page shows a genre it invented
+
+*Found 2026-08-12, retesting the earlier fixes in the UI.*
+
+`admin.catalog.$itemId.tsx` printed two metadata rows that were never data:
+
+```tsx
+<Meta label="Primary genre" value="Hiplife / Drill" />                                  // literal
+<Meta label="Label" value={item.artist === 'Various' ? 'Beatzclik Compilations' : 'Independent'} />
+```
+
+Every release read "Hiplife / Drill" whatever it actually was. The release I was looking at is
+`Afrobeats` in the database. `GET /v1/admin/catalog/:id` did not serve a genre at all — the response
+keys were `actionLog, artist, id, note, splits, status, title, tracklist, type, upc` — so the page
+could not have been right by accident.
+
+This is the same class as GAP-19 and GAP-25: the console asserting something it never measured. What
+makes it worth its own entry is *where* it sits. This is the surface a moderator uses to decide
+approve-or-take-down, and genre is exactly the kind of field a copyright or content complaint turns
+on. Two moderators comparing notes on "the Hiplife release" would be describing different records.
+
+`release.genre` existed and was already mapped on `ReleaseEntity` — nothing carried it past the
+persistence adapter. Genre is now served through `CatalogDetailRow → CatalogItemDetailView →
+CatalogItemDetailDto` and rendered as `item.genre ?? '—'`. **Label was deleted, not em-dashed:** the
+platform stores no label anywhere, and a permanent "—" would still imply it is a field we track.
+
+**Why the first pass missed it.** I audited this page twice — once in the sweep, once while building
+GAP-05/06 — and both times read the action controls beside the metadata panel without questioning
+the panel itself. A hardcoded string that looks plausible reads as data. The grep that would have
+caught it (`value="..."` with a literal, across `routes/admin*` and `components/admin/`) now returns
+these two lines and nothing else, so this was the only instance.
+
+**Status.** Fixed on `fix/GAP-28-catalog-real-genre`. Mutation-verified: reverting the mapper
+passthrough fails `get_returns_the_releases_own_genre` with `expected: <Drill> but was: <null>`.
+
+---
+
 ## 4. Medium
 
 ### GAP-09 · Settings silently accepts unknown flag keys — and disables every flag

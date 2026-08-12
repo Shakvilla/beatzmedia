@@ -88,7 +88,7 @@ class CatalogModerationServiceTest {
         catalogAdminReader, moderationCaseRepository, auditReader, auditWriter, ids, clock);
 
     catalogAdminReader.seed(new CatalogDetailRow(
-        RELEASE_ID, "Iron Boy", "artist-1", "Black Sherif", "album", "in_review", NOW,
+        RELEASE_ID, "Iron Boy", "artist-1", "Black Sherif", "album", "in_review", "Drill", NOW,
         List.of(new TrackRow(1, "track-1", "Track One", 180, 500)),
         List.of(new SplitRow("track-1", "Black Sherif", "Primary artist", 70, "confirmed"))));
   }
@@ -130,6 +130,16 @@ class CatalogModerationServiceTest {
     assertNull(view.note(), "note is honest null (Category B)");
     assertEquals(1, view.splits().size());
     assertEquals(70, view.splits().get(0).percent());
+  }
+
+  /**
+   * The console showed a fixed "Hiplife / Drill" for every release, whatever its real genre. The
+   * seeded release is "Drill"; a view that returns anything else — or nothing — has lost the
+   * release's own metadata on the page where a moderator decides whether to take it down.
+   */
+  @Test
+  void get_returns_the_releases_own_genre() {
+    assertEquals("Drill", getCatalogItemService.get(RELEASE_ID).genre());
   }
 
   @Test

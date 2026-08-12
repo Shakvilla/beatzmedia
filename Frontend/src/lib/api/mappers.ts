@@ -808,6 +808,7 @@ export interface CatalogDetailWire {
   type: string
   status: string
   upc: string | null
+  genre: string | null
   tracklist: CatalogTrackWire[]
   splits: CatalogSplitWire[]
   actionLog: CatalogActionLogWire[]
@@ -826,6 +827,7 @@ export interface CatalogDetail {
   type: CatalogType
   status: CatalogStatus
   upc: string | null
+  genre: string | null
   tracks: CatalogDetailTrack[]
   splits: CatalogSplit[]
   log: CatalogLogEntry[]
@@ -906,6 +908,7 @@ export function toCatalogDetail(w: CatalogDetailWire, now?: number): CatalogDeta
     type: toCatalogType(w.type),
     status: toCatalogStatus(w.status),
     upc: w.upc ?? null,
+    genre: w.genre ?? null,
     tracks: w.tracklist.map((t) => ({ position: t.position, title: t.title, isrc: t.isrc ?? null, duration: formatDuration(t.durationSec) })),
     splits,
     log: w.actionLog.map((l) => ({ id: l.id, action: l.action, time: relativeTimeAgo(l.time, now) })),
