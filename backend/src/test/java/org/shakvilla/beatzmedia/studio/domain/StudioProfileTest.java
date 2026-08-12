@@ -9,7 +9,6 @@ import java.util.List;
 
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
-import org.shakvilla.beatzmedia.platform.domain.Genre;
 
 /** Unit tests for {@link StudioProfile} construction invariants — LLFR-STUDIO-01.1. */
 @Tag("unit")
@@ -31,7 +30,7 @@ class StudioProfileTest {
         "blacko",
         "Black Sherif",
         "Konongo, Ghana",
-        List.of(Genre.DRILL, Genre.HIPLIFE),
+        List.of("Drill", "Hiplife"),
         "bio text",
         "avatar.png",
         "banner.png",
@@ -44,7 +43,7 @@ class StudioProfileTest {
 
     assertEquals("artist-1", profile.artistId().value());
     assertEquals("blacko", profile.username());
-    assertEquals(List.of(Genre.DRILL, Genre.HIPLIFE), profile.genres());
+    assertEquals(List.of("Drill", "Hiplife"), profile.genres());
     assertEquals(ProfileLinks.empty(), profile.links());
     assertTrue(profile.shows().isEmpty());
     assertTrue(profile.pressAssets().isEmpty());

@@ -10,16 +10,19 @@
 export type ID = string
 
 /** Music genres surfaced across BeatzClik (Ghana / Africa focused). */
-export type Genre =
-  | 'Afrobeats'
-  | 'Hiplife'
-  | 'Highlife'
-  | 'Amapiano'
-  | 'Drill'
-  | 'Gospel'
-  | 'R&B'
-  | 'Reggae'
-  | 'Jazz'
+/**
+ * A genre label, e.g. `"Afrobeats"`.
+ *
+ * This was a closed union of nine values — one of FOUR hardcoded copies of the same list, alongside
+ * `platform.domain.Genre` and `store.domain.Genre` on the backend and the CHECK constraints on the
+ * sibling category columns. Genres are admin-managed now (`taxonomy_term`, V972), so the set is not
+ * knowable at compile time and the union would be a lie the moment an operator added one.
+ *
+ * The alias is kept rather than inlining `string` everywhere: it still documents intent at every
+ * use site, and it leaves one place to tighten later if the values ever become static again.
+ * Fetch the current list with `taxonomyQuery('genre')` — never hardcode it.
+ */
+export type Genre = string
 
 /**
  * Commercial state of a track for the current user.
@@ -212,15 +215,14 @@ export type StoreSort = 'popular' | 'newest' | 'price-asc' | 'price-desc'
 // Podcasts
 // ---------------------------------------------------------------------------
 
-export type PodcastCategory =
-  | 'News & Politics'
-  | 'Comedy'
-  | 'Business'
-  | 'Sports'
-  | 'Culture'
-  | 'Tech'
-  | 'Health'
-  | 'Storytelling'
+/**
+ * A podcast category label, e.g. `"News & Politics"`.
+ *
+ * Was a closed union mirroring the `chk_pod_category` CHECK constraint. That constraint is dropped
+ * (V972) and categories are admin-managed, so the set is no longer known at compile time.
+ * Fetch the current list with `taxonomyQuery('podcast_category')`.
+ */
+export type PodcastCategory = string
 
 export interface Podcast {
   id: ID
@@ -269,7 +271,13 @@ export interface PodcastEpisode {
 
 export type EventStatus = 'on-sale' | 'selling-fast' | 'sold-out'
 
-export type EventCategory = 'Concert' | 'Festival' | 'Club Night' | 'Listening Party' | 'Tour'
+/**
+ * An event category label, e.g. `"Concert"`.
+ *
+ * Was a closed union mirroring the `chk_event_category` CHECK constraint, now dropped (V972).
+ * Fetch the current list with `taxonomyQuery('event_category')`.
+ */
+export type EventCategory = string
 
 export interface TicketTier {
   name: string

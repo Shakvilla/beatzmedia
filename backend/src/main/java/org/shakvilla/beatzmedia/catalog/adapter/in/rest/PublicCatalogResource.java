@@ -18,7 +18,6 @@ import jakarta.ws.rs.core.MediaType;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.shakvilla.beatzmedia.catalog.application.port.in.AlbumView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.ArtistView;
-import org.shakvilla.beatzmedia.catalog.application.port.in.BrowseCategoryView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.GetAlbum;
 import org.shakvilla.beatzmedia.catalog.application.port.in.GetArtist;
 import org.shakvilla.beatzmedia.catalog.application.port.in.GetHomeFeed;
@@ -26,7 +25,6 @@ import org.shakvilla.beatzmedia.catalog.application.port.in.GetLyrics;
 import org.shakvilla.beatzmedia.catalog.application.port.in.GetPlaylist;
 import org.shakvilla.beatzmedia.catalog.application.port.in.GetTrack;
 import org.shakvilla.beatzmedia.catalog.application.port.in.HomeFeedView;
-import org.shakvilla.beatzmedia.catalog.application.port.in.ListBrowseCategories;
 import org.shakvilla.beatzmedia.catalog.application.port.in.LyricsView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.PlaylistView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.ResolveCatalog;
@@ -67,7 +65,6 @@ public class PublicCatalogResource {
   private final GetPlaylist getPlaylist;
   private final GetHomeFeed getHomeFeed;
   private final Search search;
-  private final ListBrowseCategories listBrowseCategories;
   private final ResolveCatalog resolveCatalog;
   private final JsonWebToken jwt;
 
@@ -80,7 +77,6 @@ public class PublicCatalogResource {
       GetPlaylist getPlaylist,
       GetHomeFeed getHomeFeed,
       Search search,
-      ListBrowseCategories listBrowseCategories,
       ResolveCatalog resolveCatalog,
       JsonWebToken jwt) {
     this.getArtist = getArtist;
@@ -90,7 +86,6 @@ public class PublicCatalogResource {
     this.getPlaylist = getPlaylist;
     this.getHomeFeed = getHomeFeed;
     this.search = search;
-    this.listBrowseCategories = listBrowseCategories;
     this.resolveCatalog = resolveCatalog;
     this.jwt = jwt;
   }
@@ -167,12 +162,9 @@ public class PublicCatalogResource {
     return search.search(q, callerId());
   }
 
-  /** GET /v1/browse-categories — LLFR-CATALOG-01.3. */
-  @GET
-  @Path("/browse-categories")
-  public List<BrowseCategoryView> browseCategories() {
-    return listBrowseCategories.list();
-  }
+  // GET /v1/browse-categories is retired (V973). The home/search "Browse by mood & genre" tiles
+  // are genres now, served with their colours by GET /v1/taxonomy?kind=genre, so this endpoint and
+  // the browse_category taxonomy kind behind it were a second list saying the same thing.
 
   /** POST /v1/catalog/resolve — batch id-list resolution for list screens (e.g. library). */
   @POST

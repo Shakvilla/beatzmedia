@@ -1,7 +1,7 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useQuery } from '@tanstack/react-query'
 import { cn } from '../utils/cn'
-import type { HealthMetric, Incident } from '../lib/admin-data'
+import type { HealthMetric, HealthStatus, Incident } from '../lib/admin-data'
 import { healthQuery } from '../lib/api/queries/admin-overview'
 import { AdminLoadError } from '../components/admin/load-error'
 
@@ -14,20 +14,26 @@ const CARD = 'rounded-2xl bg-white dark:bg-beatz-dark-surface border border-gray
 
 function AdminHealth() {
   const { data, isPending, isError, refetch } = useQuery(healthQuery())
-  const normal = data ? data.status !== 'degraded' : null
   const metrics = data?.metrics ?? []
   const incidents = data?.incidents ?? []
   const listeners = data?.listeners ?? []
+
+  /*
+    GAP-04: this read `data.status !== 'degraded'`, a binary that resolved every non-degraded value
+    — including "we are measuring nothing" — to a green "All systems normal". The backend now
+    reports three states, so the banner distinguishes them instead of collapsing two into one.
+  */
+  const banner = badgeFor(data?.status, isError, isPending)
 
   return (
     <div className="flex flex-col gap-8">
       {/* Header */}
       <div className="flex items-start justify-between gap-4 flex-wrap">
         <h1 className="text-display text-beatz-dark-bg dark:text-white">System health</h1>
-        <span className={cn('inline-flex items-center gap-2 h-9 px-4 rounded-full text-sm font-bold',
-          normal === true ? 'bg-beatz-green/15 text-beatz-green' : normal === false ? 'bg-[#f6c644]/20 text-[#b8881f] dark:text-[#f6c644]' : 'bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-300')}>
-          <span className={cn('w-2 h-2 rounded-full', normal === true ? 'bg-beatz-green' : normal === false ? 'bg-[#f6c644]' : 'bg-gray-400 dark:bg-white/30')} />
-          {normal === true ? 'All systems normal' : normal === false ? 'Degraded' : isError ? 'Status unavailable' : 'Checking…'}
+        <span title={banner.title}
+          className={cn('inline-flex items-center gap-2 h-9 px-4 rounded-full text-sm font-bold', banner.pill)}>
+          <span className={cn('w-2 h-2 rounded-full', banner.dot)} />
+          {banner.label}
         </span>
       </div>
 
@@ -39,7 +45,9 @@ function AdminHealth() {
         <>
           {/* Metrics */}
           {metrics.length === 0 ? (
-            <p className="text-sm text-gray-400 dark:text-gray-500">No service metrics yet.</p>
+            <p className="text-sm text-gray-400 dark:text-gray-500">
+              No readiness checks are registered, so nothing here is being measured.
+            </p>
           ) : (
             <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
               {metrics.map((m) => <Metric key={m.label} metric={m} />)}
@@ -71,6 +79,42 @@ function AdminHealth() {
       )}
     </div>
   )
+}
+
+/**
+ * The header badge. `unknown` gets its own neutral treatment rather than borrowing green: a page
+ * that cannot measure anything must not look like a page reporting good news.
+ */
+function badgeFor(status: HealthStatus | undefined, isError: boolean, isPending: boolean): {
+  label: string; title: string; pill: string; dot: string
+} {
+  const neutral = {
+    pill: 'bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-300',
+    dot: 'bg-gray-400 dark:bg-white/30',
+  }
+  if (isError) return { label: 'Status unavailable', title: "Couldn't reach the health endpoint.", ...neutral }
+  if (isPending || !status) return { label: 'Checking…', title: 'Loading health status.', ...neutral }
+  if (status === 'normal') {
+    return {
+      label: 'All systems normal',
+      title: 'Every registered readiness check is passing.',
+      pill: 'bg-beatz-green/15 text-beatz-green',
+      dot: 'bg-beatz-green',
+    }
+  }
+  if (status === 'degraded') {
+    return {
+      label: 'Degraded',
+      title: 'At least one readiness check is failing.',
+      pill: 'bg-[#f6c644]/20 text-[#b8881f] dark:text-[#f6c644]',
+      dot: 'bg-[#f6c644]',
+    }
+  }
+  return {
+    label: 'Not monitored',
+    title: 'No readiness checks are registered, or the probe failed. This is not a clean bill of health.',
+    ...neutral,
+  }
 }
 
 function Metric({ metric: m }: { metric: HealthMetric }) {

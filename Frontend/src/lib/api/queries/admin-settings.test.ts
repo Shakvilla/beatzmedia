@@ -8,7 +8,7 @@ const settingsWire = {
   payoutMinimum: 10,
   defaultCurrency: 'GHS',
   maintenanceMode: false,
-  providers: { momo: true, vodafone: true, airteltigo: true, card: true, bank: false },
+  providers: { mtn: true, telecel: true, airteltigo: true, card: true, bank: false },
   flags: { artistSignups: true, podcasts: true, events: true, tipping: true, fanMessaging: true },
 }
 
@@ -18,7 +18,7 @@ const settings: PlatformSettings = {
   payoutMinimum: 10,
   defaultCurrency: 'GHS',
   maintenanceMode: false,
-  providers: { momo: true, vodafone: true, airteltigo: true, card: true, bank: false },
+  providers: { mtn: true, telecel: true, airteltigo: true, card: true, bank: false },
   flags: { artistSignups: true, podcasts: true, events: true, tipping: true, fanMessaging: true },
 }
 

@@ -3,7 +3,6 @@ import type {
   Album,
   Track,
   TrackCredit,
-  BrowseCategory,
   Playlist,
   Genre,
   OwnershipStatus,
@@ -35,8 +34,8 @@ import type {
 import type { StudioProfile, StudioSettings, StudioRelease, StudioPodcastShow, StudioEpisode, EpisodeStatus } from '../studio-data'
 import type { UploadedTrack } from '../../features/studio/release-draft-context'
 import type { Payouts, PayoutMethod, PayoutTxn, PayoutType, PayoutStatus, MethodKind } from '../studio-payouts'
-import type { AdminUserRow, UserRole, UserStatus, UserActionLog, CatalogItem, CatalogStatus, CatalogType, ModerationItem, ModReason, ModSeverity, ModStatus, Finance, PendingPayout, ProviderMix, Dispute, LedgerTxn, LedgerType, TimelineEntry, FeaturedSlot, PushItem, CuratedPlaylist, AdminOverview, AttentionItem, RevenueArtist, PayMethod, Health, HealthMetric, Incident, AuditEntry, AuditType, SupportTicket, SupportMessage, TicketStatus, TicketPriority, RiskSignal, RiskLevel, RiskStatus, ComplianceRequest, ComplianceType, ComplianceStatus, PlatformSettings } from '../admin-data'
-import { relativeTimeAgo, monthYear, formatDuration, relativeTime, toCedis, monthDay, dueLabel } from '../format'
+import type { AdminUserRow, AdminMemberRole, UserRole, UserStatus, UserActionLog, CatalogItem, CatalogStatus, CatalogType, ModerationItem, ModReason, ModSeverity, ModStatus, Finance, PendingPayout, ProviderMix, Dispute, LedgerTxn, LedgerType, TimelineEntry, FeaturedSlot, PushItem, CuratedPlaylist, AdminOverview, AttentionItem, RevenueArtist, PayMethod, Health, HealthMetric, Incident, AuditEntry, AuditType, SupportTicket, SupportMessage, TicketStatus, TicketPriority, RiskSignal, RiskLevel, RiskStatus, ComplianceRequest, ComplianceType, ComplianceStatus, PlatformSettings } from '../admin-data'
+import { relativeTimeAgo, dayMonthYear, formatDuration, relativeTime, toCedis, monthDay, dueLabel } from '../format'
 
 export interface ArtistWire {
   id: string
@@ -139,15 +138,7 @@ export function toAlbumTracks(wire: AlbumWire): Track[] {
   return (wire.tracks ?? []).map(toTrack)
 }
 
-export interface BrowseCategoryWire {
-  id: string
-  title: string
-  colorClass: string
-}
 
-export function toBrowseCategory(wire: BrowseCategoryWire): BrowseCategory {
-  return { id: wire.id, title: wire.title, colorClass: wire.colorClass }
-}
 
 export interface LyricLineWire {
   time: number
@@ -706,6 +697,8 @@ export interface AdminUserRowWire {
   joined: string
   lastActive: string
   status: string
+  /** Console role, or null/absent when the account is not an admin member (GAP-10). */
+  adminRole?: string | null
 }
 export interface UserCountsWire { all: number; fans: number; artists: number; verified: number; suspended: number }
 export interface PagedUsersWire {
@@ -726,7 +719,19 @@ export interface UserDetailWire {
 
 export interface UserCounts { all: number; fans: number; artists: number; verified: number; suspended: number }
 export interface AdminUsersList { users: AdminUserRow[]; counts: UserCounts }
-export interface AdminUserDetailData { summary: AdminUserRow; actionLog: UserActionLog[] }
+/**
+ * `activity`/`orders`/`devices` are carried through even though the API documents them as
+ * always-empty today. The detail page previously dropped them here and substituted a hardcoded
+ * fixture, so a real account displayed invented purchases and tips; passing the real (empty)
+ * arrays lets the page render honest empty states now and light up on its own later.
+ */
+export interface AdminUserDetailData {
+  summary: AdminUserRow
+  activity: unknown[]
+  orders: unknown[]
+  devices: unknown[]
+  actionLog: UserActionLog[]
+}
 
 export function toAdminUserRow(w: AdminUserRowWire, now?: number): AdminUserRow {
   return {
@@ -736,9 +741,12 @@ export function toAdminUserRow(w: AdminUserRowWire, now?: number): AdminUserRow 
     email: w.email,
     role: w.role as UserRole,
     verified: w.verified,
-    joined: monthYear(w.joined),
+    // GAP-16: was monthYear() — "Aug 2026" with no day. Support work keys off an exact join date
+    // (matching a receipt, correlating a signup with a complaint), and a month alone cannot do it.
+    joined: dayMonthYear(w.joined),
     lastActive: relativeTimeAgo(w.lastActive, now),
     status: w.status as UserStatus,
+    adminRole: (w.adminRole as AdminMemberRole | null) ?? null,
   }
 }
 
@@ -755,7 +763,13 @@ export function toUserActionLog(w: UserActionLogWire, now?: number): UserActionL
 }
 
 export function toUserDetail(w: UserDetailWire, now?: number): AdminUserDetailData {
-  return { summary: toAdminUserRow(w.summary, now), actionLog: w.actionLog.map((l) => toUserActionLog(l, now)) }
+  return {
+    summary: toAdminUserRow(w.summary, now),
+    activity: w.activity ?? [],
+    orders: w.orders ?? [],
+    devices: w.devices ?? [],
+    actionLog: w.actionLog.map((l) => toUserActionLog(l, now)),
+  }
 }
 
 // ── Admin catalog (AdminCatalogResource) ──────────────────────────────────────
@@ -794,6 +808,7 @@ export interface CatalogDetailWire {
   type: string
   status: string
   upc: string | null
+  genre: string | null
   tracklist: CatalogTrackWire[]
   splits: CatalogSplitWire[]
   actionLog: CatalogActionLogWire[]
@@ -812,6 +827,7 @@ export interface CatalogDetail {
   type: CatalogType
   status: CatalogStatus
   upc: string | null
+  genre: string | null
   tracks: CatalogDetailTrack[]
   splits: CatalogSplit[]
   log: CatalogLogEntry[]
@@ -892,6 +908,7 @@ export function toCatalogDetail(w: CatalogDetailWire, now?: number): CatalogDeta
     type: toCatalogType(w.type),
     status: toCatalogStatus(w.status),
     upc: w.upc ?? null,
+    genre: w.genre ?? null,
     tracks: w.tracklist.map((t) => ({ position: t.position, title: t.title, isrc: t.isrc ?? null, duration: formatDuration(t.durationSec) })),
     splits,
     log: w.actionLog.map((l) => ({ id: l.id, action: l.action, time: relativeTimeAgo(l.time, now) })),
@@ -1188,14 +1205,17 @@ export interface HealthWire {
 }
 
 /**
- * The backend currently returns a hardcoded honest-empty payload (`status:"normal"` and three
- * empty arrays) — there is no APM, incident tracker, or listener telemetry behind it yet. An
- * unrecognised status maps to `degraded` rather than `normal`, so a future real status can never
- * be silently reported as healthy.
+ * `status` and `metrics` are real as of GAP-04: derived from the platform's readiness checks, one
+ * metric row per check. `listeners`/`incidents` are still honest-empty — no telemetry or incident
+ * tracker exists behind them.
+ *
+ * An unrecognised status maps to `degraded`, never `normal`, so a status this client does not
+ * understand can never be silently reported as healthy. `unknown` is passed through as itself
+ * rather than being coerced, because "nothing is being measured" is a distinct thing to say.
  */
 export function toHealth(w: HealthWire): Health {
   return {
-    status: w.status === 'normal' ? 'normal' : 'degraded',
+    status: w.status === 'normal' ? 'normal' : w.status === 'unknown' ? 'unknown' : 'degraded',
     metrics: w.metrics.map((m): HealthMetric => ({ label: m.label, value: m.value, sub: m.sub })),
     listeners: w.listeners,
     incidents: w.incidents.map(
@@ -1343,7 +1363,7 @@ export interface PlatformSettingsWire {
   payoutMinimum: number
   defaultCurrency: string
   maintenanceMode: boolean
-  providers: { momo: boolean; vodafone: boolean; airteltigo: boolean; card: boolean; bank: boolean }
+  providers: { mtn: boolean; telecel: boolean; airteltigo: boolean; card: boolean; bank: boolean }
   flags: { artistSignups: boolean; podcasts: boolean; events: boolean; tipping: boolean; fanMessaging: boolean }
 }
 

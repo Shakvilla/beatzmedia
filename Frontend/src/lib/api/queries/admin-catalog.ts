@@ -40,3 +40,15 @@ export function apiFlagCatalog(id: string, note?: string): Promise<void> {
 export function apiTakedownCatalog(id: string, reason: string): Promise<void> {
   return apiFetch<unknown>(`/admin/catalog/${id}/takedown`, { method: 'POST', body: { reason } }).then(() => undefined)
 }
+
+/**
+ * `POST /v1/admin/catalog/:id/reinstate` — restore a taken-down release.
+ *
+ * The endpoint has existed, been guarded and been tested since the module was built, and **no UI
+ * ever called it**. Takedown was therefore a one-way door: an admin who pulled a release by mistake
+ * had no way back from the console. It also re-fires `ReleaseWentLive`, so the search index and the
+ * album projection are rebuilt — which a manual database edit would not do.
+ */
+export function apiReinstateCatalog(id: string): Promise<void> {
+  return apiFetch<unknown>(`/admin/catalog/${id}/reinstate`, { method: 'POST' }).then(() => undefined)
+}

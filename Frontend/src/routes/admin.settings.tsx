@@ -8,7 +8,8 @@ import { Toggle } from '../components/ui/toggle'
 import { AdminLoadError } from '../components/admin/load-error'
 import { ApiError } from '../lib/api/errors'
 import { platformSettingsQuery, apiSaveSettings } from '../lib/api/queries/admin-settings'
-import { getAdminTeam, ADMIN_ROLES, type PlatformSettings, type AdminMember, type AdminRole } from '../lib/admin-data'
+import { adminTeamQuery, apiInviteAdmin, apiChangeAdminRole, apiRemoveAdmin } from '../lib/api/queries/admin-team'
+import { ADMIN_ROLES, type PlatformSettings, type AdminRole } from '../lib/admin-data'
 
 export const Route = createFileRoute('/admin/settings')({
   component: AdminSettings,
@@ -26,9 +27,14 @@ function AdminSettings() {
   const [draft, setDraft] = useState<PlatformSettings | null>(null)
   const [saving, setSaving] = useState(false)
   const inFlight = useRef(false)
-  const [team, setTeam] = useState<AdminMember[]>(() => getAdminTeam())
+  // The real admin team. This used to be `useState(() => getAdminTeam())` — four invented people
+  // (Yaa Mensima, Kofi Annor, Adwoa Smart, Kwame DJ) hardcoded in admin-data.ts. GET /v1/admin/team
+  // was already being fetched on this page and returns the actual members; the UI simply threw the
+  // response away and rendered the fakes, so the console showed a staff roster that did not exist.
+  const { data: team = [] } = useQuery(adminTeamQuery())
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState<AdminRole>('Support')
+  const [teamBusy, setTeamBusy] = useState(false)
 
   // The draft is derived from the server copy, never seeded in an effect: it stays authoritative
   // until the user edits, which keeps `dirty` a true comparison against what the server holds.
@@ -37,6 +43,8 @@ function AdminSettings() {
 
   const setS = (fn: (p: PlatformSettings) => PlatformSettings) => setDraft((p) => (p ? fn(p) : data ? fn(data) : null))
   const setFlag = (k: keyof PlatformSettings['flags'], v: boolean) => setS((p) => ({ ...p, flags: { ...p.flags, [k]: v } }))
+  const setProvider = (k: keyof PlatformSettings['providers'], v: boolean) =>
+    setS((p) => ({ ...p, providers: { ...p.providers, [k]: v } }))
 
   const save = async () => {
     if (!s || inFlight.current) return
@@ -56,15 +64,51 @@ function AdminSettings() {
     }
   }
 
-  const invite = () => {
+  /**
+   * All three of these used to mutate local React state and nothing else, so a role change or a
+   * removal vanished on the next reload and an invite was never sent. The endpoints existed the
+   * whole time (`AdminTeamResource`: POST /invite, PATCH /{id}, DELETE /{id}, all super-admin).
+   * Each now calls the API, invalidates the team query so the list reflects the server, and
+   * reports a failure instead of a success it did not earn.
+   */
+  const refreshTeam = () => queryClient.invalidateQueries({ queryKey: ['admin', 'team'] })
+
+  const invite = async () => {
     const email = inviteEmail.trim()
-    if (!email) return
-    setTeam((t) => [...t, { id: `a-${Date.now()}`, name: email.split('@')[0], email, role: inviteRole, lastActive: 'invited' }])
-    setInviteEmail('')
-    toast(`Invite noted locally — admin team management has no backend yet`, 'info')
+    if (!email || teamBusy) return
+    setTeamBusy(true)
+    try {
+      await apiInviteAdmin(email, inviteRole)
+      setInviteEmail('')
+      await refreshTeam()
+      toast(`Invited ${email} as ${inviteRole}`, 'success')
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'Could not send the invite', 'error')
+    } finally {
+      setTeamBusy(false)
+    }
   }
-  const changeRole = (id: string, role: AdminRole) => setTeam((t) => t.map((m) => (m.id === id ? { ...m, role } : m)))
-  const removeMember = (id: string) => setTeam((t) => t.filter((m) => m.id !== id))
+
+  const changeRole = async (id: string, role: AdminRole) => {
+    try {
+      await apiChangeAdminRole(id, role)
+      await refreshTeam()
+      toast(`Role updated to ${role}`, 'success')
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'Could not change the role', 'error')
+      await refreshTeam() // undo the optimistic-looking select by re-reading the server
+    }
+  }
+
+  const removeMember = async (id: string) => {
+    try {
+      await apiRemoveAdmin(id)
+      await refreshTeam()
+      toast('Admin removed', 'success')
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'Could not remove this admin', 'error')
+    }
+  }
 
   return (
     <div className="flex flex-col gap-6 max-w-4xl">
@@ -104,13 +148,23 @@ function AdminSettings() {
             <ToggleRow label="Maintenance mode" desc="Take the apps offline with a maintenance notice." checked={s.maintenanceMode} onChange={(v) => setS((p) => ({ ...p, maintenanceMode: v }))} last />
           </Section>
 
-          {/* Payment providers */}
-          <Section title="Payment providers" desc="Which methods fans can pay with. Not yet configurable — every method is currently enabled platform-wide.">
-            <ToggleRow label="MTN MoMo" checked={s.providers.momo} onChange={() => {}} disabled />
-            <ToggleRow label="Vodafone Cash" checked={s.providers.vodafone} onChange={() => {}} disabled />
-            <ToggleRow label="AirtelTigo Money" checked={s.providers.airteltigo} onChange={() => {}} disabled />
-            <ToggleRow label="Card" checked={s.providers.card} onChange={() => {}} disabled />
-            <ToggleRow label="Bank transfer" checked={s.providers.bank} onChange={() => {}} disabled last />
+          {/*
+            GAP-13: these were rendered `disabled` with the caption "Not yet configurable" — honest,
+            but a control that could not do the thing it depicted. They are real now: switching one
+            off stops new charges on that rail immediately, and the removal is named in the audit
+            entry so "why did MoMo stop working on the 14th?" has an answer.
+
+            "Vodafone Cash" is now "Telecel Cash" — the brand changed in 2023, and checkout and
+            payouts already said Telecel. The admin console was the last place still using the old
+            name, which meant an operator disabling "Vodafone" was toggling a rail the rest of the
+            system called something else.
+          */}
+          <Section title="Payment providers" desc="Which methods fans can pay with. Switching one off stops new charges on that rail immediately; payouts are unaffected.">
+            <ToggleRow label="MTN MoMo" checked={s.providers.mtn} onChange={(v) => setProvider('mtn', v)} />
+            <ToggleRow label="Telecel Cash" checked={s.providers.telecel} onChange={(v) => setProvider('telecel', v)} />
+            <ToggleRow label="AirtelTigo Money" checked={s.providers.airteltigo} onChange={(v) => setProvider('airteltigo', v)} />
+            <ToggleRow label="Card" checked={s.providers.card} onChange={(v) => setProvider('card', v)} />
+            <ToggleRow label="Bank transfer" checked={s.providers.bank} onChange={(v) => setProvider('bank', v)} last />
           </Section>
 
           {/* Feature flags */}
@@ -123,7 +177,7 @@ function AdminSettings() {
           </Section>
 
           {/* Admin team & roles */}
-          <Section title="Admin team & roles" desc="Who can access the console and what they can do. Changes here are not saved yet — team management has no backend.">
+          <Section title="Admin team & roles" desc="Who can access the console and what they can do. Only a super-admin may invite, change roles or remove.">
             <div className="flex flex-col gap-3">
               {team.map((m) => (
                 <div key={m.id} className="flex items-center gap-3 py-2">

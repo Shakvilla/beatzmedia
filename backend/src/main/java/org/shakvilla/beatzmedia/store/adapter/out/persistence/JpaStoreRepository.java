@@ -50,8 +50,8 @@ public class JpaStoreRepository implements StoreRepository {
       listQuery.setParameter("type", t.name());
     });
     query.genre().ifPresent(g -> {
-      countQuery.setParameter("genre", g.wireValue());
-      listQuery.setParameter("genre", g.wireValue());
+      countQuery.setParameter("genre", g);
+      listQuery.setParameter("genre", g);
     });
 
     long total = countQuery.getSingleResult();

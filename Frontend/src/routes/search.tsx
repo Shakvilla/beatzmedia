@@ -10,7 +10,7 @@ import { useToast } from '../components/ui/toast-provider'
 import { Card, CardContent, CardImage, CardSubtitle, CardTitle } from '../components/ui/card'
 import { Skeleton } from '../components/ui/skeleton'
 import { ArtistCircle } from '../features/discover/components/artist-circle'
-import { browseCategoriesQuery } from '../lib/api/queries/catalog'
+import { taxonomyQuery } from '../lib/api/queries/taxonomy'
 import { searchQuery, type SearchTopResult } from '../lib/api/queries/search'
 import { useDebouncedValue } from '../hooks/use-debounced-value'
 import { formatDuration, formatPrice } from '../lib/format'
@@ -30,19 +30,28 @@ const searchSchema = z.object({ q: z.string().optional().catch('') })
  *
  * Colour is presentation and belongs here, not in the API contract.
  */
-const CATEGORY_GRADIENT: Record<string, string> = {
-  afrobeats: 'bg-gradient-to-br from-orange-500 to-amber-400',
-  amapiano: 'bg-gradient-to-br from-blue-500 to-cyan-400',
-  drill: 'bg-gradient-to-br from-red-500 to-rose-400',
-  gospel: 'bg-gradient-to-br from-yellow-500 to-lime-400',
-  highlife: 'bg-gradient-to-br from-green-500 to-teal-400',
-  hiplife: 'bg-gradient-to-br from-purple-500 to-pink-400',
-  jazz: 'bg-gradient-to-br from-slate-500 to-gray-400',
-  rb: 'bg-gradient-to-br from-indigo-500 to-violet-400',
-  reggae: 'bg-gradient-to-br from-emerald-500 to-green-400',
-}
+/**
+ * Tailwind SAFELIST — not a lookup table.
+ *
+ * The gradient for each genre now comes from the API (`taxonomy_term.color_class`), but Tailwind's
+ * JIT only scans source files, so a class that exists solely in an API response is purged from the
+ * built CSS and the tile renders transparent. That was the original bug. Writing the classes out
+ * literally here forces the JIT to emit them; nothing reads this array at runtime.
+ */
+const GENRE_TILE_SAFELIST = [
+  'bg-gradient-to-br from-orange-500 to-amber-400',
+  'bg-gradient-to-br from-blue-500 to-cyan-400',
+  'bg-gradient-to-br from-red-500 to-rose-400',
+  'bg-gradient-to-br from-yellow-500 to-lime-400',
+  'bg-gradient-to-br from-green-500 to-teal-400',
+  'bg-gradient-to-br from-purple-500 to-pink-400',
+  'bg-gradient-to-br from-slate-500 to-gray-400',
+  'bg-gradient-to-br from-indigo-500 to-violet-400',
+  'bg-gradient-to-br from-emerald-500 to-green-400',
+]
+void GENRE_TILE_SAFELIST
 
-/** Anything the API adds later still gets a readable tile rather than a transparent one. */
+/** A genre an admin added without picking a colour still gets a readable tile, not a transparent one. */
 const CATEGORY_GRADIENT_FALLBACK = 'bg-gradient-to-br from-gray-600 to-gray-400'
 
 export const Route = createFileRoute('/search')({
@@ -64,7 +73,9 @@ function SearchComponent() {
   const needle = (q ?? '').toLowerCase().trim()
   const debouncedNeedle = useDebouncedValue(needle, 300)
 
-  const { data: browseCategories, isLoading: categoriesLoading } = useQuery(browseCategoriesQuery())
+  // The browse tiles ARE the genres (V973). `/v1/browse-categories` was a second list saying the
+  // same thing and is retired; colours travel with each term.
+  const { data: genreTiles, isLoading: categoriesLoading } = useQuery(taxonomyQuery('genre'))
   const { data: results, isLoading, isError } = useQuery({
     ...searchQuery(debouncedNeedle),
     enabled: !!debouncedNeedle,
@@ -106,14 +117,14 @@ function SearchComponent() {
           <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-6">
             {categoriesLoading
               ? Array.from({ length: 8 }).map((_, i) => <Skeleton key={i} className="rounded-xl aspect-[2/1]" />)
-              : (browseCategories ?? []).map((category) => (
+              : (genreTiles ?? []).map((category) => (
                   <Link
                     key={category.id}
                     to="/search"
-                    search={{ q: category.title }}
-                    className={cn('relative overflow-hidden rounded-xl p-4 aspect-[2/1] flex items-start shadow-md hover:scale-[1.02] transition-transform duration-300 group', CATEGORY_GRADIENT[category.id] ?? CATEGORY_GRADIENT_FALLBACK)}
+                    search={{ q: category.label }}
+                    className={cn('relative overflow-hidden rounded-xl p-4 aspect-[2/1] flex items-start shadow-md hover:scale-[1.02] transition-transform duration-300 group', category.colorClass ?? CATEGORY_GRADIENT_FALLBACK)}
                   >
-                    <h3 className="text-white font-bold text-lg md:text-xl z-10 relative">{category.title}</h3>
+                    <h3 className="text-white font-bold text-lg md:text-xl z-10 relative">{category.label}</h3>
                     <div className="absolute -right-3 -bottom-3 w-16 h-16 bg-black/20 rounded-lg rotate-[25deg] shadow-lg group-hover:scale-110 transition-transform duration-300" />
                   </Link>
                 ))}

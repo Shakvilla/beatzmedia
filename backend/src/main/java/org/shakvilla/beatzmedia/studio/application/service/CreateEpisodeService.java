@@ -208,7 +208,12 @@ public class CreateEpisodeService implements CreateEpisode {
         ? "General"
         : cmd.newShowCategory();
     PodcastShow show =
-        PodcastShow.create(new ShowId(ids.newId()), artist, cmd.newShowTitle(), category, clock.now());
+        // A show created inline with its first episode inherits that episode's cover. It is the
+        // artist's own uploaded art, not an invented placeholder, and they can change it later —
+        // and without it the show could never be published, since podcast.image is NOT NULL.
+        PodcastShow.create(
+            new ShowId(ids.newId()), artist, cmd.newShowTitle(), category, cmd.coverUrl(),
+            null, clock.now());
     return repo.saveShow(show);
   }
 

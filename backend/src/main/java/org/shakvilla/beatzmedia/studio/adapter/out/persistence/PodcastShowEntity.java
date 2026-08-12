@@ -30,6 +30,13 @@ public class PodcastShowEntity {
   @Column(name = "category", nullable = false)
   public String category;
 
+  /** Cover art (V974). Nullable: required to publish, not to create. */
+  @Column(name = "image")
+  public String image;
+
+  @Column(name = "description")
+  public String description;
+
   @Column(name = "created_at", nullable = false)
   public Instant createdAt;
 }

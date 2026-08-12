@@ -12,6 +12,7 @@ import org.shakvilla.beatzmedia.catalog.application.port.in.ProvisionArtistProfi
 import org.shakvilla.beatzmedia.catalog.application.service.ProvisionArtistProfileService;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistProfile;
+import org.shakvilla.beatzmedia.catalog.domain.CatalogDefaults;
 import org.shakvilla.beatzmedia.catalog.fakes.FakeCatalogRepository;
 
 /**
@@ -52,7 +53,7 @@ class ProvisionArtistProfileServiceTest {
     service.provision(new ProvisionCommand(id, "No Avatar", "  "));
 
     assertEquals(
-        ProvisionArtistProfileService.DEFAULT_IMAGE, repo.findArtist(id).orElseThrow().getImage());
+        CatalogDefaults.PLACEHOLDER_IMAGE, repo.findArtist(id).orElseThrow().getImage());
   }
 
   @Test

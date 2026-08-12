@@ -1,13 +1,14 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useMemo, useRef, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { MoreHorizontal, Play, Check, Download, FileText, ShieldX, FileSpreadsheet, Trash2, type LucideIcon } from 'lucide-react'
+import { Play, Check, Download, FileText, ShieldX, FileSpreadsheet, Trash2, type LucideIcon } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
 import type { ComplianceRequest, ComplianceType, ComplianceStatus } from '../lib/admin-data'
 import { complianceQuery, apiStartRequest, apiCompleteRequest, apiExportRequest, apiNoticeRequest } from '../lib/api/queries/admin-compliance'
 import { AdminLoadError } from '../components/admin/load-error'
 import { usePaged, Pagination } from '../components/admin/pagination'
+import { RowMenu, MenuItem } from '../components/admin/row-menu'
 
 export const Route = createFileRoute('/admin/compliance')({
   component: AdminCompliance,
@@ -126,7 +127,6 @@ function StatusPill({ status }: { status: ComplianceStatus }) {
 function ComplianceRow({ req: c, disabled, onStart, onComplete, onDownload, onNotice }: {
   req: ComplianceRequest; disabled?: boolean; onStart: () => void; onComplete: () => void; onDownload: () => void; onNotice: () => void
 }) {
-  const [menuOpen, setMenuOpen] = useState(false)
   const meta = TYPE_META[c.type]
   const Icon = meta.icon
   const done = c.status === 'completed'
@@ -146,29 +146,17 @@ function ComplianceRow({ req: c, disabled, onStart, onComplete, onDownload, onNo
         {!done && (c.status === 'new'
           ? <button onClick={onStart} disabled={disabled} className="h-8 px-3 rounded-full text-beatz-green text-xs font-bold hover:bg-beatz-green/10 transition-colors">Start</button>
           : <button onClick={onComplete} disabled={disabled} className="h-8 px-3 rounded-full text-beatz-green text-xs font-bold hover:bg-beatz-green/10 transition-colors">Complete</button>)}
-        <div className="relative">
-          <button onClick={() => setMenuOpen((o) => !o)} aria-label="Actions" className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-beatz-dark-bg dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"><MoreHorizontal size={18} /></button>
-          {menuOpen && (
+        <RowMenu>
+          {(close) => (
             <>
-              <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
-              <div className="absolute right-0 top-9 z-50 w-48 py-1 rounded-xl bg-white dark:bg-beatz-dark-surface-2 border border-gray-200 dark:border-white/10 shadow-xl">
-                {c.status === 'new' && <MenuItem icon={Play} label="Start processing" disabled={disabled} onClick={() => { onStart(); setMenuOpen(false) }} />}
-                {c.type === 'DSAR-export' && <MenuItem icon={Download} label="Download data" disabled={disabled} onClick={() => { onDownload(); setMenuOpen(false) }} />}
-                {c.type === 'Takedown' && <MenuItem icon={FileText} label="Generate notice" disabled={disabled} onClick={() => { onNotice(); setMenuOpen(false) }} />}
-                {!done && <MenuItem icon={Check} label="Mark completed" disabled={disabled} onClick={() => { onComplete(); setMenuOpen(false) }} />}
-              </div>
+              {c.status === 'new' && <MenuItem icon={Play} label="Start processing" disabled={disabled} onClick={() => { onStart(); close() }} />}
+              {c.type === 'DSAR-export' && <MenuItem icon={Download} label="Download data" disabled={disabled} onClick={() => { onDownload(); close() }} />}
+              {c.type === 'Takedown' && <MenuItem icon={FileText} label="Generate notice" disabled={disabled} onClick={() => { onNotice(); close() }} />}
+              {!done && <MenuItem icon={Check} label="Mark completed" disabled={disabled} onClick={() => { onComplete(); close() }} />}
             </>
           )}
-        </div>
+        </RowMenu>
       </div>
     </div>
-  )
-}
-
-function MenuItem({ icon: Icon, label, onClick, disabled }: { icon: LucideIcon; label: string; onClick: () => void; disabled?: boolean }) {
-  return (
-    <button onClick={onClick} disabled={disabled} className="w-full flex items-center gap-2.5 px-3 py-2 text-sm font-medium text-beatz-dark-bg dark:text-white hover:bg-gray-100 dark:hover:bg-white/5 transition-colors">
-      <Icon size={15} /> {label}
-    </button>
   )
 }

@@ -5,6 +5,7 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
 import static org.hamcrest.Matchers.hasItem;
+import static org.hamcrest.Matchers.hasSize;
 import static org.hamcrest.Matchers.notNullValue;
 
 import jakarta.inject.Inject;
@@ -143,16 +144,25 @@ class StoreFlowIT {
         .body("error.field", equalTo("type"));
   }
 
+  /**
+   * An unknown genre filters everything out; it is not a validation error.
+   *
+   * <p>This asserted 422 while {@code genre} was a compiled-in enum. Genres are admin-managed as of
+   * V972, so the closed enum is gone: a genre the operator added yesterday is not in any Java file,
+   * and rejecting unknown labels would have made every new genre a 422 until the next deploy.
+   * Validating instead against the taxonomy would put a lookup on a hot read path to tell a caller
+   * something an empty page already says.
+   */
   @Test
-  void listStore_invalidGenre_returns422() {
+  void listStore_unknownGenre_returnsEmptyPage() {
     given()
         .queryParam("genre", "NotAGenre")
         .when()
         .get("/v1/store")
         .then()
-        .statusCode(422)
-        .body("error.code", equalTo("VALIDATION"))
-        .body("error.field", equalTo("genre"));
+        .statusCode(200)
+        .body("items", hasSize(0))
+        .body("total", equalTo(0));
   }
 
   @Test

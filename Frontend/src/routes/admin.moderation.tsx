@@ -1,13 +1,14 @@
 import { createFileRoute } from '@tanstack/react-router'
 import { useMemo, useState } from 'react'
 import { useQuery, useQueryClient } from '@tanstack/react-query'
-import { MoreHorizontal, Check, ShieldX, ArrowUpCircle, X } from 'lucide-react'
+import { Check, ShieldX, ArrowUpCircle, X } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
 import { MOD_TYPES, type ModerationItem, type ModReason, type ModSeverity, type ModStatus } from '../lib/admin-data'
 import { moderationQuery, apiReviewCase, apiApproveCase, apiRemoveCase, apiEscalateCase, apiDismissCase } from '../lib/api/queries/admin-moderation'
 import { AdminLoadError } from '../components/admin/load-error'
 import { usePaged, Pagination } from '../components/admin/pagination'
+import { RowMenu, MenuItem } from '../components/admin/row-menu'
 
 export const Route = createFileRoute('/admin/moderation')({
   component: AdminModeration,
@@ -140,7 +141,6 @@ function ModRow({ item: it, onReview, onApprove, onRemove, onEscalate, onDismiss
   item: ModerationItem
   onReview: () => void; onApprove: () => void; onRemove: () => void; onEscalate: () => void; onDismiss: () => void
 }) {
-  const [menuOpen, setMenuOpen] = useState(false)
   const resolved = it.status === 'resolved'
   return (
     <div className={cn('flex items-center gap-4 px-3 py-3.5 border-b border-dashed border-gray-200 dark:border-white/5 last:border-0 transition-colors hover:bg-gray-50 dark:hover:bg-white/5', resolved && 'opacity-55')}>
@@ -158,33 +158,17 @@ function ModRow({ item: it, onReview, onApprove, onRemove, onEscalate, onDismiss
         {!resolved && (
           <button onClick={onReview} className="h-8 px-3 rounded-full text-beatz-green text-xs font-bold hover:bg-beatz-green/10 transition-colors">Review</button>
         )}
-        <div className="relative">
-          <button onClick={() => setMenuOpen((o) => !o)} aria-label="Actions" className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-beatz-dark-bg dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors">
-            <MoreHorizontal size={18} />
-          </button>
-          {menuOpen && (
+        <RowMenu>
+          {(close) => (
             <>
-              <div className="fixed inset-0 z-40" onClick={() => setMenuOpen(false)} />
-              <div className="absolute right-0 top-9 z-50 w-44 py-1 rounded-xl bg-white dark:bg-beatz-dark-surface-2 border border-gray-200 dark:border-white/10 shadow-xl">
-                <MenuItem icon={Check} label="Approve & keep" onClick={() => { onApprove(); setMenuOpen(false) }} />
-                <MenuItem icon={ShieldX} label="Remove content" danger onClick={() => { onRemove(); setMenuOpen(false) }} />
-                <MenuItem icon={ArrowUpCircle} label="Escalate" onClick={() => { onEscalate(); setMenuOpen(false) }} />
-                <MenuItem icon={X} label="Dismiss report" onClick={() => { onDismiss(); setMenuOpen(false) }} />
-              </div>
+              <MenuItem icon={Check} label="Approve & keep" onClick={() => { onApprove(); close() }} />
+              <MenuItem icon={ShieldX} label="Remove content" danger onClick={() => { onRemove(); close() }} />
+              <MenuItem icon={ArrowUpCircle} label="Escalate" onClick={() => { onEscalate(); close() }} />
+              <MenuItem icon={X} label="Dismiss report" onClick={() => { onDismiss(); close() }} />
             </>
           )}
-        </div>
+        </RowMenu>
       </div>
     </div>
-  )
-}
-
-function MenuItem({ icon: Icon, label, onClick, danger }: { icon: typeof Check; label: string; onClick: () => void; danger?: boolean }) {
-  return (
-    <button onClick={onClick}
-      className={cn('w-full flex items-center gap-2.5 px-3 py-2 text-sm font-medium transition-colors',
-        danger ? 'text-beatz-red hover:bg-beatz-red/10' : 'text-beatz-dark-bg dark:text-white hover:bg-gray-100 dark:hover:bg-white/5')}>
-      <Icon size={15} /> {label}
-    </button>
   )
 }

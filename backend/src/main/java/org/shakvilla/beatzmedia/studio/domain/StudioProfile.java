@@ -3,7 +3,6 @@ package org.shakvilla.beatzmedia.studio.domain;
 import java.time.Instant;
 import java.util.List;
 
-import org.shakvilla.beatzmedia.platform.domain.Genre;
 
 /**
  * Studio profile aggregate root — one per artist (Studio ADD §3 / §4.1, LLFR-STUDIO-01.1). Domain
@@ -19,7 +18,7 @@ public final class StudioProfile {
   private final String username;
   private final String displayName;
   private final String hometown;
-  private final List<Genre> genres;
+  private final List<String> genres;
   private final String bio;
   private final String avatarUrl;
   private final String bannerUrl;
@@ -35,7 +34,7 @@ public final class StudioProfile {
       String username,
       String displayName,
       String hometown,
-      List<Genre> genres,
+      List<String> genres,
       String bio,
       String avatarUrl,
       String bannerUrl,
@@ -91,7 +90,7 @@ public final class StudioProfile {
     return hometown;
   }
 
-  public List<Genre> genres() {
+  public List<String> genres() {
     return genres;
   }
 

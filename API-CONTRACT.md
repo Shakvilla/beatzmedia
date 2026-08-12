@@ -143,6 +143,23 @@ Cart kinds: `track | album | album-rest | store | episode | season-pass | ticket
 > - Provider settlement callbacks: `POST /v1/payments/webhooks/redde/receive` (unauthenticated; trusted by
 >   an authenticated pull-back, not a signature). Not a client-facing endpoint.
 >
+> **Per-rail enablement (GAP-13).** Each payment rail has its own kill switch, toggled from
+> `/admin/settings` → `providers`. Two client-facing consequences:
+> - `GET /v1/payments/providers` → `{ enabled: string[] }` — the rails currently accepting charges,
+>   from the `Provider` enum (`mtn|telecel|airteltigo|card|bank`). Unauthenticated: checkout is
+>   reachable before a session exists, and the answer carries nothing private. Use it to avoid
+>   offering a method that will be refused.
+> - A charge on a disabled rail is **`409 PROVIDER_DISABLED`**. This is the authoritative check — the
+>   list above is a convenience, and a client that ignores it, or reads it moments before an operator
+>   switches a rail off, is still refused here. Never treat a hidden method as the reason money did
+>   not move. The refusal happens *before* the idempotency key is consumed, so retrying with the same
+>   `Idempotency-Key` once the rail is re-enabled charges normally rather than returning
+>   `409 IDEMPOTENCY_KEY_CONFLICT`.
+>
+> Reads are fail-closed: a rail whose flag row is missing is treated as disabled, and the application
+> refuses to start when any is absent — so a half-applied migration cannot leave money flowing over a
+> rail nobody confirmed was open.
+
 > **Order-line display fields (WU-COM-3).** `OrderSnapshot`'s line items gain `subtitle?: string | null`
 > and `image?: string | null` — additive, nullable, snapshotting the same display data the cart already
 > carried at checkout time. Orders placed before this WU shipped have `null` for both (never backfilled).
@@ -361,10 +378,19 @@ UI: `/admin/settings`. Roles: `super-admin | finance | moderator | editor | supp
 
 ```
 PlatformSettings { platformFeePct, payoutDay, payoutMinimum, defaultCurrency,
-                   maintenanceMode, providers{momo,vodafone,airteltigo,card,bank},
+                   maintenanceMode, providers{mtn,telecel,airteltigo,card,bank},
                    flags{artistSignups,podcasts,events,tipping,fanMessaging} }
 AdminMember { id, name, email, role, lastActive }
 ```
+
+> **`providers` keys renamed (GAP-13).** `momo` → `mtn`, `vodafone` → `telecel`. They now match
+> payments' `Provider` enum exactly: `momo` was always labelled "MTN MoMo" so it only ever meant MTN,
+> and Vodafone Ghana became Telecel in 2023 — checkout and payouts already said Telecel, leaving the
+> admin console the last surface on the old name.
+>
+> On `PUT`, **every key in `providers` and `flags` is required**. Omitting or misspelling one is
+> `422 VALIDATION` naming the field, not a silent default. A client sending the old `momo`/`vodafone`
+> keys is rejected rather than quietly switching MTN and Telecel off platform-wide.
 
 | Method | Path | Notes |
 |---|---|---|

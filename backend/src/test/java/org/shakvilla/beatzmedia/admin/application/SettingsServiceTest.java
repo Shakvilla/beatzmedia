@@ -65,7 +65,7 @@ class SettingsServiceTest {
     assertEquals("Friday", v.payoutDay());
     assertEquals(new BigDecimal("10.00"), v.payoutMinimum()); // defaults payoutMinimumMinor 1000
     assertEquals("GHS", v.defaultCurrency());
-    assertTrue(v.providers().momo()); // honest-static true
+    assertTrue(v.providers().mtn()); // GAP-13: real flag, seeded true by V978
     assertTrue(v.flags().tipping()); // real flag, seeded true
     assertFalse(v.flags().fanMessaging()); // real flag, seeded false
   }

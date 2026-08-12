@@ -1,13 +1,17 @@
 package org.shakvilla.beatzmedia.studio.application.service;
 
 import java.util.List;
+import java.util.Set;
+import java.util.stream.Collectors;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 
 import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
-import org.shakvilla.beatzmedia.platform.domain.Genre;
+import org.shakvilla.beatzmedia.platform.application.port.out.TaxonomyRepository;
+import org.shakvilla.beatzmedia.platform.domain.TaxonomyKind;
+import org.shakvilla.beatzmedia.platform.domain.TaxonomyTerm;
 import org.shakvilla.beatzmedia.studio.application.port.in.SaveStudioProfile;
 import org.shakvilla.beatzmedia.studio.application.port.in.SaveStudioProfileCommand;
 import org.shakvilla.beatzmedia.studio.application.port.in.StudioProfileView;
@@ -36,11 +40,14 @@ public class SaveStudioProfileService implements SaveStudioProfile {
 
   private final StudioRepository repository;
   private final Clock clock;
+  private final TaxonomyRepository taxonomy;
 
   @Inject
-  public SaveStudioProfileService(StudioRepository repository, Clock clock) {
+  public SaveStudioProfileService(
+      StudioRepository repository, Clock clock, TaxonomyRepository taxonomy) {
     this.repository = repository;
     this.clock = clock;
+    this.taxonomy = taxonomy;
   }
 
   @Override
@@ -72,12 +79,24 @@ public class SaveStudioProfileService implements SaveStudioProfile {
     return StudioProfileMapper.toView(saved);
   }
 
+  /**
+   * Genres are validated against the ACTIVE terms in the admin-managed taxonomy, not a compiled-in
+   * enum. Before V972 this called {@code Genre.isValid}, so adding "Afro-fusion" meant editing a
+   * Java enum and a TypeScript union and shipping a release.
+   *
+   * <p>Checking against active terms only is deliberate: deactivating a genre stops artists
+   * selecting it from now on, while profiles that already carry it keep working untouched.
+   */
   private void validateGenres(List<String> genres) {
-    if (genres == null) {
+    if (genres == null || genres.isEmpty()) {
       return;
     }
+    Set<String> allowed =
+        taxonomy.listActive(TaxonomyKind.GENRE).stream()
+            .map(TaxonomyTerm::label)
+            .collect(Collectors.toSet());
     for (String genre : genres) {
-      if (!Genre.isValid(genre)) {
+      if (!allowed.contains(genre)) {
         throw new InvalidGenreException(genre);
       }
     }
