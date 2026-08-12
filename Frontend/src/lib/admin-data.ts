@@ -258,7 +258,12 @@ export interface PlatformSettings {
   payoutMinimum: number
   defaultCurrency: string
   maintenanceMode: boolean
-  providers: { momo: boolean; vodafone: boolean; airteltigo: boolean; card: boolean; bank: boolean }
+  /**
+   * Per-rail payment enablement (GAP-13). Real and persisted; the toggles were decorative before.
+   * Keys match the backend `Provider` enum — `momo`/`vodafone` were renamed to `mtn`/`telecel`,
+   * the latter because Vodafone Ghana became Telecel in 2023 and checkout already said so.
+   */
+  providers: { mtn: boolean; telecel: boolean; airteltigo: boolean; card: boolean; bank: boolean }
   flags: { artistSignups: boolean; podcasts: boolean; events: boolean; tipping: boolean; fanMessaging: boolean }
 }
 
@@ -269,7 +274,7 @@ export function getPlatformSettings(): PlatformSettings {
     payoutMinimum: 10,
     defaultCurrency: 'GHS',
     maintenanceMode: false,
-    providers: { momo: true, vodafone: true, airteltigo: true, card: true, bank: true },
+    providers: { mtn: true, telecel: true, airteltigo: true, card: true, bank: true },
     flags: { artistSignups: true, podcasts: true, events: true, tipping: true, fanMessaging: false },
   }
 }

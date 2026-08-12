@@ -642,8 +642,20 @@ the application layer. Money/side-effect POSTs (finance) require `Idempotency-Ke
 > Response is the frontend `PlatformSettings` shape; `payoutMinimum` is bare decimal cedis (WU-ADM-1
 > convention) from `payoutMinimumMinor`.
 > - **All five `flags.*` are real** platform `FeatureKey`s (`ARTIST_SIGNUPS/PODCASTS/EVENTS/TIPPING/
->   FAN_MESSAGING`, seeded in V2 — `fanMessaging` false). `providers.*` is **honest-static `true`** (no
->   per-provider enablement subsystem) — accepted on PUT but not persisted; documented carryover.
+>   FAN_MESSAGING`, seeded in V2 — `fanMessaging` false). **`providers.*` are real too as of GAP-13**
+>   (`PROVIDER_MTN/TELECEL/AIRTELTIGO/CARD/BANK`, seeded enabled in V978) — previously accepted on PUT
+>   and silently discarded. Keys were renamed `momo`→`mtn` and `vodafone`→`telecel` to match payments'
+>   `Provider` enum; `vodafone` named a brand that ceased to exist in 2023, and checkout and payouts
+>   already said Telecel.
+>   - Disabling a rail stops **new charges** on it (409 `PROVIDER_DISABLED`); **payouts are
+>     deliberately unaffected**, so a disabled rail never strands balances a creator has already
+>     earned. See ADR-32.
+>   - The charge path reads these **fail-closed** via `PaymentProviderPolicy`; this screen reads them
+>     fail-open, because showing a rail as off when its row is merely unreadable would tell an
+>     operator they had already done something they had not.
+>   - Every provider key is **required** on PUT (`ProvidersRequest`, `@NotNull Boolean`). A body
+>     missing or misspelling one is a 422 — without that, the rename would have let a stale client
+>     switch MTN and Telecel off platform-wide while receiving 200 OK.
 > - **Fee change is forward-only + audited.** PUT stores `platformFeePct` (payments reads it at settle
 >   time, so settled sales are never re-priced) and keeps `creatorSharePct = 100 − fee` complementary;
 >   the other split constants (tip fee, bundle discount, service fee) are preserved from current — they
@@ -705,7 +717,7 @@ UserDetail {                                  // detail page (reader from identi
 PlatformSettings {
   platformFeePct: int, payoutDay: string, payoutMinimum: Money, defaultCurrency: string,
   maintenanceMode: bool,
-  providers: { momo: bool, vodafone: bool, airteltigo: bool, card: bool, bank: bool },
+  providers: { mtn: bool, telecel: bool, airteltigo: bool, card: bool, bank: bool },  // GAP-13: real; all five required on PUT
   flags: { artistSignups: bool, podcasts: bool, events: bool, tipping: bool, fanMessaging: bool }
 }
 
@@ -734,7 +746,7 @@ CREATE TABLE platform_settings (
     payout_minimum_minor BIGINT      NOT NULL DEFAULT 1000,          -- ₵10.00
     default_currency    TEXT         NOT NULL DEFAULT 'GHS',
     maintenance_mode    BOOLEAN      NOT NULL DEFAULT FALSE,
-    providers           JSONB        NOT NULL DEFAULT '{}'::jsonb,   -- {momo,vodafone,airteltigo,card,bank}
+    providers           JSONB        NOT NULL DEFAULT '{}'::jsonb,   -- unused: rails live in feature_flag (PROVIDER_*), see ADR-32
     flags               JSONB        NOT NULL DEFAULT '{}'::jsonb,   -- {artistSignups,podcasts,events,tipping,fanMessaging}
     updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
     CONSTRAINT platform_settings_singleton CHECK (id = '00000000-0000-0000-0000-000000000001')

@@ -85,7 +85,7 @@ public class AdminSettingsResource {
       @NotNull @PositiveOrZero @DecimalMax("1000000") BigDecimal payoutMinimum,
       @NotBlank String defaultCurrency,
       boolean maintenanceMode,
-      @NotNull PlatformSettingsView.Providers providers,
+      @Valid @NotNull ProvidersRequest providers,
       @Valid @NotNull FlagsRequest flags) {
 
     PlatformSettingsInput toInput() {
@@ -95,8 +95,40 @@ public class AdminSettingsResource {
           payoutMinimum,
           defaultCurrency,
           maintenanceMode,
-          providers,
+          providers.toProviders(),
           flags.toFlags());
+    }
+  }
+
+  /**
+   * The payment-rail half of the request body, separate from the response's
+   * {@link PlatformSettingsView.Providers} so every key can be <strong>required</strong>.
+   *
+   * <p><strong>Why (GAP-13, and GAP-09 all over again).</strong> The request reused the response
+   * record, whose fields are primitive {@code boolean}. Quarkus disables Jackson's
+   * fail-on-unknown-properties, so a key the server does not recognise is dropped in silence and the
+   * field falls back to {@code false} — and {@code SaveSettingsService} writes all five rails
+   * unconditionally.
+   *
+   * <p>Renaming {@code momo}/{@code vodafone} to {@code mtn}/{@code telecel} made every existing
+   * caller a stale caller overnight. A client still sending the old names would have had its
+   * settings save accepted with {@code 200 OK} while <strong>switching MTN and Telecel off
+   * platform-wide</strong> — payments stopping on the two largest rails in Ghana, reported as
+   * success. This was not theoretical: three integration tests did exactly that, which is how it was
+   * found.
+   *
+   * <p>Boxed {@code Boolean} plus {@code @NotNull} turns a misspelled or omitted rail into a
+   * {@code 422} naming the field, so a stale client fails loudly instead of disabling payments.
+   */
+  public record ProvidersRequest(
+      @NotNull Boolean mtn,
+      @NotNull Boolean telecel,
+      @NotNull Boolean airteltigo,
+      @NotNull Boolean card,
+      @NotNull Boolean bank) {
+
+    PlatformSettingsView.Providers toProviders() {
+      return new PlatformSettingsView.Providers(mtn, telecel, airteltigo, card, bank);
     }
   }
 

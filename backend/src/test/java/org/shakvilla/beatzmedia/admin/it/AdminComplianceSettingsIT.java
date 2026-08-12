@@ -132,8 +132,8 @@ class AdminComplianceSettingsIT {
         .body("$", hasKey("payoutMinimum"))
         .body("$", hasKey("defaultCurrency"))
         .body("$", hasKey("maintenanceMode"))
-        .body("providers", hasKey("momo"))
-        .body("providers.momo", equalTo(true))
+        .body("providers", hasKey("mtn"))
+        .body("providers.mtn", equalTo(true))
         .body("flags", hasKey("artistSignups"))
         .body("flags", hasKey("fanMessaging"))
         .body("defaultCurrency", equalTo("GHS"));
@@ -188,7 +188,7 @@ class AdminComplianceSettingsIT {
           "payoutMinimum": 10,
           "defaultCurrency": "GHS",
           "maintenanceMode": false,
-          "providers": { "momo": true, "vodafone": true, "airteltigo": true, "card": true, "bank": true },
+          "providers": { "mtn": true, "telecel": true, "airteltigo": true, "card": true, "bank": true },
           "flags": { "artistSignups": true, "podcasts": true, "events": true, "tipping": true, "fanMessaging": false }
         }
         """

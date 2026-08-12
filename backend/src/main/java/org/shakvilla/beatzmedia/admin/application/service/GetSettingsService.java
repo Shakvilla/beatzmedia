@@ -51,7 +51,25 @@ public class GetSettingsService implements GetSettings {
             flags.isEnabled(FeatureKey.PODCASTS),
             flags.isEnabled(FeatureKey.EVENTS),
             flags.isEnabled(FeatureKey.TIPPING),
-            flags.isEnabled(FeatureKey.FAN_MESSAGING)));
+            flags.isEnabled(FeatureKey.FAN_MESSAGING)),
+        providersFrom(flags));
+  }
+
+  /**
+   * Reads the per-rail flags for display (GAP-13).
+   *
+   * <p>Fail-<em>open</em> here, unlike the charge path. This is a settings screen: showing a rail as
+   * off when its row is merely unreadable would tell an operator they had already done something
+   * they had not. The authoritative, fail-closed read is {@code PaymentProviderPolicy}, which is
+   * what actually decides whether money moves — and a missing row stops the app booting anyway.
+   */
+  static PlatformSettingsView.Providers providersFrom(FeatureFlags flags) {
+    return new PlatformSettingsView.Providers(
+        flags.isEnabled(FeatureKey.PROVIDER_MTN),
+        flags.isEnabled(FeatureKey.PROVIDER_TELECEL),
+        flags.isEnabled(FeatureKey.PROVIDER_AIRTELTIGO),
+        flags.isEnabled(FeatureKey.PROVIDER_CARD),
+        flags.isEnabled(FeatureKey.PROVIDER_BANK));
   }
 
   /**
@@ -63,6 +81,12 @@ public class GetSettingsService implements GetSettings {
    * the values it had just replaced.
    */
   static PlatformSettingsView toView(PlatformSettings s, PlatformSettingsView.Flags flags) {
+    return toView(s, flags, new PlatformSettingsView.Providers(true, true, true, true, true));
+  }
+
+  /** As above, with the provider values the caller already holds — same read-your-write reason. */
+  static PlatformSettingsView toView(
+      PlatformSettings s, PlatformSettingsView.Flags flags, PlatformSettingsView.Providers providers) {
     BigDecimal payoutMinimum =
         BigDecimal.valueOf(s.payoutMinimumMinor()).divide(BigDecimal.valueOf(100), 2, RoundingMode.HALF_UP);
     return new PlatformSettingsView(
@@ -71,8 +95,7 @@ public class GetSettingsService implements GetSettings {
         payoutMinimum,
         s.defaultCurrency().name(),
         s.maintenanceMode(),
-        // providers.* — honest-static (no per-provider enablement subsystem).
-        new PlatformSettingsView.Providers(true, true, true, true, true),
+        providers,
         flags);
   }
 }

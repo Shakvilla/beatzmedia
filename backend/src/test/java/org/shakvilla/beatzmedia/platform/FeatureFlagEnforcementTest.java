@@ -101,12 +101,30 @@ class FeatureFlagEnforcementTest {
         Set.of(FeatureKey.PODCASTS, FeatureKey.EVENTS, FeatureKey.TIPPING);
     // Enforced in application services rather than at the boundary.
     Set<FeatureKey> serviceEnforced = Set.of(FeatureKey.ARTIST_SIGNUPS, FeatureKey.PSP_REDDE);
+    /*
+      Payment rails (GAP-13). Enforced by PaymentProviderPolicy in InitiateChargeService, not by
+      @RequiresFeature — and deliberately so. The annotation gates a whole resource; these must gate
+      one *field* of a request (the chosen rail) while the endpoint stays open for every other rail,
+      and they are read fail-closed, which the shared filter does not do.
+
+      Kept as its own category rather than folded into serviceEnforced because the enforcement
+      differs in a way that matters: a missing row here refuses the charge and stops the boot, where
+      every other flag on this list fails open.
+    */
+    Set<FeatureKey> chargePolicyEnforced =
+        Set.of(
+            FeatureKey.PROVIDER_MTN,
+            FeatureKey.PROVIDER_TELECEL,
+            FeatureKey.PROVIDER_AIRTELTIGO,
+            FeatureKey.PROVIDER_CARD,
+            FeatureKey.PROVIDER_BANK);
     Set<FeatureKey> noSurfaceYet = Set.of(FeatureKey.FAN_MESSAGING);
 
     List<FeatureKey> unaccounted = new ArrayList<>();
     for (FeatureKey key : FeatureKey.values()) {
       if (!annotationEnforced.contains(key)
           && !serviceEnforced.contains(key)
+          && !chargePolicyEnforced.contains(key)
           && !noSurfaceYet.contains(key)) {
         unaccounted.add(key);
       }

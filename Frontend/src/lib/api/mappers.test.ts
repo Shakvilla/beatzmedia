@@ -1089,7 +1089,7 @@ describe('compliance mapper', () => {
 describe('platform settings mappers', () => {
   const wire: PlatformSettingsWire = {
     platformFeePct: 30, payoutDay: 'Friday', payoutMinimum: 10, defaultCurrency: 'GHS', maintenanceMode: false,
-    providers: { momo: true, vodafone: true, airteltigo: true, card: true, bank: true },
+    providers: { mtn: true, telecel: true, airteltigo: true, card: true, bank: true },
     flags: { artistSignups: true, podcasts: true, events: false, tipping: true, fanMessaging: false },
   }
 
