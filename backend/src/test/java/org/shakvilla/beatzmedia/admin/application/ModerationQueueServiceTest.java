@@ -64,7 +64,7 @@ class ModerationQueueServiceTest {
         moderationCaseRepository, catalogAdminReader, auditWriter, ids, clock);
 
     catalogAdminReader.seed(new CatalogDetailRow(
-        "release-1", "Iron Boy", "artist-1", "Black Sherif", "album", "in_review", NOW,
+        "release-1", "Iron Boy", "artist-1", "Black Sherif", "album", "in_review", "Drill", NOW,
         List.of(), List.of()));
     moderationCaseRepository.save(ModerationCase.open(
         "case-1", "release:release-1", "admin-1", ModReason.COPYRIGHT, ModSeverity.HIGH, NOW));

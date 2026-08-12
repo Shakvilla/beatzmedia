@@ -746,7 +746,7 @@ describe('admin catalog mappers', () => {
 
   it('toCatalogDetail translates the wire type, formats duration + relative log time, and projects splits', () => {
     const wire: CatalogDetailWire = {
-      id: 'c1', title: 'Iron Boy', note: null, artist: 'Black Sherif', type: 'album', status: 'pending', upc: 'BZ900123',
+      id: 'c1', title: 'Iron Boy', note: null, artist: 'Black Sherif', type: 'album', status: 'pending', upc: 'BZ900123', genre: 'Afrobeats',
       tracklist: [{ position: 1, trackId: 't1', title: 'Intro', isrc: 'GHA-26-1001', durationSec: 132, priceMinor: 500 }],
       splits: [{ trackId: 't1', name: 'Black Sherif', role: 'Primary artist', percent: 70, confirmation: 'confirmed' }],
       actionLog: [{ id: 'l1', action: 'Submitted', by: 'system', time: '2026-07-24T10:00:00Z' }],
@@ -754,6 +754,7 @@ describe('admin catalog mappers', () => {
     const d = toCatalogDetail(wire, 1721815200000) // now = 2024-07-24T10:00:00Z fixed; only checks it's a string
     expect(d.type).toBe('Album')
     expect(d.upc).toBe('BZ900123')
+    expect(d.genre).toBe('Afrobeats')
     expect(d.tracks).toEqual([{ position: 1, title: 'Intro', isrc: 'GHA-26-1001', duration: '2:12' }])
     expect(d.splits).toEqual([{ name: 'Black Sherif', role: 'Primary artist', pct: 70 }])
     expect(d.log[0].action).toBe('Submitted')
@@ -762,10 +763,20 @@ describe('admin catalog mappers', () => {
 
   it('toCatalogDetail translates a realistic wire status (in_review) to the pending bucket', () => {
     const wire: CatalogDetailWire = {
-      id: 'c1', title: 'Iron Boy', note: null, artist: 'Black Sherif', type: 'album', status: 'in_review', upc: 'BZ900123',
+      id: 'c1', title: 'Iron Boy', note: null, artist: 'Black Sherif', type: 'album', status: 'in_review', upc: 'BZ900123', genre: 'Afrobeats',
       tracklist: [], splits: [], actionLog: [],
     }
     expect(toCatalogDetail(wire).status).toBe('pending')
+  })
+
+  // The page printed a fixed "Hiplife / Drill" for every release. A release with no genre must
+  // arrive as null so the page can say so, rather than borrowing a value from nowhere.
+  it('toCatalogDetail keeps a missing genre missing', () => {
+    const wire: CatalogDetailWire = {
+      id: 'c1', title: 'Untagged', note: null, artist: 'Nobody', type: 'single', status: 'in_review', upc: null, genre: null,
+      tracklist: [], splits: [], actionLog: [],
+    }
+    expect(toCatalogDetail(wire).genre).toBeNull()
   })
 
   it('toCatalogDetail dedupes splits selected across every track of a multi-track release', () => {
@@ -775,7 +786,7 @@ describe('admin catalog mappers', () => {
       { trackId, name: 'Beatzclik Publishing', role: 'Publisher', percent: 10, confirmation: 'confirmed' },
     ]
     const wire: CatalogDetailWire = {
-      id: 'c1', title: 'Iron Boy', note: null, artist: 'Black Sherif', type: 'album', status: 'live', upc: 'BZ900123',
+      id: 'c1', title: 'Iron Boy', note: null, artist: 'Black Sherif', type: 'album', status: 'live', upc: 'BZ900123', genre: 'Afrobeats',
       tracklist: [],
       splits: [...splitRow('t1'), ...splitRow('t2')],
       actionLog: [],
@@ -790,7 +801,7 @@ describe('admin catalog mappers', () => {
 
   it('toCatalogDetail carries null upc through as null', () => {
     const wire: CatalogDetailWire = {
-      id: 'c1', title: 'Iron Boy', note: null, artist: 'Black Sherif', type: 'album', status: 'live', upc: null,
+      id: 'c1', title: 'Iron Boy', note: null, artist: 'Black Sherif', type: 'album', status: 'live', upc: null, genre: 'Afrobeats',
       tracklist: [{ position: 1, trackId: 't1', title: 'Intro', isrc: null, durationSec: 132, priceMinor: 500 }],
       splits: [], actionLog: [],
     }
