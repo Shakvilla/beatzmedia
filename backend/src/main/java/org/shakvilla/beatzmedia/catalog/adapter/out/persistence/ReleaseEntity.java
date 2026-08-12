@@ -66,4 +66,11 @@ public class ReleaseEntity {
   /** Cover art URL (V975); nullable until the artist uploads one. */
   @Column(name = "cover_image")
   public String coverImage;
+
+  /**
+   * Whether buyers may download this release's audio (V980). Nullable with NO default: null
+   * means the artist has not chosen yet, which {@code PublishReleaseService} rejects at publish.
+   */
+  @Column(name = "downloadable")
+  public Boolean downloadable;
 }

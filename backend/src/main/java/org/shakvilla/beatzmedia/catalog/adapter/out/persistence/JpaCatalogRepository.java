@@ -536,6 +536,7 @@ public class JpaCatalogRepository implements CatalogRepository {
     e.genre = release.getGenre();
     e.description = release.getDescription();
     e.coverImage = release.getCoverImage();
+    e.downloadable = release.getDownloadable();
     em.merge(e);
 
     // Upsert release_track rows. Remove existing managed entities (rather than a bulk JPQL
@@ -963,6 +964,9 @@ public class JpaCatalogRepository implements CatalogRepository {
     // Set outside the factory: cover art arrives by upload after the draft exists, so widening four
     // reconstitute/create overloads for it would ripple through every call site for no gain.
     release.setCoverImage(e.coverImage);
+    // Same reasoning applies to the download choice (V980): widening the reconstitute overloads
+    // for one more nullable field would ripple through every call site for no gain.
+    release.setDownloadable(e.downloadable);
     return release;
   }
 

@@ -1,5 +1,6 @@
 package org.shakvilla.beatzmedia.catalog.application;
 
+import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -33,6 +34,7 @@ import org.shakvilla.beatzmedia.catalog.domain.ReleaseType;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseWentLive;
 import org.shakvilla.beatzmedia.catalog.domain.Visibility;
 import org.shakvilla.beatzmedia.catalog.fakes.FakeCatalogRepository;
+import org.shakvilla.beatzmedia.platform.domain.ValidationException;
 import org.shakvilla.beatzmedia.platform.fakes.FakeClock;
 import org.shakvilla.beatzmedia.platform.fakes.FakeIds;
 
@@ -226,12 +228,72 @@ class PublishReleaseServiceTest {
     assertTrue(auditWriter.all().isEmpty());
   }
 
+  // ---- download choice guard (downloadable releases) ----
+  //
+  // The artist must choose whether buyers may download, and publish is the gate that enforces
+  // it. Without a server-side guard, "required choice" is a UI convention any other client can
+  // skip — and the choice would then be decided by whatever the column defaults to, which is
+  // precisely what the design rejected (release.downloadable is nullable with no DB default).
+
+  @Test
+  void publishingWithNoDownloadChoiceIsRejected() {
+    // inReview() defaults downloadable to true for the other tests in this class; explicitly
+    // clear it back to "unanswered" here, which is the case this test exists to cover.
+    Release release = inReview("rel-dl-1");
+    release.setDownloadable(null);
+    repo.addRelease(release);
+
+    ValidationException e = assertThrows(ValidationException.class, () -> service.transition(
+        new ReleaseId("rel-dl-1"), ReleaseTransition.APPROVE_IMMEDIATE, ADMIN, Optional.empty()));
+
+    assertEquals("downloadable", e.getField());
+  }
+
+  @Test
+  void publishingWithNoDownloadChoiceIsRejectedOnApproveScheduled() {
+    // The choice is required before a release can even be scheduled to go live, not only at the
+    // moment it actually goes live — GO_LIVE runs unattended (no admin actor to fix a rejection).
+    Release release = inReview("rel-dl-2");
+    release.setDownloadable(null);
+    repo.addRelease(release);
+
+    ValidationException e = assertThrows(ValidationException.class, () -> service.transition(
+        new ReleaseId("rel-dl-2"), ReleaseTransition.APPROVE_SCHEDULED, ADMIN, Optional.of(FUTURE)));
+
+    assertEquals("downloadable", e.getField());
+  }
+
+  @Test
+  void publishingWithDownloadsAllowedSucceeds() {
+    Release release = inReview("rel-dl-3");
+    release.setDownloadable(true);
+    repo.addRelease(release);
+
+    assertDoesNotThrow(() -> service.transition(
+        new ReleaseId("rel-dl-3"), ReleaseTransition.APPROVE_IMMEDIATE, ADMIN, Optional.empty()));
+  }
+
+  @Test
+  void publishingWithDownloadsRefusedAlsoSucceeds() {
+    // "No" is a complete answer, not an absent one.
+    Release release = inReview("rel-dl-4");
+    release.setDownloadable(false);
+    repo.addRelease(release);
+
+    assertDoesNotThrow(() -> service.transition(
+        new ReleaseId("rel-dl-4"), ReleaseTransition.APPROVE_IMMEDIATE, ADMIN, Optional.empty()));
+  }
+
   // ---- helpers ----
 
   private Release inReview(String id) {
-    return Release.create(
+    Release release = Release.create(
         id, ARTIST, "Test", ReleaseType.single, Visibility.PUBLIC, null,
         List.of(new ReleaseTrack("t1", 1, 500)), 24, NOW);
+    // Pre-existing tests in this class are not exercising the download-choice guard, so give them
+    // an already-answered release; the guard's own tests below override this deliberately.
+    release.setDownloadable(true);
+    return release;
   }
 
   private Release scheduled(String id) {

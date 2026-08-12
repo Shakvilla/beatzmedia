@@ -259,9 +259,9 @@ class ReleaseTakedownSearchIT {
       String releaseId, String artistId, String title, String trackId) {
     em.createNativeQuery(
             "INSERT INTO release (id, artist_id, title, type, status, visibility,"
-                + " list_price_minor, created_at, updated_at)"
+                + " list_price_minor, created_at, updated_at, downloadable)"
                 + " VALUES (:id, :artistId, :title, 'single', 'in_review', 'public',"
-                + " 500, now(), now())")
+                + " 500, now(), now(), true)")
         .setParameter("id", releaseId)
         .setParameter("artistId", artistId)
         .setParameter("title", title)

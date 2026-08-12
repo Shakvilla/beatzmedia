@@ -25,6 +25,7 @@ import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseWentLive;
 import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
 import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
+import org.shakvilla.beatzmedia.platform.domain.ValidationException;
 
 /**
  * Application service for {@link PublishRelease}. Orchestrates the release lifecycle FSM
@@ -83,6 +84,10 @@ public class PublishReleaseService implements PublishRelease {
 
     switch (action) {
       case APPROVE_SCHEDULED -> {
+        // The artist's choice is required, not defaulted — see V980__release_downloadable.sql.
+        // Guarded here (not only at GO_LIVE) because GO_LIVE runs unattended on the scheduler;
+        // there is no admin actor there to fix a rejection.
+        guardDownloadChoiceMade(release);
         Instant at = scheduledAt.orElseThrow(
             () -> new IllegalArgumentException("scheduledAt is required for APPROVE_SCHEDULED"));
         release.approveScheduled(at, now);
@@ -92,6 +97,8 @@ public class PublishReleaseService implements PublishRelease {
             release.getId(), release.getArtistId(), ReleaseStatus.scheduled, at, actorId, now));
       }
       case APPROVE_IMMEDIATE -> {
+        // The artist's choice is required, not defaulted — see V980__release_downloadable.sql.
+        guardDownloadChoiceMade(release);
         // INV-12: a release cannot go live while any split is pending.
         guardNoPendingSplits(id);
         release.approveImmediate(now);
@@ -132,6 +139,19 @@ public class PublishReleaseService implements PublishRelease {
     }
 
     return toView(release);
+  }
+
+  /**
+   * The artist must have chosen whether buyers may download before a release can be published
+   * (approved, immediately or on a schedule). {@code release.downloadable} is nullable with no DB
+   * default (V980) precisely so this guard — not a UI convention any other client could skip — is
+   * what makes the choice required. {@code false} is a complete answer; only {@code null} throws.
+   */
+  private void guardDownloadChoiceMade(Release release) {
+    if (release.getDownloadable() == null) {
+      throw new ValidationException(
+          "Choose whether buyers may download this release before publishing.", "downloadable");
+    }
   }
 
   /** INV-12: reject a live-bound transition while any split for this release is pending. */
