@@ -183,6 +183,16 @@ public class FfmpegAudioTranscoderAdapter implements AudioTranscoderPort {
     cmd.add("-nostdin");
     cmd.add("-y");
     cmd.add("-i"); cmd.add(inputFile.toAbsolutePath().toString());
+    // Deliberately NO -vn here, unlike runFfmpegM4a. That -vn strips cover art because full.m4a
+    // and preview.m4a are the STREAMING renditions — the app already has the cover art (it's
+    // catalog metadata) and re-serves it separately on every play, so carrying a redundant copy
+    // in every streamed byte range would be pure waste. The FLAC here is different: it is the
+    // file a buyer OWNS and downloads to their own device, where the app's UI is no longer in the
+    // loop — so the embedded artwork is part of what they bought, the same way a purchased CD or
+    // vinyl rip carries its cover. Verified against ffmpeg 9.0 (the pinned runtime build) that an
+    // input with an attached-picture stream carries it through into the FLAC output cleanly
+    // (exit 0, duration unaffected) with no explicit -map/-c:v needed — so omitting -vn is a
+    // considered choice, not a copy-paste gap from runFfmpegM4a.
     cmd.add("-c:a"); cmd.add("flac");
     cmd.add("-compression_level"); cmd.add("8");
     cmd.add(outputFile.toAbsolutePath().toString());

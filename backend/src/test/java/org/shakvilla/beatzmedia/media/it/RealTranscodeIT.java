@@ -5,7 +5,13 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 import java.io.ByteArrayInputStream;
+import java.io.IOException;
+import java.io.InputStream;
 import java.net.URI;
+import java.nio.file.Files;
+import java.nio.file.Path;
+import java.nio.file.StandardCopyOption;
+import java.util.List;
 
 import org.junit.jupiter.api.AfterAll;
 import org.junit.jupiter.api.BeforeAll;
@@ -139,11 +145,18 @@ class RealTranscodeIT {
    * A lossless rendition that is silently clipped, or silently lossy, would pass a mere
    * "the object exists" check. Assert the duration matches the source — the same reasoning that
    * makes the preview assertion the real proof of INV-3.
+   *
+   * <p>The source here deliberately carries an embedded attached-picture (cover art) stream, not
+   * just silent audio. {@code runFfmpegFlac} intentionally omits {@code -vn} (unlike {@code
+   * runFfmpegM4a}) so that a buyer's FLAC download keeps its embedded artwork — see the comment on
+   * that method for why. Without a source that actually has a picture stream, nothing here would
+   * ever notice a regression that silently dropped it (e.g. an accidental {@code -vn} creeping
+   * back in), so this test also asserts the picture stream survives the transcode.
    */
   @Test
   void transcode_produces_a_full_length_lossless_rendition() throws Exception {
     MediaAssetId id = new MediaAssetId("lossless-1");
-    ObjectKey originalKey = uploadSourceWav(id);
+    ObjectKey originalKey = uploadSourceWithArtwork(id);
 
     ObjectKey losslessKey = transcoder.transcodeLossless(originalKey, id);
 
@@ -152,6 +165,9 @@ class RealTranscodeIT {
         "lossless rendition must be a single .flac: " + losslessKey.key());
     assertTrue(objectStore.exists(losslessKey), "lossless rendition must exist in delivery bucket");
     assertDurationNear(SOURCE_SECONDS, transcoder.probeDurationSec(losslessKey), "lossless");
+    assertTrue(hasVideoStream(losslessKey),
+        "lossless rendition must retain the embedded artwork (attached-picture) stream — "
+            + "a buyer's download owns the cover art, unlike the streamed full/preview renditions");
   }
 
   private static void assertDurationNear(int expectedSeconds, int actualSeconds, String what) {
@@ -173,6 +189,82 @@ class RealTranscodeIT {
         new ByteArrayInputStream(wav),
         "audio/wav",
         wav.length);
+  }
+
+  /**
+   * Build a source with BOTH a {@value #SOURCE_SECONDS}s silent audio stream and an embedded
+   * attached-picture (cover art) video stream, and upload it as the given asset's original.
+   *
+   * <p>Built entirely with ffmpeg (safe to shell out here: this whole class only runs once
+   * {@code ffmpegOnPath()} has already been asserted true in {@code @BeforeAll}): first a tiny
+   * synthetic PNG via the {@code lavfi} color source, then muxed with the silent WAV into a FLAC
+   * whose video stream carries {@code disposition:attached_pic} — the same shape a real upload
+   * with cover art takes (e.g. an MP3/FLAC/M4A with an embedded APIC/METADATA_BLOCK_PICTURE
+   * frame).
+   */
+  private static ObjectKey uploadSourceWithArtwork(MediaAssetId id) throws IOException, InterruptedException {
+    Path audioWav = Files.createTempFile("art-src-audio-", ".wav");
+    Path coverPng = Files.createTempFile("art-src-cover-", ".png");
+    Path flacWithArt = Files.createTempFile("art-src-", ".flac");
+    try {
+      Files.write(audioWav, minimalSilentWav(SOURCE_SECONDS));
+
+      runFixtureFfmpeg(List.of(
+          "ffmpeg", "-y", "-f", "lavfi", "-i", "color=c=red:s=8x8:d=1",
+          "-frames:v", "1", coverPng.toAbsolutePath().toString()));
+
+      runFixtureFfmpeg(List.of(
+          "ffmpeg", "-y",
+          "-i", audioWav.toAbsolutePath().toString(),
+          "-i", coverPng.toAbsolutePath().toString(),
+          "-map", "0:a", "-map", "1:v",
+          "-c:a", "flac", "-c:v", "copy",
+          "-disposition:v", "attached_pic",
+          flacWithArt.toAbsolutePath().toString()));
+
+      byte[] bytes = Files.readAllBytes(flacWithArt);
+      return objectStore.putOriginal(
+          org.shakvilla.beatzmedia.media.domain.MediaKind.AUDIO,
+          id,
+          new ByteArrayInputStream(bytes),
+          "audio/flac",
+          bytes.length);
+    } finally {
+      Files.deleteIfExists(audioWav);
+      Files.deleteIfExists(coverPng);
+      Files.deleteIfExists(flacWithArt);
+    }
+  }
+
+  private static void runFixtureFfmpeg(List<String> cmd) throws IOException, InterruptedException {
+    Process p = new ProcessBuilder(cmd).redirectErrorStream(true).start();
+    String out = new String(p.getInputStream().readAllBytes()).trim();
+    int exit = p.waitFor();
+    if (exit != 0) {
+      throw new IllegalStateException("fixture ffmpeg command failed (" + exit + "): " + out + " cmd=" + cmd);
+    }
+  }
+
+  /** True if the delivery object at {@code key} has a video (e.g. attached-picture) stream. */
+  private static boolean hasVideoStream(ObjectKey key) throws IOException, InterruptedException {
+    Path tmp = Files.createTempFile("probe-video-", ".flac");
+    try {
+      var stored = objectStore.open(key);
+      try (InputStream in = stored.body()) {
+        Files.copy(in, tmp, StandardCopyOption.REPLACE_EXISTING);
+      }
+      Process p = new ProcessBuilder(
+              "ffprobe", "-v", "error", "-select_streams", "v",
+              "-show_entries", "stream=codec_type", "-of", "csv=p=0",
+              tmp.toAbsolutePath().toString())
+          .redirectErrorStream(true)
+          .start();
+      String out = new String(p.getInputStream().readAllBytes()).trim();
+      p.waitFor();
+      return out.contains("video");
+    } finally {
+      Files.deleteIfExists(tmp);
+    }
   }
 
   static boolean ffmpegOnPath() {
