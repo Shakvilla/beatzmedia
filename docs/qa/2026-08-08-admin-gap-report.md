@@ -624,6 +624,49 @@ passthrough fails `get_returns_the_releases_own_genre` with `expected: <Drill> b
 
 ---
 
+### GAP-29 · The ⌘K palette loses results that arrive after you stop typing
+
+*Found 2026-08-12, retesting GAP-24. This is a regression introduced by GAP-24's own fix.*
+
+GAP-24 swapped the palette's hardcoded arrays for `usersQuery()` and `catalogQuery('all')`, fetched
+only while the palette is open. The `useMemo` that builds the result list kept its old dependency
+array:
+
+```tsx
+}, [q, sections, navigate])   // users and catalog missing
+```
+
+That list was correct when the data was synchronous — `getAdminUsers()` returned instantly, so there
+was nothing async to depend on. It is wrong now. `sections` is the module-level `NAV` constant in
+`admin-shell.tsx` and `navigate` is stable, so **`q` is the only dependency that ever changes.**
+
+The operator sequence that breaks it is the ordinary one:
+
+1. ⌘K — palette opens, both queries fire against a cold cache.
+2. Type `Abdul` faster than the fetch resolves. The memo runs against two empty arrays.
+3. The fetch lands. React re-renders, the memo's deps are unchanged, and it returns the cached
+   empty result.
+4. **"No results for 'Abdul'."** — for a real, active account.
+
+Typing one more character fixes it, which is exactly what makes it easy to miss: anyone testing
+deliberately keeps typing and never sees it. It reproduces the precise symptom GAP-24 was raised
+for, from a different cause.
+
+`react-hooks/exhaustive-deps` flags it (`missing dependencies: 'catalog' and 'users'`), so lint knew.
+Lint is not in the verification gate — see below.
+
+**Status.** Fixed: `users` and `catalog` added to the deps, with a comment saying why they are
+load-bearing. Covered by `admin-command.test.tsx`, which drives the real ordering — type the whole
+query, *then* resolve the promises, and never type again. Mutation-verified: restoring the old deps
+fails both tests on the assertion that the name appears.
+
+**Process note.** Two of the defects in this report (this one, and GAP-13's near-miss on the
+payments object) were latent in code that passed review and CI. `npm run build` catches type errors
+but not hook-dependency errors; `npx eslint` catches these and is not run by anything. Adding lint
+to the frontend gate would have caught this one before it shipped.
+
+---
+
 ## 4. Medium
 
 ### GAP-09 · Settings silently accepts unknown flag keys — and disables every flag
