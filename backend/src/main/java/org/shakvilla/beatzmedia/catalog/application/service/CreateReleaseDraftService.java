@@ -57,6 +57,10 @@ public class CreateReleaseDraftService implements CreateReleaseDraft {
         command.description(),
         now);
 
+    if (command.downloadable() != null) {
+      release.setDownloadable(command.downloadable());
+    }
+
     repo.saveRelease(release);
 
     // INV-10: audit privileged mutation atomically in the same transaction

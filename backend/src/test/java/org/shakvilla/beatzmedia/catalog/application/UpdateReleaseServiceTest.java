@@ -214,4 +214,39 @@ class UpdateReleaseServiceTest {
     service.update(new ReleaseId("r1"), ARTIST, cmd);
     assertTrue(repo.saveTrackSplitsCalls().isEmpty());
   }
+
+  private UpdateReleaseCommand commandWithDownloadable(Boolean downloadable) {
+    return new UpdateReleaseCommand(null, null, null, null, null, null, downloadable);
+  }
+
+  @Test
+  void updateSetsTheDownloadChoice() {
+    draftWithTrack();
+
+    service.update(new ReleaseId("r1"), ARTIST, commandWithDownloadable(true));
+
+    assertEquals(Boolean.TRUE, repo.findRelease(new ReleaseId("r1")).orElseThrow().getDownloadable());
+  }
+
+  @Test
+  void updateCanSetTheChoiceToFalse() {
+    // `false` is a complete answer, not an absent one — it must persist, not be treated as unset.
+    draftWithTrack();
+
+    service.update(new ReleaseId("r1"), ARTIST, commandWithDownloadable(false));
+
+    assertEquals(Boolean.FALSE, repo.findRelease(new ReleaseId("r1")).orElseThrow().getDownloadable());
+  }
+
+  @Test
+  void omittingTheChoiceLeavesThePreviousValueAlone() {
+    // PATCH is partial: a body that does not mention downloadable must not silently clear a choice
+    // the artist already made, which would make the release unpublishable again.
+    draftWithTrack();
+
+    service.update(new ReleaseId("r1"), ARTIST, commandWithDownloadable(true));
+    service.update(new ReleaseId("r1"), ARTIST, commandWithDownloadable(null));
+
+    assertEquals(Boolean.TRUE, repo.findRelease(new ReleaseId("r1")).orElseThrow().getDownloadable());
+  }
 }

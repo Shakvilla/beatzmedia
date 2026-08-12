@@ -19,7 +19,9 @@ public interface UpdateRelease {
    * any status; {@code genre}/{@code description}/{@code visibility}/{@code scheduledAt}/{@code
    * tracks} are draft-only. {@code tracks == null} leaves the track list untouched; a non-null
    * list replaces it wholesale (every referenced {@code trackId} must already belong to the
-   * release).
+   * release). {@code downloadable} follows the same "null = no change" rule and is allowed in any
+   * status: {@code null} leaves the artist's existing choice alone, {@code true}/{@code false} are
+   * both complete answers and are applied verbatim — never treat {@code false} as "unset".
    */
   record UpdateReleaseCommand(
       String title,
@@ -27,7 +29,20 @@ public interface UpdateRelease {
       String description,
       String visibility,
       Instant scheduledAt,
-      List<TrackRef> tracks) {}
+      List<TrackRef> tracks,
+      Boolean downloadable) {
+
+    /** Legacy 6-arg form — no download-choice change ({@code downloadable == null} → untouched). */
+    public UpdateReleaseCommand(
+        String title,
+        String genre,
+        String description,
+        String visibility,
+        Instant scheduledAt,
+        List<TrackRef> tracks) {
+      this(title, genre, description, visibility, scheduledAt, tracks, null);
+    }
+  }
 
   /** A single track's order + price within a wholesale track-list replacement (WU-CAT-6: + splits). */
   record TrackRef(String trackId, int position, long priceMinor, List<SplitRef> splits) {

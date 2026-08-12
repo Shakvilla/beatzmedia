@@ -105,6 +105,12 @@ public class UpdateReleaseService implements UpdateRelease {
       release.updateTitle(command.title(), now); // any status
     }
 
+    // Download choice: allowed in any status, "null = no change" — PATCH is partial, so an
+    // omitted field must not clear a choice the artist already made (see UpdateReleaseCommand).
+    if (command.downloadable() != null) {
+      release.setDownloadable(command.downloadable());
+    }
+
     repo.saveRelease(release);
 
     // WU-CAT-6: persist per-track collaborator splits (pending). Only tracks whose splits list is
