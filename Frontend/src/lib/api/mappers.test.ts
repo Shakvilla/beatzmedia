@@ -611,8 +611,22 @@ describe('admin users mappers', () => {
     const r = toAdminUserRow(rowWire, NOW)
     expect(r).toEqual({
       id: 'u1', name: 'Ama Boateng', initial: 'AB', email: 'ama@x.com',
-      role: 'artist', verified: true, joined: 'Mar 2024', lastActive: '2h ago', status: 'active',
+      role: 'artist', verified: true, joined: '15 Mar 2024', lastActive: '2h ago', status: 'active',
+      adminRole: null,
     })
+  })
+
+  /**
+   * GAP-10. The list derived a role from `is_artist` alone, so every administrator — including the
+   * super-admin running the console — was listed as "Fan" on the one screen that enumerates
+   * accounts. The console role rides alongside the fan/artist role rather than replacing it: an
+   * admin who is also an artist is exactly the case an operator needs to see.
+   */
+  it('toAdminUserRow carries the console role, and defaults it to null', () => {
+    expect(toAdminUserRow({ ...rowWire, adminRole: 'moderator' }, NOW).adminRole).toBe('moderator')
+    expect(toAdminUserRow({ ...rowWire, adminRole: null }, NOW).adminRole).toBeNull()
+    // A server that predates the field must not produce `undefined` in the row.
+    expect(toAdminUserRow(rowWire, NOW).adminRole).toBeNull()
   })
 
   it('toUsersList maps items + counts', () => {
@@ -623,7 +637,7 @@ describe('admin users mappers', () => {
     const list = toUsersList(wire, NOW)
     expect(list.users).toHaveLength(1)
     expect(list.users[0].name).toBe('Ama Boateng')
-    expect(list.users[0].joined).toBe('Mar 2024')
+    expect(list.users[0].joined).toBe('15 Mar 2024')
     expect(list.users[0].lastActive).toBe('2h ago')
     expect(list.counts).toEqual({ all: 10, fans: 7, artists: 3, verified: 2, suspended: 1 })
   })
@@ -644,7 +658,7 @@ describe('admin users mappers', () => {
     }
     const d = toUserDetail(wire, NOW)
     expect(d.summary.id).toBe('u1')
-    expect(d.summary.joined).toBe('Mar 2024')
+    expect(d.summary.joined).toBe('15 Mar 2024')
     expect(d.actionLog).toEqual([{ id: 'l1', action: 'Verified artist', by: 'Admin', time: '1h ago' }])
     // Passed through untouched — the mapper does not interpret them, so whatever the API sends is
     // what the page sees.
@@ -732,7 +746,7 @@ describe('admin catalog mappers', () => {
 
   it('toCatalogDetail translates the wire type, formats duration + relative log time, and projects splits', () => {
     const wire: CatalogDetailWire = {
-      id: 'c1', title: 'Iron Boy', note: null, artist: 'Black Sherif', type: 'album', status: 'pending', upc: 'BZ900123',
+      id: 'c1', title: 'Iron Boy', note: null, artist: 'Black Sherif', type: 'album', status: 'pending', upc: 'BZ900123', genre: 'Afrobeats',
       tracklist: [{ position: 1, trackId: 't1', title: 'Intro', isrc: 'GHA-26-1001', durationSec: 132, priceMinor: 500 }],
       splits: [{ trackId: 't1', name: 'Black Sherif', role: 'Primary artist', percent: 70, confirmation: 'confirmed' }],
       actionLog: [{ id: 'l1', action: 'Submitted', by: 'system', time: '2026-07-24T10:00:00Z' }],
@@ -740,6 +754,7 @@ describe('admin catalog mappers', () => {
     const d = toCatalogDetail(wire, 1721815200000) // now = 2024-07-24T10:00:00Z fixed; only checks it's a string
     expect(d.type).toBe('Album')
     expect(d.upc).toBe('BZ900123')
+    expect(d.genre).toBe('Afrobeats')
     expect(d.tracks).toEqual([{ position: 1, title: 'Intro', isrc: 'GHA-26-1001', duration: '2:12' }])
     expect(d.splits).toEqual([{ name: 'Black Sherif', role: 'Primary artist', pct: 70 }])
     expect(d.log[0].action).toBe('Submitted')
@@ -748,10 +763,20 @@ describe('admin catalog mappers', () => {
 
   it('toCatalogDetail translates a realistic wire status (in_review) to the pending bucket', () => {
     const wire: CatalogDetailWire = {
-      id: 'c1', title: 'Iron Boy', note: null, artist: 'Black Sherif', type: 'album', status: 'in_review', upc: 'BZ900123',
+      id: 'c1', title: 'Iron Boy', note: null, artist: 'Black Sherif', type: 'album', status: 'in_review', upc: 'BZ900123', genre: 'Afrobeats',
       tracklist: [], splits: [], actionLog: [],
     }
     expect(toCatalogDetail(wire).status).toBe('pending')
+  })
+
+  // The page printed a fixed "Hiplife / Drill" for every release. A release with no genre must
+  // arrive as null so the page can say so, rather than borrowing a value from nowhere.
+  it('toCatalogDetail keeps a missing genre missing', () => {
+    const wire: CatalogDetailWire = {
+      id: 'c1', title: 'Untagged', note: null, artist: 'Nobody', type: 'single', status: 'in_review', upc: null, genre: null,
+      tracklist: [], splits: [], actionLog: [],
+    }
+    expect(toCatalogDetail(wire).genre).toBeNull()
   })
 
   it('toCatalogDetail dedupes splits selected across every track of a multi-track release', () => {
@@ -761,7 +786,7 @@ describe('admin catalog mappers', () => {
       { trackId, name: 'Beatzclik Publishing', role: 'Publisher', percent: 10, confirmation: 'confirmed' },
     ]
     const wire: CatalogDetailWire = {
-      id: 'c1', title: 'Iron Boy', note: null, artist: 'Black Sherif', type: 'album', status: 'live', upc: 'BZ900123',
+      id: 'c1', title: 'Iron Boy', note: null, artist: 'Black Sherif', type: 'album', status: 'live', upc: 'BZ900123', genre: 'Afrobeats',
       tracklist: [],
       splits: [...splitRow('t1'), ...splitRow('t2')],
       actionLog: [],
@@ -776,7 +801,7 @@ describe('admin catalog mappers', () => {
 
   it('toCatalogDetail carries null upc through as null', () => {
     const wire: CatalogDetailWire = {
-      id: 'c1', title: 'Iron Boy', note: null, artist: 'Black Sherif', type: 'album', status: 'live', upc: null,
+      id: 'c1', title: 'Iron Boy', note: null, artist: 'Black Sherif', type: 'album', status: 'live', upc: null, genre: 'Afrobeats',
       tracklist: [{ position: 1, trackId: 't1', title: 'Intro', isrc: null, durationSec: 132, priceMinor: 500 }],
       splits: [], actionLog: [],
     }
@@ -943,13 +968,31 @@ describe('admin overview mapper', () => {
 })
 
 describe('health mapper', () => {
-  it('maps the honest-empty payload the backend always returns', () => {
-    const h = toHealth({ status: 'normal', metrics: [], listeners: [], incidents: [] })
-    expect(h).toEqual({ status: 'normal', metrics: [], listeners: [], incidents: [] })
+  it('carries readiness checks through as metric rows', () => {
+    const h = toHealth({
+      status: 'normal',
+      metrics: [{ label: 'Database connections health check', value: 'UP', sub: 'readiness check' }],
+      listeners: [],
+      incidents: [],
+    })
+    expect(h.status).toBe('normal')
+    expect(h.metrics).toEqual([
+      { label: 'Database connections health check', value: 'UP', sub: 'readiness check' },
+    ])
   })
 
-  it('narrows an unknown status to degraded rather than trusting it', () => {
+  it('narrows a status it does not recognise to degraded rather than trusting it', () => {
     expect(toHealth({ status: 'something-else', metrics: [], listeners: [], incidents: [] }).status).toBe('degraded')
+  })
+
+  /**
+   * GAP-04. `unknown` means nothing is being measured — no readiness checks registered, or the
+   * probe itself failed. Coercing it to `normal` is the original bug; coercing it to `degraded`
+   * would be a different lie (claiming a fault nobody observed). It has to survive as itself so the
+   * page can say "Not monitored".
+   */
+  it('passes unknown through as itself, neither normal nor degraded', () => {
+    expect(toHealth({ status: 'unknown', metrics: [], listeners: [], incidents: [] }).status).toBe('unknown')
   })
 })
 
@@ -1046,7 +1089,7 @@ describe('compliance mapper', () => {
 describe('platform settings mappers', () => {
   const wire: PlatformSettingsWire = {
     platformFeePct: 30, payoutDay: 'Friday', payoutMinimum: 10, defaultCurrency: 'GHS', maintenanceMode: false,
-    providers: { momo: true, vodafone: true, airteltigo: true, card: true, bank: true },
+    providers: { mtn: true, telecel: true, airteltigo: true, card: true, bank: true },
     flags: { artistSignups: true, podcasts: true, events: false, tipping: true, fanMessaging: false },
   }
 

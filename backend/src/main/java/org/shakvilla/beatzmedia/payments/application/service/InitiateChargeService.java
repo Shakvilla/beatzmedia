@@ -18,6 +18,7 @@ import org.shakvilla.beatzmedia.payments.application.port.in.PaymentIntentView;
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway;
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway.ChargeHandle;
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway.CheckoutHandle;
+import org.shakvilla.beatzmedia.payments.application.port.out.PaymentProviderPolicy;
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentRepository;
 import org.shakvilla.beatzmedia.payments.domain.AccountId;
 import org.shakvilla.beatzmedia.payments.domain.IdempotencyConflictException;
@@ -25,6 +26,7 @@ import org.shakvilla.beatzmedia.payments.domain.IdempotencyKey;
 import org.shakvilla.beatzmedia.payments.domain.OrderRef;
 import org.shakvilla.beatzmedia.payments.domain.PaymentIntent;
 import org.shakvilla.beatzmedia.payments.domain.PaymentMethodRef;
+import org.shakvilla.beatzmedia.payments.domain.ProviderDisabledException;
 import org.shakvilla.beatzmedia.payments.domain.ProviderException;
 import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
 import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
@@ -68,6 +70,7 @@ public class InitiateChargeService implements InitiateCharge {
   private final IdGenerator ids;
   private final Clock clock;
   private final AuditWriter auditWriter;
+  private final PaymentProviderPolicy providerPolicy;
 
   @Inject
   public InitiateChargeService(
@@ -75,12 +78,14 @@ public class InitiateChargeService implements InitiateCharge {
       PaymentGateway gateway,
       IdGenerator ids,
       Clock clock,
-      AuditWriter auditWriter) {
+      AuditWriter auditWriter,
+      PaymentProviderPolicy providerPolicy) {
     this.repository = repository;
     this.gateway = gateway;
     this.ids = ids;
     this.clock = clock;
     this.auditWriter = auditWriter;
+    this.providerPolicy = providerPolicy;
   }
 
   @Override
@@ -91,6 +96,21 @@ public class InitiateChargeService implements InitiateCharge {
       Money amount,
       PaymentMethodRef method,
       IdempotencyKey idempotencyKey) {
+
+    /*
+      Refuse a disabled rail BEFORE the idempotency lock and before any intent exists (GAP-13).
+
+      Order matters here. Checking after the lock would consume the caller's Idempotency-Key on a
+      request that never reached a provider, so a retry after the operator re-enables the rail would
+      come back 409 IDEMPOTENCY_KEY_CONFLICT instead of charging. Refusing first leaves the key
+      unused and the retry clean.
+
+      The policy is fail-closed: a rail whose flag row is missing reads as disabled rather than
+      enabled, so a half-applied migration cannot leave money flowing over a rail nobody confirmed.
+    */
+    if (!providerPolicy.isEnabledForCharges(method.provider())) {
+      throw new ProviderDisabledException(method.provider());
+    }
 
     // Serialise concurrent same-key requests before the read/provider/save window. The loser blocks
     // here until the winner commits, then finds the winner's intent below and returns it — so only

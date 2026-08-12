@@ -56,15 +56,16 @@ class AdminUsersContractTest {
     assertTrue(names.contains("joined"));
     assertTrue(names.contains("lastActive"));
     assertTrue(names.contains("status"));
-    assertEquals(9, names.size(), "no extra fields beyond the contract shape");
+    assertTrue(names.contains("adminRole"));
+    assertEquals(10, names.size(), "no extra fields beyond the contract shape");
   }
 
   @Test
   void admin_user_row_dto_role_is_fan_or_artist_and_timestamps_are_iso8601() {
     AdminUserRowView fan = new AdminUserRowView(
-        "u1", "Ama Boateng", "A", "ama@example.com", "fan", false, NOW, NOW, "active");
+        "u1", "Ama Boateng", "A", "ama@example.com", "fan", false, NOW, NOW, "active", null);
     AdminUserRowView artist = new AdminUserRowView(
-        "u2", "Black Sherif", "B", "team@blacksherif.com", "artist", true, NOW, NOW, "active");
+        "u2", "Black Sherif", "B", "team@blacksherif.com", "artist", true, NOW, NOW, "active", null);
 
     AdminUserRowDto fanDto = AdminUserRowDto.from(fan);
     AdminUserRowDto artistDto = AdminUserRowDto.from(artist);
@@ -79,7 +80,7 @@ class AdminUsersContractTest {
   @Test
   void paged_users_dto_has_items_page_size_total_counts() {
     PagedUsersView view = new PagedUsersView(
-        List.of(new AdminUserRowView("u1", "Ama", "A", "ama@x.com", "fan", false, NOW, NOW, "active")),
+        List.of(new AdminUserRowView("u1", "Ama", "A", "ama@x.com", "fan", false, NOW, NOW, "active", null)),
         1, 20, 1, new UserCounts(1, 1, 0, 0, 0));
 
     PagedUsersDto dto = PagedUsersDto.from(view);
@@ -94,7 +95,7 @@ class AdminUsersContractTest {
   @Test
   void user_detail_dto_has_summary_activity_orders_devices_actionLog() {
     UserDetailView view = new UserDetailView(
-        new AdminUserRowView("u1", "Ama", "A", "ama@x.com", "fan", false, NOW, NOW, "active"),
+        new AdminUserRowView("u1", "Ama", "A", "ama@x.com", "fan", false, NOW, NOW, "active", null),
         List.of(), List.of(), List.of(),
         List.of(new ActionLogEntryView("a1", "Verified artist", "admin-1", NOW)));
 

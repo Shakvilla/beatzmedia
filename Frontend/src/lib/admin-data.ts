@@ -59,6 +59,12 @@ const RANGE_META: Record<AdminRange, { label: string; bars: number; deltas: { us
 export type UserRole = 'fan' | 'artist'
 export type UserStatus = 'active' | 'pending' | 'suspended'
 
+/**
+ * Console role, present only for the handful of accounts that are admin members (GAP-10).
+ * Orthogonal to {@link UserRole}: an admin is still a fan or an artist underneath.
+ */
+export type AdminMemberRole = 'super-admin' | 'finance' | 'moderator' | 'editor' | 'support'
+
 export interface AdminUserRow {
   id: string
   name: string
@@ -69,6 +75,8 @@ export interface AdminUserRow {
   joined: string
   lastActive: string
   status: UserStatus
+  /** Console role when this account is an admin member, else null. */
+  adminRole: AdminMemberRole | null
 }
 
 export const USER_COUNTS = { all: 48210, fans: 46880, artists: 1260, verified: 84, suspended: 32 }
@@ -108,24 +116,24 @@ export function getUserDetail(): UserDetail {
 
 export function getAdminUsers(): AdminUserRow[] {
   return [
-    { id: 'u-kojo', name: 'Kojo Asante', initial: 'K', email: 'kojo@gmail.com', role: 'fan', verified: false, joined: 'Mar 2024', lastActive: '2m ago', status: 'active' },
-    { id: 'u-blacko', name: 'Black Sherif', initial: 'B', email: 'team@blacksherif.com', role: 'artist', verified: true, joined: 'Jan 2023', lastActive: '1h ago', status: 'active' },
-    { id: 'u-ama', name: 'Ama Boateng', initial: 'A', email: 'ama_b@gmail.com', role: 'fan', verified: false, joined: 'Sep 2024', lastActive: 'now', status: 'active' },
-    { id: 'u-djkojo', name: 'DJ Kojo', initial: 'D', email: 'dj@mixtape.gh', role: 'artist', verified: false, joined: 'Feb 2025', lastActive: '3d', status: 'pending' },
-    { id: 'u-yaw', name: 'Yaw Mensah', initial: 'Y', email: 'yaw@gmail.com', role: 'fan', verified: false, joined: 'Apr 2025', lastActive: '1w', status: 'suspended' },
-    { id: 'u-nana', name: 'Nana Akua', initial: 'N', email: 'akua@gmail.com', role: 'fan', verified: false, joined: 'Jul 2024', lastActive: '12m', status: 'active' },
-    { id: 'u-osei', name: 'Osei Beats', initial: 'O', email: 'osei.b@producer.gh', role: 'artist', verified: false, joined: 'Nov 2024', lastActive: '1d', status: 'active' },
-    { id: 'u-esi', name: 'Esi Owusu', initial: 'E', email: 'esi@gmail.com', role: 'fan', verified: false, joined: 'Dec 2024', lastActive: '4h', status: 'active' },
-    { id: 'u-abena', name: 'Abena Pokua', initial: 'A', email: 'abena@gmail.com', role: 'fan', verified: false, joined: 'Jan 2025', lastActive: '8m', status: 'active' },
-    { id: 'u-kofi', name: 'Kofi Mensah', initial: 'K', email: 'kofi.m@gmail.com', role: 'fan', verified: false, joined: 'Feb 2024', lastActive: '2d', status: 'active' },
-    { id: 'u-sark', name: 'Sarkodie', initial: 'S', email: 'team@sarkodie.com', role: 'artist', verified: true, joined: 'Jun 2022', lastActive: '5h', status: 'active' },
-    { id: 'u-efya', name: 'Efya', initial: 'E', email: 'mgmt@efya.com', role: 'artist', verified: true, joined: 'Aug 2022', lastActive: '1d', status: 'active' },
-    { id: 'u-adwoa', name: 'Adwoa Safo', initial: 'A', email: 'adwoa.s@gmail.com', role: 'fan', verified: false, joined: 'Mar 2025', lastActive: '3h', status: 'active' },
-    { id: 'u-fiifi', name: 'Fiifi Coleman', initial: 'F', email: 'fiifi@gmail.com', role: 'fan', verified: false, joined: 'Oct 2024', lastActive: '6d', status: 'suspended' },
-    { id: 'u-akua2', name: 'Akua Donkor', initial: 'A', email: 'akua.d@gmail.com', role: 'fan', verified: false, joined: 'Nov 2024', lastActive: '20m', status: 'active' },
-    { id: 'u-joey', name: 'Joey B', initial: 'J', email: 'team@joeyb.com', role: 'artist', verified: true, joined: 'Apr 2023', lastActive: '12h', status: 'active' },
-    { id: 'u- debo', name: 'Kojo Debrah', initial: 'K', email: 'kdebrah@gmail.com', role: 'fan', verified: false, joined: 'Jan 2024', lastActive: '2w', status: 'active' },
-    { id: 'u- as', name: 'Ato Sarpong', initial: 'A', email: 'ato@beatmaker.gh', role: 'artist', verified: false, joined: 'May 2025', lastActive: '4d', status: 'pending' },
+    { id: 'u-kojo', name: 'Kojo Asante', initial: 'K', email: 'kojo@gmail.com', role: 'fan', verified: false, joined: 'Mar 2024', lastActive: '2m ago', status: 'active', adminRole: null },
+    { id: 'u-blacko', name: 'Black Sherif', initial: 'B', email: 'team@blacksherif.com', role: 'artist', verified: true, joined: 'Jan 2023', lastActive: '1h ago', status: 'active', adminRole: null },
+    { id: 'u-ama', name: 'Ama Boateng', initial: 'A', email: 'ama_b@gmail.com', role: 'fan', verified: false, joined: 'Sep 2024', lastActive: 'now', status: 'active', adminRole: null },
+    { id: 'u-djkojo', name: 'DJ Kojo', initial: 'D', email: 'dj@mixtape.gh', role: 'artist', verified: false, joined: 'Feb 2025', lastActive: '3d', status: 'pending', adminRole: null },
+    { id: 'u-yaw', name: 'Yaw Mensah', initial: 'Y', email: 'yaw@gmail.com', role: 'fan', verified: false, joined: 'Apr 2025', lastActive: '1w', status: 'suspended', adminRole: null },
+    { id: 'u-nana', name: 'Nana Akua', initial: 'N', email: 'akua@gmail.com', role: 'fan', verified: false, joined: 'Jul 2024', lastActive: '12m', status: 'active', adminRole: null },
+    { id: 'u-osei', name: 'Osei Beats', initial: 'O', email: 'osei.b@producer.gh', role: 'artist', verified: false, joined: 'Nov 2024', lastActive: '1d', status: 'active', adminRole: null },
+    { id: 'u-esi', name: 'Esi Owusu', initial: 'E', email: 'esi@gmail.com', role: 'fan', verified: false, joined: 'Dec 2024', lastActive: '4h', status: 'active', adminRole: null },
+    { id: 'u-abena', name: 'Abena Pokua', initial: 'A', email: 'abena@gmail.com', role: 'fan', verified: false, joined: 'Jan 2025', lastActive: '8m', status: 'active', adminRole: null },
+    { id: 'u-kofi', name: 'Kofi Mensah', initial: 'K', email: 'kofi.m@gmail.com', role: 'fan', verified: false, joined: 'Feb 2024', lastActive: '2d', status: 'active', adminRole: null },
+    { id: 'u-sark', name: 'Sarkodie', initial: 'S', email: 'team@sarkodie.com', role: 'artist', verified: true, joined: 'Jun 2022', lastActive: '5h', status: 'active', adminRole: null },
+    { id: 'u-efya', name: 'Efya', initial: 'E', email: 'mgmt@efya.com', role: 'artist', verified: true, joined: 'Aug 2022', lastActive: '1d', status: 'active', adminRole: null },
+    { id: 'u-adwoa', name: 'Adwoa Safo', initial: 'A', email: 'adwoa.s@gmail.com', role: 'fan', verified: false, joined: 'Mar 2025', lastActive: '3h', status: 'active', adminRole: null },
+    { id: 'u-fiifi', name: 'Fiifi Coleman', initial: 'F', email: 'fiifi@gmail.com', role: 'fan', verified: false, joined: 'Oct 2024', lastActive: '6d', status: 'suspended', adminRole: null },
+    { id: 'u-akua2', name: 'Akua Donkor', initial: 'A', email: 'akua.d@gmail.com', role: 'fan', verified: false, joined: 'Nov 2024', lastActive: '20m', status: 'active', adminRole: null },
+    { id: 'u-joey', name: 'Joey B', initial: 'J', email: 'team@joeyb.com', role: 'artist', verified: true, joined: 'Apr 2023', lastActive: '12h', status: 'active', adminRole: null },
+    { id: 'u- debo', name: 'Kojo Debrah', initial: 'K', email: 'kdebrah@gmail.com', role: 'fan', verified: false, joined: 'Jan 2024', lastActive: '2w', status: 'active', adminRole: null },
+    { id: 'u- as', name: 'Ato Sarpong', initial: 'A', email: 'ato@beatmaker.gh', role: 'artist', verified: false, joined: 'May 2025', lastActive: '4d', status: 'pending', adminRole: null },
   ]
 }
 
@@ -250,7 +258,12 @@ export interface PlatformSettings {
   payoutMinimum: number
   defaultCurrency: string
   maintenanceMode: boolean
-  providers: { momo: boolean; vodafone: boolean; airteltigo: boolean; card: boolean; bank: boolean }
+  /**
+   * Per-rail payment enablement (GAP-13). Real and persisted; the toggles were decorative before.
+   * Keys match the backend `Provider` enum — `momo`/`vodafone` were renamed to `mtn`/`telecel`,
+   * the latter because Vodafone Ghana became Telecel in 2023 and checkout already said so.
+   */
+  providers: { mtn: boolean; telecel: boolean; airteltigo: boolean; card: boolean; bank: boolean }
   flags: { artistSignups: boolean; podcasts: boolean; events: boolean; tipping: boolean; fanMessaging: boolean }
 }
 
@@ -261,7 +274,7 @@ export function getPlatformSettings(): PlatformSettings {
     payoutMinimum: 10,
     defaultCurrency: 'GHS',
     maintenanceMode: false,
-    providers: { momo: true, vodafone: true, airteltigo: true, card: true, bank: true },
+    providers: { mtn: true, telecel: true, airteltigo: true, card: true, bank: true },
     flags: { artistSignups: true, podcasts: true, events: true, tipping: true, fanMessaging: false },
   }
 }
@@ -301,8 +314,15 @@ export function getAuditLog(): AuditEntry[] {
 export interface HealthMetric { label: string; value: string; sub: string }
 export interface Incident { id: string; title: string; date: string; status: 'resolved' | 'open' }
 
+/**
+ * `unknown` means no readiness checks are registered, or the probe itself failed — i.e. nothing is
+ * being measured (GAP-04). It is deliberately not folded into `normal`: the previous two-state
+ * shape forced "no evidence" to be reported as one or the other, and it chose healthy.
+ */
+export type HealthStatus = 'normal' | 'degraded' | 'unknown'
+
 export interface Health {
-  status: 'normal' | 'degraded'
+  status: HealthStatus
   metrics: HealthMetric[]
   listeners: number[]
   incidents: Incident[]

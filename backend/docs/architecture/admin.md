@@ -581,16 +581,22 @@ the application layer. Money/side-effect POSTs (finance) require `Idempotency-Ke
 |---|---|---|---|---|---|---|---|
 | GET | `/admin/support/tickets?status=&q=` | any admin (support+) | — | `SupportTicket[]` (bare array, full thread) | 200 | `422` | 08.1 |
 | GET | `/admin/support/tickets/:id` | any admin | — | `SupportTicket` (thread) | 200 | `404` | 08.1 |
-| POST | `/admin/support/tickets/:id/reply` | any admin | `{ text }` | `SupportMessage` | 201 | `422 VALIDATION`, `404` | 08.1 |
-| POST | `/admin/support/tickets/:id/assign` | any admin | `{ assigneeId }` | `SupportTicket` | 200 | `404` | 08.1 |
-| POST | `/admin/support/tickets/:id/resolve` | any admin | — | `SupportTicket` | 200 | `404`, `409 ILLEGAL_TRANSITION` | 08.1 |
+| POST | `/admin/support/tickets/:id/reply` | **support, super-admin** | `{ text }` | `SupportMessage` | 201 | `422 VALIDATION`, `403`, `404` | 08.1 |
+| POST | `/admin/support/tickets/:id/assign` | **support, super-admin** | `{ assigneeId }` | `SupportTicket` | 200 | `403`, `404` | 08.1 |
+| POST | `/admin/support/tickets/:id/resolve` | **support, super-admin** | — | `SupportTicket` | 200 | `403`, `404`, `409 ILLEGAL_TRANSITION` | 08.1 |
 
 > **WU-ADM-7 as-built.** `GET /admin/support/tickets` returns a **bare array** (not a `{ items,
 > page, size, total }` envelope) of full `SupportTicket` objects including `messages` — this
 > mirrors `Frontend/src/lib/admin-data.ts`'s `getSupportTickets()` mock and `admin.support.tsx`,
-> which renders a selected list item's thread with no extra fetch. RBAC: `@RolesAllowed` accepts
-> all five admin roles (support is `RW` for every role per §8's matrix); no additional
-> application-layer narrowing is needed (unlike compliance/settings, which are super-admin only).
+> which renders a selected list item's thread with no extra fetch. RBAC: **reads accept all five
+> admin roles; `reply`/`assign`/`resolve` are `support` + `super-admin` only (GAP-17).** Every role
+> could originally act, which made support the loosest grant in the console — and it is the one
+> surface that speaks to a fan *in the platform's voice*, so a `finance` or `editor` admin could
+> answer a customer on BeatzClik's behalf. Catalog already had the shape right: `support` may read
+> it, only `moderator` may act on it. Reads stay wide deliberately — looking a ticket up is how a
+> finance admin corroborates a refund complaint or an editor traces a takedown appeal, and narrowing
+> that would break real work to fix a problem that only exists on the write path. Note method-level
+> `@RolesAllowed` **replaces** the class-level grant rather than adding to it.
 > `requesterRef` resolves to a display name via the `IdentityReader` output port (reads the
 > identity module's `account` JPA entity in-process — no cross-module FK, mirrors
 > `library.CatalogReaderAdapter`). Audit entries use `AuditType.USER` (the wire `AuditType` union
@@ -636,8 +642,20 @@ the application layer. Money/side-effect POSTs (finance) require `Idempotency-Ke
 > Response is the frontend `PlatformSettings` shape; `payoutMinimum` is bare decimal cedis (WU-ADM-1
 > convention) from `payoutMinimumMinor`.
 > - **All five `flags.*` are real** platform `FeatureKey`s (`ARTIST_SIGNUPS/PODCASTS/EVENTS/TIPPING/
->   FAN_MESSAGING`, seeded in V2 — `fanMessaging` false). `providers.*` is **honest-static `true`** (no
->   per-provider enablement subsystem) — accepted on PUT but not persisted; documented carryover.
+>   FAN_MESSAGING`, seeded in V2 — `fanMessaging` false). **`providers.*` are real too as of GAP-13**
+>   (`PROVIDER_MTN/TELECEL/AIRTELTIGO/CARD/BANK`, seeded enabled in V978) — previously accepted on PUT
+>   and silently discarded. Keys were renamed `momo`→`mtn` and `vodafone`→`telecel` to match payments'
+>   `Provider` enum; `vodafone` named a brand that ceased to exist in 2023, and checkout and payouts
+>   already said Telecel.
+>   - Disabling a rail stops **new charges** on it (409 `PROVIDER_DISABLED`); **payouts are
+>     deliberately unaffected**, so a disabled rail never strands balances a creator has already
+>     earned. See ADR-32.
+>   - The charge path reads these **fail-closed** via `PaymentProviderPolicy`; this screen reads them
+>     fail-open, because showing a rail as off when its row is merely unreadable would tell an
+>     operator they had already done something they had not.
+>   - Every provider key is **required** on PUT (`ProvidersRequest`, `@NotNull Boolean`). A body
+>     missing or misspelling one is a 422 — without that, the rename would have let a stale client
+>     switch MTN and Telecel off platform-wide while receiving 200 OK.
 > - **Fee change is forward-only + audited.** PUT stores `platformFeePct` (payments reads it at settle
 >   time, so settled sales are never re-priced) and keeps `creatorSharePct = 100 − fee` complementary;
 >   the other split constants (tip fee, bundle discount, service fee) are preserved from current — they
@@ -699,7 +717,7 @@ UserDetail {                                  // detail page (reader from identi
 PlatformSettings {
   platformFeePct: int, payoutDay: string, payoutMinimum: Money, defaultCurrency: string,
   maintenanceMode: bool,
-  providers: { momo: bool, vodafone: bool, airteltigo: bool, card: bool, bank: bool },
+  providers: { mtn: bool, telecel: bool, airteltigo: bool, card: bool, bank: bool },  // GAP-13: real; all five required on PUT
   flags: { artistSignups: bool, podcasts: bool, events: bool, tipping: bool, fanMessaging: bool }
 }
 
@@ -728,7 +746,7 @@ CREATE TABLE platform_settings (
     payout_minimum_minor BIGINT      NOT NULL DEFAULT 1000,          -- ₵10.00
     default_currency    TEXT         NOT NULL DEFAULT 'GHS',
     maintenance_mode    BOOLEAN      NOT NULL DEFAULT FALSE,
-    providers           JSONB        NOT NULL DEFAULT '{}'::jsonb,   -- {momo,vodafone,airteltigo,card,bank}
+    providers           JSONB        NOT NULL DEFAULT '{}'::jsonb,   -- unused: rails live in feature_flag (PROVIDER_*), see ADR-32
     flags               JSONB        NOT NULL DEFAULT '{}'::jsonb,   -- {artistSignups,podcasts,events,tipping,fanMessaging}
     updated_at          TIMESTAMPTZ  NOT NULL DEFAULT now(),
     CONSTRAINT platform_settings_singleton CHECK (id = '00000000-0000-0000-0000-000000000001')
@@ -1473,6 +1491,7 @@ principle established in studio ADD §15/§16 and admin ADD §13/§14:
 | `note` | **Honest `null`** | No free-text submission/flag-annotation field exists anywhere on `Release`/`ModerationCase`; `admin-data.ts`'s example notes ("submitted 2h ago", "duplicate ISRC") are illustrative UI copy, not a real persisted field. |
 | every track's `isrc` | **Honest `null`** | No ISRC column anywhere in `catalog` (`ReleaseTrack`/`ReleaseTrackEntity` carry only `trackId`/`position`/`priceMinor`) — checked directly, not guessed. |
 | `upc` | **Honest `null`** | Same — no UPC field anywhere on `Release`/`ReleaseEntity`. |
+| `genre` | **Real, nullable** | `release.genre`, already mapped on `ReleaseEntity` but not carried past the persistence adapter until GAP-28. Nullable because the column has no NOT NULL constraint: a release submitted without a genre must read as unknown rather than borrow a default. Added because the console printed a fixed literal ("Hiplife / Drill") beside every release on the surface a moderator uses to decide approve-or-take-down. |
 
 Both `note`/`isrc`/`upc` are Category B carryovers in the same sense WU-STU-3/4 and WU-ADM-1/2
 already established this convention: no backing subsystem exists to source real ISRC/UPC/rights-

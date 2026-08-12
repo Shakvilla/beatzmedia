@@ -9,6 +9,13 @@
 import { createContext, useContext, useEffect, useMemo, useRef, useState, type ReactNode } from 'react'
 import { apiFetch, setUnauthorizedHandler } from '../../lib/api/client'
 import { clearToken, getToken, setToken } from '../../lib/api/token'
+import {
+  beginImpersonation,
+  currentImpersonation,
+  endImpersonation,
+  hasImpersonationMarker,
+  type Impersonation,
+} from './impersonation'
 
 export interface Account {
   id: string
@@ -28,6 +35,15 @@ interface AuthContextValue {
   signup: (name: string, email: string, password: string) => Promise<void>
   logout: () => Promise<void>
   becomeArtist: () => Promise<void>
+  /**
+   * The impersonation in progress, or null (GAP-08). Present so every surface — not just the admin
+   * console — can show who the operator is acting as.
+   */
+  impersonation: Impersonation | null
+  /** Swaps the session to `token` and re-hydrates as the target account. */
+  startImpersonation: (token: string, subject: Impersonation) => Promise<void>
+  /** Restores the operator's own session. Safe to call when not impersonating. */
+  stopImpersonation: () => Promise<void>
 }
 
 interface AuthResponse {
@@ -42,11 +58,42 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   // Start "loading" only when there's a token to verify; a signed-out visitor is
   // resolved immediately (no synchronous setState in the hydration effect below).
   const [isLoading, setIsLoading] = useState(() => getToken() !== null)
+  const [impersonation, setImpersonation] = useState<Impersonation | null>(() => currentImpersonation())
   const hydrated = useRef(false)
 
   useEffect(() => {
-    setUnauthorizedHandler(() => setAccount(null))
+    /*
+      A 401 while impersonating means the short-lived token lapsed. Drop back to the operator's own
+      session rather than signing them out: they were mid-investigation, and the console session is
+      still valid. Without this the expiry would bounce them to /login.
+    */
+    setUnauthorizedHandler(() => {
+      if (hasImpersonationMarker()) {
+        endImpersonation()
+        setImpersonation(null)
+        apiFetch<Account>('/me').then(setAccount).catch(() => setAccount(null))
+        return
+      }
+      setAccount(null)
+    })
   }, [])
+
+  /*
+    The token is time-boxed, so the banner's countdown has to end in something. Exiting on our own
+    schedule returns the operator to the console deliberately, instead of leaving them to discover
+    the expiry through the first request that fails.
+  */
+  useEffect(() => {
+    if (!impersonation) return
+    const msLeft = Date.parse(impersonation.expiresAt) - Date.now()
+    if (msLeft <= 0) return
+    const timer = setTimeout(() => {
+      endImpersonation()
+      setImpersonation(null)
+      apiFetch<Account>('/me').then(setAccount).catch(() => setAccount(null))
+    }, msLeft)
+    return () => clearTimeout(timer)
+  }, [impersonation])
 
   useEffect(() => {
     if (hydrated.current) return
@@ -93,7 +140,26 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       const result = await apiFetch<Account>('/me/become-artist', { method: 'POST' })
       setAccount(result)
     },
-  }), [account, isLoading])
+    impersonation,
+    startImpersonation: async (token, subject) => {
+      beginImpersonation(token, subject)
+      setImpersonation(subject)
+      // Re-hydrate rather than trusting the admin's row: /me under the new token is the only
+      // statement of who the session actually is now.
+      const me = await apiFetch<Account>('/me')
+      setAccount(me)
+    },
+    stopImpersonation: async () => {
+      const restored = endImpersonation()
+      setImpersonation(null)
+      if (!restored) {
+        setAccount(null)
+        return
+      }
+      const me = await apiFetch<Account>('/me')
+      setAccount(me)
+    },
+  }), [account, isLoading, impersonation])
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>
 }

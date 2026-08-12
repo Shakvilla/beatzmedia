@@ -3,7 +3,6 @@ import { useState } from 'react'
 import { useSuspenseQuery } from '@tanstack/react-query'
 import { ArrowUp, ArrowDown, Download } from 'lucide-react'
 import { cn } from '../utils/cn'
-import { useToast } from '../components/ui/toast-provider'
 import { studioAnalyticsQuery } from '../lib/api/queries/studio'
 import {
   formatCompact, ANALYTICS_RANGES,
@@ -29,11 +28,9 @@ const METRICS: { key: MetricKey; label: string; fmt: (n: number) => string }[] =
 ]
 
 function AnalyticsComponent() {
-  const { toast } = useToast()
   const [range, setRange] = useState<AnalyticsRange>(DEFAULT_RANGE)
   const [metric, setMetric] = useState<MetricKey>('streams')
   const [showPrev, setShowPrev] = useState(true)
-  const [exportOpen, setExportOpen] = useState(false)
   const { data } = useSuspenseQuery(studioAnalyticsQuery(range))
 
   const active = data.metrics[metric]
@@ -60,27 +57,16 @@ function AnalyticsComponent() {
               </button>
             ))}
           </div>
-          <div className="relative">
-            <button
-              onClick={() => setExportOpen((o) => !o)}
-              className="h-10 px-4 rounded-full bg-gray-100 dark:bg-white/10 text-beatz-dark-bg dark:text-white text-sm font-bold flex items-center gap-2 hover:bg-gray-200 dark:hover:bg-white/15 transition-colors"
-            >
-              <Download size={16} /> Export
-            </button>
-            {exportOpen && (
-              <>
-                <div className="fixed inset-0 z-40" onClick={() => setExportOpen(false)} />
-                <div className="absolute right-0 top-12 z-50 w-40 py-1 rounded-xl bg-white dark:bg-beatz-dark-surface-2 border border-gray-200 dark:border-white/10 shadow-xl">
-                  {['CSV', 'PDF report'].map((f) => (
-                    <button key={f} onClick={() => { setExportOpen(false); toast(`Exporting ${data.rangeLabel.toLowerCase()} as ${f}`, 'success') }}
-                      className="w-full text-left px-3 py-2 text-sm font-medium text-beatz-dark-bg dark:text-white hover:bg-gray-100 dark:hover:bg-white/5 transition-colors">
-                      {f}
-                    </button>
-                  ))}
-                </div>
-              </>
-            )}
-          </div>
+          {/*
+            Disabled rather than removed: exporting your own analytics is a real requirement, it
+            just has no endpoint. The dropdown offered CSV and "PDF report" and each toasted
+            "Exporting last 28 days as CSV" while producing no file — an artist would believe they
+            held figures they never received. Same treatment as the four exports in admin and
+            payouts; this one sat behind a dropdown, so the sweep that caught those missed it.
+          */}
+          <button disabled title="Analytics export isn't available yet." className="h-10 px-4 rounded-full bg-gray-100 dark:bg-white/10 text-gray-400 dark:text-gray-500 text-sm font-bold flex items-center gap-2 cursor-not-allowed">
+            <Download size={16} /> Export
+          </button>
         </div>
       </div>
 

@@ -128,8 +128,14 @@ function AdminCatalogDetail() {
           <section className={cn(CARD, 'flex flex-col gap-3')}>
             <h2 className="text-lg font-bold text-beatz-dark-bg dark:text-white">Metadata</h2>
             <Meta label="UPC" value={item.upc ?? '—'} />
-            <Meta label="Primary genre" value="Hiplife / Drill" />
-            <Meta label="Label" value={item.artist === 'Various' ? 'Beatzclik Compilations' : 'Independent'} />
+            {/*
+              Genre used to be the literal "Hiplife / Drill" and Label a guess off the artist name,
+              so every release read the same regardless of what it actually was — on the page a
+              moderator uses to decide approve-or-take-down. Genre now comes from release.genre;
+              Label is gone because the platform stores no label anywhere, and an em dash would
+              still imply it is a field we track.
+            */}
+            <Meta label="Primary genre" value={item.genre ?? '—'} />
             <Meta label="Tracks" value={`${item.tracks.length}`} last />
           </section>
 

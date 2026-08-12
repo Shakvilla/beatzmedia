@@ -79,6 +79,12 @@ public enum ErrorCode {
   CART_EMPTY,
   CHECKOUT_KIND_UNSUPPORTED,
   CHARGE_AMOUNT_EXCEEDED,
+  /**
+   * The requested payment rail is switched off platform-wide (GAP-13). A 409, not a 422: the
+   * request is well-formed and would have been valid a moment ago — it is the platform's current
+   * state that refuses it.
+   */
+  PROVIDER_DISABLED,
   // ---- Playback codes (WU-PLY-1) ----
   MEDIA_UNAVAILABLE,
   // ---- Podcasts codes (WU-POD-2) — tipping ----

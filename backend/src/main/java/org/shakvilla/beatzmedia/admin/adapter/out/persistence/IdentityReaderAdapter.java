@@ -1,7 +1,9 @@
 package org.shakvilla.beatzmedia.admin.adapter.out.persistence;
 
 import java.time.Instant;
+import java.util.HashMap;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 
 import jakarta.enterprise.context.ApplicationScoped;
@@ -82,9 +84,12 @@ public class IdentityReaderAdapter implements IdentityReader {
     dataQuery.setFirstResult(page.offset());
     dataQuery.setMaxResults(page.size());
 
-    List<AccountRow> items = dataQuery.getResultList().stream()
-        .map(IdentityReaderAdapter::toRow)
-        .toList();
+    List<AccountEntity> entities = dataQuery.getResultList();
+    // One extra query for the whole page rather than one per row: the console lists 25-100 accounts
+    // at a time and admin members are a handful of them.
+    Map<String, String> adminRoles = adminRolesOf(entities.stream().map(e -> e.id).toList());
+    List<AccountRow> items =
+        entities.stream().map(e -> toRow(e, adminRoles.get(e.id))).toList();
 
     return Page.of(items, page.page(), page.size(), total);
   }
@@ -95,7 +100,8 @@ public class IdentityReaderAdapter implements IdentityReader {
       return Optional.empty();
     }
     AccountEntity entity = em.find(AccountEntity.class, accountId);
-    return Optional.ofNullable(entity).map(IdentityReaderAdapter::toRow);
+    return Optional.ofNullable(entity)
+        .map(e -> toRow(e, adminRolesOf(List.of(e.id)).get(e.id)));
   }
 
   @Override
@@ -138,8 +144,39 @@ public class IdentityReaderAdapter implements IdentityReader {
     }
   }
 
-  private static AccountRow toRow(AccountEntity e) {
+  @Override
+  public Optional<String> adminRoleOf(String accountId) {
+    if (accountId == null || accountId.isBlank()) {
+      return Optional.empty();
+    }
+    return Optional.ofNullable(adminRolesOf(List.of(accountId)).get(accountId));
+  }
+
+  /**
+   * Console role per account id, for the ids that have one. Absent from the map means "not an admin
+   * member", which is the common case.
+   */
+  private Map<String, String> adminRolesOf(List<String> accountIds) {
+    if (accountIds.isEmpty()) {
+      return Map.of();
+    }
+    List<Object[]> rows = em.createQuery(
+            "SELECT m.accountId, m.role FROM AdminMemberEntity m WHERE m.accountId IN :ids",
+            Object[].class)
+        .setParameter("ids", accountIds)
+        .getResultList();
+    Map<String, String> byAccount = new HashMap<>();
+    // An account with more than one membership row would be a data error; keep the first
+    // deterministically rather than letting Collectors.toMap throw on a duplicate key.
+    for (Object[] row : rows) {
+      byAccount.putIfAbsent((String) row[0], (String) row[1]);
+    }
+    return byAccount;
+  }
+
+  private static AccountRow toRow(AccountEntity e, String adminRole) {
     return new AccountRow(
-        e.id, e.name, e.email, e.isArtist, e.verified, e.status, e.createdAt, e.updatedAt);
+        e.id, e.name, e.email, e.isArtist, e.verified, e.status, e.createdAt, e.updatedAt,
+        adminRole);
   }
 }

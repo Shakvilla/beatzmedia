@@ -114,7 +114,15 @@ function AdminEditorial() {
         <section className={cn(CARD, 'flex flex-col gap-4')}>
           <div className="flex flex-col gap-0.5">
             <h2 className="text-lg font-bold text-beatz-dark-bg dark:text-white">Home featured · Ghana</h2>
-            <span className="text-xs text-gray-400 dark:text-gray-500">Drag to reorder · live in 2h</span>
+            {/*
+              GAP-14: this read "Drag to reorder · live in 2h". Both halves were false. There is no
+              drag-and-drop anywhere on this page — ordering is the Move up / Move down actions in
+              each row's menu — and the "2h" was a literal, not a countdown: a slot has no scheduled
+              go-live time at all (FeaturedSlot is { id, title, note, sponsored }), and reordering
+              takes effect on save. Describing the control that exists costs nothing; inventing a
+              deadline an operator might plan around costs trust.
+            */}
+            <span className="text-xs text-gray-400 dark:text-gray-500">Use each row's menu to reorder · changes go live on save</span>
           </div>
           <div className="flex flex-col">
             {featuredQ.isError ? (

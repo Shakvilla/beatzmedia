@@ -61,7 +61,14 @@ export function AdminCommand({ open, onClose, sections }: { open: boolean; onClo
       .slice(0, 5)
       .map((c) => ({ key: `c-${c.id}`, label: c.title, sub: `Release · ${c.artist}`, icon: Disc3, go: () => navigate({ to: '/admin/catalog/$itemId', params: { itemId: c.id } }) }))
     return [...sectionR, ...userR, ...catalogR]
-  }, [q, sections, navigate])
+    // `users` and `catalog` MUST stay in this list. They arrive asynchronously — the queries only
+    // fire once the palette opens — while `sections` is a module-level constant and `navigate` is
+    // stable, so `q` was the only dependency that ever changed. An operator who opened the palette
+    // and typed a name faster than the fetch resolved got the memo computed against two empty
+    // arrays, and nothing recomputed it when the data landed: "No results for 'Abdul'" for a real,
+    // active account. That is the exact symptom GAP-24 was raised for, reintroduced by GAP-24's own
+    // fix, because the deps were written when the data was synchronous.
+  }, [q, sections, navigate, users, catalog])
 
   // Reset / clamp the highlighted row whenever the result set changes.
   useEffect(() => { setActive(0) }, [q])

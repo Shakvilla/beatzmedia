@@ -4,6 +4,7 @@ import static io.restassured.RestAssured.given;
 import static org.hamcrest.Matchers.empty;
 import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.greaterThanOrEqualTo;
+import static org.hamcrest.Matchers.not;
 
 import java.time.LocalDate;
 import java.time.ZoneOffset;
@@ -125,8 +126,19 @@ class AdminOverviewResourceIT {
 
   // ---- LLFR-ADMIN-01.2: GET /admin/health ----
 
+  /**
+   * This asserted {@code metrics} was <em>empty</em> and {@code status} the literal {@code
+   * "normal"} — it locked in GAP-04, where the console showed a green all-clear that would have
+   * read identically during a total database outage.
+   *
+   * <p>Now: every admin role may read health (unchanged), {@code status} is derived from the real
+   * readiness checks, and each check is a metric row. {@code listeners}/{@code incidents} stay
+   * honest-empty — no telemetry or incident tracker exists behind them, and GAP-04 did not invent
+   * one. The detailed assertions live in {@code AdminHealthSignalsIT}; this one is about role
+   * access and the unchanged half of the contract.
+   */
   @Test
-  void health_returnsHonestStaticShapeForAnyAdminRole() {
+  void health_isReadableByAnyAdminRole_andReportsRealChecks() {
     for (String role : new String[] {"super-admin", "finance", "moderator", "editor", "support"}) {
       long n = System.nanoTime();
       String token = adminToken(role, n);
@@ -135,7 +147,7 @@ class AdminOverviewResourceIT {
           .when().get(HEALTH_URL)
           .then().statusCode(200)
           .body("status", equalTo("normal"))
-          .body("metrics", empty())
+          .body("metrics", not(empty()))
           .body("listeners", empty())
           .body("incidents", empty());
     }

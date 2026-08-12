@@ -17,10 +17,13 @@ import org.shakvilla.beatzmedia.payments.domain.MethodKind;
 import org.shakvilla.beatzmedia.payments.domain.OrderRef;
 import org.shakvilla.beatzmedia.payments.domain.PaymentMethodRef;
 import org.shakvilla.beatzmedia.payments.domain.Provider;
+import org.shakvilla.beatzmedia.payments.domain.ProviderDisabledException;
 import org.shakvilla.beatzmedia.payments.domain.ProviderException;
 import org.shakvilla.beatzmedia.payments.fakes.FakePaymentGateway;
+import org.shakvilla.beatzmedia.payments.fakes.FakePaymentProviderPolicy;
 import org.shakvilla.beatzmedia.payments.fakes.FakePaymentRepository;
 import org.shakvilla.beatzmedia.platform.domain.Currency;
+import org.shakvilla.beatzmedia.platform.domain.ErrorCode;
 import org.shakvilla.beatzmedia.platform.domain.Money;
 import org.shakvilla.beatzmedia.platform.fakes.FakeClock;
 import org.shakvilla.beatzmedia.platform.fakes.FakeIds;
@@ -35,6 +38,7 @@ class InitiateChargeServiceTest {
   private FakePaymentRepository repo;
   private FakePaymentGateway gateway;
   private FakeAuditWriter audit;
+  private FakePaymentProviderPolicy providerPolicy;
   private InitiateChargeService service;
 
   private static final AccountId ACCOUNT = new AccountId("acct-42");
@@ -48,9 +52,51 @@ class InitiateChargeServiceTest {
     repo = new FakePaymentRepository();
     gateway = new FakePaymentGateway();
     audit = new FakeAuditWriter();
+    providerPolicy = new FakePaymentProviderPolicy();
     service =
         new InitiateChargeService(
-            repo, gateway, FakeIds.sequential("pi"), FakeClock.fixed(), audit);
+            repo, gateway, FakeIds.sequential("pi"), FakeClock.fixed(), audit, providerPolicy);
+  }
+
+  /**
+   * GAP-13 — a rail the operator has switched off must not reach the gateway.
+   *
+   * <p>409, not 422: the request is well-formed and would have succeeded a moment earlier. It is
+   * the platform's current state that refuses it, which is what tells a client to offer another
+   * method rather than to fix the body.
+   */
+  @Test
+  void refuses_a_charge_on_a_disabled_provider() {
+    providerPolicy.disable(Provider.mtn);
+
+    ProviderDisabledException thrown = assertThrows(
+        ProviderDisabledException.class,
+        () -> service.charge(ACCOUNT, ORDER, TEN_CEDIS, MTN_MOMO, new IdempotencyKey("idem-off")));
+
+    assertEquals(ErrorCode.PROVIDER_DISABLED, thrown.getErrorCode());
+    assertEquals(0, gateway.initiateCalls(), "the gateway must never see a disabled rail");
+  }
+
+  /**
+   * The refusal happens BEFORE the idempotency key is consumed.
+   *
+   * <p>Checking after would burn the caller's key on a request that never reached a provider, so
+   * the retry after the rail came back would return 409 IDEMPOTENCY_KEY_CONFLICT instead of
+   * charging — turning a temporary outage into a permanently unusable key.
+   */
+  @Test
+  void a_refused_charge_leaves_the_idempotency_key_reusable() {
+    IdempotencyKey key = new IdempotencyKey("idem-retry");
+    providerPolicy.disable(Provider.mtn);
+    assertThrows(
+        ProviderDisabledException.class,
+        () -> service.charge(ACCOUNT, ORDER, TEN_CEDIS, MTN_MOMO, key));
+
+    providerPolicy.enable(Provider.mtn);
+    PaymentIntentView view = service.charge(ACCOUNT, ORDER, TEN_CEDIS, MTN_MOMO, key);
+
+    assertEquals(1, gateway.initiateCalls(), "the retry charges exactly once");
+    assertTrue(view.id() != null && !view.id().isBlank());
   }
 
   @Test

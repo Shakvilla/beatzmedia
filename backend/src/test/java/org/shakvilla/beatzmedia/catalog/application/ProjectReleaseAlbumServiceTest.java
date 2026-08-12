@@ -21,6 +21,7 @@ import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseTrack;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseType;
 import org.shakvilla.beatzmedia.catalog.domain.Visibility;
+import org.shakvilla.beatzmedia.catalog.fakes.FakeAlbumSearchProjection;
 import org.shakvilla.beatzmedia.catalog.fakes.FakeCatalogRepository;
 import org.shakvilla.beatzmedia.platform.fakes.FakeClock;
 
@@ -40,12 +41,14 @@ class ProjectReleaseAlbumServiceTest {
   private static final String ARTIST_ID = "art-1";
 
   private FakeCatalogRepository repo;
+  private FakeAlbumSearchProjection search;
   private ProjectReleaseAlbumService service;
 
   @BeforeEach
   void setUp() {
     repo = new FakeCatalogRepository();
-    service = new ProjectReleaseAlbumService(repo, FakeClock.at(NOW));
+    search = new FakeAlbumSearchProjection();
+    service = new ProjectReleaseAlbumService(repo, search, FakeClock.at(NOW));
     repo.addArtist(
         new ArtistProfile(
             new ArtistId(ARTIST_ID), "Kod Sherif", "img.png", null, true, 100L, 50L, "bio",
@@ -173,6 +176,79 @@ class ProjectReleaseAlbumServiceTest {
     service.remove(RELEASE_ID);
 
     assertTrue(repo.findAlbum(new AlbumId(RELEASE_ID)).isEmpty());
+  }
+
+  /**
+   * GAP-27. Taking a release down deleted the album row but left its search document behind, so
+   * {@code /v1/search} kept returning the album — as the top result — while {@code /v1/albums/:id}
+   * answered 404. Nothing recovered from it: the reindex loads from the {@code album} table, which
+   * no longer had the row, and indexing is upsert-only.
+   */
+  @Test
+  void removeAlsoDropsTheAlbumFromSearch() {
+    repo.addRelease(
+        release(ReleaseType.album, ReleaseStatus.live, "Drill",
+            List.of(new ReleaseTrack("t-1", 1, 500))));
+    service.project(RELEASE_ID);
+    assertTrue(search.document(RELEASE_ID).isPresent(), "a live release should be searchable");
+
+    service.remove(RELEASE_ID);
+
+    assertTrue(
+        search.document(RELEASE_ID).isEmpty(),
+        "a taken-down release must not remain in the search index");
+  }
+
+  /** The same must hold on the path that comes down via a replayed go-live event. */
+  @Test
+  void projectingAReleaseThatHasSinceComeDownAlsoDropsItFromSearch() {
+    repo.addRelease(
+        release(ReleaseType.album, ReleaseStatus.live, "Drill",
+            List.of(new ReleaseTrack("t-1", 1, 500))));
+    service.project(RELEASE_ID);
+
+    repo.addRelease(
+        release(ReleaseType.album, ReleaseStatus.takedown, "Drill",
+            List.of(new ReleaseTrack("t-1", 1, 500))));
+    service.project(RELEASE_ID);
+
+    assertTrue(search.document(RELEASE_ID).isEmpty());
+  }
+
+  @Test
+  void reinstatingPutsTheAlbumBackIntoSearch() {
+    repo.addRelease(
+        release(ReleaseType.album, ReleaseStatus.live, "Drill",
+            List.of(new ReleaseTrack("t-1", 1, 500))));
+    service.project(RELEASE_ID);
+    service.remove(RELEASE_ID);
+
+    service.project(RELEASE_ID);
+
+    assertEquals(
+        "Iron Boy",
+        search.document(RELEASE_ID).orElseThrow().getTitle(),
+        "reinstate must restore the document, not just the row");
+  }
+
+  @Test
+  void indexingIsIdempotentTheSameWayTheRowIs() {
+    repo.addRelease(
+        release(ReleaseType.album, ReleaseStatus.live, "Drill",
+            List.of(new ReleaseTrack("t-1", 1, 500))));
+
+    service.project(RELEASE_ID);
+    service.project(RELEASE_ID);
+
+    assertEquals(1, search.size());
+  }
+
+  /** A release that never projected has no document to remove; removal must not blow up. */
+  @Test
+  void removingAnUnprojectedReleaseIsANoOp() {
+    service.remove("never-projected");
+
+    assertEquals(0, search.size());
   }
 
   @Test

@@ -40,6 +40,7 @@ public interface CatalogAdminReader {
       String artistName,
       String type,
       String status,
+      String genre,
       Instant createdAt,
       List<TrackRow> tracks,
       List<SplitRow> splits) {}

@@ -5,7 +5,10 @@
 controls the admin console claims to own.
 **Method:** Static wiring audit + authenticated endpoint sweep + manual UI walkthrough of every page,
 against a near-empty database (1 release, 2 accounts, 16 store items).
-**Status:** Documentation only. Nothing in this report has been fixed.
+**Status:** Live document. Findings are updated in place as they are fixed — each carries its own
+**Status** line. Two entries (GAP-12, and the `topResult` half of GAP-27) record corrections to
+findings that were wrong when first written; they are struck through rather than deleted, so the
+report is not quietly edited to look more accurate than it was.
 
 ---
 
@@ -394,6 +397,30 @@ outage.**
 
 **Impact.** Worse than having no health page, because it manufactures false confidence.
 
+**Status.** Fixed. `status` and `metrics` are derived from the platform's own readiness checks — the
+same ones behind `/q/health/ready`, which the Compose smoke test already gates on. Nothing new is
+measured and nothing is invented: this is a signal the app has always published and the console
+never read. Each check becomes a metric row, so the page states *what it measured*.
+
+The important part is a **third state**. The old shape could only say `normal` or `degraded`, which
+forced "nothing is being measured" to be reported as one of them — and it chose healthy. `unknown`
+now exists for no-checks-registered or probe-failed, and the page renders it as a neutral **"Not
+monitored"**, not green. Collapsing it back into `normal` would recreate this gap exactly; coercing
+it to `degraded` would be a different lie, claiming a fault nobody observed.
+
+`listeners` and `incidents` stay honest-empty — there is still no telemetry or incident tracker, and
+this change did not invent one.
+
+Two things worth recording:
+
+- The existing tests **asserted the bug as the specification** — `GetHealthServiceTest` required
+  `status == "normal"` with three empty lists, and `AdminOverviewResourceIT` required `metrics` to be
+  *empty*. Both are rewritten. This is the second time in this batch that the test which broke was one
+  pinning fabricated behaviour in place (see GAP-17).
+- Verified by mutation: restoring the literal fails both ITs on the **metrics** assertions, while
+  `status == "normal"` keeps passing — the old code hardcoded that value, so a status-only test would
+  have sailed through the bug. That is how it survived every prior CI run.
+
 ---
 
 ## 3. High — operationally dangerous
@@ -454,15 +481,25 @@ GET /v1/albums/{id}    ->  404 ALBUM_NOT_FOUND
 search, as the *top result*, and following it dead-ends on a 404. The takedown looks effective in
 the admin console while the content remains discoverable.
 
-The album projection is left half-torn-down too: the takedown detaches the track
-(`track.album_id = NULL`) but leaves the orphaned `album` row. That row is inert — album detail
-404s because it has no tracks — but it is stale state that reinstate happens to repair rather than
-state that takedown correctly cleared.
+**Correction to an earlier draft of this entry.** It said takedown also leaves an orphaned `album`
+row behind. That was wrong — `ProjectReleaseAlbumService.remove` deletes the row correctly, which is
+*why* `/v1/albums/:id` 404s. The album row was never the problem; the search document outliving it
+was.
+
+**Where it surfaces.** `SearchService` hydrates the grouped `albums` list from the `album` table and
+drops hits it cannot resolve, so a deleted album quietly vanishes from that list. `topResult` is
+mapped straight off the search hit with no hydration — so the stale document surfaces there, as the
+single most prominent result on the page. Nothing self-corrected: `AlbumIndexSource` loads from the
+`album` table, so once the row is gone the backfill can never see the document again, and indexing
+is upsert-only.
 
 Reinstate restores everything correctly (`status = live`, track reattached, album detail 200), so
-this is specific to the takedown path.
+this was specific to the takedown path.
 
-**Not fixed.** Belongs in the catalog/search module, not the frontend.
+**Status.** Fixed — `ProjectReleaseAlbumService` now writes the album's search document alongside
+its row, through the new catalog outbound port `AlbumSearchProjection`. Covered by
+`ReleaseTakedownSearchIT`, which drives the real admin endpoints and asserts on both
+`search_document` and `/v1/search`.
 
 ---
 
@@ -513,35 +550,217 @@ response is to toggle again — which now writes the wrong thing. Ruled out brow
 
 ---
 
-### GAP-08 · Three built endpoints have no UI at all
+### GAP-08 · ~~Three built endpoints have no UI at all~~ — **STALE WHEN TRIAGED. All three were wrong by the time I acted on it.**
 
-| Endpoint | Consequence |
-|---|---|
-| `POST /users/{id}/data-export` | GDPR/DSAR export unreachable — and the Compliance page exists to service exactly these requests |
-| `POST /users/{id}/impersonate` | Support cannot reproduce a user's state |
-| `GET /support/tickets/{id}` | Ticket detail; inbox says "Select a ticket." but no drill-in exists |
+Written 2026-08-08 against the then-unreachable user detail page. **PR #193 landed after, revived
+that route and wired every action on it** — so by the time this entry was picked up, two of the
+three were already called, and the third never needed calling.
+
+| Endpoint | What the entry claimed | What was actually true |
+|---|---|---|
+| `POST /users/{id}/data-export` | unreachable | **Wired** — "Export data (GDPR)" calls it |
+| `POST /users/{id}/impersonate` | unreachable | **Wired** — "Log in as user" calls it and reports the token was issued and audited |
+| `GET /support/tickets/{id}` | "inbox says *Select a ticket.* but no drill-in exists" | **Never a UI gap.** The inbox renders the full thread inline; `GET /admin/support/tickets` returns a bare array of full tickets *including messages*, an explicit design choice recorded in the admin ADD. The endpoint is redundant, not unwired |
+
+I recorded the ticket-detail item from a label on screen without checking whether the thread rendered
+beside it — the same mistake as GAP-12, which I made from a field name without checking the page.
+
+**What acting on this entry did find**, which is the part worth keeping:
+
+1. **The DSAR button was lying.** It toasted *"Data export started"*. `ExportUserDataService` is an
+   honest stub — it verifies the account, mints a job id and audits the request, and its own javadoc
+   states there is no DSAR queue or worker to process it. Nothing runs; no file is produced. That is
+   **GAP-19's pattern surviving inside the PR meant to eliminate it**, on a statutory obligation
+   where someone may rely on it to answer a regulator inside a deadline. Now reads *"DSAR request
+   logged — no file is produced yet"*, and the menu item is renamed to match.
+2. **"Select a ticket."** showed when the filtered list was *empty* — an instruction the operator
+   could not follow, and the thing that misled me into filing the ticket-detail item. Now says
+   whether there are no tickets at all or none matching the filter.
+3. **Impersonation could not actually be used.** The handler was scrupulously honest — it reported
+   only that a token had been *issued and audited*, with a comment explaining why the session was not
+   swapped. That deferral is now closed: see below.
+
+**Status.** The session swap is built. Confirmation dialog → swap → persistent banner with time
+remaining → Exit restores the operator's own session. The token is never rendered: it is a live
+bearer credential the backend deliberately keeps out of the audit log, so putting it on screen would
+undo that care.
+
+---
+
+### GAP-28 · The moderation page shows a genre it invented
+
+*Found 2026-08-12, retesting the earlier fixes in the UI.*
+
+`admin.catalog.$itemId.tsx` printed two metadata rows that were never data:
+
+```tsx
+<Meta label="Primary genre" value="Hiplife / Drill" />                                  // literal
+<Meta label="Label" value={item.artist === 'Various' ? 'Beatzclik Compilations' : 'Independent'} />
+```
+
+Every release read "Hiplife / Drill" whatever it actually was. The release I was looking at is
+`Afrobeats` in the database. `GET /v1/admin/catalog/:id` did not serve a genre at all — the response
+keys were `actionLog, artist, id, note, splits, status, title, tracklist, type, upc` — so the page
+could not have been right by accident.
+
+This is the same class as GAP-19 and GAP-25: the console asserting something it never measured. What
+makes it worth its own entry is *where* it sits. This is the surface a moderator uses to decide
+approve-or-take-down, and genre is exactly the kind of field a copyright or content complaint turns
+on. Two moderators comparing notes on "the Hiplife release" would be describing different records.
+
+`release.genre` existed and was already mapped on `ReleaseEntity` — nothing carried it past the
+persistence adapter. Genre is now served through `CatalogDetailRow → CatalogItemDetailView →
+CatalogItemDetailDto` and rendered as `item.genre ?? '—'`. **Label was deleted, not em-dashed:** the
+platform stores no label anywhere, and a permanent "—" would still imply it is a field we track.
+
+**Why the first pass missed it.** I audited this page twice — once in the sweep, once while building
+GAP-05/06 — and both times read the action controls beside the metadata panel without questioning
+the panel itself. A hardcoded string that looks plausible reads as data. The grep that would have
+caught it (`value="..."` with a literal, across `routes/admin*` and `components/admin/`) now returns
+these two lines and nothing else, so this was the only instance.
+
+**Status.** Fixed on `fix/GAP-28-catalog-real-genre`. Mutation-verified: reverting the mapper
+passthrough fails `get_returns_the_releases_own_genre` with `expected: <Drill> but was: <null>`.
+
+---
+
+### GAP-29 · The ⌘K palette loses results that arrive after you stop typing
+
+*Found 2026-08-12, retesting GAP-24. This is a regression introduced by GAP-24's own fix.*
+
+GAP-24 swapped the palette's hardcoded arrays for `usersQuery()` and `catalogQuery('all')`, fetched
+only while the palette is open. The `useMemo` that builds the result list kept its old dependency
+array:
+
+```tsx
+}, [q, sections, navigate])   // users and catalog missing
+```
+
+That list was correct when the data was synchronous — `getAdminUsers()` returned instantly, so there
+was nothing async to depend on. It is wrong now. `sections` is the module-level `NAV` constant in
+`admin-shell.tsx` and `navigate` is stable, so **`q` is the only dependency that ever changes.**
+
+The operator sequence that breaks it is the ordinary one:
+
+1. ⌘K — palette opens, both queries fire against a cold cache.
+2. Type `Abdul` faster than the fetch resolves. The memo runs against two empty arrays.
+3. The fetch lands. React re-renders, the memo's deps are unchanged, and it returns the cached
+   empty result.
+4. **"No results for 'Abdul'."** — for a real, active account.
+
+Typing one more character fixes it, which is exactly what makes it easy to miss: anyone testing
+deliberately keeps typing and never sees it. It reproduces the precise symptom GAP-24 was raised
+for, from a different cause.
+
+`react-hooks/exhaustive-deps` flags it (`missing dependencies: 'catalog' and 'users'`), so lint knew.
+Lint is not in the verification gate — see below.
+
+**Status.** Fixed: `users` and `catalog` added to the deps, with a comment saying why they are
+load-bearing. Covered by `admin-command.test.tsx`, which drives the real ordering — type the whole
+query, *then* resolve the promises, and never type again. Mutation-verified: restoring the old deps
+fails both tests on the assertion that the name appears.
+
+**Process note.** Two of the defects in this report (this one, and GAP-13's near-miss on the
+payments object) were latent in code that passed review and CI. `npm run build` catches type errors
+but not hook-dependency errors; `npx eslint` catches these and is not run by anything. Adding lint
+to the frontend gate would have caught this one before it shipped.
+
+---
+
+### GAP-30 · Three more controls that do nothing — the ones that stayed silent
+
+*Found 2026-08-12, retesting GAP-19/21.*
+
+All five placebo exports named in GAP-19/21 are now honestly disabled with tooltips — verified in
+source. But re-sweeping **by control** rather than by the old list turned up three the first pass
+never recorded:
+
+| Control | Where | What it did |
+|---|---|---|
+| **Export** → CSV / PDF report | `studio.analytics.tsx` | Toasted *"Exporting last 28 days as CSV"* — **success** — and produced no file. |
+| **Download all** | `checkout.complete.tsx` | **No `onClick` at all.** Styled as enabled. |
+| **Install desktop app** | `components/layout/sidebar.tsx` | **No `onClick` at all.** Present on every fan screen. |
+
+**Why the first sweep missed exactly these.** It was done by clicking, and it recorded what came
+back. A button that toasts a lie announces itself; a button with no handler produces *nothing* — no
+toast, no navigation, no network — and reads as "I must have missed the target" rather than "this
+control is dead". The sweep was biased toward controls that respond. The analytics export hid a
+third way: it toasts, but from behind a dropdown, so it costs two clicks to reach and one to
+discover.
+
+The re-sweep that found them enumerates every `Download`-icon control in the codebase and classifies
+each as disabled or live, which does not depend on noticing anything:
+
+```bash
+grep -rn "Download size" Frontend/src/routes Frontend/src/components
+```
+
+**"Download all" is the serious one.** It sits on the post-purchase screen of a **buy-to-own**
+platform, directly under the words *"yours forever"*. A dead control there does not read as a
+missing feature; it reads as a purchase that failed. And no download endpoint exists anywhere in the
+API — media serves signed, time-boxed *stream* URLs, and nothing bundles a purchase into a file. So
+the product's core promise has no delivery mechanism behind it. **That is a missing feature, not a
+defect, and it belongs in the triage list above GAP-22.**
+
+**Status.** Analytics export and Download all are disabled with honest tooltips, matching the
+treatment of the other five. *Install desktop app* was **removed**, not disabled: unlike the
+exports, it is not a real requirement waiting on an endpoint — there is no desktop app and nothing
+in the repo builds one, so a disabled control would still advertise a product that does not exist.
 
 ---
 
 ## 4. Medium
 
-### GAP-09 · Settings silently accepts unknown flag keys
+### GAP-09 · Settings silently accepts unknown flag keys — and disables every flag
 `PUT /v1/admin/settings` with `flags: { PODCASTS: false }` (enum-case instead of the wire's camelCase
-`podcasts`) returns **200 OK** and changes nothing. A typo'd or renamed key is indistinguishable from
-success. Should be `422` on unrecognised keys.
+`podcasts`) returns **200 OK**.
+
+**Correction — this entry understated it.** It said the call "changes nothing". It does the opposite.
+The request reused the response's `Flags` record, whose fields are primitive `boolean`. Quarkus
+disables Jackson's fail-on-unknown-properties, so the unrecognised key was dropped in silence and
+every field fell back to `false`; `SaveSettingsService` then wrote all five flags unconditionally. So
+that call **disabled podcasts, events, tipping, artist signups and fan messaging platform-wide** and
+reported success. A partial body — sending only the flag being toggled, the natural thing for a
+client to do — had the same effect.
+
+**Status.** Fixed. Every flag key is now required (`@NotNull Boolean`), so a misspelled key and an
+omitted one are the same 422 naming the field. Requiring all five rather than defaulting the missing
+ones is deliberate: a flag is a kill switch, and inferring "off" for one the caller never mentioned
+is the failure being fixed. Covered by `SettingsFlagKeysIT`, which reads the flags back after the
+rejected call to prove nothing moved.
 
 ### GAP-10 · Admin users are listed as "Fan"
 `/admin/users` shows `admin@beatzclik.com` with **ROLE = Fan**. The list derives role from
 `is_artist` only and ignores `admin_member`. Admins are invisible as admins on the one screen that
 enumerates accounts.
 
+**Status.** Fixed. `AdminUserRow` gains an `adminRole` field, shown as a second pill beside the
+fan/artist one rather than replacing it — the two are orthogonal, and an admin who is also an artist
+is exactly the case an operator needs to see. The mutation responses (verify/suspend/reactivate) are
+built from identity's account view, which does not carry the role, so they look it up explicitly;
+without that, suspending an administrator returned a row claiming they were not one. Covered by
+`AdminRoleVisibleInUserListIT`, which asserts the negative case too — a field that is always
+populated would pass a positive-only test while being just as wrong.
+
 ### GAP-11 · `GET /v1/admin/taxonomy` returns 422 without a `kind`
 There is no "list all terms" for admins; the bare call is a validation error rather than the full
 set. Forces the page into one request per kind and makes the endpoint feel broken when probed.
 
-### GAP-12 · Admin catalog rows carry no artist name
-`GET /v1/admin/catalog` items have no `artistName` field. A moderator approving or taking down a
-release cannot see whose release it is from the list.
+**Status.** Fixed. An absent — or blank, which is what an unset UI filter serializes to — `kind` now
+returns every kind, matching what every other admin list already does. A kind that is present but
+unrecognised is still a 422: that is a caller error, not an absent filter. Covered by
+`AdminTaxonomyListAllIT`.
+
+### GAP-12 · ~~Admin catalog rows carry no artist name~~ — **NOT A DEFECT. My error.**
+
+The original entry claimed `GET /v1/admin/catalog` items have no artist name. **That was wrong.**
+`CatalogItemRowView` has carried an `artist` field since WU-ADM-3 (#107), populated from
+`row.artistName()` in `CatalogItemMapper`, and the catalog list renders an ARTIST column — confirmed
+in the browser on a real release.
+
+I recorded the finding from the field *name* (`artistName`) rather than the wire name (`artist`) and
+never checked the rendered page for this one. Retained rather than deleted so the report is not
+quietly edited to look more accurate than it was.
 
 ### GAP-17 · Every admin role can act on support tickets
 Building the role matrix surfaced this: `assign`, `reply` and `resolve` on
@@ -559,13 +778,44 @@ Settings renders MTN MoMo / Vodafone Cash / AirtelTigo / Card / Bank transfer wi
 *"Not yet configurable — every method is currently enabled platform-wide."* Honest, but it is UI that
 cannot do the thing it depicts.
 
+**Status.** Built. The toggles are real: switching one off stops new charges on that rail
+immediately (409 `PROVIDER_DISABLED`), and the removal is named in the audit entry so *"why did MoMo
+stop working on the 14th?"* has an answer. Design and the four decisions behind it:
+`docs/superpowers/specs/2026-08-11-gap-13-per-provider-payment-enablement-design.md`; rationale in
+ADR-32.
+
+Three things worth carrying forward from building it:
+
+1. **The vocabularies did not match.** Settings said `momo`/`vodafone`; the domain says
+   `mtn`/`telecel`. *Vodafone Ghana became Telecel in 2023* — checkout and payouts already knew, and
+   the admin console was the last surface still using the dead brand. Renamed.
+2. **Flag semantics were actively wrong for money.** `FeatureFlags.isEnabled` answers **true** for a
+   key with no row. A rail whose flag never seeded would have kept charging while the console showed
+   it off. The rails are now read fail-closed through a payments-owned port, and a missing row stops
+   the app booting — so both bad outcomes become "does not start" rather than a silent one.
+3. **The rename recreated GAP-09 on a more dangerous object.** `Providers` was a primitive-`boolean`
+   record, so a client still sending `momo`/`vodafone` got **200 OK while switching MTN and Telecel
+   off platform-wide**. Found because three integration tests were that stale client and every charge
+   started returning 409. Every provider key is now required, so a stale body is a 422.
+
+**Payouts are deliberately untouched.** Disabling a rail must not strand balances a creator has
+already earned.
+
 ---
 
 ## 5. Low
 
 - **GAP-14** — Editorial shows a hardcoded `"Drag to reorder · live in 2h"`. The "2h" is a literal.
-- **GAP-15** — `Export` buttons on Audit and Users were not exercised (see §7).
+  **Worse than recorded, and fixed:** *both* halves were false. There is no drag-and-drop anywhere on
+  the page — ordering is the Move up / Move down actions in each row's menu — and a featured slot has
+  no scheduled go-live time at all (`FeaturedSlot` is `{ id, title, note, sponsored }`), so the "2h"
+  was not a stale countdown but an invented one. Now reads "Use each row's menu to reorder · changes
+  go live on save".
+- **GAP-15** — ~~`Export` buttons on Audit and Users were not exercised~~ — **CLOSED**, superseded by
+  GAP-19: they were clicked, they do nothing, and they claim success.
 - **GAP-16** — "Joined" renders as `Aug 2026` with no day; ambiguous for support work.
+  **Fixed:** now `15 Mar 2024`, formatted in UTC so the label does not shift with the viewer's
+  timezone. `monthYear()` had no other caller and was removed with its tests.
 
 ---
 
@@ -582,8 +832,12 @@ strength and directly contradicts the older pattern of rendering invented totals
 database. GAP-04 is the one place this discipline breaks.
 
 **The console is read-heavy and action-light in practice.** Of 61 endpoints, the destructive ones are
-reachable in one click (GAP-05) while the corrective ones are unreachable entirely (GAP-06, GAP-08).
-The balance is backwards.
+reachable in one click (GAP-05) while the corrective ones are unreachable entirely (GAP-06). The
+balance is backwards.
+
+*Amended: this originally cited GAP-08 alongside GAP-06. GAP-08 turned out to be stale — those
+endpoints were already wired by PR #193 before the observation was acted on. GAP-06 (reinstate with
+no caller) stands, and was the real instance of this pattern.*
 
 ---
 
@@ -619,7 +873,9 @@ Listed so this report is not mistaken for full coverage.
    needs a creator with a ready balance, which this database has never had.
 5. **Disputes** — no dispute rows exist, and I did not fabricate one; refund/escalate/reject are
    unexercised end to end.
-6. **Impersonation** — no UI (GAP-08), not exercised via API.
+6. ~~**Impersonation** — no UI (GAP-08), not exercised via API.~~ **CLOSED.** The UI existed
+   (issuing a token honestly, without applying it); the session swap is now built, and the
+   stash-and-restore is unit-tested both directions. Still to be driven end to end in a browser.
 7. **Overview "Needs attention"** — empty throughout, but nothing was ever in a state that should
    populate it, so I still cannot say whether it works.
 8. **Suspension against a live session.** Suspension is enforced at login, but there is **no token
@@ -630,12 +886,57 @@ Listed so this report is not mistaken for full coverage.
 
 ---
 
+## 7b. Retest — 2026-08-12
+
+Every fix re-verified against a clean-master stack (schema 977) with a live admin session, driving
+the real UI and checking the database rather than the toast. Three new defects came out of it —
+GAP-28, GAP-29, GAP-30 — each written up above.
+
+| Gap | How it was verified | Result |
+|---|---|---|
+| GAP-01 | both detail routes opened directly | render |
+| GAP-02 | flags set false in the DB, waited out the 30s cache, curled the endpoints | `403 FEATURE_DISABLED` on `/v1/podcasts` and `/v1/events`; flags restored |
+| GAP-03 | `audit_entry` after each live action | `actor_name = Admin` on every row |
+| GAP-04 | `GET /v1/admin/health` | one real readiness check, `status` derived from it, no `<default>: UP` noise |
+| GAP-05 | clicked Take down in the row menu | modal, 5 reason chips, confirm genuinely `disabled` until one is picked; audit recorded `TAKEDOWN_RELEASE / Copyright claim` |
+| GAP-06 | detail page while taken down | button reads **Reinstate**; clicking it returned the release to `live` |
+| GAP-07 | PUT → GET → PUT → GET on `fanMessaging` | every PUT returned what it wrote; the second toggle straight after a save landed correctly |
+| GAP-09 | `PUT /settings` with `flags: { PODCASTS: false }` | `422 VALIDATION`; **flags unchanged** |
+| GAP-10 | `GET /v1/admin/users` + the console's own pill | `adminRole: super-admin` / `null`; pill reads SUPER-ADMIN |
+| GAP-11 | taxonomy with no / blank / bogus / real `kind` | 200 (22 terms, 3 kinds) / 200 / **422** / 200 (9) |
+| GAP-16 | user detail header | "joined 8 Aug 2026" |
+| GAP-17 | `AdminRoleMatrixIT` + `AdminSupportResourceIT` | 20 tests green. **Not verified live** — no support-role account exists in this database, so only the negative case's test coverage was checked, not the running behaviour |
+| GAP-19/21 | every `Download`-icon control classified in source | five listed exports disabled; three unlisted ones found → GAP-30 |
+| GAP-22 | `album` table after publish | album row projected, `genres={Afrobeats}` |
+| GAP-23 | triggered a reset, read Mailpit | mail delivered with a single-use link; token is two UUIDv7s from `SecureRandom` (148 bits), SHA-256 stored, 30-minute expiry |
+| GAP-25 | `/v1/tracks/:id/lyrics` + the query factory | 404 → `[]`; the placeholder generator is unreferenced |
+| GAP-26 | `elementFromPoint` at each open menu item's own centre | every item returns its **own** button, not the `fixed inset-0 z-40` backdrop |
+| GAP-27 | took the release down, read `search_document` | TRACK `visible=f` **and the ALBUM document removed**, album projection dropped; reinstating rebuilt all three |
+| GAP-08 | impersonated, then exited | banner with live countdown, `/v1/me` returned the artist, Exit restored the **exact** admin token (SHA-256 compared inside the page) and cleaned up both storage keys |
+
+**Not re-verified:** GAP-13 (PR #206, unmerged), GAP-20 (`compliance_request` is empty in this
+database, so overdue derivation was only read in source), GAP-24's live palette behaviour beyond the
+regression test.
+
+**Two observations, neither a defect.** The one release carries `release_track.position = 0` and
+`price_minor = 0`, and has no `split_entry` rows — the console reports all three faithfully, so this
+is a question about the release-creation path, not the admin surface. Separately, `feature_flag`
+still holds five orphan `PROVIDER_*` rows from V978, which master's `FeatureKey` does not define;
+nothing on master reads them.
+
+---
+
 ## 8. Suggested triage order
 
 0. **GAP-23** — no password-reset mail is sent anywhere. Nobody can recover an account, and every
    invited admin is locked out. `notifications.SmtpMailer` already works and Mailpit is running, so
    this is wiring identity's `Mailer` port to a real adapter, not building one. Highest
    severity-to-effort ratio in this report.
+0. **GAP-30's download gap** — there is no way to download anything you have bought. Media serves
+   signed, time-boxed *stream* URLs and nothing bundles a purchase into a file, so on a **buy-to-own**
+   platform the core promise has no delivery mechanism. The dead "Download all" button is now
+   honestly disabled, which makes the absence visible rather than fixing it. Like GAP-22 this is a
+   missing feature rather than a defect — but it is the one the product is named for.
 0. **GAP-22** — nothing creates albums. Six fan-facing surfaces, including the "New releases" rail
    and the entire album detail route, are dead on any database without the dev seed. Decide whether
    publishing an `album`/`ep`/`mixtape` release should project an `album` row (the same projection
