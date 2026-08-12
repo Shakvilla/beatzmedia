@@ -31,4 +31,14 @@ public interface AudioTranscoderPort {
    * a non-owner is only ever signed this object, so INV-3 cannot be overrun client-side.
    */
   ObjectKey clipPreview(ObjectKey original, MediaAssetId id, int previewSeconds);
+
+  /**
+   * Transcode the original to the LOSSLESS delivery rendition: a single FLAC object at
+   * {@code delivery/{id}/lossless.flac}. This is the download payload.
+   *
+   * <p>FLAC rather than the original upload: formats vary per track and sizes are unbounded, and
+   * handing over the artist's master is the thing an artist disabling downloads is protecting.
+   * FLAC over WAV for roughly half the size at identical fidelity.
+   */
+  ObjectKey transcodeLossless(ObjectKey original, MediaAssetId id);
 }

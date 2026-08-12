@@ -117,14 +117,7 @@ class RealTranscodeIT {
   @Test
   void transcode_wav_produces_full_and_a_genuinely_clipped_preview() throws Exception {
     MediaAssetId id = new MediaAssetId("asset-transcode-1");
-
-    byte[] wav = minimalSilentWav(SOURCE_SECONDS);
-    ObjectKey originalKey = objectStore.putOriginal(
-        org.shakvilla.beatzmedia.media.domain.MediaKind.AUDIO,
-        id,
-        new ByteArrayInputStream(wav),
-        "audio/wav",
-        wav.length);
+    ObjectKey originalKey = uploadSourceWav(id);
 
     assertDurationNear(SOURCE_SECONDS, transcoder.probeDurationSec(originalKey), "original");
 
@@ -142,6 +135,25 @@ class RealTranscodeIT {
     assertDurationNear(PREVIEW_SECONDS, transcoder.probeDurationSec(previewKey), "preview rendition");
   }
 
+  /**
+   * A lossless rendition that is silently clipped, or silently lossy, would pass a mere
+   * "the object exists" check. Assert the duration matches the source — the same reasoning that
+   * makes the preview assertion the real proof of INV-3.
+   */
+  @Test
+  void transcode_produces_a_full_length_lossless_rendition() throws Exception {
+    MediaAssetId id = new MediaAssetId("lossless-1");
+    ObjectKey originalKey = uploadSourceWav(id);
+
+    ObjectKey losslessKey = transcoder.transcodeLossless(originalKey, id);
+
+    assertNotNull(losslessKey, "lossless key must not be null");
+    assertTrue(losslessKey.key().endsWith("/lossless.flac"),
+        "lossless rendition must be a single .flac: " + losslessKey.key());
+    assertTrue(objectStore.exists(losslessKey), "lossless rendition must exist in delivery bucket");
+    assertDurationNear(SOURCE_SECONDS, transcoder.probeDurationSec(losslessKey), "lossless");
+  }
+
   private static void assertDurationNear(int expectedSeconds, int actualSeconds, String what) {
     assertTrue(
         Math.abs(actualSeconds - expectedSeconds) <= TOLERANCE_SECONDS,
@@ -149,6 +161,19 @@ class RealTranscodeIT {
   }
 
   // ---- Helpers ----
+
+  /** Upload a {@value #SOURCE_SECONDS}s silent WAV as the given asset's original. Shared source
+   * material for every transcode test in this class — one upload, several renditions asserted
+   * against it. */
+  private static ObjectKey uploadSourceWav(MediaAssetId id) {
+    byte[] wav = minimalSilentWav(SOURCE_SECONDS);
+    return objectStore.putOriginal(
+        org.shakvilla.beatzmedia.media.domain.MediaKind.AUDIO,
+        id,
+        new ByteArrayInputStream(wav),
+        "audio/wav",
+        wav.length);
+  }
 
   static boolean ffmpegOnPath() {
     try {

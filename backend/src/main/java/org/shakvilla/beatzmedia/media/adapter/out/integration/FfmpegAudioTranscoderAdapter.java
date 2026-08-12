@@ -70,6 +70,30 @@ public class FfmpegAudioTranscoderAdapter implements AudioTranscoderPort {
     return transcodeToM4a(original, id, previewSeconds, "preview.m4a", "preview-");
   }
 
+  @Override
+  public ObjectKey transcodeLossless(ObjectKey original, MediaAssetId id) {
+    Path tmpInput = null;
+    Path tmpOutput = null;
+    try {
+      tmpInput = downloadToTemp(original, "lossless-", ".audio");
+      tmpOutput = Files.createTempFile("lossless-" + id.value(), ".flac");
+
+      runFfmpegFlac(tmpInput, tmpOutput);
+
+      String relKey = "delivery/" + id.value() + "/lossless.flac";
+      try (InputStream in = Files.newInputStream(tmpOutput)) {
+        objectStore.putDelivery(id, relKey, in, "audio/flac");
+      }
+      return new ObjectKey(deliveryBucketOf(original), relKey);
+    } catch (IOException | InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException("ffmpeg lossless transcode failed for " + id.value(), e);
+    } finally {
+      deleteSilently(tmpOutput);
+      deleteSilently(tmpInput);
+    }
+  }
+
   /**
    * Shared path for both renditions: download the original, run ffmpeg to one AAC/M4A file,
    * upload it, return its key. {@code durationLimit} non-null clips the output (preview).
@@ -143,6 +167,24 @@ public class FfmpegAudioTranscoderAdapter implements AudioTranscoderPort {
     cmd.add("-c:a"); cmd.add("aac");
     cmd.add("-b:a"); cmd.add("128k");
     cmd.add("-movflags"); cmd.add("+faststart"); // moov atom first: playable before fully downloaded
+    cmd.add(outputFile.toAbsolutePath().toString());
+
+    Process proc = new ProcessBuilder(cmd).redirectErrorStream(true).start();
+    String output = new String(proc.getInputStream().readAllBytes()).trim();
+    int exit = proc.waitFor();
+    if (exit != 0) {
+      throw new IllegalStateException("ffmpeg exited with " + exit + ": " + output);
+    }
+  }
+
+  private void runFfmpegFlac(Path inputFile, Path outputFile) throws IOException, InterruptedException {
+    List<String> cmd = new ArrayList<>();
+    cmd.add("ffmpeg");
+    cmd.add("-nostdin");
+    cmd.add("-y");
+    cmd.add("-i"); cmd.add(inputFile.toAbsolutePath().toString());
+    cmd.add("-c:a"); cmd.add("flac");
+    cmd.add("-compression_level"); cmd.add("8");
     cmd.add(outputFile.toAbsolutePath().toString());
 
     Process proc = new ProcessBuilder(cmd).redirectErrorStream(true).start();
