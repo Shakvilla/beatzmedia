@@ -505,6 +505,86 @@ git commit -m "feat(download): require an explicit download choice before publis
 
 ---
 
+## Task 4b: Studio write path — let the artist actually set the choice
+
+**Added during execution.** Task 4's guard makes `downloadable` required at publish, but no REST
+path can set it: `CreateDraftBody` and `UpdateReleaseBody` in
+`catalog/adapter/in/rest/StudioReleaseResource.java` carry `title/genre/description/visibility/
+scheduledAt/tracks` and nothing else. Without this task the guard rejects **every** publish through
+the real API, and Task 8's wizard control has nowhere to persist to. This was a gap in the original
+plan, not a deviation by any implementer.
+
+**Files:**
+- Modify: `backend/src/main/java/org/shakvilla/beatzmedia/catalog/adapter/in/rest/StudioReleaseResource.java`
+- Modify: `backend/src/main/java/org/shakvilla/beatzmedia/catalog/application/port/in/UpdateRelease.java` (the `UpdateReleaseCommand` record)
+- Modify: `backend/src/main/java/org/shakvilla/beatzmedia/catalog/application/service/UpdateReleaseService.java`
+- Modify: the create-draft command/service equivalents
+- Test: `backend/src/test/java/org/shakvilla/beatzmedia/catalog/application/UpdateReleaseServiceTest.java`
+
+**Interfaces:**
+- Consumes: `Release.getDownloadable()` / setter (Task 4)
+- Produces: `PATCH /v1/studio/releases/{id}` and `POST /v1/studio/releases` accept
+  `downloadable: boolean | null`; a subsequent publish of that release succeeds.
+
+- [ ] **Step 1: Write the failing test**
+
+Add to `UpdateReleaseServiceTest`:
+
+```java
+  @Test
+  void updateSetsTheDownloadChoice() {
+    service.update(RELEASE_ID, ARTIST, commandWithDownloadable(true));
+    assertEquals(Boolean.TRUE, repository.find(RELEASE_ID).orElseThrow().getDownloadable());
+  }
+
+  @Test
+  void updateCanSetTheChoiceToFalse() {
+    // `false` is a complete answer, not an absent one — it must persist, not be treated as unset.
+    service.update(RELEASE_ID, ARTIST, commandWithDownloadable(false));
+    assertEquals(Boolean.FALSE, repository.find(RELEASE_ID).orElseThrow().getDownloadable());
+  }
+
+  @Test
+  void omittingTheChoiceLeavesThePreviousValueAlone() {
+    // PATCH is partial: a body that does not mention downloadable must not silently clear a choice
+    // the artist already made, which would make the release unpublishable again.
+    service.update(RELEASE_ID, ARTIST, commandWithDownloadable(true));
+    service.update(RELEASE_ID, ARTIST, commandWithDownloadable(null));
+    assertEquals(Boolean.TRUE, repository.find(RELEASE_ID).orElseThrow().getDownloadable());
+  }
+```
+
+Wire `commandWithDownloadable` from the existing test's command builder.
+
+- [ ] **Step 2: Run it and confirm it fails**
+
+```bash
+cd backend && ./mvnw -o test -Dtest=UpdateReleaseServiceTest
+```
+
+- [ ] **Step 3: Thread `downloadable` through**
+
+Add `Boolean downloadable` to `CreateDraftBody`, `UpdateReleaseBody`, and `UpdateReleaseCommand`
+(and the create-draft command). In `UpdateReleaseService`, apply it **only when non-null** — see the
+third test: PATCH is partial, and clearing a made choice would make the release unpublishable.
+
+- [ ] **Step 4: Run it and confirm it passes**
+
+```bash
+cd backend && ./mvnw -o test -Dtest=UpdateReleaseServiceTest
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd backend && ./mvnw -o spotless:apply
+git add backend/src/main/java/org/shakvilla/beatzmedia/catalog backend/src/test/java/org/shakvilla/beatzmedia/catalog
+git commit -m "feat(download): accept the download choice on the studio release write path"
+```
+
+
+---
+
 ## Task 5: Commerce — capture the permission on the grant
 
 **Files:**
