@@ -1,0 +1,44 @@
+name: Install runtime ffmpeg
+description: >
+  Installs the exact ffmpeg/ffprobe binaries the runtime image ships, by copying them out of the
+  mwader/static-ffmpeg image pinned in Dockerfile.jvm.
+
+# Why this is a composite action rather than a step copied into each job
+# ---------------------------------------------------------------------
+# Two jobs run RealTranscodeIT — `integration-tests` and `coverage-gate`. It is the only executable
+# proof of INV-3 (that a non-owner's preview is *physically* ~30s, not merely a file named
+# preview.m4a), and it guards itself with assumeTrue(ffmpegOnPath()). A job without ffmpeg therefore
+# reports "Tests run: 0" and goes green having proven nothing.
+#
+# That has now gone wrong twice, in two different ways:
+#   1. Both jobs originally lacked ffmpeg, so INV-3 was uncovered entirely.
+#   2. The fix installed Ubuntu's `apt-get install ffmpeg` into `integration-tests` only — a
+#      different binary from the pinned static build, and only in one of the two jobs. So when
+#      static-ffmpeg was bumped 8.1.2 -> 9.0 (#200), CI went green without executing ffmpeg 9 once,
+#      and coverage-gate kept silently skipping the test, under-counting media coverage.
+#
+# One definition, used by both jobs, is what stops a third variation. The tag is read out of
+# Dockerfile.jvm rather than repeated, so a Dependabot bump moves CI and production together.
+runs:
+  using: composite
+  steps:
+    - name: Copy ffmpeg/ffprobe from the pinned runtime image
+      shell: bash
+      run: |
+        set -euo pipefail
+        IMAGE=$(grep -oE 'mwader/static-ffmpeg:[^[:space:]]+' backend/src/main/docker/Dockerfile.jvm | head -1)
+        if [ -z "$IMAGE" ]; then
+          echo "::error::Could not read the static-ffmpeg tag from Dockerfile.jvm. Refusing to" \
+               "fall back to a distro ffmpeg — that is the drift this action exists to prevent."
+          exit 1
+        fi
+        echo "Using $IMAGE (from Dockerfile.jvm)"
+        docker create --name ffmpeg-src "$IMAGE"
+        sudo docker cp ffmpeg-src:/ffmpeg  /usr/local/bin/ffmpeg
+        sudo docker cp ffmpeg-src:/ffprobe /usr/local/bin/ffprobe
+        docker rm ffmpeg-src
+        ffprobe -version | head -1
+        # Load-bearing: fail the job if the binary that wins on PATH is not the one just installed.
+        EXPECTED="${IMAGE##*:}"
+        ffprobe -version | head -1 | grep -q "version ${EXPECTED%%-*}" || {
+          echo "::error::ffprobe on PATH is not $IMAGE"; exit 1; }
