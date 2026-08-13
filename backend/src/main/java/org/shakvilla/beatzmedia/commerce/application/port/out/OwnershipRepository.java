@@ -1,6 +1,7 @@
 package org.shakvilla.beatzmedia.commerce.application.port.out;
 
 import java.util.List;
+import java.util.Optional;
 
 import org.shakvilla.beatzmedia.commerce.domain.OrderId;
 import org.shakvilla.beatzmedia.commerce.domain.OwnershipGrant;
@@ -30,6 +31,16 @@ public interface OwnershipRepository {
   OwnershipGrant save(OwnershipGrant grant);
 
   boolean existsActiveForTrack(AccountId account, String trackId);
+
+  /**
+   * The account's ACTIVE grant for the track, if any — the grant itself, not just its existence,
+   * because callers need the permission it carries ({@code downloadable}). Backs
+   * {@code GetTrackDownloadPermission}. Empty when never bought or revoked (INV-9).
+   *
+   * <p>At most one active grant can exist per (account, track): the unique-active index
+   * {@code ux_grant_account_track} is the durable guarantee.
+   */
+  Optional<OwnershipGrant> findActiveForTrack(AccountId account, String trackId);
 
   boolean existsActiveForEpisode(AccountId account, String episodeId);
 

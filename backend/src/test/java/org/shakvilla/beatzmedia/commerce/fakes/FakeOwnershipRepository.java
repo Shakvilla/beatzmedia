@@ -3,6 +3,7 @@ package org.shakvilla.beatzmedia.commerce.fakes;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 import org.shakvilla.beatzmedia.commerce.application.port.out.OwnershipRepository;
@@ -51,6 +52,17 @@ public class FakeOwnershipRepository implements OwnershipRepository {
                 g.isActive()
                     && g.getAccountId().value().equals(account.value())
                     && trackId.equals(g.getTrackId()));
+  }
+
+  @Override
+  public Optional<OwnershipGrant> findActiveForTrack(AccountId account, String trackId) {
+    return grants.stream()
+        .filter(
+            g ->
+                g.isActive()
+                    && g.getAccountId().value().equals(account.value())
+                    && trackId.equals(g.getTrackId()))
+        .findFirst();
   }
 
   @Override

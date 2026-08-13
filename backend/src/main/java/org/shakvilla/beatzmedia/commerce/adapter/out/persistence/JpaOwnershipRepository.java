@@ -1,6 +1,7 @@
 package org.shakvilla.beatzmedia.commerce.adapter.out.persistence;
 
 import java.util.List;
+import java.util.Optional;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -68,6 +69,22 @@ public class JpaOwnershipRepository implements OwnershipRepository {
             .setParameter("tid", trackId)
             .getSingleResult();
     return count > 0;
+  }
+
+  @Override
+  public Optional<OwnershipGrant> findActiveForTrack(AccountId account, String trackId) {
+    return em
+        .createQuery(
+            "SELECT g FROM OwnershipGrantEntity g WHERE g.accountId = :acc"
+                + " AND g.trackId = :tid AND g.revokedAt IS NULL",
+            OwnershipGrantEntity.class)
+        .setParameter("acc", account.value())
+        .setParameter("tid", trackId)
+        .getResultStream()
+        // At most one row can match (ux_grant_account_track over the active rows); findFirst is
+        // defensive rather than a silent pick — it cannot mask a duplicate the index forbids.
+        .findFirst()
+        .map(this::toDomain);
   }
 
   @Override

@@ -56,7 +56,12 @@ public class DomainExceptionMapper implements ExceptionMapper<DomainException> {
           Response.Status.NOT_FOUND.getStatusCode();
       case UNAUTHENTICATED, INVALID_CREDENTIALS, SOCIAL_TOKEN_INVALID ->
         Response.Status.UNAUTHORIZED.getStatusCode();
-      case UNAUTHORIZED, FEATURE_DISABLED, ACCOUNT_SUSPENDED, KYC_REQUIRED, TIPS_DISABLED ->
+      case UNAUTHORIZED,
+              FEATURE_DISABLED,
+              ACCOUNT_SUSPENDED,
+              KYC_REQUIRED,
+              TIPS_DISABLED,
+              NOT_OWNED ->
           Response.Status.FORBIDDEN.getStatusCode();
       case SELF_TIP_NOT_ALLOWED -> UNPROCESSABLE_ENTITY;
       case CONFLICT,
@@ -78,7 +83,9 @@ public class DomainExceptionMapper implements ExceptionMapper<DomainException> {
               EPISODE_PUBLISHED,
               ALREADY_VERIFIED,
               ALREADY_SUSPENDED,
-              NOT_SUSPENDED ->
+              NOT_SUSPENDED,
+              DOWNLOAD_NOT_ALLOWED,
+              DOWNLOAD_NOT_READY ->
           Response.Status.CONFLICT.getStatusCode();
       case MISSING_IDEMPOTENCY_KEY -> Response.Status.BAD_REQUEST.getStatusCode();
       case PROVIDER_ERROR -> BAD_GATEWAY;
