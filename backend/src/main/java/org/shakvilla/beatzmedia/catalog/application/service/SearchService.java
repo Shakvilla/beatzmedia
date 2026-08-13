@@ -143,7 +143,8 @@ public class SearchService implements Search {
         album.getCoverImage(),
         album.getGenres(),
         album.getTrackIds(),
-        null);
+        null,
+        album.isDownloadable());
   }
 
   private PlaylistView toPlaylistView(Playlist p) {

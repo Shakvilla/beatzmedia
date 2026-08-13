@@ -109,7 +109,8 @@ public class ResolveCatalogService implements ResolveCatalog {
         album.getCoverImage(),
         album.getGenres(),
         album.getTrackIds(),
-        null);
+        null,
+        album.isDownloadable());
   }
 
   private PlaylistView toPlaylistView(Playlist p, Optional<String> callerId) {

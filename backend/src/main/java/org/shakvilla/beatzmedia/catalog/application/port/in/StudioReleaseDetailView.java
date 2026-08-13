@@ -25,4 +25,12 @@ public record StudioReleaseDetailView(
     String description,
     String visibility,
     String scheduledAt,
-    List<TrackDraftView> tracks) {}
+    List<TrackDraftView> tracks,
+    /**
+     * Whether buyers may download this release's audio, straight from {@link
+     * org.shakvilla.beatzmedia.catalog.domain.Release#getDownloadable()}. {@code null} means the
+     * artist has not chosen yet — a live/published draft-flow client, unlike the public
+     * track/album views, needs to tell "not chosen" apart from "chosen: no" to drive the
+     * required-choice UI, so this is NOT coerced to {@code false}.
+     */
+    Boolean downloadable) {}

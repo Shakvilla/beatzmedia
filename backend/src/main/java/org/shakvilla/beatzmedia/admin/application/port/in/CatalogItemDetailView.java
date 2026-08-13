@@ -18,6 +18,13 @@ import java.util.List;
  * submitted without one reads as unknown rather than as some default. It is served because the
  * moderation page previously printed a fixed literal ("Hiplife / Drill") beside every release
  * regardless of its actual genre, on the surface where a moderator decides approve-or-take-down.
+ *
+ * <p>{@code downloadable} is real, carried straight from {@code release.downloadable} (same
+ * nullable pattern as {@code genre}): {@code true}/{@code false} once the artist has chosen,
+ * {@code null} for a draft/in_review release reached before publish's guard forces a choice. A
+ * moderator reviewing a pending submission needs to see whether download is even in question, and
+ * an honest {@code null} — not a coerced {@code false} — is what tells them "not decided yet"
+ * apart from "decided: no".
  */
 public record CatalogItemDetailView(
     String id,
@@ -28,6 +35,7 @@ public record CatalogItemDetailView(
     String status,
     String upc,
     String genre,
+    Boolean downloadable,
     List<CatalogTrackView> tracklist,
     List<CatalogSplitView> splits,
     List<ActionLogEntryView> actionLog) {}

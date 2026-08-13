@@ -54,6 +54,7 @@ public class GetAlbumService implements GetAlbum {
         album.getCoverImage(),
         album.getGenres(),
         album.getTrackIds(),
-        trackViews);
+        trackViews,
+        album.isDownloadable());
   }
 }

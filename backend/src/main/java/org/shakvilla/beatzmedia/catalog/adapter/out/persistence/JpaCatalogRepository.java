@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
@@ -991,9 +992,13 @@ public class JpaCatalogRepository implements CatalogRepository {
     // Group by trackId in memory; preserve credit order as returned by DB (by primary key).
     Map<String, List<TrackCreditEntity>> creditsByTrack =
         allCredits.stream().collect(Collectors.groupingBy(c -> c.trackId));
+    Map<String, Boolean> downloadableByTrack = downloadableByTrackId(trackIds);
 
     return entities.stream()
-        .map(e -> trackToDomain(e, creditsByTrack.getOrDefault(e.id, Collections.emptyList())))
+        .map(e -> trackToDomain(
+            e,
+            creditsByTrack.getOrDefault(e.id, Collections.emptyList()),
+            Boolean.TRUE.equals(downloadableByTrack.get(e.id))))
         .toList();
   }
 
@@ -1020,6 +1025,9 @@ public class JpaCatalogRepository implements CatalogRepository {
             .collect(
                 Collectors.groupingBy(
                     t -> t.albumId, Collectors.mapping(t -> t.id, Collectors.toList())));
+    // An album shares its id with the release that projected it (ProjectReleaseAlbumService), so
+    // albumIds double as releaseIds here.
+    Map<String, Boolean> downloadableByAlbumId = downloadableByReleaseId(albumIds);
 
     return entities.stream()
         .map(
@@ -1036,9 +1044,58 @@ public class JpaCatalogRepository implements CatalogRepository {
                   e.coverImage,
                   genres,
                   trackIds,
-                  e.listPriceMinor);
+                  e.listPriceMinor,
+                  Boolean.TRUE.equals(downloadableByAlbumId.get(e.id)));
             })
         .toList();
+  }
+
+  /**
+   * Batched {@code releaseId -> downloadable} lookup, used to decorate both {@link Album} (id ==
+   * releaseId) and {@link Track} (joined via {@code release_track}) with the download choice at
+   * read time rather than a denormalized column — see {@code ProjectReleaseAlbumService}'s comment
+   * on why a write-time snapshot would go stale. A release with no row (deleted mid-request) or a
+   * still-{@code null} choice (an unpublished draft reached directly) is absent from the map;
+   * callers coerce that to {@code false} for the public wire type.
+   */
+  private Map<String, Boolean> downloadableByReleaseId(List<String> releaseIds) {
+    if (releaseIds.isEmpty()) {
+      return Map.of();
+    }
+    List<Object[]> rows =
+        em.createQuery(
+                "SELECT r.id, r.downloadable FROM ReleaseEntity r WHERE r.id IN :ids",
+                Object[].class)
+            .setParameter("ids", releaseIds)
+            .getResultList();
+    Map<String, Boolean> map = new HashMap<>();
+    for (Object[] row : rows) {
+      map.put((String) row[0], (Boolean) row[1]);
+    }
+    return map;
+  }
+
+  /**
+   * Batched {@code trackId -> downloadable} lookup via {@code release_track} — a track has no
+   * independent choice, it inherits its release's. See {@link #downloadableByReleaseId} for why
+   * this is a read-time join rather than a stored column.
+   */
+  private Map<String, Boolean> downloadableByTrackId(List<String> trackIds) {
+    if (trackIds.isEmpty()) {
+      return Map.of();
+    }
+    List<Object[]> rows =
+        em.createQuery(
+                "SELECT rt.trackId, r.downloadable FROM ReleaseTrackEntity rt, ReleaseEntity r "
+                    + "WHERE rt.pk.releaseId = r.id AND rt.trackId IN :ids",
+                Object[].class)
+            .setParameter("ids", trackIds)
+            .getResultList();
+    Map<String, Boolean> map = new HashMap<>();
+    for (Object[] row : rows) {
+      map.put((String) row[0], (Boolean) row[1]);
+    }
+    return map;
   }
 
   // ---- Low-level mapping helpers ----
@@ -1060,7 +1117,8 @@ public class JpaCatalogRepository implements CatalogRepository {
         shows);
   }
 
-  private Track trackToDomain(TrackEntity e, List<TrackCreditEntity> creditEntities) {
+  private Track trackToDomain(
+      TrackEntity e, List<TrackCreditEntity> creditEntities, boolean downloadable) {
     List<TrackCredit> credits =
         creditEntities.stream()
             .map(c -> new TrackCredit(c.role, Arrays.asList(c.names)))
@@ -1089,6 +1147,7 @@ public class JpaCatalogRepository implements CatalogRepository {
         credits.isEmpty() ? null : credits,
         e.quality,
         e.year,
-        e.status);
+        e.status,
+        downloadable);
   }
 }

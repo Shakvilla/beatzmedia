@@ -30,10 +30,25 @@ public final class Track {
   private final String quality;
   private final Integer year;
   private final String status;
+  /**
+   * Whether this track's release permits buyer downloads. Sourced from the owning release's
+   * {@code downloadable} at read time (a track has no independent choice — it inherits its
+   * release's), NOT persisted on the track row itself. {@code false} for a track with no live
+   * release yet (upload-stub, or a draft the caller reached directly) — see {@link TrackMapper}
+   * for why the public wire type coerces the release's nullable "undecided" state closed rather
+   * than leaking it.
+   */
+  private final boolean downloadable;
 
   /** Wire value the catalog read model treats as publicly visible. */
   public static final String READY_STATUS = "ready";
 
+  /**
+   * Legacy constructor — defaults {@code downloadable} to {@code false}. Kept so every existing
+   * caller that predates the download-choice feature (test fixtures, the upload-stub path) keeps
+   * compiling unchanged; only {@link org.shakvilla.beatzmedia.catalog.adapter.out.persistence.JpaCatalogRepository}
+   * needs the real, joined value and calls the full constructor below.
+   */
   public Track(
       TrackId id,
       String title,
@@ -51,6 +66,29 @@ public final class Track {
       String quality,
       Integer year,
       String status) {
+    this(
+        id, title, artistId, artistName, albumId, albumTitle, durationSec, image, ownership,
+        priceMinor, plays, audioUrl, credits, quality, year, status, false);
+  }
+
+  public Track(
+      TrackId id,
+      String title,
+      ArtistId artistId,
+      String artistName,
+      AlbumId albumId,
+      String albumTitle,
+      int durationSec,
+      String image,
+      OwnershipStatus ownership,
+      Long priceMinor,
+      Long plays,
+      String audioUrl,
+      List<TrackCredit> credits,
+      String quality,
+      Integer year,
+      String status,
+      boolean downloadable) {
     this.id = id;
     this.title = title;
     this.artistId = artistId;
@@ -67,6 +105,7 @@ public final class Track {
     this.quality = quality;
     this.year = year;
     this.status = status;
+    this.downloadable = downloadable;
   }
 
   /**
@@ -87,7 +126,8 @@ public final class Track {
     return new Track(
         id, title, artistId, artistName, albumId, albumTitle,
         probedDurationSec > 0 ? probedDurationSec : durationSec,
-        image, ownership, priceMinor, plays, audioUrl, credits, quality, year, READY_STATUS);
+        image, ownership, priceMinor, plays, audioUrl, credits, quality, year, READY_STATUS,
+        downloadable);
   }
 
   /**
@@ -104,7 +144,8 @@ public final class Track {
     }
     return new Track(
         id, title, artistId, artistName, albumId, albumTitle, durationSec,
-        newImage, ownership, priceMinor, plays, audioUrl, credits, quality, year, status);
+        newImage, ownership, priceMinor, plays, audioUrl, credits, quality, year, status,
+        downloadable);
   }
 
   public TrackId getId() {
@@ -169,5 +210,10 @@ public final class Track {
 
   public String getStatus() {
     return status;
+  }
+
+  /** See the {@code downloadable} field javadoc. */
+  public boolean isDownloadable() {
+    return downloadable;
   }
 }

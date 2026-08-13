@@ -25,4 +25,10 @@ public record TrackView(
     String audioUrl,
     List<TrackCreditView> credits,
     String quality,
-    Integer year) {}
+    Integer year,
+    /**
+     * Whether this track's release permits buyer downloads. Non-nullable on the wire: a release
+     * with no decision yet (draft {@code null}) reads as {@code false} here — see {@link
+     * org.shakvilla.beatzmedia.catalog.application.service.TrackMapper} for why.
+     */
+    boolean downloadable) {}

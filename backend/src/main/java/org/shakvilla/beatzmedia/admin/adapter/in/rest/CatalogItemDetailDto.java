@@ -10,7 +10,7 @@ import org.shakvilla.beatzmedia.admin.application.port.in.CatalogTrackView;
 /**
  * Response DTO for {@code GET /admin/catalog/:id} and every catalog-moderation mutation ({@code
  * approve|flag|takedown|reinstate}): {@code { id, title, note, artist, type, status, upc, genre,
- * tracklist, splits, actionLog } }. Admin ADD §6 (LLFR-ADMIN-03.1/.2).
+ * downloadable, tracklist, splits, actionLog } }. Admin ADD §6 (LLFR-ADMIN-03.1/.2).
  */
 public record CatalogItemDetailDto(
     String id,
@@ -21,6 +21,7 @@ public record CatalogItemDetailDto(
     String status,
     String upc,
     String genre,
+    Boolean downloadable,
     List<TrackDto> tracklist,
     List<SplitDto> splits,
     List<ActionLogEntryDto> actionLog) {
@@ -35,6 +36,7 @@ public record CatalogItemDetailDto(
         view.status(),
         view.upc(),
         view.genre(),
+        view.downloadable(),
         view.tracklist().stream().map(TrackDto::from).toList(),
         view.splits().stream().map(SplitDto::from).toList(),
         view.actionLog().stream().map(ActionLogEntryDto::from).toList());

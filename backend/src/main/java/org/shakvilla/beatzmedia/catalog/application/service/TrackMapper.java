@@ -49,6 +49,7 @@ final class TrackMapper {
         track.getAudioUrl().orElse(null),
         creditViews,
         track.getQuality().orElse(null),
-        track.getYear().orElse(null));
+        track.getYear().orElse(null),
+        track.isDownloadable());
   }
 }

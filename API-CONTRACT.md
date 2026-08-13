@@ -70,6 +70,13 @@ UI: home, search, artist, album, track, playlist pages. Shapes: `Artist`, `Album
 | GET | `/playlists/:id` | + tracks | `Playlist` (+ `tracks: Track[]`) |
 | POST | `/catalog/resolve` | batch-resolve id-lists → full objects in one call (for list screens that hold only ids, e.g. the library); every request field optional | `{ tracks: Track[], artists: Artist[], albums: Album[], playlists: Playlist[] }` |
 
+> **`downloadable: boolean`** on `Track` and `Album` (not yet in `Frontend/src/types/index.ts` —
+> added by the backend ahead of the UI slice that reads it): whether the underlying release permits
+> buyer downloads (`GET /tracks/:id/download`, §4). Always a plain boolean here, never `null` — a
+> published release always has the artist's choice recorded (the publish guard enforces it before
+> a release can go live). Contrast the Studio surface (§11), which serves the artist's own
+> unpublished draft and so keeps `downloadable` nullable to distinguish "not chosen" from "chosen: no".
+
 > **`POST /catalog/resolve`** request: `{ trackIds?, artistIds?, albumIds?, playlistIds? }` (string[]).
 > Every response array is always present (possibly empty). **Lenient:** unknown/removed ids are
 > silently omitted — never a `404`. **Private playlists are omitted** (same visibility rule as
@@ -87,9 +94,27 @@ UI: global player, 30s preview gate on for-sale tracks.
 |---|---|---|---|
 | GET | `/tracks/:id/stream` | returns a signed, time-boxed audio URL; **server decides preview vs full** based on ownership and returns `previewSeconds` when gated | `{ audioUrl, previewSeconds?: number, expiresAt }` |
 | POST | `/tracks/:id/play` | record a play (for plays count / royalties) | `204` |
+| GET | `/tracks/:id/download` | signed URL to the lossless (FLAC) source file, for an owner whose grant permits it. Auth required (no anonymous case). | `{ downloadUrl, expiresAt, format }` |
 
 > The UI's `ownership` field and 30s preview cap come from here: the server returns a full URL for
 > free/owned tracks and a preview URL + `previewSeconds` for for-sale tracks the caller doesn't own.
+
+> **`GET /tracks/:id/download`** — `format` is the container of the file behind `downloadUrl`
+> (`"flac"`), so a client can name the saved file without parsing the signed URL. No `sizeBytes`:
+> the signed-URL source (`ObjectStorePort.open()`) doesn't report one without a full object GET per
+> request, and a fabricated `0` would be worse than omitting the field.
+>
+> Errors, checked in this order — **ownership before permission**, so a non-owner's response never
+> reveals whether the release is downloadable:
+> - `404 TRACK_NOT_FOUND` — unknown track.
+> - `403 NOT_OWNED` — caller does not own the track.
+> - `409 DOWNLOAD_NOT_ALLOWED` — owned, but the caller's own purchase grant forbids downloading.
+> - `409 DOWNLOAD_NOT_READY` — permitted, but no FLAC rendition has finished transcoding yet.
+>
+> Whether downloading is permitted is **captured on the ownership grant at the moment of purchase**
+> and never re-read from the release afterwards — an artist toggling their release's download choice
+> off (or on) only affects sales made *after* the change; it does not retroactively add or remove the
+> download permission on grants an owner already holds.
 
 ---
 
@@ -238,8 +263,13 @@ UI: studio overview, releases, 4-step release wizard, analytics, audience, payou
 `StudioRelease { id, title, type: single|ep|album|mixtape, status: live|scheduled|in_review|draft|takedown, date, trackCount, streams, revenue, price }`
 — the **list** shape (`GET /studio/releases`), unchanged.
 
-`StudioReleaseDetail` = `StudioRelease` **+** `{ genre, description, visibility: public|scheduled, scheduledAt, tracks: TrackDraft[] }`
+`StudioReleaseDetail` = `StudioRelease` **+** `{ genre, description, visibility: public|scheduled, scheduledAt, tracks: TrackDraft[], downloadable: boolean|null }`
 — additive superset returned by `GET /:id` and every draft-flow mutation (create/PATCH/submit).
+`downloadable` is the artist's choice of whether buyers may download this release's audio (see
+§4's `GET /tracks/:id/download`); `null` means **not chosen yet** — unlike the public `Track`/`Album`
+shapes below, this field is **never coerced to `false`**, because the wizard's required-choice UI
+needs to tell "not decided" apart from "decided: no". A release cannot leave `draft` (`APPROVE_*`
+transitions) while `downloadable` is still `null`.
 
 `TrackDraft { trackId, title, duration, status: uploading|ready|error, position, price, splits: SplitEntry[] }` (WU-CAT-6). `SplitEntry { id, name, email, role, percent, confirmation: self|confirmed|pending|declined|auto }` — **collaborators only**: the originating creator's share is implicit and never stored as a row, so `Σ percent ≤ 100` (not `== 100`), per INV-12. `PATCH .../:id` accepts `splits` nested under each `tracks[]` entry on input (`{name, email, role, percent}` — no `id`/`confirmation`, wholesale-replace per track); every persisted collaborator lands with `confirmation:"pending"` until the invite/accept flow (WU-CAT-9, see below) moves it to `confirmed`/`declined` — `declined` is terminal and non-blocking for go-live, same as `confirmed`.
 
@@ -252,9 +282,9 @@ UI: studio overview, releases, 4-step release wizard, analytics, audience, payou
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/studio/releases` | list (status filter) → `StudioRelease[]` |
-| POST | `/studio/releases` | create a **metadata-only draft**: `{ title?, type, visibility?, scheduledAt?, genre?, description? }` → **201** `StudioReleaseDetail` with `status:"draft"`, empty `tracks`. `type` required; `title` defaults to `"Untitled release"`. No Idempotency-Key (drafts are cheap/deletable). |
+| POST | `/studio/releases` | create a **metadata-only draft**: `{ title?, type, visibility?, scheduledAt?, genre?, description?, downloadable? }` → **201** `StudioReleaseDetail` with `status:"draft"`, empty `tracks`. `type` required; `title` defaults to `"Untitled release"`; `downloadable` omitted leaves the choice unanswered (`null`). No Idempotency-Key (drafts are cheap/deletable). |
 | GET | `/studio/releases/:id` | → `StudioReleaseDetail` |
-| PATCH | `/studio/releases/:id` | `{ title?, genre?, description?, visibility?, scheduledAt?, tracks?: [{trackId, position, priceMinor, splits?: [{name, email, role, percent}]}] }` → `StudioReleaseDetail`. `title` alone is editable on any status; `genre`/`description`/`visibility`/`scheduledAt`/`tracks` are **draft-only** (409 `ILLEGAL_TRANSITION` otherwise). `tracks`, when present, **replaces** the whole ordered list (every `trackId` must already belong to the release, else 422 `TRACK_NOT_IN_RELEASE`; a repeated `trackId` or `position` → 422 `DUPLICATE_TRACK_REF`; a `priceMinor` outside `[0, 100_000_000]` → 422 `INVALID_PRICE`). Each track's `splits`, when present, **replaces** that track's collaborator list (`percent` outside `[0, 100]` → a plain 422 field-validation error); every persisted collaborator is `confirmation:"pending"`. |
+| PATCH | `/studio/releases/:id` | `{ title?, genre?, description?, visibility?, scheduledAt?, tracks?: [{trackId, position, priceMinor, splits?: [{name, email, role, percent}]}], downloadable? }` → `StudioReleaseDetail`. `title`/`downloadable` are editable on any status; `genre`/`description`/`visibility`/`scheduledAt`/`tracks` are **draft-only** (409 `ILLEGAL_TRANSITION` otherwise). `tracks`, when present, **replaces** the whole ordered list (every `trackId` must already belong to the release, else 422 `TRACK_NOT_IN_RELEASE`; a repeated `trackId` or `position` → 422 `DUPLICATE_TRACK_REF`; a `priceMinor` outside `[0, 100_000_000]` → 422 `INVALID_PRICE`). Each track's `splits`, when present, **replaces** that track's collaborator list (`percent` outside `[0, 100]` → a plain 422 field-validation error); every persisted collaborator is `confirmation:"pending"`. `downloadable`, when present, sets the choice; **omitted (not `false`) leaves a previously-made choice unchanged** — a partial PATCH must not silently clear it. Once a purchase captures the choice on its ownership grant, changing `downloadable` here only affects sales made after the change (see §4). |
 | DELETE | `/studio/releases/:id` | delete a `draft`/`in_review` release (409 `RELEASE_LIVE` for `live`) |
 | POST | `/studio/releases/:id/tracks` | multipart audio upload (WAV/FLAC, ≤500MB) → **201** `UploadedTrack` (`{ id, title, duration, status, progress, src, price, explicit, position }`) — the track is **attached** to the release as a `TrackDraft` (draft-only; 409 `ILLEGAL_TRANSITION` on a non-draft release) |
 | DELETE | `/studio/releases/:id/tracks/:trackId` | remove a draft track → **204**. Draft-only (409); unknown `trackId` → 404 `TRACK_NOT_FOUND` |
