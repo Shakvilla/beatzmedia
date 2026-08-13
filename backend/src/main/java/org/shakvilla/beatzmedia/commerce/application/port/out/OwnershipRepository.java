@@ -66,4 +66,12 @@ public interface OwnershipRepository {
    * episode list.
    */
   List<String> activeEpisodeIds(AccountId account, List<String> candidateEpisodeIds);
+
+  /**
+   * Of the given candidate track ids, the subset for which the account holds an ACTIVE grant that
+   * also permits downloading ({@code downloadable = true}) — a single batched query, mirroring
+   * {@link #activeEpisodeIds}. Backs {@code GetTrackDownloadPermission#downloadableTrackIds}: a
+   * library collection load of N owned tracks must decorate all of them with one query, not N.
+   */
+  List<String> downloadableTrackIds(AccountId account, List<String> candidateTrackIds);
 }

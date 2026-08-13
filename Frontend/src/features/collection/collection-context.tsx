@@ -43,6 +43,12 @@ interface CollectionContextValue extends CollectionData {
   isShowFollowed: (id: string) => boolean
   isAlbumSaved: (id: string) => boolean
   isTrackOwned: (id: string) => boolean
+  /**
+   * Whether the account may currently download this owned track — sourced from the ownership
+   * grant, not the release's current setting (Task 9b). Use this to gate a library download
+   * control; never a catalog track's `downloadable`, which reflects new sales, not this buyer's.
+   */
+  isTrackDownloadable: (id: string) => boolean
   markTracksOwned: (ids: string[]) => void
   createPlaylist: (title: string, firstTrackId?: string) => Promise<string>
   deletePlaylist: (id: string) => void
@@ -136,6 +142,7 @@ export function CollectionProvider({ children }: { children: ReactNode }) {
       isShowFollowed: (id) => collection.followedShows.includes(id),
       isAlbumSaved: (id) => collection.savedAlbums.includes(id),
       isTrackOwned: (id) => collection.ownedTracks.includes(id),
+      isTrackDownloadable: (id) => collection.downloadableTracks.includes(id),
       // Ownership is granted server-side at checkout (a later slice). Here we only reflect it
       // optimistically in the cache; GET /me/collection is the real source.
       markTracksOwned: (ids) =>

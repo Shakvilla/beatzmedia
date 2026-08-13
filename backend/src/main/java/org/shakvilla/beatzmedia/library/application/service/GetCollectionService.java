@@ -11,6 +11,7 @@ import org.shakvilla.beatzmedia.library.application.port.in.CollectionView;
 import org.shakvilla.beatzmedia.library.application.port.in.GetCollection;
 import org.shakvilla.beatzmedia.library.application.port.in.UserPlaylistView;
 import org.shakvilla.beatzmedia.library.application.port.out.CollectionRepository;
+import org.shakvilla.beatzmedia.library.application.port.out.DownloadPermissionReader;
 import org.shakvilla.beatzmedia.library.application.port.out.LibraryOwnershipReader;
 import org.shakvilla.beatzmedia.library.domain.LikeSets;
 import org.shakvilla.beatzmedia.library.domain.UserPlaylist;
@@ -21,11 +22,16 @@ public class GetCollectionService implements GetCollection {
 
   private final CollectionRepository repo;
   private final LibraryOwnershipReader ownershipReader;
+  private final DownloadPermissionReader downloadPermissionReader;
 
   @Inject
-  public GetCollectionService(CollectionRepository repo, LibraryOwnershipReader ownershipReader) {
+  public GetCollectionService(
+      CollectionRepository repo,
+      LibraryOwnershipReader ownershipReader,
+      DownloadPermissionReader downloadPermissionReader) {
     this.repo = repo;
     this.ownershipReader = ownershipReader;
+    this.downloadPermissionReader = downloadPermissionReader;
   }
 
   @Override
@@ -34,6 +40,8 @@ public class GetCollectionService implements GetCollection {
     LikeSets sets = repo.likeSets(account);
     List<UserPlaylist> playlists = repo.playlistsOf(account);
     List<String> owned = ownershipReader.ownedTrackIds(account);
+    // Batched — one query for however many tracks are owned, not one per track (Task 9b).
+    List<String> downloadable = List.copyOf(downloadPermissionReader.downloadableTrackIds(account, owned));
 
     List<UserPlaylistView> playlistViews = playlists.stream().map(PlaylistMapper::toView).toList();
 
@@ -44,6 +52,7 @@ public class GetCollectionService implements GetCollection {
         sets.followedShowIds(),
         sets.savedAlbumIds(),
         owned,
+        downloadable,
         playlistViews);
   }
 }

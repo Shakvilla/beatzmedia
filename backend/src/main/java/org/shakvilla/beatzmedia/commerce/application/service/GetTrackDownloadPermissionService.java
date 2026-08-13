@@ -1,5 +1,9 @@
 package org.shakvilla.beatzmedia.commerce.application.service;
 
+import java.util.Collection;
+import java.util.List;
+import java.util.Set;
+
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
@@ -35,5 +39,13 @@ public class GetTrackDownloadPermissionService implements GetTrackDownloadPermis
         .map(OwnershipGrant::isDownloadable)
         // No active grant (never bought, or refunded — INV-9): no download. Fail closed.
         .orElse(false);
+  }
+
+  @Override
+  public Set<String> downloadableTrackIds(AccountId account, Collection<String> trackIds) {
+    if (trackIds == null || trackIds.isEmpty()) {
+      return Set.of();
+    }
+    return Set.copyOf(ownershipRepository.downloadableTrackIds(account, List.copyOf(trackIds)));
   }
 }

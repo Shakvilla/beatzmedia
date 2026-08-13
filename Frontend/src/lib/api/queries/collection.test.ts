@@ -23,6 +23,7 @@ const base: CollectionData = {
   followedShows: [],
   savedAlbums: [],
   ownedTracks: [],
+  downloadableTracks: [],
   userPlaylists: [{ id: 'p1', title: 'Mine', trackIds: ['t1'], createdAt: '2026-01-01' }],
 }
 
@@ -55,13 +56,27 @@ describe('collection API calls', () => {
   it('collectionQuery maps the wire view, nulling playlist description to undefined', async () => {
     vi.mocked(apiFetch).mockResolvedValue({
       likedTracks: ['t1'], followedArtists: [], followedPlaylists: [], followedShows: [],
-      savedAlbums: [], ownedTracks: ['t9'],
+      savedAlbums: [], ownedTracks: ['t9'], downloadableTracks: ['t9'],
       userPlaylists: [{ id: 'p1', title: 'Mine', description: null, trackIds: ['t1'], createdAt: '2026-01-01' }],
     })
     const data = await collectionQuery().queryFn!({} as any)
     expect(apiFetch).toHaveBeenCalledWith('/me/collection')
     expect(data.ownedTracks).toEqual(['t9'])
+    expect(data.downloadableTracks).toEqual(['t9'])
     expect(data.userPlaylists[0].description).toBeUndefined()
+  })
+
+  it('a track owned without a download grant is absent from downloadableTracks even though it is owned', async () => {
+    // The bug this task fixes: an artist can switch a release off after a sale, so ownership and
+    // download permission are two separate sets, not one derived from the other.
+    vi.mocked(apiFetch).mockResolvedValue({
+      likedTracks: [], followedArtists: [], followedPlaylists: [], followedShows: [],
+      savedAlbums: [], ownedTracks: ['t9', 't10'], downloadableTracks: ['t9'],
+      userPlaylists: [],
+    })
+    const data = await collectionQuery().queryFn!({} as any)
+    expect(data.ownedTracks).toEqual(['t9', 't10'])
+    expect(data.downloadableTracks).toEqual(['t9'])
   })
 
   it('apiToggleMembership uses PUT to add and DELETE to remove', async () => {

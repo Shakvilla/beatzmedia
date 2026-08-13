@@ -1,5 +1,8 @@
 package org.shakvilla.beatzmedia.commerce.application.port.in;
 
+import java.util.Collection;
+import java.util.Set;
+
 import org.shakvilla.beatzmedia.identity.domain.AccountId;
 
 /**
@@ -20,4 +23,12 @@ public interface GetTrackDownloadPermission {
 
   /** {@code true} only when an ACTIVE grant exists for the track AND that grant permits download. */
   boolean mayDownload(AccountId account, String trackId);
+
+  /**
+   * Batched form of {@link #mayDownload}: of the given candidate track ids, which does the account
+   * hold an ACTIVE, download-permitting grant for? One query regardless of candidate count —
+   * required so a caller decorating N owned tracks (e.g. the library collection view) issues one
+   * permission query, not N. Same grant-is-the-authority rule as {@link #mayDownload}.
+   */
+  Set<String> downloadableTrackIds(AccountId account, Collection<String> trackIds);
 }

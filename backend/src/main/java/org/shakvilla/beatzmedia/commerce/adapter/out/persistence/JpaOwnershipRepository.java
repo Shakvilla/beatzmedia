@@ -161,6 +161,20 @@ public class JpaOwnershipRepository implements OwnershipRepository {
         .getResultList();
   }
 
+  @Override
+  public List<String> downloadableTrackIds(AccountId account, List<String> candidateTrackIds) {
+    if (candidateTrackIds == null || candidateTrackIds.isEmpty()) {
+      return List.of();
+    }
+    return em.createQuery(
+            "SELECT g.trackId FROM OwnershipGrantEntity g WHERE g.accountId = :acc"
+                + " AND g.trackId IN :tids AND g.revokedAt IS NULL AND g.downloadable = true",
+            String.class)
+        .setParameter("acc", account.value())
+        .setParameter("tids", candidateTrackIds)
+        .getResultList();
+  }
+
   private OwnershipGrant toDomain(OwnershipGrantEntity e) {
     return new OwnershipGrant(
         e.id,

@@ -118,6 +118,24 @@ public class FakeOwnershipRepository implements OwnershipRepository {
         .toList();
   }
 
+  @Override
+  public List<String> downloadableTrackIds(AccountId account, List<String> candidateTrackIds) {
+    if (candidateTrackIds == null || candidateTrackIds.isEmpty()) {
+      return List.of();
+    }
+    Set<String> candidates = new HashSet<>(candidateTrackIds);
+    return grants.stream()
+        .filter(
+            g ->
+                g.isActive()
+                    && g.isDownloadable()
+                    && g.getAccountId().value().equals(account.value())
+                    && g.getTrackId() != null
+                    && candidates.contains(g.getTrackId()))
+        .map(OwnershipGrant::getTrackId)
+        .toList();
+  }
+
   /** Test helper: all grants (active or revoked). */
   public List<OwnershipGrant> all() {
     return List.copyOf(grants);

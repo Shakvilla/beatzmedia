@@ -1,9 +1,12 @@
 package org.shakvilla.beatzmedia.commerce.application;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.Instant;
+import java.util.List;
+import java.util.Set;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
@@ -98,5 +101,32 @@ class GetTrackDownloadPermissionServiceTest {
     assertFalse(
         service.mayDownload(BUYER, "t-bought-after-the-artist-said-no"),
         "a purchase made after the artist said no carries no download permission");
+  }
+
+  @Test
+  void theBatchQueryReturnsOnlyTheDownloadableTracksAmongTheCandidates() {
+    // A library page must decorate N owned tracks with one query, not N — this is that query.
+    grant(BUYER, "t-yes", true);
+    grant(BUYER, "t-no", false);
+    // t-unowned is a candidate but has no grant at all for BUYER.
+
+    Set<String> result =
+        service.downloadableTrackIds(BUYER, List.of("t-yes", "t-no", "t-unowned"));
+
+    assertEquals(Set.of("t-yes"), result);
+  }
+
+  @Test
+  void theBatchQueryIsScopedToTheCallingAccount() {
+    grant(BUYER, TRACK, true);
+
+    assertTrue(
+        service.downloadableTrackIds(STRANGER, List.of(TRACK)).isEmpty(),
+        "someone else's grant is not a permission");
+  }
+
+  @Test
+  void theBatchQueryOnEmptyCandidatesReturnsEmpty() {
+    assertTrue(service.downloadableTrackIds(BUYER, List.of()).isEmpty());
   }
 }

@@ -44,7 +44,15 @@ function LibraryComponent() {
   const [createOpen, setCreateOpen] = useState(false)
   const navigate = useNavigate()
   const { playQueue } = usePlayer()
-  const { likedTracks, followedPlaylists, followedArtists, savedAlbums, userPlaylists, ownedTracks } = useCollection()
+  const {
+    likedTracks,
+    followedPlaylists,
+    followedArtists,
+    savedAlbums,
+    userPlaylists,
+    ownedTracks,
+    isTrackDownloadable,
+  } = useCollection()
   const { toast } = useToast()
 
   const { data: resolved } = useSuspenseQuery(
@@ -64,10 +72,12 @@ function LibraryComponent() {
   const playlistCoverById = new Map(resolved.tracks.map((t) => [t.id, t.image]))
 
   /**
-   * Calls the signed-URL endpoint and navigates to it. `track.downloadable` (the release's
-   * current setting) gates whether the button renders at all, but the grant captured at purchase
-   * is the actual authority and can differ if the artist changed their mind since — so a 409 here
-   * is a real, expected outcome even though the button was shown, not a bug.
+   * Calls the signed-URL endpoint and navigates to it. Whether the button renders at all is gated
+   * on the collection's per-track `downloadable` (sourced from the buyer's own ownership grant,
+   * captured at purchase — Task 9b), not on the catalog track's `downloadable` (the release's
+   * current setting), which can disagree once an artist changes their mind after a sale. A grant
+   * is still the ultimate authority server-side, so a 409 here would be unexpected rather than
+   * routine, but this call can still race a concurrent refund.
    */
   const handleDownload = async (track: Track) => {
     try {
@@ -191,9 +201,11 @@ function LibraryComponent() {
                 </div>
                 {/*
                   Never a disabled control with no explanation: when the grant doesn't permit a
-                  download, nothing renders here at all rather than a greyed-out button.
+                  download, nothing renders here at all rather than a greyed-out button. Gated on
+                  the collection's per-track flag (the grant), not track.downloadable (the
+                  release's current setting) — see the module comment on handleDownload.
                 */}
-                {track.downloadable && (
+                {isTrackDownloadable(track.id) && (
                   <button
                     onClick={(e) => {
                       e.stopPropagation()
