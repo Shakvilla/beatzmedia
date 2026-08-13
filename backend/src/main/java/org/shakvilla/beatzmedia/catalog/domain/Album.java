@@ -20,7 +20,16 @@ public final class Album {
   private final List<String> trackIds;
   /** INV-5: stored list price in pesewas; 0 if not priced yet. */
   private final long listPriceMinor;
+  /**
+   * Whether this album's release permits buyer downloads. An album shares its id with the
+   * release that projected it (see {@code ProjectReleaseAlbumService}), so it is sourced by a
+   * read-time lookup of that same release's {@code downloadable} rather than a stored/denormalized
+   * column — a denormalized snapshot would go stale the moment the artist changes the choice after
+   * publish, which {@code UpdateReleaseService} allows on any status.
+   */
+  private final boolean downloadable;
 
+  /** Legacy constructor — defaults {@code downloadable} to {@code false}; see the full ctor. */
   public Album(
       AlbumId id,
       String title,
@@ -31,6 +40,20 @@ public final class Album {
       List<String> genres,
       List<String> trackIds,
       long listPriceMinor) {
+    this(id, title, artistId, artistName, year, coverImage, genres, trackIds, listPriceMinor, false);
+  }
+
+  public Album(
+      AlbumId id,
+      String title,
+      ArtistId artistId,
+      String artistName,
+      int year,
+      String coverImage,
+      List<String> genres,
+      List<String> trackIds,
+      long listPriceMinor,
+      boolean downloadable) {
     this.id = id;
     this.title = title;
     this.artistId = artistId;
@@ -40,6 +63,7 @@ public final class Album {
     this.genres = genres;
     this.trackIds = trackIds;
     this.listPriceMinor = listPriceMinor;
+    this.downloadable = downloadable;
   }
 
   public AlbumId getId() {
@@ -76,5 +100,10 @@ public final class Album {
 
   public long getListPriceMinor() {
     return listPriceMinor;
+  }
+
+  /** See the {@code downloadable} field javadoc. */
+  public boolean isDownloadable() {
+    return downloadable;
   }
 }

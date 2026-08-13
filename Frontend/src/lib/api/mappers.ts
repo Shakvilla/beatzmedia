@@ -86,6 +86,12 @@ export interface TrackWire {
   credits: TrackCreditWire[] | null
   quality: string | null
   year: number | null
+  /**
+   * Whether buyers may download this track's audio. Always a plain boolean on this public wire
+   * shape — the backend coerces an unrecorded choice to `false` rather than ever serving `null`
+   * here (contrast the nullable Studio `StudioReleaseDetailWire.downloadable`).
+   */
+  downloadable: boolean
 }
 
 export function toTrack(wire: TrackWire): Track {
@@ -105,6 +111,7 @@ export function toTrack(wire: TrackWire): Track {
     credits: (wire.credits as TrackCredit[] | null) ?? undefined,
     quality: wire.quality ?? undefined,
     year: wire.year ?? undefined,
+    downloadable: wire.downloadable ?? false,
   }
 }
 
@@ -119,6 +126,8 @@ export interface AlbumWire {
   trackIds: string[]
   /** Populated only when the album was fetched with ?tracks=true. */
   tracks: TrackWire[] | null
+  /** Whether buyers may download this album's audio — see `TrackWire.downloadable`. */
+  downloadable: boolean
 }
 
 export function toAlbum(wire: AlbumWire): Album {
@@ -131,6 +140,7 @@ export function toAlbum(wire: AlbumWire): Album {
     coverImage: wire.coverImage,
     genres: (wire.genres ?? undefined) as Genre[] | undefined,
     trackIds: wire.trackIds,
+    downloadable: wire.downloadable ?? false,
   }
 }
 
@@ -565,6 +575,10 @@ export interface StudioReleaseWire {
   streams: number
   revenue: { amount: number; currency: string }
   price: { amount: number; currency: string }
+  // No `downloadable` here on purpose: this is the shape of GET /v1/studio/releases (the LIST
+  // endpoint), and the backend's StudioReleaseView (list read model) doesn't carry the field —
+  // every row would silently resolve to `null` regardless of the artist's actual choice. The
+  // single-release detail endpoint (StudioReleaseDetailWire, below) does carry it.
 }
 export function toStudioRelease(w: StudioReleaseWire): StudioRelease {
   return {
@@ -577,6 +591,9 @@ export function toStudioRelease(w: StudioReleaseWire): StudioRelease {
     streams: w.streams,
     revenue: w.revenue?.amount ?? 0,
     price: w.price?.amount ?? 0,
+    // Not on StudioReleaseWire (see above) — callers that fetched the single-release detail
+    // endpoint (which does carry the real value) override this after calling toStudioRelease.
+    downloadable: null,
   }
 }
 

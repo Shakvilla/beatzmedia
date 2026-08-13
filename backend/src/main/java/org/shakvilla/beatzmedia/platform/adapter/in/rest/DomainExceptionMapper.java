@@ -38,7 +38,8 @@ public class DomainExceptionMapper implements ExceptionMapper<DomainException> {
       case VALIDATION, UNSUPPORTED_FORMAT, FILE_REJECTED, WEAK_PASSWORD, INVALID_ROLE,
               MISSING_QUERY, TRACK_COUNT_INVALID, SPLIT_OVER_100, CHARGE_AMOUNT_EXCEEDED,
               BELOW_MIN_PAYOUT, INVALID_GENRE, INVALID_PRICE, SCHEDULE_DATE_REQUIRED,
-              MEDIA_INVALID, INVALID_RANGE, TRACK_NOT_IN_RELEASE, DUPLICATE_TRACK_REF ->
+              MEDIA_INVALID, INVALID_RANGE, TRACK_NOT_IN_RELEASE, DUPLICATE_TRACK_REF,
+              DOWNLOAD_CHOICE_REQUIRED ->
           UNPROCESSABLE_ENTITY;
       case NOT_FOUND,
               ARTIST_NOT_FOUND,
@@ -56,7 +57,12 @@ public class DomainExceptionMapper implements ExceptionMapper<DomainException> {
           Response.Status.NOT_FOUND.getStatusCode();
       case UNAUTHENTICATED, INVALID_CREDENTIALS, SOCIAL_TOKEN_INVALID ->
         Response.Status.UNAUTHORIZED.getStatusCode();
-      case UNAUTHORIZED, FEATURE_DISABLED, ACCOUNT_SUSPENDED, KYC_REQUIRED, TIPS_DISABLED ->
+      case UNAUTHORIZED,
+              FEATURE_DISABLED,
+              ACCOUNT_SUSPENDED,
+              KYC_REQUIRED,
+              TIPS_DISABLED,
+              NOT_OWNED ->
           Response.Status.FORBIDDEN.getStatusCode();
       case SELF_TIP_NOT_ALLOWED -> UNPROCESSABLE_ENTITY;
       case CONFLICT,
@@ -78,7 +84,9 @@ public class DomainExceptionMapper implements ExceptionMapper<DomainException> {
               EPISODE_PUBLISHED,
               ALREADY_VERIFIED,
               ALREADY_SUSPENDED,
-              NOT_SUSPENDED ->
+              NOT_SUSPENDED,
+              DOWNLOAD_NOT_ALLOWED,
+              DOWNLOAD_NOT_READY ->
           Response.Status.CONFLICT.getStatusCode();
       case MISSING_IDEMPOTENCY_KEY -> Response.Status.BAD_REQUEST.getStatusCode();
       case PROVIDER_ERROR -> BAD_GATEWAY;

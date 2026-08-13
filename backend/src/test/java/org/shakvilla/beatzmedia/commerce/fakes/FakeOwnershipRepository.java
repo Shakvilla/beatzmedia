@@ -3,6 +3,7 @@ package org.shakvilla.beatzmedia.commerce.fakes;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 
 import org.shakvilla.beatzmedia.commerce.application.port.out.OwnershipRepository;
@@ -51,6 +52,17 @@ public class FakeOwnershipRepository implements OwnershipRepository {
                 g.isActive()
                     && g.getAccountId().value().equals(account.value())
                     && trackId.equals(g.getTrackId()));
+  }
+
+  @Override
+  public Optional<OwnershipGrant> findActiveForTrack(AccountId account, String trackId) {
+    return grants.stream()
+        .filter(
+            g ->
+                g.isActive()
+                    && g.getAccountId().value().equals(account.value())
+                    && trackId.equals(g.getTrackId()))
+        .findFirst();
   }
 
   @Override
@@ -106,6 +118,24 @@ public class FakeOwnershipRepository implements OwnershipRepository {
         .toList();
   }
 
+  @Override
+  public List<String> downloadableTrackIds(AccountId account, List<String> candidateTrackIds) {
+    if (candidateTrackIds == null || candidateTrackIds.isEmpty()) {
+      return List.of();
+    }
+    Set<String> candidates = new HashSet<>(candidateTrackIds);
+    return grants.stream()
+        .filter(
+            g ->
+                g.isActive()
+                    && g.isDownloadable()
+                    && g.getAccountId().value().equals(account.value())
+                    && g.getTrackId() != null
+                    && candidates.contains(g.getTrackId()))
+        .map(OwnershipGrant::getTrackId)
+        .toList();
+  }
+
   /** Test helper: all grants (active or revoked). */
   public List<OwnershipGrant> all() {
     return List.copyOf(grants);
@@ -114,5 +144,13 @@ public class FakeOwnershipRepository implements OwnershipRepository {
   /** Test helper: count of active track grants for an account. */
   public long activeTrackCount(AccountId account) {
     return activeTrackIds(account).size();
+  }
+
+  /** Test helper: the most recently saved active grant for a track, or throws if none exists. */
+  public OwnershipGrant findByTrack(String trackId) {
+    return grants.stream()
+        .filter(g -> g.isActive() && trackId.equals(g.getTrackId()))
+        .reduce((first, second) -> second) // most recent
+        .orElseThrow(() -> new java.util.NoSuchElementException("no active grant for " + trackId));
   }
 }

@@ -12,4 +12,12 @@ public record CollectionView(
     List<String> followedShows,
     List<String> savedAlbums,
     List<String> ownedTracks,
+    /**
+     * The subset of {@code ownedTracks} the account may currently download — sourced from each
+     * track's ownership GRANT (captured once at settlement), never from the owning release's
+     * current setting. An artist switching a release's downloads off after a sale does not remove
+     * an already-owned track from this set: the buyer keeps the right they paid for, and this is
+     * what lets the UI keep showing they have it. Task 9b.
+     */
+    List<String> downloadableTracks,
     List<UserPlaylistView> userPlaylists) {}

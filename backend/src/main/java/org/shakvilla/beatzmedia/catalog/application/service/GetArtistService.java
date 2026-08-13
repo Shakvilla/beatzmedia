@@ -66,7 +66,8 @@ public class GetArtistService implements GetArtist {
             a.getCoverImage(),
             a.getGenres(),
             a.getTrackIds(),
-            null))
+            null,
+            a.isDownloadable()))
         .toList();
   }
 

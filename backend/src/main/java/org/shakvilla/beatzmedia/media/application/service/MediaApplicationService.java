@@ -323,6 +323,22 @@ public class MediaApplicationService
     }
   }
 
+  /**
+   * Persists the lossless (FLAC) rendition key once the worker's post-READY
+   * {@code transcodeLossless} stage succeeds. Called strictly AFTER {@link #handleTranscodeResult}
+   * — see {@link MediaAsset#markLosslessReady} javadoc: READY means playable, and the FLAC
+   * transcode (the slowest stage, needed only for downloads) must never gate it. Callers must not
+   * invoke this when the lossless transcode failed; a lost FLAC is a recoverable, download-only
+   * gap (regenerable later), so the asset simply stays READY with a null {@code losslessKey}
+   * rather than being pushed through this method or into ERROR.
+   */
+  @Transactional
+  public void markLosslessReady(MediaAssetId assetId, ObjectKey losslessKey) {
+    MediaAsset asset = requireAsset(assetId);
+    asset.markLosslessReady(losslessKey);
+    repository.save(asset);
+  }
+
   // ---- Helpers ----
 
   @Override

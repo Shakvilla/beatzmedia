@@ -73,6 +73,13 @@ function ReviewStep() {
         }
       : { label: 'All tracks uploaded', done: true },
     { label: 'Splits set on all tracks', done: splitsComplete, fix: splitsComplete ? undefined : goSplits },
+    {
+      label: draft.downloadable === null
+        ? 'Download choice not made — pick whether buyers can download this release'
+        : draft.downloadable ? 'Downloads · Allowed' : 'Downloads · Streaming only',
+      done: draft.downloadable !== null,
+      fix: draft.downloadable === null ? goDetails : undefined,
+    },
     pending.length > 0
       ? { label: `${pending.length} collaborator${pending.length === 1 ? '' : 's'} pending · ${pending[0].email || pending[0].name}`, done: false, fix: goSplits }
       : { label: 'All collaborators confirmed', done: true },

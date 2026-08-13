@@ -66,6 +66,12 @@ export interface Album {
   genres?: Genre[]
   /** Ordered track ids belonging to this album. */
   trackIds: ID[]
+  /**
+   * Whether the artist permits buyers to download this release's audio (`GET
+   * /tracks/:id/download`). Fixed at purchase time for a given buyer — always a plain boolean
+   * here, never `null`, since a published release always has the artist's choice recorded.
+   */
+  downloadable: boolean
 }
 
 export interface Track {
@@ -91,6 +97,12 @@ export interface Track {
   /** e.g. "Lossless • 24-bit/192kHz" */
   quality?: string
   year?: number
+  /**
+   * Whether the artist permits buyers to download this track's audio (`GET
+   * /tracks/:id/download`). Fixed at purchase time for a given buyer — always a plain boolean
+   * here, never `null`, since a published release always has the artist's choice recorded.
+   */
+  downloadable: boolean
 }
 
 export interface TrackCredit {

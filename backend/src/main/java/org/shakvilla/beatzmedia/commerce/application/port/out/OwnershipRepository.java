@@ -1,6 +1,7 @@
 package org.shakvilla.beatzmedia.commerce.application.port.out;
 
 import java.util.List;
+import java.util.Optional;
 
 import org.shakvilla.beatzmedia.commerce.domain.OrderId;
 import org.shakvilla.beatzmedia.commerce.domain.OwnershipGrant;
@@ -31,6 +32,16 @@ public interface OwnershipRepository {
 
   boolean existsActiveForTrack(AccountId account, String trackId);
 
+  /**
+   * The account's ACTIVE grant for the track, if any — the grant itself, not just its existence,
+   * because callers need the permission it carries ({@code downloadable}). Backs
+   * {@code GetTrackDownloadPermission}. Empty when never bought or revoked (INV-9).
+   *
+   * <p>At most one active grant can exist per (account, track): the unique-active index
+   * {@code ux_grant_account_track} is the durable guarantee.
+   */
+  Optional<OwnershipGrant> findActiveForTrack(AccountId account, String trackId);
+
   boolean existsActiveForEpisode(AccountId account, String episodeId);
 
   /**
@@ -55,4 +66,12 @@ public interface OwnershipRepository {
    * episode list.
    */
   List<String> activeEpisodeIds(AccountId account, List<String> candidateEpisodeIds);
+
+  /**
+   * Of the given candidate track ids, the subset for which the account holds an ACTIVE grant that
+   * also permits downloading ({@code downloadable = true}) — a single batched query, mirroring
+   * {@link #activeEpisodeIds}. Backs {@code GetTrackDownloadPermission#downloadableTrackIds}: a
+   * library collection load of N owned tracks must decorate all of them with one query, not N.
+   */
+  List<String> downloadableTrackIds(AccountId account, List<String> candidateTrackIds);
 }

@@ -146,8 +146,8 @@ public class CatalogAdminReaderAdapter implements CatalogAdminReader {
     String artistName = artistNamesById(List.of(r.artistId)).getOrDefault(r.artistId, r.artistId);
 
     return Optional.of(new CatalogDetailRow(
-        r.id, r.title, r.artistId, artistName, r.type, r.status, r.genre, r.createdAt, tracks,
-        splits));
+        r.id, r.title, r.artistId, artistName, r.type, r.status, r.genre, r.downloadable,
+        r.createdAt, tracks, splits));
   }
 
   @Override

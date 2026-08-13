@@ -932,11 +932,15 @@ nothing on master reads them.
    invited admin is locked out. `notifications.SmtpMailer` already works and Mailpit is running, so
    this is wiring identity's `Mailer` port to a real adapter, not building one. Highest
    severity-to-effort ratio in this report.
-0. **GAP-30's download gap** — there is no way to download anything you have bought. Media serves
-   signed, time-boxed *stream* URLs and nothing bundles a purchase into a file, so on a **buy-to-own**
-   platform the core promise has no delivery mechanism. The dead "Download all" button is now
-   honestly disabled, which makes the absence visible rather than fixing it. Like GAP-22 this is a
-   missing feature rather than a defect — but it is the one the product is named for.
+0. ~~**GAP-30's download gap**~~ — **Resolved for single tracks** (`docs/superpowers/sdd/2026-08-12-downloadable-releases/`).
+   There is now a real endpoint (`GET /v1/tracks/:id/download`) that returns a signed URL to a
+   lossless FLAC rendition, gated on the caller's own ownership grant (INV-13, `BACKEND-PRD.md` §3.3) —
+   the artist chooses per release whether buyers may download, the choice is required before publish,
+   and a buyer's download stays reachable even if the artist later turns it off, because the
+   permission was captured on their grant at settlement, not re-read from the release. **The
+   "Download all" button's one-click ZIP bundle for a multi-track purchase (album, `album-rest`)
+   remains outstanding** — that is a separate spec (bundling multiple signed renditions into a single
+   archive server-side); today a fan can download an owned album only one track at a time.
 0. **GAP-22** — nothing creates albums. Six fan-facing surfaces, including the "New releases" rail
    and the entire album detail route, are dead on any database without the dev seed. Decide whether
    publishing an `album`/`ep`/`mixtape` release should project an `album` row (the same projection

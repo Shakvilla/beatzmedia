@@ -138,6 +138,43 @@ function ReleaseDetailsStep() {
             placeholder="Tell fans the story of this release…"
           />
         </Field>
+
+        {/*
+          No default. A default would decide this for the artist by inertia — off-by-default
+          quietly makes the platform stream-only, on-by-default means "the artist chooses" becomes
+          "the artist notices". Neither button is active until the artist picks one; the publish
+          button stays disabled (with the reason shown) until they do.
+        */}
+        <Field label="Downloads" required>
+          <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+            {(
+              [
+                { value: true, label: 'Allow downloads', hint: 'Buyers get a lossless file they keep.' },
+                { value: false, label: 'Streaming only', hint: 'Buyers can play it in the app, but not download the file.' },
+              ] as const
+            ).map((opt) => {
+              const active = draft.downloadable === opt.value
+              return (
+                <button
+                  key={String(opt.value)}
+                  type="button"
+                  onClick={() => setField('downloadable', opt.value)}
+                  className={cn(
+                    'flex flex-col items-start gap-1 rounded-xl border p-3 text-left transition-colors',
+                    active
+                      ? 'bg-beatz-green/10 border-beatz-green text-beatz-green'
+                      : 'bg-transparent border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 hover:border-gray-300 dark:hover:border-white/20',
+                  )}
+                >
+                  <span className="text-sm font-bold">{opt.label}</span>
+                  <span className={cn('text-xs leading-snug', active ? 'text-beatz-green/80' : 'text-gray-400 dark:text-gray-500')}>
+                    {opt.hint}
+                  </span>
+                </button>
+              )
+            })}
+          </div>
+        </Field>
       </div>
 
       {/* Cover art + visibility column */}
@@ -202,10 +239,13 @@ function ReleaseDetailsStep() {
   )
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({ label, required, children }: { label: string; required?: boolean; children: React.ReactNode }) {
   return (
     <div className="flex flex-col gap-3">
-      <label className={LABEL}>{label}</label>
+      <label className={LABEL}>
+        {label}
+        {required && <span className="text-beatz-red normal-case tracking-normal"> *</span>}
+      </label>
       {children}
     </div>
   )

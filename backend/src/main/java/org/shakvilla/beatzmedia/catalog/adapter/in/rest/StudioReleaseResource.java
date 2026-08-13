@@ -140,7 +140,8 @@ public class StudioReleaseResource {
         body.visibility() != null ? Visibility.fromDbValue(body.visibility()) : Visibility.SCHEDULED,
         body.scheduledAt() != null ? java.time.Instant.parse(body.scheduledAt()) : null,
         body.genre(),
-        body.description());
+        body.description(),
+        body.downloadable());
     StudioReleaseDetailView view = createReleaseDraft.create(cmd);
     return Response.status(Response.Status.CREATED).entity(view).build();
   }
@@ -153,9 +154,11 @@ public class StudioReleaseResource {
   }
 
   /**
-   * PATCH /v1/studio/releases/:id — LLFR-CATALOG-02.3. {@code title} is editable on any status;
-   * {@code genre}/{@code description}/{@code visibility}/{@code scheduledAt}/{@code tracks} are
-   * draft-only (409 ILLEGAL_TRANSITION otherwise).
+   * PATCH /v1/studio/releases/:id — LLFR-CATALOG-02.3. {@code title}/{@code downloadable} are
+   * editable on any status; {@code genre}/{@code description}/{@code visibility}/{@code
+   * scheduledAt}/{@code tracks} are draft-only (409 ILLEGAL_TRANSITION otherwise). {@code
+   * downloadable} follows "omit = unchanged" (see {@code UpdateReleaseCommand}) — a body without
+   * it must not clear a choice the artist already made.
    */
   @PATCH
   @Path("/{id}")
@@ -177,7 +180,8 @@ public class StudioReleaseResource {
                             .map(s -> new UpdateRelease.SplitRef(s.name(), s.email(), s.role(), s.percent()))
                             .toList()))
                 .toList()
-            : null);
+            : null,
+        body.downloadable());
     return updateRelease.update(new ReleaseId(id), artistId(), cmd);
   }
 
@@ -322,7 +326,8 @@ public class StudioReleaseResource {
       String visibility,
       String scheduledAt,
       String genre,
-      String description) {}
+      String description,
+      Boolean downloadable) {}
 
   public record UpdateReleaseBody(
       String title,
@@ -330,7 +335,8 @@ public class StudioReleaseResource {
       String description,
       String visibility,
       String scheduledAt,
-      @jakarta.validation.Valid List<TrackRefBody> tracks) {}
+      @jakarta.validation.Valid List<TrackRefBody> tracks,
+      Boolean downloadable) {}
 
   public record TrackRefBody(
       String trackId, int position, long priceMinor,

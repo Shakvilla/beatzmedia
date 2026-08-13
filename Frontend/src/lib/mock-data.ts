@@ -121,6 +121,7 @@ export const artists: Artist[] = [
 export const albums: Album[] = [
   {
     id: 'iron-boy',
+    downloadable: true,
     title: 'Iron Boy',
     artistId: 'black-sherif',
     artistName: 'Black Sherif',
@@ -131,6 +132,7 @@ export const albums: Album[] = [
   },
   {
     id: 'love-damini',
+    downloadable: true,
     title: 'Love, Damini',
     artistId: 'burna-boy',
     artistName: 'Burna Boy',
@@ -141,6 +143,7 @@ export const albums: Album[] = [
   },
   {
     id: 'the-villain-i-never-was',
+    downloadable: true,
     title: 'The Villain I Never Was',
     artistId: 'black-sherif',
     artistName: 'Black Sherif',
@@ -158,6 +161,7 @@ export const albums: Album[] = [
 export const tracks: Track[] = [
   {
     id: 'last-last',
+    downloadable: true,
     title: 'Last Last',
     artistId: 'burna-boy',
     artistName: 'Burna Boy',
@@ -178,6 +182,7 @@ export const tracks: Track[] = [
   },
   {
     id: 'its-plenty',
+    downloadable: true,
     title: "It's Plenty",
     artistId: 'burna-boy',
     artistName: 'Burna Boy',
@@ -192,6 +197,7 @@ export const tracks: Track[] = [
   },
   {
     id: 'for-my-hand',
+    downloadable: true,
     title: 'For My Hand',
     artistId: 'burna-boy',
     artistName: 'Burna Boy ft. Ed Sheeran',
@@ -206,6 +212,7 @@ export const tracks: Track[] = [
   },
   {
     id: 'kwaku-the-traveller',
+    downloadable: true,
     title: 'Kwaku the Traveller',
     artistId: 'black-sherif',
     artistName: 'Black Sherif',
@@ -220,6 +227,7 @@ export const tracks: Track[] = [
   },
   {
     id: 'soja',
+    downloadable: true,
     title: 'Soja',
     artistId: 'black-sherif',
     artistName: 'Black Sherif',
@@ -233,6 +241,7 @@ export const tracks: Track[] = [
   },
   {
     id: '45',
+    downloadable: true,
     title: '45',
     artistId: 'black-sherif',
     artistName: 'Black Sherif',
@@ -247,6 +256,7 @@ export const tracks: Track[] = [
   },
   {
     id: 'iron-boy-intro',
+    downloadable: true,
     title: 'Iron Boy (intro)',
     artistId: 'black-sherif',
     artistName: 'Black Sherif',
@@ -259,6 +269,7 @@ export const tracks: Track[] = [
   },
   {
     id: 'konongo-zongo-ii',
+    downloadable: true,
     title: 'Konongo Zongo II',
     artistId: 'black-sherif',
     artistName: 'Black Sherif',
@@ -273,6 +284,7 @@ export const tracks: Track[] = [
   },
   {
     id: 'hold-on',
+    downloadable: true,
     title: 'Hold On',
     artistId: 'black-sherif',
     artistName: 'Black Sherif',
@@ -286,6 +298,7 @@ export const tracks: Track[] = [
   },
   {
     id: 'mountains',
+    downloadable: true,
     title: 'Mountains',
     artistId: 'black-sherif',
     artistName: 'Black Sherif',
@@ -300,6 +313,7 @@ export const tracks: Track[] = [
   },
   {
     id: 'akwasidae',
+    downloadable: true,
     title: 'Akwasidae',
     artistId: 'black-sherif',
     artistName: 'Black Sherif',
@@ -313,6 +327,7 @@ export const tracks: Track[] = [
   },
   {
     id: 'jah-jah',
+    downloadable: true,
     title: 'Jah Jah',
     artistId: 'black-sherif',
     artistName: 'Black Sherif',
@@ -327,6 +342,7 @@ export const tracks: Track[] = [
   },
   {
     id: 'sungba',
+    downloadable: true,
     title: 'Sungba',
     artistId: 'asake',
     artistName: 'Asake',
@@ -339,6 +355,7 @@ export const tracks: Track[] = [
   },
   {
     id: 'terminator',
+    downloadable: true,
     title: 'Terminator',
     artistId: 'king-promise',
     artistName: 'King Promise',
@@ -351,6 +368,7 @@ export const tracks: Track[] = [
   },
   {
     id: 'friday-night',
+    downloadable: true,
     title: 'Friday Night',
     artistId: 'lasmid',
     artistName: 'Lasmid',
@@ -362,6 +380,7 @@ export const tracks: Track[] = [
   },
   {
     id: 'sugarcane',
+    downloadable: true,
     title: 'Sugarcane',
     artistId: 'camidoh',
     artistName: 'Camidoh',
@@ -374,6 +393,7 @@ export const tracks: Track[] = [
   },
   {
     id: 'calm-down',
+    downloadable: true,
     title: 'Calm Down',
     artistId: 'rema',
     artistName: 'Rema, Selena Gomez',

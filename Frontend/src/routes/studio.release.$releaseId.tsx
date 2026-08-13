@@ -4,7 +4,10 @@ import { useSuspenseQuery, useQueryClient } from '@tanstack/react-query'
 import { ArrowLeft, Disc3, ExternalLink, Trash2, Eye, EyeOff } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
-import { studioReleaseQuery, studioReleasesQuery, apiRenameRelease, apiDeleteRelease } from '../lib/api/queries/studio'
+import {
+  studioReleaseQuery, studioReleasesQuery, apiDeleteRelease, apiUpdateRelease,
+  type UpdateReleaseInput,
+} from '../lib/api/queries/studio'
 import { PRICE_OPTIONS, releaseTypeLabel, type ReleaseStatus, type StudioRelease } from '../lib/studio-data'
 import { useCreatorIdentity } from '../features/studio/use-creator-identity'
 
@@ -54,16 +57,21 @@ function ReleaseManage() {
   const status = STATUS_META[release.status] ?? { label: release.status, cls: 'bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-300' }
   const set = <K extends keyof StudioRelease>(k: K, v: StudioRelease[K]) => setDraft((d) => ({ ...d, [k]: v }))
 
-  // NOTE: PATCH /v1/studio/releases/:id updates the TITLE only. Price, release
-  // date, and publish/unpublish (status) have no artist endpoint — publish is
-  // admin-gated (submit → in_review → admin approves → live), and per-track
-  // price lives in the create wizard (Slice 3b). Those controls edit the local
-  // draft so the UI behaves, but only the title is persisted.
+  // NOTE: PATCH /v1/studio/releases/:id updates TITLE and DOWNLOADABLE only. Price, release date,
+  // and publish/unpublish (status) have no artist endpoint — publish is admin-gated (submit →
+  // in_review → admin approves → live), and per-track price lives in the create wizard (Slice 3b).
+  // Those controls edit the local draft so the UI behaves, but only title/downloadable persist.
   const save = async () => {
     const previous = release
     try {
-      const saved = await apiRenameRelease(release.id, draft.title)
-      queryClient.setQueryData(studioReleaseQuery(release.id).queryKey, { ...saved, price: draft.price, date: draft.date, status: draft.status })
+      const patch: UpdateReleaseInput = { title: draft.title }
+      // Omit the field entirely when unchanged — a PATCH is partial. release.downloadable CAN be
+      // null here (a draft reached from the releases list hasn't had the choice made yet), so the
+      // `?? undefined` below turns that null into "omit the field", not into an accidental
+      // `downloadable: null` on the wire.
+      if (draft.downloadable !== release.downloadable) patch.downloadable = draft.downloadable ?? undefined
+      await apiUpdateRelease(release.id, patch)
+      queryClient.setQueryData(studioReleaseQuery(release.id).queryKey, { ...release, ...draft })
       queryClient.invalidateQueries({ queryKey: studioReleasesQuery().queryKey })
       toast('Release updated', 'success')
     } catch {
@@ -159,6 +167,41 @@ function ReleaseManage() {
               <label className={LABEL}>Release date</label>
               <input className={INPUT} value={draft.date} onChange={(e) => set('date', e.target.value)} />
             </div>
+          </div>
+
+          <div className="flex flex-col gap-3 pt-2 border-t border-gray-200 dark:border-white/10">
+            <span className={LABEL}>Downloads</span>
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+              {(
+                [
+                  { value: true, label: 'Allow downloads', hint: 'Buyers get a lossless file they keep.' },
+                  { value: false, label: 'Streaming only', hint: 'Buyers can play it in the app, but not download the file.' },
+                ] as const
+              ).map((opt) => {
+                const active = draft.downloadable === opt.value
+                return (
+                  <button
+                    key={String(opt.value)}
+                    type="button"
+                    onClick={() => set('downloadable', opt.value)}
+                    className={cn(
+                      'flex flex-col items-start gap-1 rounded-xl border p-3 text-left transition-colors',
+                      active
+                        ? 'bg-beatz-green/10 border-beatz-green text-beatz-green'
+                        : 'bg-transparent border-gray-200 dark:border-white/10 text-gray-600 dark:text-gray-300 hover:border-gray-300 dark:hover:border-white/20',
+                    )}
+                  >
+                    <span className="text-sm font-bold">{opt.label}</span>
+                    <span className={cn('text-xs leading-snug', active ? 'text-beatz-green/80' : 'text-gray-400 dark:text-gray-500')}>
+                      {opt.hint}
+                    </span>
+                  </button>
+                )
+              })}
+            </div>
+            <p className="text-xs text-gray-500 dark:text-gray-400 leading-relaxed">
+              Changing this affects future sales. People who already bought this keep the downloads they paid for.
+            </p>
           </div>
 
           <div className="flex flex-col gap-3 pt-2 border-t border-gray-200 dark:border-white/10">

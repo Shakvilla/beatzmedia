@@ -15,7 +15,11 @@ public interface CreateReleaseDraft {
 
   StudioReleaseDetailView create(CreateDraftCommand command);
 
-  /** Command carrying draft-creation metadata. {@code title} defaults to "Untitled release". */
+  /**
+   * Command carrying draft-creation metadata. {@code title} defaults to "Untitled release".
+   * {@code downloadable} is optional here too — {@code null} leaves the choice unanswered (the
+   * artist can still set it via a later PATCH); {@code true}/{@code false} set it at creation.
+   */
   record CreateDraftCommand(
       ArtistId artistId,
       String title,
@@ -23,5 +27,19 @@ public interface CreateReleaseDraft {
       Visibility visibility,
       Instant scheduledAt,
       String genre,
-      String description) {}
+      String description,
+      Boolean downloadable) {
+
+    /** Legacy 7-arg form — no download choice made at creation ({@code downloadable == null}). */
+    public CreateDraftCommand(
+        ArtistId artistId,
+        String title,
+        ReleaseType type,
+        Visibility visibility,
+        Instant scheduledAt,
+        String genre,
+        String description) {
+      this(artistId, title, type, visibility, scheduledAt, genre, description, null);
+    }
+  }
 }

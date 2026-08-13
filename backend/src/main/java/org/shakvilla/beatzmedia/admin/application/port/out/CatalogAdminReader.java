@@ -41,6 +41,7 @@ public interface CatalogAdminReader {
       String type,
       String status,
       String genre,
+      Boolean downloadable,
       Instant createdAt,
       List<TrackRow> tracks,
       List<SplitRow> splits) {}

@@ -73,7 +73,7 @@ class AdminCatalogContractTest {
   @Test
   void catalog_item_detail_dto_has_tracklist_splits_actionLog_and_honest_null_isrc_upc_note() {
     CatalogItemDetailView view = new CatalogItemDetailView(
-        "r1", "Iron Boy", null, "Black Sherif", "album", "live", null, "Afrobeats",
+        "r1", "Iron Boy", null, "Black Sherif", "album", "live", null, "Afrobeats", true,
         List.of(new CatalogTrackView(1, "t1", "Track One", null, 180, 500)),
         List.of(new CatalogSplitView("t1", "Black Sherif", "Primary artist", 70, "confirmed")),
         List.of(new ActionLogEntryView("a1", "APPROVE_RELEASE", "admin-1", NOW)));
@@ -89,12 +89,14 @@ class AdminCatalogContractTest {
     assertTrue(names.contains("actionLog"));
     assertTrue(names.contains("upc"));
     assertTrue(names.contains("genre"));
-    assertEquals(11, names.size());
+    assertTrue(names.contains("downloadable"));
+    assertEquals(12, names.size());
 
     assertNull(dto.note(), "note is honest null (Category B)");
     assertNull(dto.upc(), "upc is honest null (Category B)");
     assertNull(dto.tracklist().get(0).isrc(), "isrc is honest null (Category B)");
     assertEquals("Afrobeats", dto.genre(), "genre is real, carried from release.genre");
+    assertEquals(true, dto.downloadable(), "moderators must see whether a release permits downloads");
     assertEquals(1, dto.splits().size());
     assertEquals(1, dto.actionLog().size());
     assertEquals("APPROVE_RELEASE", dto.actionLog().get(0).action());
@@ -108,9 +110,12 @@ class AdminCatalogContractTest {
   @Test
   void catalog_item_detail_dto_serves_a_null_genre_rather_than_inventing_one() {
     CatalogItemDetailView view = new CatalogItemDetailView(
-        "r2", "Untagged", null, "Nobody", "single", "in_review", null, null,
+        "r2", "Untagged", null, "Nobody", "single", "in_review", null, null, null,
         List.of(), List.of(), List.of());
 
     assertNull(CatalogItemDetailDto.from(view).genre());
+    assertNull(
+        CatalogItemDetailDto.from(view).downloadable(),
+        "an in-review release may not have a download choice yet — honest null, not coerced");
   }
 }

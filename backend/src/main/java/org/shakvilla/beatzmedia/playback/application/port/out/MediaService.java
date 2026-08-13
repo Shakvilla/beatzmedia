@@ -2,6 +2,7 @@ package org.shakvilla.beatzmedia.playback.application.port.out;
 
 import java.time.Duration;
 import java.time.Instant;
+import java.util.Optional;
 
 import org.shakvilla.beatzmedia.catalog.domain.TrackId;
 import org.shakvilla.beatzmedia.playback.domain.PlaybackMode;
@@ -26,6 +27,21 @@ public interface MediaService {
    *     exists for the track
    */
   SignedUrl issueSignedUrl(TrackId track, PlaybackMode mode, Duration ttl);
+
+  /**
+   * Presign a delivery URL for the track's LOSSLESS (FLAC) rendition — the download payload.
+   *
+   * <p>The variant is fixed by the method rather than passed in: there is exactly one rendition a
+   * download may ever be, and no caller should be able to ask this port for the lossy one under the
+   * name "download". The permission decision has already been made by the time this is called.
+   *
+   * @return empty when the FLAC does not exist yet (no media asset at all, or the asset carries no
+   *     lossless key). Deliberately NOT a fall back to {@code FULL} — see
+   *     {@code DownloadNotReadyException}. The caller turns this into 409 DOWNLOAD_NOT_READY.
+   * @throws org.shakvilla.beatzmedia.playback.domain.MediaUnavailableException if the media module
+   *     itself is unreachable or failing (a 503 condition, distinct from "not ready")
+   */
+  Optional<SignedUrl> issueLosslessUrl(TrackId track, Duration ttl);
 
   /** Result of presigning: the URL and its expiry instant. */
   record SignedUrl(String url, Instant expiresAt) {}

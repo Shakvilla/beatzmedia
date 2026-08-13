@@ -18,6 +18,14 @@ export interface CollectionData {
   followedShows: string[]
   savedAlbums: string[]
   ownedTracks: string[]
+  /**
+   * The subset of `ownedTracks` this account may currently download — sourced from each track's
+   * ownership grant (captured at purchase), not from the release's current setting. An artist
+   * switching a release's downloads off after a sale does not drop an already-owned track out of
+   * this set: the buyer keeps the right they paid for. Gate the library's download control on
+   * this, never on a catalog track's `downloadable` (Task 9b).
+   */
+  downloadableTracks: string[]
   userPlaylists: UserPlaylist[]
 }
 
@@ -28,6 +36,7 @@ export const EMPTY_COLLECTION: CollectionData = {
   followedShows: [],
   savedAlbums: [],
   ownedTracks: [],
+  downloadableTracks: [],
   userPlaylists: [],
 }
 
@@ -46,6 +55,7 @@ interface CollectionWire {
   followedShows: string[]
   savedAlbums: string[]
   ownedTracks: string[]
+  downloadableTracks: string[]
   userPlaylists: UserPlaylistWire[]
 }
 
@@ -67,6 +77,7 @@ function toCollectionData(w: CollectionWire): CollectionData {
     followedShows: w.followedShows,
     savedAlbums: w.savedAlbums,
     ownedTracks: w.ownedTracks,
+    downloadableTracks: w.downloadableTracks,
     userPlaylists: w.userPlaylists.map(toPlaylist),
   }
 }

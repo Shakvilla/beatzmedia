@@ -74,7 +74,8 @@ public class GetHomeFeedService implements GetHomeFeed {
         album.getCoverImage(),
         album.getGenres(),
         album.getTrackIds(),
-        null);
+        null,
+        album.isDownloadable());
   }
 
   private ArtistView toArtistView(ArtistProfile a) {

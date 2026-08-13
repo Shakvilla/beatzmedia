@@ -25,6 +25,10 @@ public class FakeCatalogExpansionReader implements CatalogExpansionReader {
   private final Map<String, List<PurchasableTrack>> forSaleTracksByAlbum = new HashMap<>();
   // (account:trackId) the account already actively owns (F2 ownership-aware album-rest).
   private final Set<String> owned = new HashSet<>();
+  // releaseId -> the artist's download choice (Task 5).
+  private final Map<String, Boolean> downloadableByRelease = new HashMap<>();
+  // trackId -> its owning releaseId, mirroring TrackEntity.releaseId (Task 5).
+  private final Map<String, String> releaseIdByTrack = new HashMap<>();
 
   public void seedTrack(String trackId, String creatorId) {
     tracksByRef.put(key(CartItemKind.track, trackId), List.of(trackId));
@@ -53,9 +57,35 @@ public class FakeCatalogExpansionReader implements CatalogExpansionReader {
     owned.add(account.value() + ":" + trackId);
   }
 
+  /** Seed a release's download choice (Task 5). Overwrites any prior value for this release id. */
+  public void seedRelease(String releaseId, boolean downloadable) {
+    downloadableByRelease.put(releaseId, downloadable);
+  }
+
+  /**
+   * Associate a track with its owning release (Task 5), mirroring {@code TrackEntity.releaseId} —
+   * needed so {@link #isDownloadable} can resolve a {@code track}-kind line to its release's choice.
+   * Does not seed the track's tracksToGrant/creator wiring; combine with {@link #seedTrack} for that.
+   */
+  public void seedTrackForRelease(String trackId, String releaseId, String creatorId) {
+    seedTrack(trackId, creatorId);
+    releaseIdByTrack.put(trackId, releaseId);
+  }
+
   @Override
   public List<String> tracksToGrant(CartItemKind kind, String refId) {
     return tracksByRef.getOrDefault(key(kind, refId), List.of());
+  }
+
+  @Override
+  public boolean isDownloadable(CartItemKind kind, String refId) {
+    return switch (kind) {
+      case track -> Boolean.TRUE.equals(downloadableByRelease.get(releaseIdByTrack.get(refId)));
+      // album/album-rest ids are seeded as release ids directly, mirroring the real adapter where
+      // the album row shares its release's id one-to-one.
+      case album, album_rest -> Boolean.TRUE.equals(downloadableByRelease.get(refId));
+      case episode, season_pass, ticket, store -> false;
+    };
   }
 
   @Override

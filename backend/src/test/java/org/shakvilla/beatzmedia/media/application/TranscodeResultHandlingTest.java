@@ -1,6 +1,8 @@
 package org.shakvilla.beatzmedia.media.application;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 
 import java.io.ByteArrayInputStream;
 import java.time.Instant;
@@ -21,6 +23,7 @@ import org.shakvilla.beatzmedia.media.domain.MediaStatus;
 import org.shakvilla.beatzmedia.media.domain.ObjectKey;
 import org.shakvilla.beatzmedia.media.domain.OwnerRef;
 import org.shakvilla.beatzmedia.media.fakes.FakeArtworkProcessor;
+import org.shakvilla.beatzmedia.media.fakes.FakeAudioTranscoderPort;
 import org.shakvilla.beatzmedia.media.fakes.FakeMediaAssetRepository;
 import org.shakvilla.beatzmedia.media.fakes.FakeMediaReadyEvent;
 import org.shakvilla.beatzmedia.media.fakes.FakeObjectStore;
@@ -39,6 +42,7 @@ class TranscodeResultHandlingTest {
   private FakeMediaAssetRepository repository;
   private FakeMediaReadyEvent mediaReadyEvent;
   private MediaApplicationService service;
+  private FakeAudioTranscoderPort transcoder;
 
   @BeforeEach
   void setUp() {
@@ -56,22 +60,75 @@ class TranscodeResultHandlingTest {
         FakeClock.fixed(),
         mediaReadyEvent,
         30);
+    transcoder = new FakeAudioTranscoderPort();
   }
 
   private MediaAssetId seedTranscodingAsset() {
-    MediaAssetId id = new MediaAssetId("transcode-001");
+    return seedTranscodingAsset(new MediaAssetId("transcode-001"), "track-t1", "hash-t1");
+  }
+
+  private MediaAssetId seedTranscodingAsset(MediaAssetId id, String trackRef, String contentHash) {
     MediaAsset asset = new MediaAsset(
         id,
-        new OwnerRef("catalog", "track-t1"),
+        new OwnerRef("catalog", trackRef),
         MediaKind.AUDIO,
         MediaStatus.TRANSCODING,
         0,
-        new ObjectKey("orig", "originals/audio/transcode-001"),
-        null, null,
+        new ObjectKey("orig", "originals/audio/" + id.value()),
+        null, null, null,
         Instant.parse("2026-01-01T00:00:00Z"),
-        "hash-t1");
+        contentHash);
     repository.save(asset);
     return id;
+  }
+
+  /**
+   * Mirrors {@code InProcessTranscodeJobAdapter#dispatch} after the Task 12 fix: full + preview
+   * transcode, {@code markReady} (via {@code handleTranscodeResult}), and ONLY THEN the lossless
+   * (FLAC) transcode — never before markReady, since READY means playable and the FLAC step is the
+   * slowest one, needed only for downloads. A failed lossless transcode is logged and swallowed:
+   * it must not fail the (already READY) asset.
+   */
+  private void runJobFor(MediaAssetId id) {
+    service.markTranscoding(id);
+    ObjectKey original = repository.findById(id).orElseThrow().getOriginalKey();
+    int durationSec = transcoder.probeDurationSec(original);
+    ObjectKey fullKey = transcoder.transcodeFull(original, id);
+    ObjectKey previewKey = transcoder.clipPreview(original, id, 30);
+    service.handleTranscodeResult(new TranscodeResult(id, fullKey, previewKey, durationSec, true, null));
+
+    try {
+      ObjectKey losslessKey = transcoder.transcodeLossless(original, id);
+      service.markLosslessReady(id, losslessKey);
+    } catch (Exception ex) {
+      // Contained deliberately — see InProcessTranscodeJobAdapter#tryTranscodeLossless.
+    }
+  }
+
+  @Test
+  void aTranscodedAssetAlsoGetsItsLosslessRendition() {
+    MediaAssetId id = seedTranscodingAsset(new MediaAssetId("lossless-001"), "track-lossless", "hash-lossless");
+
+    runJobFor(id);
+
+    assertNotNull(
+        repository.findById(id).orElseThrow().getLosslessKey(),
+        "without this the download endpoint answers 409 DOWNLOAD_NOT_READY forever");
+  }
+
+  @Test
+  void aFailedLosslessTranscodeStillLeavesTheAssetPlayable() {
+    // READY means playable. The FLAC is only needed for downloads, so losing it must not cost the
+    // fan playback they already paid for — or cost the artist a release that will not stream.
+    MediaAssetId id =
+        seedTranscodingAsset(new MediaAssetId("lossless-fail-001"), "track-lossless-fail", "hash-lossless-fail");
+    transcoder.failLosslessOnly();
+
+    runJobFor(id);
+
+    MediaAsset asset = repository.findById(id).orElseThrow();
+    assertEquals(MediaStatus.READY, asset.getStatus());
+    assertNull(asset.getLosslessKey());
   }
 
   @Test
@@ -163,7 +220,7 @@ class TranscodeResultHandlingTest {
         MediaStatus.ERROR,
         0,
         new ObjectKey("orig", "originals/audio/retry-001"),
-        null, null,
+        null, null, null,
         Instant.parse("2026-01-01T00:00:00Z"),
         "hash-retry");
     repository.save(asset);

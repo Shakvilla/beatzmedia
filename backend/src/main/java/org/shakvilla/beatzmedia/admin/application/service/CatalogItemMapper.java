@@ -64,6 +64,6 @@ final class CatalogItemMapper {
         .toList();
     return new CatalogItemDetailView(
         row.id(), row.title(), null, row.artistName(), row.type(), row.status(), null, row.genre(),
-        tracks, splits, actionLog);
+        row.downloadable(), tracks, splits, actionLog);
   }
 }

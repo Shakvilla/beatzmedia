@@ -37,4 +37,11 @@ public class OwnershipGrantEntity {
 
   @Column(name = "revoked_at")
   public Instant revokedAt;
+
+  /**
+   * The download permission as it stood at settlement (V981) — captured once, never re-read from
+   * the release afterwards. See {@link org.shakvilla.beatzmedia.commerce.domain.OwnershipGrant}.
+   */
+  @Column(name = "downloadable", nullable = false)
+  public boolean downloadable;
 }

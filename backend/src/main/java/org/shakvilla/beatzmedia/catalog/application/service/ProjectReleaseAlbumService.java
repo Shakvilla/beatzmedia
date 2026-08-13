@@ -92,6 +92,12 @@ public class ProjectReleaseAlbumService implements ProjectReleaseAlbum {
             .map(ReleaseTrack::trackId)
             .toList();
 
+    // `downloadable` is deliberately left at its default (false) on this transient object — the
+    // `album` table has no such column. Album shares the release's id 1:1, so every read path
+    // (JpaCatalogRepository.mapAlbumsWithBatchedTrackIds) looks the choice up fresh from
+    // ReleaseEntity at query time instead. A snapshot taken here would go stale the moment the
+    // artist changes the choice post-publish, since UpdateReleaseService allows that on any
+    // status and does not re-trigger this projection.
     Album album =
         new Album(
             new AlbumId(releaseId),

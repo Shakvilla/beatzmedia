@@ -67,6 +67,7 @@ class MediaAssetMapperTest {
         new ObjectKey("beatz-media-originals", "originals/audio/map-002"),
         new ObjectKey("beatz-media-delivery", "delivery/map-002/full.m4a"),
         new ObjectKey("beatz-media-delivery", "delivery/map-002/preview.m4a"),
+        null,
         NOW,
         "hash-ready");
 
@@ -105,5 +106,19 @@ class MediaAssetMapperTest {
     assertEquals(0, domain.getDurationSec()); // null → 0
     assertNull(domain.getFullKey());
     assertNull(domain.getPreviewKey());
+  }
+
+  @Test
+  void losslessKeyRoundTripsThroughTheMapper() {
+    MediaAsset asset = MediaAsset.createUploading(
+        new MediaAssetId("m1"), new OwnerRef("track", "t1"), MediaKind.AUDIO,
+        new ObjectKey("originals", "o/m1.wav"), 0, NOW, "hash");
+    asset.markReady(new ObjectKey("delivery", "d/m1/full.m4a"),
+        new ObjectKey("delivery", "d/m1/preview.m4a"), 180);
+    asset.markLosslessReady(new ObjectKey("delivery", "d/m1/lossless.flac"));
+
+    MediaAsset back = MediaAssetMapper.toDomain(MediaAssetMapper.toEntity(asset));
+
+    assertEquals("d/m1/lossless.flac", back.getLosslessKey().key());
   }
 }

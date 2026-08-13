@@ -81,7 +81,8 @@ public final class ReleaseViewMapper {
         r.getDescription(),
         r.getVisibility().toDbValue(),
         r.getScheduledAt() != null ? r.getScheduledAt().toString() : null,
-        trackViews);
+        trackViews,
+        r.getDownloadable());
   }
 
   private static String dateOf(Release r) {

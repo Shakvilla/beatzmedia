@@ -88,8 +88,8 @@ class CatalogModerationServiceTest {
         catalogAdminReader, moderationCaseRepository, auditReader, auditWriter, ids, clock);
 
     catalogAdminReader.seed(new CatalogDetailRow(
-        RELEASE_ID, "Iron Boy", "artist-1", "Black Sherif", "album", "in_review", "Drill", NOW,
-        List.of(new TrackRow(1, "track-1", "Track One", 180, 500)),
+        RELEASE_ID, "Iron Boy", "artist-1", "Black Sherif", "album", "in_review", "Drill", true,
+        NOW, List.of(new TrackRow(1, "track-1", "Track One", 180, 500)),
         List.of(new SplitRow("track-1", "Black Sherif", "Primary artist", 70, "confirmed"))));
   }
 

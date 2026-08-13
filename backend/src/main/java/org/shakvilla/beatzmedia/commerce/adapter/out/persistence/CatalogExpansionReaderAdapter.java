@@ -9,6 +9,7 @@ import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 
 import org.shakvilla.beatzmedia.catalog.adapter.out.persistence.AlbumEntity;
+import org.shakvilla.beatzmedia.catalog.adapter.out.persistence.ReleaseEntity;
 import org.shakvilla.beatzmedia.catalog.adapter.out.persistence.TrackEntity;
 import org.shakvilla.beatzmedia.commerce.application.port.out.CatalogExpansionReader;
 import org.shakvilla.beatzmedia.commerce.application.port.out.OwnershipRepository;
@@ -95,6 +96,29 @@ public class CatalogExpansionReaderAdapter implements CatalogExpansionReader {
       }
       case episode, season_pass, ticket, store -> Optional.empty();
     };
+  }
+
+  @Override
+  public boolean isDownloadable(CartItemKind kind, String refId) {
+    return switch (kind) {
+      case track -> {
+        TrackEntity t = em.find(TrackEntity.class, refId);
+        yield t == null || t.releaseId == null ? false : releaseDownloadable(t.releaseId);
+      }
+      // The album/album-rest ref IS the release id (ProjectReleaseAlbumService: the album row
+      // shares its release's id one-to-one), so no track lookup is needed.
+      case album, album_rest -> releaseDownloadable(refId);
+      // Dispatched to their own SettlementSource before this reader is consulted (WU-COM-4); never
+      // reached for these kinds. Downloads are a music-release feature — false is the safe default.
+      case episode, season_pass, ticket, store -> false;
+    };
+  }
+
+  private boolean releaseDownloadable(String releaseId) {
+    ReleaseEntity r = em.find(ReleaseEntity.class, releaseId);
+    // A release that reached a purchasable state always has a non-null choice (PublishReleaseService
+    // rejects publishing a null); the null-safe check is defensive only.
+    return r != null && Boolean.TRUE.equals(r.downloadable);
   }
 
   private List<String> trackIfExists(String refId) {

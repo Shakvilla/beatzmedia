@@ -1,15 +1,18 @@
 import { createFileRoute, useNavigate, Link } from '@tanstack/react-router'
 import { useSuspenseQuery, CancelledError } from '@tanstack/react-query'
 import { useState } from 'react'
-import { Heart, Check, Play, Plus, ListMusic } from 'lucide-react'
+import { Heart, Check, Play, Plus, ListMusic, Download } from 'lucide-react'
 import { Card, CardContent, CardImage, CardSubtitle, CardTitle } from '../components/ui/card'
 import { usePlayer } from '../features/player/player-context'
 import { useCollection } from '../features/collection/collection-context'
 import { CreatePlaylistModal } from '../features/collection/components/create-playlist-modal'
-import { resolveQuery } from '../lib/api/queries/catalog'
+import { resolveQuery, apiDownloadTrack } from '../lib/api/queries/catalog'
 import { collectionQuery } from '../lib/api/queries/collection'
+import { ApiError } from '../lib/api/errors'
+import { useToast } from '../components/ui/toast-provider'
 import { formatDuration } from '../lib/format'
 import { cn } from '../utils/cn'
+import type { Track } from '../types'
 
 export const Route = createFileRoute('/library')({
   loader: async ({ context: { queryClient } }) => {
@@ -20,7 +23,7 @@ export const Route = createFileRoute('/library')({
       const c = await queryClient.ensureQueryData(collectionQuery())
       await queryClient.ensureQueryData(
         resolveQuery({
-          trackIds: c.likedTracks,
+          trackIds: Array.from(new Set([...c.likedTracks, ...c.ownedTracks])),
           artistIds: c.followedArtists,
           albumIds: c.savedAlbums,
           playlistIds: c.followedPlaylists,
@@ -33,7 +36,7 @@ export const Route = createFileRoute('/library')({
   component: LibraryComponent,
 })
 
-const TABS = ['All', 'Playlists', 'Albums', 'Artists', 'Liked'] as const
+const TABS = ['All', 'Playlists', 'Albums', 'Artists', 'Liked', 'Owned'] as const
 type Tab = (typeof TABS)[number]
 
 function LibraryComponent() {
@@ -41,17 +44,57 @@ function LibraryComponent() {
   const [createOpen, setCreateOpen] = useState(false)
   const navigate = useNavigate()
   const { playQueue } = usePlayer()
-  const { likedTracks, followedPlaylists, followedArtists, savedAlbums, userPlaylists, ownedTracks } = useCollection()
+  const {
+    likedTracks,
+    followedPlaylists,
+    followedArtists,
+    savedAlbums,
+    userPlaylists,
+    ownedTracks,
+    isTrackDownloadable,
+  } = useCollection()
+  const { toast } = useToast()
 
   const { data: resolved } = useSuspenseQuery(
-    resolveQuery({ trackIds: likedTracks, artistIds: followedArtists, albumIds: savedAlbums, playlistIds: followedPlaylists }),
+    resolveQuery({
+      trackIds: Array.from(new Set([...likedTracks, ...ownedTracks])),
+      artistIds: followedArtists,
+      albumIds: savedAlbums,
+      playlistIds: followedPlaylists,
+    }),
   )
-  const likedList = resolved.tracks
+  const likedList = resolved.tracks.filter((t) => likedTracks.includes(t.id))
+  const ownedList = resolved.tracks.filter((t) => ownedTracks.includes(t.id))
   const playlists = resolved.playlists
   const artistsList = resolved.artists
   const albumsList = resolved.albums
   const ownedCount = ownedTracks.length
   const playlistCoverById = new Map(resolved.tracks.map((t) => [t.id, t.image]))
+
+  /**
+   * Calls the signed-URL endpoint and navigates to it. Whether the button renders at all is gated
+   * on the collection's per-track `downloadable` (sourced from the buyer's own ownership grant,
+   * captured at purchase — Task 9b), not on the catalog track's `downloadable` (the release's
+   * current setting), which can disagree once an artist changes their mind after a sale. A grant
+   * is still the ultimate authority server-side, so a 409 here would be unexpected rather than
+   * routine, but this call can still race a concurrent refund.
+   */
+  const handleDownload = async (track: Track) => {
+    try {
+      const { downloadUrl } = await apiDownloadTrack(track.id)
+      window.location.assign(downloadUrl)
+    } catch (e) {
+      if (e instanceof ApiError && e.code === 'NOT_OWNED') {
+        toast("You don't own this track", 'error')
+      } else if (e instanceof ApiError && e.code === 'DOWNLOAD_NOT_ALLOWED') {
+        toast('Downloads are not included with this purchase', 'error')
+      } else if (e instanceof ApiError && e.code === 'DOWNLOAD_NOT_READY') {
+        toast('This download is not ready yet — try again shortly', 'error')
+      } else {
+        toast('Could not start the download — please try again', 'error')
+      }
+    }
+  }
 
   const showSection = (s: Tab) => tab === 'All' || tab === s
 
@@ -120,6 +163,67 @@ function LibraryComponent() {
             {likedList.length === 0 && <p className="text-gray-500 dark:text-gray-300 py-8 text-center">No liked songs yet — tap the heart on any track.</p>}
           </div>
         </div>
+      ) : tab === 'Owned' ? (
+        <div className="flex flex-col gap-4">
+          <div className="flex items-center gap-5 p-6 rounded-2xl bg-gradient-to-br from-[#f6c644] to-orange-600">
+            <div className="w-20 h-20 rounded-lg bg-white/10 flex items-center justify-center">
+              <Check size={40} className="text-black" strokeWidth={3} />
+            </div>
+            <div className="flex flex-col gap-1">
+              <span className="text-[10px] font-bold uppercase tracking-widest text-black/60">Collection</span>
+              <h2 className="text-3xl font-bold text-black">Owned Tracks</h2>
+              <span className="text-sm text-black/70">{ownedList.length} tracks</span>
+            </div>
+            <button
+              onClick={() => ownedList.length && playQueue(ownedList, 0)}
+              className="ml-auto w-14 h-14 rounded-full bg-black flex items-center justify-center shadow-lg hover:scale-105 transition-transform"
+              aria-label="Play owned tracks"
+            >
+              <Play size={28} className="text-white ml-1" fill="currentColor" />
+            </button>
+          </div>
+
+          <div className="flex flex-col">
+            {ownedList.map((track, index) => (
+              <div key={track.id} onClick={() => playQueue(ownedList, index)} className="flex items-center gap-4 px-4 py-2.5 rounded-lg hover:bg-gray-100 dark:hover:bg-white/5 transition-colors group cursor-pointer">
+                <span className="w-6 text-center text-sm font-mono text-gray-500 dark:text-gray-300">{index + 1}</span>
+                <div className="w-11 h-11 rounded overflow-hidden shrink-0"><img src={track.image} alt={track.title} className="w-full h-full object-cover" /></div>
+                <div className="flex flex-col flex-1 min-w-0">
+                  <Link
+                    to="/track/$trackId"
+                    params={{ trackId: track.id }}
+                    onClick={(e) => e.stopPropagation()}
+                    className="font-bold text-beatz-dark-bg dark:text-white truncate hover:underline w-fit max-w-full"
+                  >
+                    {track.title}
+                  </Link>
+                  <span className="text-xs text-gray-500 dark:text-gray-300 truncate">{track.artistName}</span>
+                </div>
+                {/*
+                  Never a disabled control with no explanation: when the grant doesn't permit a
+                  download, nothing renders here at all rather than a greyed-out button. Gated on
+                  the collection's per-track flag (the grant), not track.downloadable (the
+                  release's current setting) — see the module comment on handleDownload.
+                */}
+                {isTrackDownloadable(track.id) && (
+                  <button
+                    onClick={(e) => {
+                      e.stopPropagation()
+                      void handleDownload(track)
+                    }}
+                    aria-label={`Download ${track.title}`}
+                    title="Download lossless file"
+                    className="text-gray-400 hover:text-beatz-dark-bg dark:hover:text-white transition-colors"
+                  >
+                    <Download size={18} />
+                  </button>
+                )}
+                <span className="text-sm font-mono text-gray-500 dark:text-gray-300 tabular-nums">{formatDuration(track.duration)}</span>
+              </div>
+            ))}
+            {ownedList.length === 0 && <p className="text-gray-500 dark:text-gray-300 py-8 text-center">Nothing owned yet — buy a track or album to build your collection.</p>}
+          </div>
+        </div>
       ) : (
         <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 gap-6 mt-2">
           {/* Create playlist tile */}
@@ -173,15 +277,15 @@ function LibraryComponent() {
           ))}
 
           {showSection('Albums') && (
-            <div className="group flex flex-col gap-3">
-              <div className="relative aspect-square rounded-md overflow-hidden shadow-md bg-gradient-to-br from-[#f6c644] to-orange-600 flex items-center justify-center">
+            <button onClick={() => setTab('Owned')} className="group flex flex-col gap-3 text-left">
+              <div className="relative aspect-square rounded-md overflow-hidden shadow-md bg-gradient-to-br from-[#f6c644] to-orange-600 flex items-center justify-center group-hover:-translate-y-1 transition-transform">
                 <Check size={48} className="text-black" strokeWidth={3} />
               </div>
               <div className="flex flex-col">
                 <span className="font-bold text-beatz-dark-bg dark:text-white truncate">Owned Tracks</span>
                 <span className="text-sm text-gray-500 dark:text-gray-300">{ownedCount} tracks</span>
               </div>
-            </div>
+            </button>
           )}
 
           {showSection('Albums') && albumsList.map((album) => (

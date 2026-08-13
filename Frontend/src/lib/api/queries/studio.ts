@@ -1,6 +1,6 @@
 import { queryOptions } from '@tanstack/react-query'
 import type { AnalyticsRange, AudienceRange } from '../../studio-analytics'
-import type { StudioProfile, StudioSettings, StudioRelease } from '../../studio-data'
+import type { StudioProfile, StudioSettings } from '../../studio-data'
 import type { ReleaseType } from '../../studio-data'
 import type { UploadedTrack } from '../../../features/studio/release-draft-context'
 import { apiFetch } from '../client'
@@ -69,11 +69,19 @@ export function studioReleasesQuery() {
   })
 }
 
-/** `GET /v1/studio/releases/:id` — one release (404s if not the caller's). */
+/**
+ * `GET /v1/studio/releases/:id` — one release (404s if not the caller's). Hits the same detail
+ * endpoint as {@link studioReleaseDetailQuery}, so the response really does carry `downloadable`
+ * even though `toStudioRelease` (shared with the list endpoint, which doesn't) defaults it to
+ * `null` — override with the wire's real value.
+ */
 export function studioReleaseQuery(id: string) {
   return queryOptions({
     queryKey: ['studio', 'release', id],
-    queryFn: async () => toStudioRelease(await apiFetch<StudioReleaseWire>(`/studio/releases/${id}`)),
+    queryFn: async () => {
+      const wire = await apiFetch<StudioReleaseDetailWire>(`/studio/releases/${id}`)
+      return { ...toStudioRelease(wire), downloadable: wire.downloadable }
+    },
   })
 }
 
@@ -90,6 +98,14 @@ export interface StudioReleaseDetailWire extends StudioReleaseWire {
   description: string | null
   visibility: string | null
   scheduledAt: string | null
+  /**
+   * The artist's download choice. `null` means "not chosen yet" and is distinct from `false`
+   * ("chosen: no") — collapsing the two with `?? false` would silently satisfy the publish guard
+   * with an answer the artist never gave, so it is carried through as `null`, never defaulted.
+   * Declared here (not on the base `StudioReleaseWire`) because only this single-release detail
+   * endpoint actually serves it — the list endpoint's read model doesn't have the field.
+   */
+  downloadable: boolean | null
   tracks: {
     trackId: string
     title: string
@@ -122,12 +138,6 @@ export function studioReleaseDetailQuery(id: string) {
   })
 }
 
-/** `PATCH /v1/studio/releases/:id` — rename (title is the only updatable field). */
-export function apiRenameRelease(id: string, title: string): Promise<StudioRelease> {
-  return apiFetch<StudioReleaseWire>(`/studio/releases/${id}`, { method: 'PATCH', body: { title } })
-    .then(toStudioRelease)
-}
-
 /** `DELETE /v1/studio/releases/:id` — draft/in_review only; throws ApiError for live. */
 export function apiDeleteRelease(id: string): Promise<void> {
   return apiFetch<void>(`/studio/releases/${id}`, { method: 'DELETE' })
@@ -142,6 +152,8 @@ export interface CreateDraftInput {
   description?: string
   visibility?: 'public' | 'scheduled'
   scheduledAt?: string
+  /** Omitted (not `false`) leaves the download choice unanswered (`null`) — never send a bare `null`. */
+  downloadable?: boolean
 }
 
 export interface TrackPatch { trackId: string; position: number; priceMinor: number }
@@ -153,6 +165,8 @@ export interface UpdateReleaseInput {
   visibility?: 'public' | 'scheduled'
   scheduledAt?: string
   tracks?: TrackPatch[]
+  /** Editable on any status. Omitted (not `false`) leaves a previously-made choice unchanged. */
+  downloadable?: boolean
 }
 
 /** `POST /v1/studio/releases` — create a metadata-only draft; returns the new id. */

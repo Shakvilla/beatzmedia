@@ -70,6 +70,30 @@ public class FfmpegAudioTranscoderAdapter implements AudioTranscoderPort {
     return transcodeToM4a(original, id, previewSeconds, "preview.m4a", "preview-");
   }
 
+  @Override
+  public ObjectKey transcodeLossless(ObjectKey original, MediaAssetId id) {
+    Path tmpInput = null;
+    Path tmpOutput = null;
+    try {
+      tmpInput = downloadToTemp(original, "lossless-", ".audio");
+      tmpOutput = Files.createTempFile("lossless-" + id.value(), ".flac");
+
+      runFfmpegFlac(tmpInput, tmpOutput);
+
+      String relKey = "delivery/" + id.value() + "/lossless.flac";
+      try (InputStream in = Files.newInputStream(tmpOutput)) {
+        objectStore.putDelivery(id, relKey, in, "audio/flac");
+      }
+      return new ObjectKey(deliveryBucketOf(original), relKey);
+    } catch (IOException | InterruptedException e) {
+      Thread.currentThread().interrupt();
+      throw new IllegalStateException("ffmpeg lossless transcode failed for " + id.value(), e);
+    } finally {
+      deleteSilently(tmpOutput);
+      deleteSilently(tmpInput);
+    }
+  }
+
   /**
    * Shared path for both renditions: download the original, run ffmpeg to one AAC/M4A file,
    * upload it, return its key. {@code durationLimit} non-null clips the output (preview).
@@ -143,6 +167,34 @@ public class FfmpegAudioTranscoderAdapter implements AudioTranscoderPort {
     cmd.add("-c:a"); cmd.add("aac");
     cmd.add("-b:a"); cmd.add("128k");
     cmd.add("-movflags"); cmd.add("+faststart"); // moov atom first: playable before fully downloaded
+    cmd.add(outputFile.toAbsolutePath().toString());
+
+    Process proc = new ProcessBuilder(cmd).redirectErrorStream(true).start();
+    String output = new String(proc.getInputStream().readAllBytes()).trim();
+    int exit = proc.waitFor();
+    if (exit != 0) {
+      throw new IllegalStateException("ffmpeg exited with " + exit + ": " + output);
+    }
+  }
+
+  private void runFfmpegFlac(Path inputFile, Path outputFile) throws IOException, InterruptedException {
+    List<String> cmd = new ArrayList<>();
+    cmd.add("ffmpeg");
+    cmd.add("-nostdin");
+    cmd.add("-y");
+    cmd.add("-i"); cmd.add(inputFile.toAbsolutePath().toString());
+    // Deliberately NO -vn here, unlike runFfmpegM4a. That -vn strips cover art because full.m4a
+    // and preview.m4a are the STREAMING renditions — the app already has the cover art (it's
+    // catalog metadata) and re-serves it separately on every play, so carrying a redundant copy
+    // in every streamed byte range would be pure waste. The FLAC here is different: it is the
+    // file a buyer OWNS and downloads to their own device, where the app's UI is no longer in the
+    // loop — so the embedded artwork is part of what they bought, the same way a purchased CD or
+    // vinyl rip carries its cover. Verified against ffmpeg 9.0 (the pinned runtime build) that an
+    // input with an attached-picture stream carries it through into the FLAC output cleanly
+    // (exit 0, duration unaffected) with no explicit -map/-c:v needed — so omitting -vn is a
+    // considered choice, not a copy-paste gap from runFfmpegM4a.
+    cmd.add("-c:a"); cmd.add("flac");
+    cmd.add("-compression_level"); cmd.add("8");
     cmd.add(outputFile.toAbsolutePath().toString());
 
     Process proc = new ProcessBuilder(cmd).redirectErrorStream(true).start();

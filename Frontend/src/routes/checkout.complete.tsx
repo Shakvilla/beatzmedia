@@ -144,8 +144,10 @@ function CheckoutCompleteComponent() {
             promised, so a dead download control here reads as a broken purchase rather than a
             missing feature.
 
-            No download endpoint exists anywhere in the API: media serves signed, time-boxed stream
-            URLs, and nothing bundles a purchase for download. Disabled and labelled until one does.
+            "Download all" means one bundled download for the whole order, and that endpoint
+            doesn't exist yet — GET /v1/tracks/:id/download now serves a single owned, permitted
+            track's lossless file, but nothing bundles a multi-item purchase into one ZIP. Disabled
+            and labelled until the bundle endpoint does.
           */}
           <button disabled title="Downloads aren't available yet — your purchase is in your library." className="h-12 px-8 rounded-full border border-gray-200 dark:border-white/10 text-gray-400 dark:text-gray-500 font-bold flex items-center justify-center gap-2 cursor-not-allowed">
             <Download size={18} /> Download all

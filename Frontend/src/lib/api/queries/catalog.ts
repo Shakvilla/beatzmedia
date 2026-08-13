@@ -96,6 +96,18 @@ export function trackQuery(id: string) {
   })
 }
 
+/** Mirrors the `{ downloadUrl, expiresAt, format }` shape served by `GET /tracks/:id/download`. No `sizeBytes` — the backend deliberately never fabricates one. */
+export interface DownloadUrlWire {
+  downloadUrl: string
+  expiresAt: string
+  format: string
+}
+
+/** `GET /v1/tracks/:id/download` — a signed lossless URL for a permitted owner. */
+export function apiDownloadTrack(id: string): Promise<DownloadUrlWire> {
+  return apiFetch<DownloadUrlWire>(`/tracks/${id}/download`)
+}
+
 /**
  * Lyrics are OPTIONAL content: most tracks have none, and the API answers 404 for those.
  * A 404 therefore resolves to an empty list rather than rejecting — otherwise the track

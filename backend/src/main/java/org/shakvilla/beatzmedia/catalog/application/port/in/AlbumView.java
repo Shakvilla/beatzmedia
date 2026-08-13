@@ -17,4 +17,9 @@ public record AlbumView(
     List<String> genres,
     List<String> trackIds,
     /** Embedded tracks; null when not requested (?tracks=true not set). */
-    List<TrackView> tracks) {}
+    List<TrackView> tracks,
+    /**
+     * Whether this album's release permits buyer downloads. Non-nullable on the wire; see {@link
+     * TrackView#downloadable()} for the same "undecided draft reads as false" rule.
+     */
+    boolean downloadable) {}

@@ -1,6 +1,7 @@
 package org.shakvilla.beatzmedia.commerce.adapter.out.persistence;
 
 import java.util.List;
+import java.util.Optional;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -51,6 +52,7 @@ public class JpaOwnershipRepository implements OwnershipRepository {
     e.sourceOrderId = grant.getSourceOrderId().value();
     e.grantedAt = grant.getGrantedAt();
     e.revokedAt = grant.getRevokedAt();
+    e.downloadable = grant.isDownloadable();
     em.persist(e);
     em.flush();
     return grant;
@@ -67,6 +69,22 @@ public class JpaOwnershipRepository implements OwnershipRepository {
             .setParameter("tid", trackId)
             .getSingleResult();
     return count > 0;
+  }
+
+  @Override
+  public Optional<OwnershipGrant> findActiveForTrack(AccountId account, String trackId) {
+    return em
+        .createQuery(
+            "SELECT g FROM OwnershipGrantEntity g WHERE g.accountId = :acc"
+                + " AND g.trackId = :tid AND g.revokedAt IS NULL",
+            OwnershipGrantEntity.class)
+        .setParameter("acc", account.value())
+        .setParameter("tid", trackId)
+        .getResultStream()
+        // At most one row can match (ux_grant_account_track over the active rows); findFirst is
+        // defensive rather than a silent pick — it cannot mask a duplicate the index forbids.
+        .findFirst()
+        .map(this::toDomain);
   }
 
   @Override
@@ -143,6 +161,20 @@ public class JpaOwnershipRepository implements OwnershipRepository {
         .getResultList();
   }
 
+  @Override
+  public List<String> downloadableTrackIds(AccountId account, List<String> candidateTrackIds) {
+    if (candidateTrackIds == null || candidateTrackIds.isEmpty()) {
+      return List.of();
+    }
+    return em.createQuery(
+            "SELECT g.trackId FROM OwnershipGrantEntity g WHERE g.accountId = :acc"
+                + " AND g.trackId IN :tids AND g.revokedAt IS NULL AND g.downloadable = true",
+            String.class)
+        .setParameter("acc", account.value())
+        .setParameter("tids", candidateTrackIds)
+        .getResultList();
+  }
+
   private OwnershipGrant toDomain(OwnershipGrantEntity e) {
     return new OwnershipGrant(
         e.id,
@@ -151,6 +183,7 @@ public class JpaOwnershipRepository implements OwnershipRepository {
         e.episodeId,
         new OrderId(e.sourceOrderId),
         e.grantedAt,
-        e.revokedAt);
+        e.revokedAt,
+        e.downloadable);
   }
 }

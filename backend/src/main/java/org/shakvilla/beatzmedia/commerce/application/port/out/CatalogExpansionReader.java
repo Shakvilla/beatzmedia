@@ -56,4 +56,18 @@ public interface CatalogExpansionReader {
    * Empty if unresolvable (the split is then skipped rather than posted to a fabricated creator).
    */
   Optional<String> creatorOf(CartItemKind kind, String refId);
+
+  /**
+   * Whether buyers who settle this line may download the audio (Task 5) — the owning release's
+   * {@code downloadable} choice, resolved once per line by the caller and then applied to EVERY
+   * grant the line expands to (INV-2: a half-downloadable album is not a thing; every constituent
+   * track grant of an album carries the same, single value).
+   *
+   * <p>{@code track} resolves via the track's release; {@code album}/{@code album-rest} resolve
+   * directly since the album row shares the release's id (one-to-one, {@code
+   * ProjectReleaseAlbumService}). {@code false} for kinds this reader does not serve (episode/
+   * season-pass/ticket/store) — those never reach this method (dispatched to their own {@link
+   * SettlementSource} before this reader is consulted) and downloads are a music-release feature.
+   */
+  boolean isDownloadable(CartItemKind kind, String refId);
 }

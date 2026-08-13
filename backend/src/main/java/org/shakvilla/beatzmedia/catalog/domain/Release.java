@@ -34,6 +34,14 @@ public final class Release {
    */
   private String coverImage;
   private List<SplitEntry> splits;
+  /**
+   * Whether buyers may download this release's audio (delivered as the lossless FLAC rendition).
+   * Nullable and WITHOUT a default (V980): {@code null} means the artist has not chosen yet.
+   * {@code false} is a complete answer, not an absent one — only {@code null} is rejected.
+   * {@link org.shakvilla.beatzmedia.catalog.application.service.PublishReleaseService} is the
+   * guard that makes this choice required before a release can be published.
+   */
+  private Boolean downloadable;
 
   private Release(
       String id,
@@ -233,6 +241,23 @@ public final class Release {
   /** Whether this release has art. Fans see it as the track image, so it is not optional. */
   public boolean hasCover() {
     return coverImage != null && !coverImage.isBlank();
+  }
+
+  /**
+   * Sets the artist's download choice. Allowed in any status — used by the draft-update path, but
+   * not itself a state transition. {@code null} clears the choice back to "unanswered"; publish
+   * rejects a {@code null} value (see {@link #getDownloadable()}).
+   */
+  public void setDownloadable(Boolean downloadable) {
+    this.downloadable = downloadable;
+  }
+
+  /**
+   * Whether buyers may download this release's audio. {@code null} means the artist has not
+   * chosen yet — {@code false} is a complete "no", not an absent answer.
+   */
+  public Boolean getDownloadable() {
+    return downloadable;
   }
 
   public void updateMetadata(

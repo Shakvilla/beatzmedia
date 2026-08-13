@@ -3,7 +3,7 @@ import * as client from '../client'
 import {
   studioAnalyticsQuery, studioAudienceQuery,
   studioProfileQuery, studioSettingsQuery, apiSaveStudioProfile, apiSaveStudioSettings,
-  studioReleasesQuery, studioReleaseQuery, apiRenameRelease, apiDeleteRelease,
+  studioReleasesQuery, studioReleaseQuery, apiDeleteRelease,
   apiCreateDraft, apiUploadTrack, apiUpdateRelease, apiSubmitRelease, apiDeleteTrack,
 } from './studio'
 
@@ -183,6 +183,7 @@ describe('apiSaveStudioSettings', () => {
 const releaseWire = {
   id: 'r1', title: 'Iron Boy', type: 'album', status: 'in_review', date: 'Jul 14, 2026',
   trackCount: 14, streams: 0, revenue: { amount: 0, currency: 'GHS' }, price: { amount: 2.5, currency: 'GHS' },
+  downloadable: null,
 }
 
 describe('studioReleasesQuery', () => {
@@ -190,7 +191,7 @@ describe('studioReleasesQuery', () => {
     vi.mocked(client.apiFetch).mockResolvedValue({ items: [releaseWire], page: 0, size: 100, total: 1 })
     const rows = await studioReleasesQuery().queryFn!({} as never)
     expect(client.apiFetch).toHaveBeenCalledWith('/studio/releases?size=100')
-    expect(rows[0]).toEqual({ id: 'r1', title: 'Iron Boy', type: 'album', status: 'in_review', date: 'Jul 14, 2026', trackCount: 14, streams: 0, revenue: 0, price: 2.5 })
+    expect(rows[0]).toEqual({ id: 'r1', title: 'Iron Boy', type: 'album', status: 'in_review', date: 'Jul 14, 2026', trackCount: 14, streams: 0, revenue: 0, price: 2.5, downloadable: null })
   })
 })
 
@@ -201,10 +202,17 @@ describe('studioReleaseQuery / mutations', () => {
     expect(client.apiFetch).toHaveBeenCalledWith('/studio/releases/r1')
     expect(r.price).toBe(2.5)
   })
-  it('renames via PATCH title-only', async () => {
-    vi.mocked(client.apiFetch).mockResolvedValue({ ...releaseWire, title: 'New' })
-    await apiRenameRelease('r1', 'New')
-    expect(client.apiFetch).toHaveBeenCalledWith('/studio/releases/r1', { method: 'PATCH', body: { title: 'New' } })
+  it('carries the real downloadable choice through, unlike the list endpoint', async () => {
+    // studioReleaseQuery hits the single-release DETAIL endpoint, which (unlike the list) really
+    // does serve `downloadable` — toStudioRelease alone would default it to null (it's shared
+    // with the list mapping), so this pins that studioReleaseQuery overrides it correctly.
+    vi.mocked(client.apiFetch).mockResolvedValue({ ...releaseWire, downloadable: true })
+    const allowed = await studioReleaseQuery('r1').queryFn!({} as never)
+    expect(allowed.downloadable).toBe(true)
+
+    vi.mocked(client.apiFetch).mockResolvedValue({ ...releaseWire, downloadable: false })
+    const disallowed = await studioReleaseQuery('r1').queryFn!({} as never)
+    expect(disallowed.downloadable).toBe(false)
   })
   it('deletes via DELETE', async () => {
     vi.mocked(client.apiFetch).mockResolvedValue(undefined)

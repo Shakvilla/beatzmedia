@@ -50,6 +50,14 @@ public enum ErrorCode {
   SPLIT_INVITE_NOT_FOUND,
   SPLIT_INVITE_GONE,
   /**
+   * The artist has not yet chosen whether buyers may download this release (422). Thrown by
+   * {@code PublishReleaseService#guardDownloadChoiceMade} when a publish-bound transition is
+   * attempted while {@code release.downloadable} is still {@code null}. Distinct from generic
+   * {@link #VALIDATION} so a client can point the artist straight at the download toggle instead
+   * of a catch-all field error.
+   */
+  DOWNLOAD_CHOICE_REQUIRED,
+  /**
    * A password-reset token could not be redeemed. Deliberately returned for all three failure
    * modes — unknown, already used, and expired — so the response never reveals which, and a
    * harvested token cannot be probed for validity.
@@ -87,6 +95,25 @@ public enum ErrorCode {
   PROVIDER_DISABLED,
   // ---- Playback codes (WU-PLY-1) ----
   MEDIA_UNAVAILABLE,
+  // ---- Playback codes (downloadable releases) ----
+  /**
+   * The caller does not own the track they asked to download (403). Distinct from
+   * {@link #DOWNLOAD_NOT_ALLOWED} on purpose: a non-owner's answer is the same whatever the
+   * release's download setting is, so telling them "buy it first" leaks nothing, while collapsing
+   * both into one code would make an owner unable to tell "I never bought this" from "the artist
+   * does not permit downloads".
+   */
+  NOT_OWNED,
+  /**
+   * The caller owns the track, but the ownership grant they hold does not permit downloading (409).
+   * The grant is the authority — the release's CURRENT setting governs future sales only.
+   */
+  DOWNLOAD_NOT_ALLOWED,
+  /**
+   * The download is permitted, but the lossless (FLAC) rendition does not exist yet (409). Never
+   * silently substituted with the lossy streaming rendition — the caller should retry later.
+   */
+  DOWNLOAD_NOT_READY,
   // ---- Podcasts codes (WU-POD-2) — tipping ----
   TIPS_DISABLED,
   SELF_TIP_NOT_ALLOWED,

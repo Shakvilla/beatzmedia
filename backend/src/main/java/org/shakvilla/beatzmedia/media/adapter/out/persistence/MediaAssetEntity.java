@@ -45,6 +45,9 @@ public class MediaAssetEntity {
   @Column(name = "preview_key", length = 255)
   public String previewKey;
 
+  @Column(name = "lossless_key", length = 255)
+  public String losslessKey;
+
   @Column(name = "created_at", nullable = false)
   public Instant createdAt;
 

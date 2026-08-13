@@ -15,7 +15,10 @@ platform — accepting audio/artwork uploads, validating format and safety, tran
 artwork into delivery variants, laying assets out in object storage, and issuing **signed, time-boxed
 delivery URLs**. It is the **server-side enforcement point for INV-3** (the preview gate): a non-owner
 can only ever receive a URL to the 30s preview rendition; the full rendition is issued only when
-ownership is confirmed by the caller. The module **does not** own catalog/track/episode entities,
+ownership is confirmed by the caller. It also holds the **LOSSLESS (FLAC) rendition** — the downloadable
+releases feature's delivery payload — and issues signed URLs to it (`playback` decides *whether* a
+caller may have one, per INV-13; `media` only ever hands over the object once told to). The module
+**does not** own catalog/track/episode entities,
 ownership grants, or REST upload endpoints — those belong to `catalog`, `studio`,
 `commerce`/`playback`, which call this module's `MediaService` output port. It exposes **no public
 REST of its own**: uploads arrive through `catalog`/`studio` multipart endpoints, delivery through
@@ -68,7 +71,7 @@ Persistence (`media_asset`) is private to this module; consumers reference asset
 
 | Name | Kind | Key fields | Notes |
 |---|---|---|---|
-| `MediaAsset` | Aggregate root | `id`, `ownerRef`, `kind`, `status`, `durationSec`, `originalKey`, `fullKey`, `previewKey` | One row per uploaded binary; lifecycle owner |
+| `MediaAsset` | Aggregate root | `id`, `ownerRef`, `kind`, `status`, `durationSec`, `originalKey`, `fullKey`, `previewKey`, `losslessKey?` | One row per uploaded binary; lifecycle owner |
 | `OwnerRef` | Value object | `module`, `entityId` | Opaque back-reference to the catalog/studio entity (no cross-module FK) |
 | `ObjectKey` | Value object | `bucket`, `key` | Fully-qualified storage location |
 | `SignedUrl` | Value object | `url`, `variant`, `expiresAt` | Result of presigning; ISO-8601 `expiresAt` |
@@ -78,7 +81,7 @@ Persistence (`media_asset`) is private to this module; consumers reference asset
 
 - `MediaKind { AUDIO, ARTWORK }`
 - `MediaStatus { UPLOADING, TRANSCODING, READY, ERROR }`
-- `DeliveryVariant { FULL, PREVIEW }`
+- `DeliveryVariant { FULL, PREVIEW, LOSSLESS }`
 - `AudioFormat { WAV, FLAC, MP3 }` (MP3 is `lossy()`, ADR-35) · `ImageFormat { PNG, JPG }`
 
 **Invariants enforced here:**
@@ -90,8 +93,23 @@ Persistence (`media_asset`) is private to this module; consumers reference asset
   non-owner is signed an object that physically contains only ~30 seconds of audio, so there is no
   full-length media for a client to over-play; the client-side countdown timer is advisory only
   (§9.3).
+- **INV-13 (download gate) — why LOSSLESS is not FULL.** `DeliveryVariant.LOSSLESS` (`losslessKey`,
+  `delivery/{id}/lossless.flac`) is a **separate** rendition from `FULL`, not a reuse of it, for two
+  reasons. First, `fullKey` is a lossy AAC 128k object — the streaming rendition — so serving it as
+  "the download" would hand a buyer a lossy file on a platform selling lossless masters; the FLAC is
+  produced fresh from the original. Second, the *decision* to serve either one is a different
+  invariant with a different owner: FULL is gated on ownership alone (INV-3, decided in `playback`
+  from `OwnershipReader`), while LOSSLESS is gated on the caller's **download permission**, captured
+  once on their `ownership_grant` at settlement (INV-13, decided in `playback` from commerce's
+  `GetTrackDownloadPermission` — see `commerce.md` §3/§9 and `playback.md` §4.1/§9). `media` itself
+  enforces neither gate; `MediaAsset.resolveDeliveryKey(LOSSLESS)` just refuses to fabricate a
+  download from `fullKey` when `losslessKey` is absent (throws rather than falling back), so a caller
+  who *is* entitled to a download either gets true lossless bytes or a `409 DOWNLOAD_NOT_READY` — never
+  a quietly-downgraded AAC file.
 - A `MediaAsset` reaches `READY` only after **both** `fullKey` and `previewKey` (for `AUDIO`) are
-  written; artwork reaches `READY` after its processed variant is written.
+  written; artwork reaches `READY` after its processed variant is written. `losslessKey` is
+  independent of `READY` — `markLosslessReady(...)` is a separate transition (§8, §13) precisely so a
+  track that can already stream never blocks on a FLAC transcode nobody has to wait for.
 - Format guard: only `AUDIO ∈ {WAV,FLAC,MP3}` and `ARTWORK ∈ {PNG,JPG}` are admitted (§9).
 
 ### Object-storage layout
@@ -103,6 +121,7 @@ Two S3-compatible buckets (PRD §5: `beatz-media-originals` PRIVATE, `beatz-medi
 | `beatz-media-originals` | `originals/{kind}/{assetId}` | **private**, never public, never signed for read by clients | raw uploaded WAV/FLAC/MP3/PNG/JPG |
 | `beatz-media-delivery` | `delivery/{assetId}/full.m4a` | signed read only | single AAC/M4A object, full rendition |
 | `beatz-media-delivery` | `delivery/{assetId}/preview.m4a` | signed read only | single AAC/M4A object, physically ≤30s |
+| `beatz-media-delivery` | `delivery/{assetId}/lossless.flac` | signed read only | single FLAC object, the download payload (INV-13); nullable, produced after `READY` |
 | `beatz-media-delivery` | `delivery/{assetId}/art/` | signed read only | processed artwork variants (e.g. `cover-1024.jpg`) |
 
 > **Why a single file per variant, not HLS (ADR, see `00-system-architecture.md` §9).** The original
@@ -127,6 +146,7 @@ erDiagram
     string original_key
     string hls_key
     string preview_key
+    string lossless_key
     timestamptz created_at
   }
 ```
@@ -205,6 +225,8 @@ public interface AudioTranscoderPort {
     int probeDurationSec(ObjectKey original);                   // ffprobe
     ObjectKey transcodeFull(ObjectKey original, MediaAssetId id);       // delivery/{id}/full.m4a
     ObjectKey clipPreview(ObjectKey original, MediaAssetId id, int previewSeconds); // delivery/{id}/preview.m4a
+
+  ObjectKey transcodeLossless(ObjectKey original, MediaAssetId id);         // delivery/{id}/lossless.flac (INV-13 payload)
 }
 
 public interface ArtworkProcessorPort {
@@ -289,6 +311,18 @@ the part to an `UploadCommand` and call `MediaService.uploadOriginal`. Delivery 
   the front of the file so playback can start before the whole object is downloaded); the preview
   additionally passes `-t <previewSeconds>` to physically clip the output. See §3 for why this
   replaced HLS. Long-running, off the request thread (async job).
+- **LOSSLESS transcode (`transcodeLossless` → `delivery/{id}/lossless.flac`).** `ffmpeg -nostdin -y
+  -i <input> -c:a flac -compression_level 8 <output>` — a single FLAC object, content-type
+  `audio/flac`. **Deliberately omits `-vn`**, unlike `runFfmpegM4a` above. `-vn` on the streaming
+  renditions drops an embedded cover-art video stream because the app already re-serves that artwork
+  separately on every play — carrying a redundant copy in every streamed byte range is pure waste.
+  The FLAC is different: it is the file a buyer **owns and downloads**, where the app's UI is no
+  longer in the loop, so the embedded artwork is part of what they bought — the same way a purchased
+  CD or vinyl rip carries its cover. Verified against ffmpeg 9.0 (the pinned runtime build) that an
+  input with an attached-picture stream carries it through into the FLAC output cleanly (exit 0,
+  duration unaffected) with no explicit `-map`/`-c:v` needed, so omitting `-vn` here is a considered
+  choice, not a copy-paste gap from `runFfmpegM4a`. Guarded by `RealTranscodeIT` (full-length output,
+  ffprobe'd duration; cover-art retention).
 - **Artwork processor** (`ArtworkProcessorPort`): validates and emits delivery image variants.
 - **Mapping:** domain `MediaAsset` ↔ JPA entity in the persistence adapter; domain carries no ORM
   annotations. **Transaction boundary** = the use case (`@Transactional` on the application service);
@@ -319,6 +353,7 @@ CREATE TABLE media_asset (
     original_key  VARCHAR(255) NOT NULL,               -- originals/{kind}/{id}
     hls_key       VARCHAR(255),                        -- delivery/{id}/full.m4a (column name is historical, see note below)
     preview_key   VARCHAR(255),                        -- delivery/{id}/preview.m4a
+    lossless_key  VARCHAR(255),                        -- delivery/{id}/lossless.flac; nullable, produced after READY (INV-13)
     content_hash  VARCHAR(64),                         -- SHA-256 of the original bytes; idempotency on (owner_ref, content_hash)
     created_at    TIMESTAMPTZ  NOT NULL DEFAULT now(),
     CONSTRAINT chk_media_kind   CHECK (kind   IN ('AUDIO','ARTWORK')),
@@ -348,9 +383,17 @@ CREATE UNIQUE INDEX uidx_media_asset_owner_content
 > is explicit and documented in `MediaAssetEntity`'s Javadoc. **This is not a bug** — do not "fix" the
 > mismatch without a reason beyond cosmetics.
 
+> **`lossless_key` (downloadable releases).** Added by `V979__media_asset_lossless_key.sql`, nullable
+> with no default — precisely because it is produced **after** `READY` (§3): playback must not wait on
+> a FLAC transcode that only a download needs. An asset with `lossless_key IS NULL` answers `409
+> DOWNLOAD_NOT_READY` at the `playback` download endpoint rather than silently serving the AAC `FULL`
+> rendition (§3 INV-13 note). Domain: `MediaAsset.markLosslessReady(ObjectKey)` is the sole writer,
+> separate from `markReady` on purpose (§8).
+
 **Flyway list** (`src/main/resources/db/migration/`, forward-only):
 
 - `V<n>__create_media_asset.sql` — table + indexes above (including `uidx_media_asset_owner_content`).
+- `V979__media_asset_lossless_key.sql` — adds nullable `lossless_key` (downloadable releases).
 
 Repeatable seed `R__seed_dev_data.sql` (dev/test only) inserts placeholder `media_asset` rows for the
 seed catalog audio uploaded to MinIO by the `createbuckets`/seed init (PRD §5.4).
@@ -456,6 +499,10 @@ units (CAT-3, PLY-1, POD-1, STU-2) list WU-MED-1 as a dependency.
 - **Integration (Testcontainers MinIO + Postgres, REST-assured via the inbound modules):** real
   upload→store→transcode→ready against Compose MinIO and the `transcoder`; presign + fetch.
 - **Contract:** `SignedUrl`/`MediaHandle` projections validate against frontend types.
+- **LOSSLESS (INV-13, real ffmpeg, `RealTranscodeIT`):** `transcodeLossless` on a real WAV produces a
+  full-length FLAC (ffprobe'd duration matches the source, not clipped like PREVIEW) and retains an
+  embedded cover-art stream (the deliberate `-vn` omission, §5.2). Skipped on hosts without ffmpeg on
+  `PATH` (`@BeforeAll assumeTrue`).
 
 **PRD §6.14 acceptance (Given/When/Then):**
 
@@ -515,3 +562,18 @@ unchanged; only the concrete executor mechanism changed. No port, DTO, or other 
 touched. Regression-tested by `studio.it.StudioPodcastResourceIT`'s successful create-episode paths
 (the media module's own unit tests — `UploadOriginalUseCaseTest` et al. — construct
 `MediaApplicationService` directly with `FakeTranscodeJobPort` and were unaffected).
+
+**The LOSSLESS rendition (downloadable releases, as-built).** `AudioTranscoderPort.transcodeLossless`,
+`MediaAsset.markLosslessReady`, the `lossless_key` column (`V979`), and
+`MediaService.issueSignedUrl(assetId, DeliveryVariant.LOSSLESS, ttl)` are all shipped and exercised
+end-to-end by `playback.it.DownloadEndpointIT` (six cases, including grandfathering) and, on hosts
+with ffmpeg, by `RealTranscodeIT`. **What is *not* shipped yet:** nothing in `media`'s own upload
+pipeline (`UploadOriginalUseCaseTest`'s job flow, `InProcessTranscodeJobAdapter`) calls
+`transcodeLossless` automatically after a track reaches `READY`. The capability exists and is
+independently correct — §3's design (nullable column, `markLosslessReady` separate from `markReady`)
+is exactly shaped for "produced later, off the READY path" — but nothing yet *triggers* that later
+production in a running system. `DownloadEndpointIT` seeds `lossless_key` directly via SQL rather than
+through a real transcode (its own class Javadoc says so) precisely because no such trigger exists to
+exercise. Wiring one — e.g. `enqueueTranscode` scheduling a second, lower-priority `TranscodeJob` for
+the FLAC, or a standalone post-`READY` job — is unscoped follow-up work, not a defect in what shipped:
+every commit in this feature does exactly what its own commit message says.

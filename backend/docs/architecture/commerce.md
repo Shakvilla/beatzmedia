@@ -19,7 +19,9 @@ own catalog truth (album→track and show→episode expansion data is read from 
 ports) nor ticket inventory truth (`events` module), though it triggers ticket issuance on settlement.
 Surface: **Fan** only (cart, buy buttons, checkout, receipt, order history; the buy-to-own unlock that
 playback later reads). HLFRs covered: **HLFR-COMMERCE-01** (cart) and **HLFR-COMMERCE-02** (checkout &
-ownership grant), i.e. LLFR-COMMERCE-01.1–01.3 and 02.1–02.5.
+ownership grant), i.e. LLFR-COMMERCE-01.1–01.3 and 02.1–02.5. It also captures, at settlement, whether
+each grant permits a **download** of its track — the authority `playback`'s download endpoint reads
+for INV-13 (§3, §9, §14).
 
 ## 2. Context & dependencies (C4 component view)
 
@@ -60,7 +62,7 @@ intent id are stored as opaque ids and resolved through ports). Commerce **calls
 | `CartItem` | Entity (within Cart) | `lineId`, `kind`, `refId`, `title`, `subtitle?`, `image`, `unitPrice (Money)`, `qty`, `stackable`, `metadata` | `lineId` stable, e.g. `track:last-last`, `ticket:iron-boy-live:VIP`. |
 | `Order` | Aggregate root | `id`, `accountId`, `reference (BZ-YYYY-NNNNN)`, `status`, `subtotal/fee/total (Money)`, `paymentIntentId?`, `failureReason?`, `lines[]`, `createdAt` | Immutable price snapshot taken at checkout. |
 | `OrderLine` | Entity (within Order) | `id`, `kind`, `refId`, `title`, `unitPrice (Money)`, `qty` | Snapshot — never re-priced after checkout. |
-| `OwnershipGrant` | Aggregate root | `id`, `accountId`, `trackId?`, `episodeId?`, `sourceOrderId`, `grantedAt`, `revokedAt?` | Exactly one of `trackId`/`episodeId` set. Active when `revokedAt IS NULL`. |
+| `OwnershipGrant` | Aggregate root | `id`, `accountId`, `trackId?`, `episodeId?`, `sourceOrderId`, `grantedAt`, `revokedAt?`, `downloadable` | Exactly one of `trackId`/`episodeId` set. Active when `revokedAt IS NULL`. `downloadable` is captured from the release at settlement and never updated (INV-13); always `false` for episode grants (podcasts are out of scope for downloads). |
 | `Money` | Value object (kernel) | `minor`, `currency` | From `platform` kernel; minor units. |
 | `IdempotencyKey` | Value object (kernel) | `value` | Required on `/checkout`. |
 
@@ -83,6 +85,14 @@ with qty clamped to `1..99`.
   `revoked_at` on every grant whose `source_order_id` matches.
 - **INV-11** — All money is `*_minor` internally; totals (`subtotal = Σ unitPrice×qty`,
   `fee = serviceFee when items>0 else 0`, `total = subtotal+fee`) are computed half-up on minor units.
+- **INV-13 (download gate, capture side)** — `GrantOwnership` reads `release.downloadable` **once**
+  per settled `track`/`album`/`album-rest` line and stamps that value onto every `OwnershipGrant` the
+  line expands to (a half-downloadable album is not a thing); it is never re-read from the release
+  afterwards. This is what makes a download **grandfathered**: an artist flipping the setting off
+  after some buyers already own the release affects only **future** sales, because past grants already
+  carry their own answer. `playback`'s download endpoint (`playback.md` §4.1/§9) reads the grant, not
+  the release, for exactly this reason. Episode grants (`OwnershipGrant.forEpisode`) always carry
+  `downloadable=false` — downloads are a music-release feature; podcasts are out of scope.
 
 ```mermaid
 erDiagram
@@ -135,6 +145,7 @@ erDiagram
     uuid source_order_id FK
     timestamptz granted_at
     timestamptz revoked_at
+    bool downloadable "captured at settlement, never updated (INV-13)"
   }
 ```
 
@@ -239,6 +250,21 @@ public interface GetOwnedEpisodeIds {
 Consumed in-process by the `podcasts` module's `OwnershipReader` output-port adapter — podcasts
 never reads `ownership_grant` directly. Symmetric to how playback consumes library's
 `GetOwnedTrackIds`.
+
+**`GetTrackDownloadPermission` input port (downloadable releases, INV-13).** Answers "may this account
+download this track" from the caller's own grant — deliberately **not** by reading
+`release.downloadable`, which is the artist's setting for future sales only:
+
+```java
+public interface GetTrackDownloadPermission {
+    /** true only when an active grant exists AND that grant permits downloading. Fail-closed: no active grant (never bought, or refunded — INV-9) -> false. */
+    boolean mayDownload(AccountId account, String trackId);
+    Set<String> downloadableTrackIds(AccountId account, Collection<String> trackIds); // batched, avoids N+1
+}
+```
+
+Consumed in-process by `playback`'s `DownloadPermissionReaderAdapter` output-port adapter — playback
+never reads `ownership_grant` directly, same rule as `GetOwnedEpisodeIds` above.
 
 ```java
 /** Server-side price/expansion source; never trusts the client (INV-2, INV-11). */
@@ -403,6 +429,7 @@ CREATE TABLE ownership_grant (
     source_order_id UUID NOT NULL REFERENCES "order"(id),
     granted_at      TIMESTAMPTZ NOT NULL DEFAULT now(),
     revoked_at      TIMESTAMPTZ,
+    downloadable    BOOLEAN NOT NULL DEFAULT FALSE,   -- captured from release at settlement, never updated (INV-13)
     CHECK ( (track_id IS NOT NULL) <> (episode_id IS NOT NULL) )   -- exactly one target
 );
 -- one active grant per (account, track) / (account, episode); revoked rows excluded (INV-1/INV-9)
@@ -413,6 +440,13 @@ CREATE UNIQUE INDEX ux_grant_account_episode
 CREATE INDEX ix_grant_source_order ON ownership_grant (source_order_id);
 CREATE INDEX ix_grant_account ON ownership_grant (account_id);
 ```
+
+> **`downloadable` (downloadable releases, `V981__ownership_grant_downloadable.sql`).** `NOT NULL
+> DEFAULT false` on an already-populated table — the default exists **only** so the column can be
+> `NOT NULL` on an existing table; every write path sets it explicitly (`GrantOwnershipService`, §14
+> below). `false` rather than `true` is a deliberate fail-closed choice: if a future insert path ever
+> forgets to set it, the grant **denies** a download the artist never agreed to, rather than granting
+> one. See `media.md` §7 for the sibling `lossless_key` migration this column's permission gates.
 
 **Flyway list (illustrative version numbers — see §13 for the actual allocated version):**
 `V20__commerce_cart.sql`, `V21__commerce_order.sql`, `V22__commerce_ownership_grant.sql`.
@@ -490,6 +524,13 @@ stateDiagram-v2
 - **Stackability.** Non-stackable kinds reject qty changes (`NOT_STACKABLE`) and collapse re-adds to a
   no-op; stackable kinds clamp `1..99`.
 - **Audit (INV-10).** Refund-driven revocation appends an `AuditEntry` via the platform interceptor.
+- **Download permission is captured, not referenced (INV-13).** `GrantOwnership` reads
+  `release.downloadable` once per settled line and stamps it onto every grant that line expands to
+  (§3). `GetTrackDownloadPermissionService` answers every later "may download" question from that
+  stamped value on the grant — it never re-reads the release. The practical effect is
+  **grandfathering**: two buyers of the same release, one before and one after the artist turns
+  downloads off, get different (and each individually correct) answers forever, because each grant
+  captured the truth as it stood at their own settlement.
 - **Error codes:** `CART_EMPTY` (409), `ALREADY_OWNED` (409), `NOT_STACKABLE` (409),
   `TIER_SOLD_OUT` (409), plus `ILLEGAL_TRANSITION` (409) for bad order-status moves; validation → 422.
 - **Rate limiting.** `/checkout` is rate-limited per account/IP (429 + `Retry-After`, §9.5).
@@ -549,6 +590,9 @@ Global DoD (conventions §11 / PRD §8) **plus**:
    the order to `refunded`, restoring re-purchase eligibility.
 5. **Album/season expansion (INV-2):** album/season-pass lines fan out to all constituent
    track/episode grants on settle.
+6. **Download permission is captured, not referenced (INV-13):** every `OwnershipGrant` created for a
+   track/album/album-rest line carries the release's `downloadable` value as it stood at settlement;
+   episode grants always carry `false`; no code path re-reads `release.downloadable` after grant time.
 
 ## 13. WU-COM-1 implementation notes (cart shipped)
 
@@ -824,3 +868,35 @@ hosted-checkout redirect. As-built decisions on top of this ADD (see ADR-31):
 - **Residual (documented in ADR-31):** an item with no `creator_account_id`/`artist_id` is intentionally
   not sellable; ticket `holderName` defaults to the buyer account id; a tier renamed/removed between
   checkout and settlement fails the settlement loudly (retried) rather than minting the wrong tier.
+
+## 17. Downloadable releases — captured permission at settlement (INV-13, as-built)
+
+Shipped as a standalone spec-driven feature (`.superpowers/sdd/2026-08-12-downloadable-releases/`),
+not a numbered WU, spanning `catalog` (the artist's choice + publish guard), `media` (the FLAC
+rendition, see `media.md` §3/§5.2/§13), `commerce` (this section — capture + read of the permission),
+and `playback` (the download endpoint, see `playback.md` §4.1/§9/§14).
+
+- **`V981__ownership_grant_downloadable.sql`** adds `downloadable BOOLEAN NOT NULL DEFAULT false` to
+  `ownership_grant` (rationale in §7's note above).
+- **`GrantOwnershipService` (settlement→grant, §14 above) reads `downloadable` exactly once per
+  line.** For `track`/`album`/`album-rest`: `CatalogExpansionReader.isDownloadable(kind, refId)` is
+  called once per settled line (not once per resulting grant) and the same value is stamped onto every
+  track id that line expands to — a half-downloadable album purchase is not representable. For
+  `episode`/`season-pass` (`OwnershipGrant.forEpisode`): always `false`, unconditionally — podcasts are
+  out of scope for downloads by design, not by omission.
+- **`GetTrackDownloadPermissionService`** (`commerce.application.service`, implements
+  `GetTrackDownloadPermission`) answers `mayDownload` by loading the caller's **active** grant for the
+  track and returning its stamped `downloadable` value; no active grant (never bought, or refunded —
+  INV-9) answers `false` — fail-closed, matching the column default. It is deliberately **not**
+  implemented as `CatalogExpansionReader.isDownloadable(...)` against the current release, because that
+  reads the artist's setting for *future* sales — two tracks of the same release bought either side of
+  an artist changing their mind must be able to give different answers, and only the per-grant value
+  can do that (this is the grandfathering behavior, proven end-to-end by
+  `playback.it.DownloadEndpointIT`'s case 6).
+- **Publish-time guard lives in `catalog`, not here.** `catalog.application.service
+  .PublishReleaseService.guardDownloadChoiceMade` rejects `release.downloadable == null` with `422`
+  (field `downloadable`) on both `APPROVE_IMMEDIATE` and `APPROVE_SCHEDULED` — `release.downloadable`
+  is nullable with no DB default (`V980`) precisely so this guard, not a UI convention, is what makes
+  the artist's choice required before a release can ever be sold. `commerce` only ever reads the
+  release's value once, at settlement, through `CatalogExpansionReader` — it never writes it and never
+  re-reads it after the grant is created.
