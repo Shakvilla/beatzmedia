@@ -109,10 +109,34 @@ albums — was permanently empty while still answering `200`.
   written with an invented name (`album.artist_id` is a foreign key).
 - The projection is driven by the lifecycle **events**, not the publish path, so a release that goes
   live via the scheduled sweep and one an admin approves are projected identically.
+
+**Track pricing is a projection of the live release** (`ReleasePricingProjectionObserver`, driven by
+`ReleaseWentLive`). The artist authors a price on `release_track.price_minor`, but everything that
+decides whether a track can be **sold** reads the `track` row: commerce's
+`CatalogPricingServiceAdapter.priceTrack` and catalog's own fan-facing `trackToDomain` both require
+`ownership='for-sale'` **and** a non-null `price_minor`. Nothing bridged the two, so
+`OwnershipStatus.for_sale` was never assigned anywhere in production — add-to-cart answered
+`404 Price unavailable` for every track, fans saw everything as free regardless of what the artist
+charged, and INV-3 preview enforcement never once fired because no track was ever for sale.
+
+- **A zero price stays `free`**, not "for sale at nothing" — an artist giving a track away must not
+  start being charged for.
+- Idempotent: an unchanged projection returns the same `Track` instance and costs no write, so a
+  reinstate (which re-fires `ReleaseWentLive`) is free.
+- **Not wired to `ContentTakenDown`.** A takedown removes discoverability, but existing owners keep
+  their access (PRD OQ-8); resetting a taken-down track's price would misreport what it sold for.
+- **Known limitation:** editing the price of an already-live release does not re-project, because
+  `ReleaseWentLive` fires only on publish, reinstate and the go-live sweep. `track` then goes stale
+  against `release_track`.
+
 - `ReleaseStatus = live | scheduled | in_review | draft | takedown` (PRD R6: `takedown` added for moderation parity)
 - `SplitConfirmation = self | confirmed | pending | auto`
 - `UploadedTrack.status = uploading | ready | error`
-- `OwnershipStatus = owned | free | for-sale`
+- `OwnershipStatus = owned | free | for-sale` — the wire and column form is **hyphenated** (the
+  `track_ownership_chk` constraint allows only these three), while the Java constant is `for_sale`.
+  Persist it with `wireValue()`, never `name()`: `for_sale` is the only enum constant in the
+  codebase where the two differ, which is why writing `name()` went unnoticed until something
+  finally assigned it.
 - `Genre = Afrobeats | Hiplife | Highlife | Amapiano | Drill | Gospel | R&B | Reggae | Jazz`
 
 **Invariants enforced here** (guard conditions in the domain, not the UI)
