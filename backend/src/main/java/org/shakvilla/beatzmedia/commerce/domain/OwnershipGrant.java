@@ -21,6 +21,7 @@ public final class OwnershipGrant {
   private final OrderId sourceOrderId;
   private final Instant grantedAt;
   private Instant revokedAt;
+  private final boolean downloadable;
 
   public OwnershipGrant(
       String id,
@@ -29,7 +30,8 @@ public final class OwnershipGrant {
       String episodeId,
       OrderId sourceOrderId,
       Instant grantedAt,
-      Instant revokedAt) {
+      Instant revokedAt,
+      boolean downloadable) {
     boolean hasTrack = trackId != null && !trackId.isBlank();
     boolean hasEpisode = episodeId != null && !episodeId.isBlank();
     if (hasTrack == hasEpisode) {
@@ -42,18 +44,35 @@ public final class OwnershipGrant {
     this.sourceOrderId = sourceOrderId;
     this.grantedAt = grantedAt;
     this.revokedAt = revokedAt;
+    this.downloadable = downloadable;
   }
 
-  /** Grant ownership of a track (INV-1/INV-2). */
+  /**
+   * Grant ownership of a track (INV-1/INV-2). {@code downloadable} is the owning release's download
+   * permission AS IT STOOD at settlement — captured once here and never updated afterwards, even if
+   * the artist later changes the release's choice (PRD OQ-8: an artist changing their mind is less
+   * adversarial than a takedown, and a takedown already preserves owners' downloads).
+   */
   public static OwnershipGrant forTrack(
-      String id, AccountId accountId, String trackId, OrderId sourceOrderId, Instant grantedAt) {
-    return new OwnershipGrant(id, accountId, trackId, null, sourceOrderId, grantedAt, null);
+      String id,
+      AccountId accountId,
+      String trackId,
+      OrderId sourceOrderId,
+      Instant grantedAt,
+      boolean downloadable) {
+    return new OwnershipGrant(
+        id, accountId, trackId, null, sourceOrderId, grantedAt, null, downloadable);
   }
 
-  /** Grant ownership of a premium episode (INV-1/INV-2). */
+  /**
+   * Grant ownership of a premium episode (INV-1/INV-2). Always {@code downloadable = false}:
+   * downloads are a music-release feature and podcasts are out of scope for it. This is the
+   * fail-closed direction — nothing becomes downloadable that no artist ever agreed to.
+   */
   public static OwnershipGrant forEpisode(
       String id, AccountId accountId, String episodeId, OrderId sourceOrderId, Instant grantedAt) {
-    return new OwnershipGrant(id, accountId, null, episodeId, sourceOrderId, grantedAt, null);
+    return new OwnershipGrant(
+        id, accountId, null, episodeId, sourceOrderId, grantedAt, null, false);
   }
 
   /** Revoke this grant (INV-9), setting {@code revokedAt}. Idempotent — re-revoking is a no-op. */
@@ -93,5 +112,14 @@ public final class OwnershipGrant {
 
   public Instant getRevokedAt() {
     return revokedAt;
+  }
+
+  /**
+   * Whether the buyer may download this grant's audio — the release's permission as it stood at
+   * settlement (captured once, never re-read from the release afterwards). Always {@code false} for
+   * an episode grant (downloads are a music-release feature).
+   */
+  public boolean isDownloadable() {
+    return downloadable;
   }
 }

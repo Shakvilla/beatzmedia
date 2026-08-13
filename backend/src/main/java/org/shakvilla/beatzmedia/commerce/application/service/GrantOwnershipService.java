@@ -162,6 +162,8 @@ public class GrantOwnershipService implements GrantOwnership {
         SettlementSource source = settlementSource.get();
 
         // episode/season-pass: grant ownership of each expanded episode id (empty for ticket/store).
+        // forEpisode always grants downloadable=false: downloads are a music-release feature and
+        // podcasts are out of scope for it (see OwnershipGrant.forEpisode javadoc).
         for (String episodeId : source.ownedEpisodeIds(line.getRefId())) {
           if (ownershipRepository.existsActiveForEpisode(buyer, episodeId)) {
             continue; // already owns (e.g. bought the episode then the season pass) — no duplicate
@@ -189,14 +191,20 @@ public class GrantOwnershipService implements GrantOwnership {
                         line.getKind().wireValue(), line.getRefId()));
       } else {
         // track/album/album-rest: authoritative catalog path (unchanged).
-        // INV-2: album lines expand to every constituent track id.
+        // INV-2: album lines expand to every constituent track id. The release's download permission
+        // is read ONCE per line and stamped onto every grant that line expands to — a half-
+        // downloadable album is not a thing. This is a snapshot at settlement (Task 5): it is never
+        // re-read from the release afterwards, so an artist later switching downloads off affects
+        // FUTURE sales only.
         List<String> trackIds = expansionReader.tracksToGrant(line.getKind(), line.getRefId());
+        boolean downloadable = expansionReader.isDownloadable(line.getKind(), line.getRefId());
         for (String trackId : trackIds) {
           if (ownershipRepository.existsActiveForTrack(buyer, trackId)) {
             continue; // already owns (e.g. bought a track then the whole album) — no duplicate
           }
           ownershipRepository.save(
-              OwnershipGrant.forTrack(ids.newId(), buyer, trackId, order.getId(), clock.now()));
+              OwnershipGrant.forTrack(
+                  ids.newId(), buyer, trackId, order.getId(), clock.now(), downloadable));
           grantedTrackIds.add(trackId);
         }
 

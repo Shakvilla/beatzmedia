@@ -21,16 +21,23 @@ class OwnershipGrantTest {
 
   @Test
   void forTrack_isActiveTrackGrant() {
-    OwnershipGrant g = OwnershipGrant.forTrack("g1", ACCOUNT, "t1", ORDER, NOW);
+    OwnershipGrant g = OwnershipGrant.forTrack("g1", ACCOUNT, "t1", ORDER, NOW, true);
     assertEquals("t1", g.getTrackId());
     assertTrue(g.isActive());
+    assertTrue(g.isDownloadable());
+  }
+
+  @Test
+  void forEpisode_isAlwaysNotDownloadable() {
+    OwnershipGrant g = OwnershipGrant.forEpisode("g1", ACCOUNT, "e1", ORDER, NOW);
+    assertFalse(g.isDownloadable(), "podcasts are out of scope for downloads (fail-closed)");
   }
 
   @Test
   void bothTargets_rejected() {
     assertThrows(
         IllegalArgumentException.class,
-        () -> new OwnershipGrant("g1", ACCOUNT, "t1", "e1", ORDER, NOW, null),
+        () -> new OwnershipGrant("g1", ACCOUNT, "t1", "e1", ORDER, NOW, null, false),
         "exactly one of track/episode must be set");
   }
 
@@ -38,12 +45,12 @@ class OwnershipGrantTest {
   void neitherTarget_rejected() {
     assertThrows(
         IllegalArgumentException.class,
-        () -> new OwnershipGrant("g1", ACCOUNT, null, null, ORDER, NOW, null));
+        () -> new OwnershipGrant("g1", ACCOUNT, null, null, ORDER, NOW, null, false));
   }
 
   @Test
   void revoke_setsRevokedAt_andIsIdempotent() {
-    OwnershipGrant g = OwnershipGrant.forTrack("g1", ACCOUNT, "t1", ORDER, NOW);
+    OwnershipGrant g = OwnershipGrant.forTrack("g1", ACCOUNT, "t1", ORDER, NOW, false);
     Instant revokeAt = NOW.plusSeconds(60);
     g.revoke(revokeAt);
     assertFalse(g.isActive());

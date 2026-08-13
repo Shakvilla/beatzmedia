@@ -115,4 +115,12 @@ public class FakeOwnershipRepository implements OwnershipRepository {
   public long activeTrackCount(AccountId account) {
     return activeTrackIds(account).size();
   }
+
+  /** Test helper: the most recently saved active grant for a track, or throws if none exists. */
+  public OwnershipGrant findByTrack(String trackId) {
+    return grants.stream()
+        .filter(g -> g.isActive() && trackId.equals(g.getTrackId()))
+        .reduce((first, second) -> second) // most recent
+        .orElseThrow(() -> new java.util.NoSuchElementException("no active grant for " + trackId));
+  }
 }

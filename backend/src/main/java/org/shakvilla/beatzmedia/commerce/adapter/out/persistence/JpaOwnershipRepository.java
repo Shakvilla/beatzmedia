@@ -51,6 +51,7 @@ public class JpaOwnershipRepository implements OwnershipRepository {
     e.sourceOrderId = grant.getSourceOrderId().value();
     e.grantedAt = grant.getGrantedAt();
     e.revokedAt = grant.getRevokedAt();
+    e.downloadable = grant.isDownloadable();
     em.persist(e);
     em.flush();
     return grant;
@@ -151,6 +152,7 @@ public class JpaOwnershipRepository implements OwnershipRepository {
         e.episodeId,
         new OrderId(e.sourceOrderId),
         e.grantedAt,
-        e.revokedAt);
+        e.revokedAt,
+        e.downloadable);
   }
 }
