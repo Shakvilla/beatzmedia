@@ -11,13 +11,17 @@
 
 The `playback` module issues **signed, time-boxed audio URLs** and decides **preview-vs-full** by
 ownership, **server-side**, and **records plays** for the plays counter and royalty accounting. It
-owns exactly one table, `play_event` (write-optimized; rolled up by `analytics`). It explicitly does
+owns exactly one table, `play_event` (write-optimized; rolled up by `analytics`). It also serves the
+**download** endpoint for buy-to-own tracks: a signed URL to the LOSSLESS (FLAC) rendition, gated on
+the caller's own ownership-grant permission rather than ownership alone. It explicitly does
 **not** own catalog data (it reads tracks via `CatalogReader`), ownership grants (it reads via
-`OwnershipReader` from commerce/library), media renditions or signed-URL minting (it delegates to
+`OwnershipReader` from commerce/library), download permission (it reads via `DownloadPermissionReader`
+from commerce), media renditions or signed-URL minting (it delegates to
 `MediaService`), or analytics rollups. It serves the **Fan** surface (global player, preview
-gate). Covered HLFR: **HLFR-PLAYBACK-01** (ownership-aware streaming), satisfying LLFR-PLAYBACK-01.1
+gate, library download). Covered HLFR: **HLFR-PLAYBACK-01** (ownership-aware streaming), satisfying LLFR-PLAYBACK-01.1
 (get stream URL) and LLFR-PLAYBACK-01.2 (record a play), enforcing **INV-3** (non-owner gets the server-clipped preview)
-server-side (PRD §9.3 R8).
+server-side (PRD §9.3 R8); and the download endpoint, enforcing **INV-13** (a download is served only
+when the caller's own grant permits it) server-side, exactly as INV-3.
 
 ## 2. Context & dependencies (C4 component view)
 
@@ -44,7 +48,8 @@ flowchart LR
 **Dependency rule.** Hexagonal: `domain` depends on nothing; `application` depends on `domain` and on
 its own output-port interfaces; adapters depend inward only (ArchUnit enforced). `playback` calls
 other modules **only through output ports** — `MediaService` (media), `OwnershipReader`
-(commerce/library), `CatalogReader` (catalog) — never their DB or JPA types. It owns `play_event`;
+(commerce/library), `CatalogReader` (catalog), `DownloadPermissionReader` (commerce) — never their DB
+or JPA types. It owns `play_event`;
 no cross-module FKs (`account_id`/`track_id` are opaque id references). It **publishes** the
 `PlayRecorded` domain event (consumed by `analytics`) and consumes none.
 
@@ -100,6 +105,15 @@ public interface GetStreamUrl {
 public interface RecordPlay {
     void recordPlay(TrackId track, Optional<AccountId> caller, PlaySource source);
 }
+
+/**
+ * Return a signed, time-boxed URL to the LOSSLESS (FLAC) file for a track the caller owns and is
+ * permitted to download. Unlike GetStreamUrl there is no anonymous case — caller is AccountId, not
+ * Optional. INV-13 enforcement point.
+ */
+public interface GetDownloadUrl {
+    DownloadUrlResult getDownloadUrl(TrackId track, AccountId caller);
+}
 ```
 
 - **GetStreamUrl** — *Trigger:* `GET /v1/tracks/:id/stream`. *Auth:* optional; anonymous caller =
@@ -108,9 +122,34 @@ public interface RecordPlay {
 - **RecordPlay** — *Trigger:* `POST /v1/tracks/:id/play`. *Auth:* optional. *Idempotency:* de-duped
   per (account, track) within a window (§9); a suppressed duplicate is a silent no-op (still 204).
   *Events:* `PlayRecorded` (AFTER_SUCCESS) on a counted play. *Satisfies:* LLFR-PLAYBACK-01.2.
+- **GetDownloadUrl** — *Trigger:* `GET /v1/tracks/:id/download`. *Auth:* **required**
+  (`@Authenticated`) — there is no anonymous download. *Idempotency:* pure read, none. *Events:* none.
+  *Satisfies:* INV-13. The guard order is load-bearing and each failure is distinct, evaluated in this
+  sequence:
+  1. track unknown → `TrackNotFoundException` (404 `TRACK_NOT_FOUND`)
+  2. not owned → `NotOwnedException` (403 `NOT_OWNED`)
+  3. owned, but the caller's own **grant** forbids downloading → `DownloadNotAllowedException`
+     (409 `DOWNLOAD_NOT_ALLOWED`)
+  4. permitted, but no FLAC rendition exists yet → `DownloadNotReadyException`
+     (409 `DOWNLOAD_NOT_READY`)
+
+  Ownership is checked **before** permission so a non-owner's answer never varies with the release's
+  download setting or the asset's transcode state — a stranger cannot use the endpoint to probe
+  whether a release is downloadable. Permission is checked before readiness so a refused caller never
+  causes a signing round-trip to media. `GetDownloadUrlService` reads the caller's own
+  `ownership_grant.downloadable` (via `DownloadPermissionReader`) — **never** `release.downloadable` —
+  which is what makes grandfathering work (§9): a download stays reachable after the artist changes
+  their mind, because the grant already captured the answer at settlement (`commerce.md` §3/§14).
 
 ```java
 public record StreamUrlResult(String audioUrl, Optional<Integer> previewSeconds, Instant expiresAt) {}
+
+/**
+ * No sizeBytes: the signing path carries no object length, and the only way to get one today opens a
+ * full object stream just to read it. Reporting 0 for "unknown" would be a fabricated number — the
+ * field is absent rather than wrong until a HEAD-style ObjectStorePort method exists.
+ */
+public record DownloadUrlResult(String downloadUrl, Instant expiresAt, String format) {}
 ```
 
 ### 4.2 Output ports
@@ -119,12 +158,24 @@ public record StreamUrlResult(String audioUrl, Optional<Integer> previewSeconds,
 /** Mints signed, time-boxed object-store URLs; the full or the server-clipped preview rendition, one presigned object each (ADR-34). Adapter: media module / WU-MED-1. */
 public interface MediaService {
     SignedUrl issueSignedUrl(TrackId track, PlaybackMode mode, Duration ttl);
+
+    /** Presign the LOSSLESS (FLAC) rendition. Empty = not produced yet (409 DOWNLOAD_NOT_READY), never a fallback to FULL. */
+    Optional<SignedUrl> issueLosslessUrl(TrackId track, Duration ttl);
 }
 public record SignedUrl(String url, Instant expiresAt) {}
 
 /** Reads commerce/library ownership grants. Adapter: commerce-ownership client (in-process port). */
 public interface OwnershipReader {
     boolean isOwned(AccountId account, TrackId track);
+}
+
+/**
+ * Reads whether the caller's own ownership grant permits a download (INV-13) — never
+ * release.downloadable, which governs future sales only. Adapter: commerce's GetTrackDownloadPermission
+ * input port, called in-process (commerce ADD §4.1/§9).
+ */
+public interface DownloadPermissionReader {
+    boolean mayDownload(AccountId account, TrackId track);
 }
 
 /** Reads track metadata to resolve ownership kind + existence. Adapter: catalog read client. */
@@ -141,7 +192,8 @@ public interface EventPublisher { void publish(DomainEvent event); }
 ```
 
 One-liners: `MediaService` → media module's S3 object signer (WU-MED-1); `OwnershipReader` → commerce
-ownership grant reader (WU-COM-2); `CatalogReader` → catalog track read; `Clock`/`EventPublisher` →
+ownership grant reader (WU-COM-2); `CatalogReader` → catalog track read; `DownloadPermissionReader` →
+commerce's `GetTrackDownloadPermission` (downloadable releases); `Clock`/`EventPublisher` →
 kernel.
 
 ## 5. Adapters
@@ -152,6 +204,7 @@ kernel.
 |---|---|---|---|---|---|---|---|
 | GET | `/v1/tracks/:id/stream` | optional (anon → preview for `for-sale`, full for `free`) | — | `StreamUrlResponse { audioUrl, previewSeconds?, expiresAt }` | 200 | 404 `TRACK_NOT_FOUND`, 503 `MEDIA_UNAVAILABLE` | PLAYBACK-01.1 |
 | POST | `/v1/tracks/:id/play` | optional | `RecordPlayRequest { source? }` | — | 204 | 404 `TRACK_NOT_FOUND`, 429 `RATE_LIMITED` (+`Retry-After`) | PLAYBACK-01.2 |
+| GET | `/v1/tracks/:id/download` | `@Authenticated` (required — no anonymous case) | — | `DownloadUrlResponse { downloadUrl, expiresAt, format }` | 200 | 401, 404 `TRACK_NOT_FOUND`, 403 `NOT_OWNED`, 409 `DOWNLOAD_NOT_ALLOWED`, 409 `DOWNLOAD_NOT_READY` | INV-13 |
 
 Resources are thin: extract `caller` from JWT `sub` if present, map path/body → command, call the
 input port, map result → DTO. **No business logic in resources.**
@@ -183,6 +236,15 @@ claiming a multi-segment root that another class's method path also produces.
 - **`CatalogReaderAdapter`** (`adapter/out/integration`) — implements `CatalogReader`; calls catalog's
   `GetTrackPlaybackInfo` input port (added alongside this WU — existence + intrinsic ownership kind
   only, no per-caller decoration).
+- **`MediaServiceAdapter.issueLosslessUrl`** — same asset-resolution path as `issueSignedUrl`, but
+  requests `DeliveryVariant.LOSSLESS` and returns `Optional.empty()` (not a thrown exception) when
+  `MediaAsset.resolveDeliveryKey` reports the asset isn't `READY` or carries no `losslessKey` —
+  `GetDownloadUrlService` maps that empty to `DownloadNotReadyException` (409), deliberately **not**
+  the `MediaUnavailableException`/503 that every other media-side failure maps to: nothing is broken,
+  the FLAC just doesn't exist yet.
+- **`DownloadPermissionReaderAdapter`** (`adapter/out/integration`) — implements
+  `DownloadPermissionReader`; calls commerce's `GetTrackDownloadPermission` input port in-process.
+  Playback never reads `ownership_grant` directly — same rule as `OwnershipReaderAdapter`.
 - **Transaction boundary** = the use case (`@Transactional` on `RecordPlayService`; `GetStreamUrlService`
   is a read, no DB write). `PlayRecorded` fires via CDI `Event<PlayRecorded>` after the insert, within
   the same transaction (see §13 on the `EventPublisher` deviation).
@@ -194,6 +256,11 @@ claiming a multi-segment root that another class's method path also produces.
   `API-CONTRACT.md` §4 and `Frontend/src/lib/api/queries/playback.ts`, which feeds it to the player as
   the seek clamp — so an inaccurate value here is directly observable in the UI.
 - **`RecordPlayRequest`** — `source?: 'player' | 'preview' | 'autoplay'` (defaults `player`).
+- **`DownloadUrlResponse`** — `downloadUrl: string` (signed URL to the LOSSLESS/FLAC object),
+  `expiresAt: string` (ISO-8601), `format: string` (always `"flac"` — fixed by the transcoder, not a
+  tunable, so it travels with the variant rather than config). **No `sizeBytes`** — dropped rather
+  than report a fabricated `0`; the signing path carries no object length today (see `GetDownloadUrl`
+  §4.1 record Javadoc).
 - Durations are whole **seconds**; timestamps ISO-8601; no money in this module.
 
 ## 7. Persistence schema & migrations
@@ -305,6 +372,14 @@ decided once per request.
 - **Bot-play exclusion from popularity.** Flagged bot plays are excluded from popularity/plays inputs
   consumed by search ranking (PRD §6.13 LLFR-SEARCH-01.2) and surfaced as risk signals (§6.13/§9);
   `source` + de-dup metadata support this downstream.
+- **Download gate / INV-13.** `GetDownloadUrl` is `@Authenticated`; the guard order (existence →
+  ownership → permission → readiness, §4.1) is server-enforced and never bypassed by the client. The
+  permission itself is **read from the caller's own grant**, captured onto it at settlement — never
+  re-read from `release.downloadable`, which governs only future sales (commerce ADD §3/§14). This is
+  what makes a download **grandfathered**: an owner who bought while downloads were on keeps their
+  download after the artist turns them off, exactly as the library UI's own gate does (Task 9b — it
+  also reads the grant, not the release). This is the sibling invariant to INV-3: same "server decides,
+  never the client" shape, different question (may-download vs. may-hear-full).
 - **Events.** `PlayRecorded { trackId, accountId?, at, fullVsPreview, source }` (ids + snapshot only,
   no JPA entities) published AFTER_SUCCESS; idempotent consumer in `analytics`.
 - **Observability.** Trace id on every request; metrics: `playback.stream.requests{mode}`,
@@ -329,6 +404,16 @@ ownership").
   URL; the preview asset is ≤ `beatz.preview-seconds`; `/play` inserts a `play_event` and emits `PlayRecorded`.
 - **Contract:** `StreamUrlResponse` / `RecordPlayRequest` validate against `API-CONTRACT.md` §4 and
   frontend types (`previewSeconds` optional, present only when gated).
+- **Download endpoint / INV-13 (`playback.it.DownloadEndpointIT`, real Postgres via Testcontainers):**
+  the full guard chain end to end through the real service/adapter chain (`GetDownloadUrlService` →
+  commerce's `GetTrackDownloadPermission` → library's `GetOwnedTrackIds` → media's variant selection),
+  with the S3 signer faked so no live MinIO is required. Six cases: unauthenticated → 401; unknown
+  track → 404; not owned → 403 `NOT_OWNED`; owned but grant forbids → 409 `DOWNLOAD_NOT_ALLOWED`;
+  owned + permitted but no FLAC yet → 409 `DOWNLOAD_NOT_READY`; owned + permitted + FLAC present → 200
+  with a `.flac` URL. Case order matters: ownership is asserted before permission so a non-owner's
+  refusal is proven not to vary with the release's download setting. One case is the
+  **grandfathering** proof — a grant seeded `downloadable=true` still serves a download after the
+  release's own `downloadable` flag is (independently) `false`. `Tests run: 6, Skipped: 0`.
 
 **Key Given/When/Then (PRD §6.3):**
 - **Given** a `for-sale` track the caller does **not** own **When** `GET /stream` **Then** `audioUrl`
@@ -353,6 +438,9 @@ Global DoD (PRD §8 / conventions §11) plus:
 - `expiresAt` honours `BEATZ_SIGNED_URL_TTL_SECONDS`; no hard-coded TTL or preview length.
 - `play_event` writes are de-duplicated per (account, track) window; `PlayRecorded` emitted only on
   counted plays; ArchUnit (hexagonal dependency rule) green.
+- **Download gate (INV-13):** the guard order (existence → ownership → permission → readiness) is
+  enforced exactly as specified in every path — no shortcut returns a download URL to a non-owner or
+  to an owner whose grant forbids it; `DownloadEndpointIT`'s six cases (incl. grandfathering) green.
 
 ## 13. Implementation notes (WU-PLY-1, as-built)
 
@@ -410,3 +498,35 @@ guard in every environment, and would have defeated playback's own INV-3 ownersh
 `PlaybackFlowIT`'s owner-of-a-for-sale-track assertion; fixed by deleting the dead stub so
 `CommerceLibraryOwnershipReaderAdapter` is the sole bean for the port. `library.md` and `commerce.md`
 should be cross-referenced/updated for this fix by doc-writer if not already covered.
+
+## 14. Download endpoint implementation notes (INV-13, as-built)
+
+Mirrors §13's shape: real ports/adapters, wired the same sanctioned way as streaming.
+
+**`GetDownloadUrlService`** (`playback.application.service`) is the only place a download is
+authorised — read-only, no transaction/DB write, same shape as `GetStreamUrlService`. It resolves
+`CatalogReader.getTrack` (existence), `OwnershipReader.isOwned` (ownership), then
+`DownloadPermissionReader.mayDownload` (permission), then `MediaService.issueLosslessUrl` (readiness),
+throwing the matching domain exception at the first failing step (§4.1's numbered guard order) — never
+combining checks or reordering them, because reordering ownership after permission would let a
+stranger's HTTP status leak whether a given release is downloadable.
+
+**Format is a constant, not configuration.** `GetDownloadUrlService.LOSSLESS_FORMAT = "flac"` is a
+`private static final String`, not a `@ConfigProperty` — the container the LOSSLESS rendition is
+produced in is fixed by the transcoder (`media.md` §5.2's `runFfmpegFlac`), so it travels with the
+variant rather than being independently tunable and possibly wrong.
+
+**Cross-module reads for one request.** A download request makes two in-process cross-module calls —
+`library::GetOwnedTrackIds` (ownership, reusing the streaming path's adapter) and
+`commerce::GetTrackDownloadPermission` (permission, new for this feature) — plus the media lookup.
+Both are read-only, in-process, and follow the same "playback never touches another module's table"
+rule as §13's `OwnershipReaderAdapter`.
+
+**Cross-reference.** `commerce.md` §3/§7/§14 owns the captured permission
+(`ownership_grant.downloadable`, set once at settlement, never re-read from `release.downloadable`)
+and the grandfathering rule this endpoint depends on. `media.md` §3/§5.2/§7/§13 owns the LOSSLESS
+(FLAC) rendition itself, the deliberate `-vn` omission, and the as-built note that nothing yet
+triggers its production automatically after a track reaches `READY` — `DownloadEndpointIT` seeds
+`lossless_key` directly rather than through a real transcode for exactly that reason. This module is
+only the decision point that reads the former to gate a signed URL to the latter; it neither stores
+the permission nor produces the file.

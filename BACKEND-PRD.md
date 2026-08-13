@@ -181,23 +181,26 @@ suspended` · `ComplianceType = DSAR-export | DSAR-delete | Takedown | Tax` · `
    purchasing a `season-pass` grants all premium episodes of the show. (INV-2)
 3. **Preview gate.** For a `for-sale` track the caller does not own, `/stream` returns a signed URL
    clipped to `previewSeconds = 30`; full audio only for `owned`/`free`. (INV-3)
-4. **Revenue split.** Every settled sale/royalty credits the creator `70%` and the platform `30%`;
+4. **Download gate.** A download is served only when the caller's own grant permits it. Server-enforced,
+   exactly as INV-3. The permission is captured on the ownership grant at settlement; an artist's later
+   change affects future sales only. (INV-13)
+5. **Revenue split.** Every settled sale/royalty credits the creator `70%` and the platform `30%`;
    tips credit creator `90%` / platform `10%`. Percentages come from `PlatformSettings`, not code. (INV-4)
-5. **Bundle discount.** A multi-track release's list price = `round(Σ track prices × (1 − bundle), 2)`
+6. **Bundle discount.** A multi-track release's list price = `round(Σ track prices × (1 − bundle), 2)`
    with `bundle = 0.24`. Singles get no discount. (INV-5)
-6. **Ledger balance.** Every monetary movement posts **balanced** double-entry rows (Σ debits =
+7. **Ledger balance.** Every monetary movement posts **balanced** double-entry rows (Σ debits =
    Σ credits); creator withdrawable balance = cleared credits − cleared cash-outs. (INV-6)
-7. **Scheduled go-live.** A `scheduled` release/episode becomes `live`/`published` at its scheduled
+8. **Scheduled go-live.** A `scheduled` release/episode becomes `live`/`published` at its scheduled
    instant via a job; it is not publicly streamable before then. (INV-7)
-8. **Withdrawal floor & KYC.** A withdrawal requires `amount ≥ MIN_PAYOUT (₵10)`, sufficient cleared
+9. **Withdrawal floor & KYC.** A withdrawal requires `amount ≥ MIN_PAYOUT (₵10)`, sufficient cleared
    balance, and a `KycRecord` in `verified` state. (INV-8)
-9. **Refund revokes ownership.** A completed refund revokes the corresponding `OwnershipGrant`(s) and
-   reverses the ledger entries; the creator's accrued credit is clawed back. (INV-9)
-10. **Audit completeness.** Every privileged mutation (suspend, verify, takedown, payout, refund,
+10. **Refund revokes ownership.** A completed refund revokes the corresponding `OwnershipGrant`(s) and
+    reverses the ledger entries; the creator's accrued credit is clawed back. (INV-9)
+11. **Audit completeness.** Every privileged mutation (suspend, verify, takedown, payout, refund,
     settings change, role change, impersonate) appends exactly one `AuditEntry`. (INV-10)
-11. **Money precision.** Money is stored in **minor units (pesewas, integer)** internally; the API
+12. **Money precision.** Money is stored in **minor units (pesewas, integer)** internally; the API
     surface uses `{ amount: decimal cedis, currency }`. Rounding is half-up to 2 dp at boundaries. (INV-11)
-12. **Split sum.** Per-track royalty splits sum to **≤ 100%** of the creator pool; the originating
+13. **Split sum.** Per-track royalty splits sum to **≤ 100%** of the creator pool; the originating
     creator implicitly holds the remainder; a release cannot go `live` with `pending` splits. (INV-12)
 
 ### 3.4 Entity-relationship overview (textual)
