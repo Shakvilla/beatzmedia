@@ -130,6 +130,12 @@ public class InProcessTranscodeJobAdapter implements TranscodeJobPort {
                   job.assetId(), null, null, 0, false, "TRANSCODE_FAILED: " + ex.getMessage());
         }
         onResult(result);
+        if (result.ok()) {
+          // AFTER markReady (via onResult above), never before: READY means playable, and the
+          // FLAC transcode is the slowest stage here — needed only for downloads, so it must not
+          // delay playback for every stream. See MediaAsset#markLosslessReady javadoc.
+          tryTranscodeLossless(job);
+        }
       } catch (Throwable fatal) {
         // markTranscoding / onResult themselves failed (DB, CDI context, OOM…). Nothing further
         // can persist a state for this asset, so at minimum make it visible instead of silent.
@@ -145,6 +151,29 @@ public class InProcessTranscodeJobAdapter implements TranscodeJobPort {
   @Override
   public void onResult(TranscodeResult result) {
     mediaApplicationService.handleTranscodeResult(result);
+  }
+
+  /**
+   * Lossless (FLAC) delivery rendition — the download payload. Deliberately a best-effort,
+   * contained step: a failure here must NOT fail the asset. Losing the FLAC costs a download
+   * (recoverable — the download endpoint answers {@code 409 DOWNLOAD_NOT_READY} and it can be
+   * regenerated later); marking the asset ERROR here would cost the artist a release that will
+   * not stream at all, over a rendition most listeners never download. So: log and move on,
+   * leaving {@code losslessKey} null on an otherwise READY asset.
+   */
+  private void tryTranscodeLossless(TranscodeJob job) {
+    try {
+      ObjectKey losslessKey = transcoder.transcodeLossless(job.original(), job.assetId());
+      mediaApplicationService.markLosslessReady(job.assetId(), losslessKey);
+      LOG.infof(
+          "transcode: lossless ok asset=%s lossless=%s", job.assetId().value(), losslessKey.key());
+    } catch (Exception ex) {
+      LOG.errorf(
+          ex,
+          "transcode: lossless stage failed for asset=%s — asset stays READY, download "
+              + "unavailable until this is re-run",
+          job.assetId().value());
+    }
   }
 
   @PreDestroy
