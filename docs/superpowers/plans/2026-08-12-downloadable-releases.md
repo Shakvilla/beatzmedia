@@ -1254,6 +1254,82 @@ Use the `open-pull-request` skill. Note in the PR body that `contract-test` will
 
 ---
 
+## Task 12: Trigger the lossless transcode
+
+**Added during execution.** `transcodeLossless` is built, tested and documented — and nothing calls
+it. `InProcessTranscodeJobAdapter` runs `transcodeFull` + `clipPreview` then `markReady`, and stops
+there. So no asset ever gets a `lossless_key`, and **every download returns `409 DOWNLOAD_NOT_READY`
+forever**.
+
+This is the same defect class the QA report calls GAP-19: a capability wired to nothing, indefinitely
+reporting a state that reads like "not yet" but means "never". The feature is not deployable without
+this.
+
+**Files:**
+- Modify: `backend/src/main/java/org/shakvilla/beatzmedia/media/adapter/out/integration/InProcessTranscodeJobAdapter.java`
+- Test: the adapter's existing test class (or `TranscodeResultHandlingTest`)
+
+**Interfaces:**
+- Consumes: `AudioTranscoderPort.transcodeLossless(ObjectKey, MediaAssetId)`, `MediaAsset.markLosslessReady(ObjectKey)`
+- Produces: an asset that reaches READY also acquires a `lossless_key`
+
+- [ ] **Step 1: Write the failing test**
+
+```java
+  @Test
+  void aTranscodedAssetAlsoGetsItsLosslessRendition() {
+    runJobFor(ASSET_ID);
+
+    assertNotNull(
+        repository.find(ASSET_ID).orElseThrow().getLosslessKey(),
+        "without this the download endpoint answers 409 DOWNLOAD_NOT_READY forever");
+  }
+
+  @Test
+  void aFailedLosslessTranscodeStillLeavesTheAssetPlayable() {
+    // READY means playable. The FLAC is only needed for downloads, so losing it must not cost the
+    // fan playback they already paid for — or cost the artist a release that will not stream.
+    transcoder.failLosslessOnly();
+
+    runJobFor(ASSET_ID);
+
+    MediaAsset asset = repository.find(ASSET_ID).orElseThrow();
+    assertEquals(MediaStatus.READY, asset.getStatus());
+    assertNull(asset.getLosslessKey());
+  }
+```
+
+- [ ] **Step 2: Run it and confirm it fails**
+
+```bash
+cd backend && ./mvnw -o test -Dtest=TranscodeResultHandlingTest
+```
+
+- [ ] **Step 3: Wire it, AFTER markReady**
+
+Order matters: `markReady(fullKey, previewKey, duration)` first so playback is available immediately,
+then the lossless transcode. A FLAC transcode is the slowest step and only downloads need it —
+blocking READY on it would delay every stream for a file most listeners never download.
+
+Wrap the lossless step so a failure logs and leaves the asset READY rather than ERROR.
+
+- [ ] **Step 4: Run it and confirm it passes**
+
+```bash
+cd backend && ./mvnw -o test -Dtest=TranscodeResultHandlingTest
+```
+
+- [ ] **Step 5: Commit**
+
+```bash
+cd backend && ./mvnw -o spotless:apply
+git add backend/src
+git commit -m "fix(download): actually run the lossless transcode after an asset is ready"
+```
+
+
+---
+
 ## Self-Review
 
 **Spec coverage**
