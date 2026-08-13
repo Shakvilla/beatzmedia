@@ -1121,21 +1121,13 @@ describe('toStudioRelease', () => {
   const base: StudioReleaseWire = {
     id: 'r1', title: 'Iron Boy', type: 'album', status: 'draft', date: '—',
     trackCount: 14, streams: 0, revenue: { amount: 0, currency: 'GHS' }, price: { amount: 2.5, currency: 'GHS' },
-    downloadable: null,
   }
 
-  it('carries a missing download choice through as null rather than false', () => {
-    const wire: StudioReleaseWire = { ...base, downloadable: null }
-    expect(toStudioRelease(wire).downloadable).toBeNull()
-  })
-
-  it('carries an explicit "no downloads" choice through as false, not null', () => {
-    const wire: StudioReleaseWire = { ...base, downloadable: false }
-    expect(toStudioRelease(wire).downloadable).toBe(false)
-  })
-
-  it('carries an explicit "allow downloads" choice through as true', () => {
-    const wire: StudioReleaseWire = { ...base, downloadable: true }
-    expect(toStudioRelease(wire).downloadable).toBe(true)
+  it('always maps downloadable to null: the LIST wire (StudioReleaseWire) never carries the field', () => {
+    // GET /v1/studio/releases (the list endpoint) has no downloadable on its read model, so
+    // toStudioRelease — shared with that endpoint via studioReleasesQuery — cannot derive a real
+    // value here. The single-release detail endpoint does carry it (StudioReleaseDetailWire); see
+    // studioReleaseQuery in queries/studio.ts, which overrides this null with the real value.
+    expect(toStudioRelease(base).downloadable).toBeNull()
   })
 })

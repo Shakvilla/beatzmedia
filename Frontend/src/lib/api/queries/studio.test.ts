@@ -3,7 +3,7 @@ import * as client from '../client'
 import {
   studioAnalyticsQuery, studioAudienceQuery,
   studioProfileQuery, studioSettingsQuery, apiSaveStudioProfile, apiSaveStudioSettings,
-  studioReleasesQuery, studioReleaseQuery, apiRenameRelease, apiDeleteRelease,
+  studioReleasesQuery, studioReleaseQuery, apiDeleteRelease,
   apiCreateDraft, apiUploadTrack, apiUpdateRelease, apiSubmitRelease, apiDeleteTrack,
 } from './studio'
 
@@ -202,10 +202,17 @@ describe('studioReleaseQuery / mutations', () => {
     expect(client.apiFetch).toHaveBeenCalledWith('/studio/releases/r1')
     expect(r.price).toBe(2.5)
   })
-  it('renames via PATCH title-only', async () => {
-    vi.mocked(client.apiFetch).mockResolvedValue({ ...releaseWire, title: 'New' })
-    await apiRenameRelease('r1', 'New')
-    expect(client.apiFetch).toHaveBeenCalledWith('/studio/releases/r1', { method: 'PATCH', body: { title: 'New' } })
+  it('carries the real downloadable choice through, unlike the list endpoint', async () => {
+    // studioReleaseQuery hits the single-release DETAIL endpoint, which (unlike the list) really
+    // does serve `downloadable` — toStudioRelease alone would default it to null (it's shared
+    // with the list mapping), so this pins that studioReleaseQuery overrides it correctly.
+    vi.mocked(client.apiFetch).mockResolvedValue({ ...releaseWire, downloadable: true })
+    const allowed = await studioReleaseQuery('r1').queryFn!({} as never)
+    expect(allowed.downloadable).toBe(true)
+
+    vi.mocked(client.apiFetch).mockResolvedValue({ ...releaseWire, downloadable: false })
+    const disallowed = await studioReleaseQuery('r1').queryFn!({} as never)
+    expect(disallowed.downloadable).toBe(false)
   })
   it('deletes via DELETE', async () => {
     vi.mocked(client.apiFetch).mockResolvedValue(undefined)
