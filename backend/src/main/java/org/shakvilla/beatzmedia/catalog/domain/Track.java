@@ -148,6 +148,31 @@ public final class Track {
         downloadable);
   }
 
+  /**
+   * Apply the price the artist set on this track's release.
+   *
+   * <p>The price is authored on {@code release_track}, but everything that decides whether a track
+   * can be SOLD reads this row: commerce's pricing adapter and the fan-facing track view both look
+   * at {@code ownership}/{@code priceMinor}. Nothing bridged the two, so {@code for_sale} was never
+   * assigned anywhere in production and every uploaded track stayed free and unpurchasable.
+   *
+   * <p>A zero price means {@code free}, not "for sale at nothing" — an artist giving a track away
+   * must not start being charged for. Idempotent: an unchanged projection returns the same instance
+   * and costs no write, matching {@link #withImage} and {@link #markReady}.
+   */
+  public Track withReleasePricing(long releasePriceMinor) {
+    OwnershipStatus newOwnership =
+        releasePriceMinor > 0 ? OwnershipStatus.for_sale : OwnershipStatus.free;
+    Long newPrice = releasePriceMinor > 0 ? releasePriceMinor : null;
+    if (newOwnership == ownership && java.util.Objects.equals(newPrice, priceMinor)) {
+      return this;
+    }
+    return new Track(
+        id, title, artistId, artistName, albumId, albumTitle, durationSec,
+        image, newOwnership, newPrice, plays, audioUrl, credits, quality, year, status,
+        downloadable);
+  }
+
   public TrackId getId() {
     return id;
   }

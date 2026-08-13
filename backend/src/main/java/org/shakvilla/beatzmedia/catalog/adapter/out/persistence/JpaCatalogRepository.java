@@ -604,7 +604,10 @@ public class JpaCatalogRepository implements CatalogRepository {
     e.albumTitle = track.getAlbumTitle().orElse(null);
     e.durationSec = track.getDurationSec();
     e.image = track.getImage();
-    e.ownership = track.getOwnership().name();
+    // wireValue(), not name(): the column is hyphenated ('for-sale'), which the check constraint
+    // enforces and every reader compares against. The read path already translates back; only
+    // for_sale differs, which is why this survived — nothing ever assigned it.
+    e.ownership = track.getOwnership().wireValue();
     e.priceMinor = track.getPriceMinor().orElse(null);
     e.plays = track.getPlays().orElse(0L);
     e.audioUrl = track.getAudioUrl().orElse(null);
