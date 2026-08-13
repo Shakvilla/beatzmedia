@@ -24,6 +24,7 @@ import org.shakvilla.beatzmedia.audit.fakes.FakeAuditWriter;
 import org.shakvilla.beatzmedia.catalog.application.port.in.PublishRelease.ReleaseTransition;
 import org.shakvilla.beatzmedia.catalog.application.service.PublishReleaseService;
 import org.shakvilla.beatzmedia.catalog.domain.ContentTakenDown;
+import org.shakvilla.beatzmedia.catalog.domain.DownloadChoiceRequiredException;
 import org.shakvilla.beatzmedia.catalog.domain.IllegalTransitionException;
 import org.shakvilla.beatzmedia.catalog.domain.Release;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseApproved;
@@ -34,7 +35,7 @@ import org.shakvilla.beatzmedia.catalog.domain.ReleaseType;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseWentLive;
 import org.shakvilla.beatzmedia.catalog.domain.Visibility;
 import org.shakvilla.beatzmedia.catalog.fakes.FakeCatalogRepository;
-import org.shakvilla.beatzmedia.platform.domain.ValidationException;
+import org.shakvilla.beatzmedia.platform.domain.ErrorCode;
 import org.shakvilla.beatzmedia.platform.fakes.FakeClock;
 import org.shakvilla.beatzmedia.platform.fakes.FakeIds;
 
@@ -243,10 +244,19 @@ class PublishReleaseServiceTest {
     release.setDownloadable(null);
     repo.addRelease(release);
 
-    ValidationException e = assertThrows(ValidationException.class, () -> service.transition(
-        new ReleaseId("rel-dl-1"), ReleaseTransition.APPROVE_IMMEDIATE, ADMIN, Optional.empty()));
+    DownloadChoiceRequiredException e =
+        assertThrows(
+            DownloadChoiceRequiredException.class,
+            () ->
+                service.transition(
+                    new ReleaseId("rel-dl-1"),
+                    ReleaseTransition.APPROVE_IMMEDIATE,
+                    ADMIN,
+                    Optional.empty()));
 
     assertEquals("downloadable", e.getField());
+    // A client must be able to tell "choose downloads" apart from any other 422 field error.
+    assertEquals(ErrorCode.DOWNLOAD_CHOICE_REQUIRED, e.getErrorCode());
   }
 
   @Test
@@ -257,10 +267,18 @@ class PublishReleaseServiceTest {
     release.setDownloadable(null);
     repo.addRelease(release);
 
-    ValidationException e = assertThrows(ValidationException.class, () -> service.transition(
-        new ReleaseId("rel-dl-2"), ReleaseTransition.APPROVE_SCHEDULED, ADMIN, Optional.of(FUTURE)));
+    DownloadChoiceRequiredException e =
+        assertThrows(
+            DownloadChoiceRequiredException.class,
+            () ->
+                service.transition(
+                    new ReleaseId("rel-dl-2"),
+                    ReleaseTransition.APPROVE_SCHEDULED,
+                    ADMIN,
+                    Optional.of(FUTURE)));
 
     assertEquals("downloadable", e.getField());
+    assertEquals(ErrorCode.DOWNLOAD_CHOICE_REQUIRED, e.getErrorCode());
   }
 
   @Test

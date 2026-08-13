@@ -16,6 +16,7 @@ import org.shakvilla.beatzmedia.catalog.application.port.in.PublishRelease;
 import org.shakvilla.beatzmedia.catalog.application.port.in.StudioReleaseView;
 import org.shakvilla.beatzmedia.catalog.application.port.out.CatalogRepository;
 import org.shakvilla.beatzmedia.catalog.domain.ContentTakenDown;
+import org.shakvilla.beatzmedia.catalog.domain.DownloadChoiceRequiredException;
 import org.shakvilla.beatzmedia.catalog.domain.IllegalTransitionException;
 import org.shakvilla.beatzmedia.catalog.domain.Release;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseApproved;
@@ -25,7 +26,6 @@ import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseWentLive;
 import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
 import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
-import org.shakvilla.beatzmedia.platform.domain.ValidationException;
 
 /**
  * Application service for {@link PublishRelease}. Orchestrates the release lifecycle FSM
@@ -149,8 +149,8 @@ public class PublishReleaseService implements PublishRelease {
    */
   private void guardDownloadChoiceMade(Release release) {
     if (release.getDownloadable() == null) {
-      throw new ValidationException(
-          "Choose whether buyers may download this release before publishing.", "downloadable");
+      throw new DownloadChoiceRequiredException(
+          "Choose whether buyers may download this release before publishing.");
     }
   }
 

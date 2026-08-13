@@ -269,7 +269,9 @@ UI: studio overview, releases, 4-step release wizard, analytics, audience, payou
 §4's `GET /tracks/:id/download`); `null` means **not chosen yet** — unlike the public `Track`/`Album`
 shapes below, this field is **never coerced to `false`**, because the wizard's required-choice UI
 needs to tell "not decided" apart from "decided: no". A release cannot leave `draft` (`APPROVE_*`
-transitions) while `downloadable` is still `null`.
+transitions) while `downloadable` is still `null` — attempting it returns `422
+DOWNLOAD_CHOICE_REQUIRED` (field `downloadable`), distinct from a generic `VALIDATION` error so a
+client can point the artist straight at the download toggle.
 
 `TrackDraft { trackId, title, duration, status: uploading|ready|error, position, price, splits: SplitEntry[] }` (WU-CAT-6). `SplitEntry { id, name, email, role, percent, confirmation: self|confirmed|pending|declined|auto }` — **collaborators only**: the originating creator's share is implicit and never stored as a row, so `Σ percent ≤ 100` (not `== 100`), per INV-12. `PATCH .../:id` accepts `splits` nested under each `tracks[]` entry on input (`{name, email, role, percent}` — no `id`/`confirmation`, wholesale-replace per track); every persisted collaborator lands with `confirmation:"pending"` until the invite/accept flow (WU-CAT-9, see below) moves it to `confirmed`/`declined` — `declined` is terminal and non-blocking for go-live, same as `confirmed`.
 
