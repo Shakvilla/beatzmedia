@@ -66,9 +66,12 @@ describe('collection API calls', () => {
     expect(data.userPlaylists[0].description).toBeUndefined()
   })
 
-  it('a track owned without a download grant is absent from downloadableTracks even though it is owned', async () => {
-    // The bug this task fixes: an artist can switch a release off after a sale, so ownership and
-    // download permission are two separate sets, not one derived from the other.
+  it('ownedTracks and downloadableTracks pass through as two independent sets, not one derived from the other', async () => {
+    // toCollectionData copies both wire fields verbatim (no client-side filtering/derivation): a
+    // track can be in ownedTracks without being in downloadableTracks. This test only pins that
+    // pass-through shape; it does NOT exercise the backend reason the two sets can differ (the
+    // grant, not the release, gates downloadableTracks — see GrantOwnershipService /
+    // CatalogExpansionReaderAdapter#isDownloadable), which is covered on the backend instead.
     vi.mocked(apiFetch).mockResolvedValue({
       likedTracks: [], followedArtists: [], followedPlaylists: [], followedShows: [],
       savedAlbums: [], ownedTracks: ['t9', 't10'], downloadableTracks: ['t9'],
