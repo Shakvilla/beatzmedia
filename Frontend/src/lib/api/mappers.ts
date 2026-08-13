@@ -565,6 +565,12 @@ export interface StudioReleaseWire {
   streams: number
   revenue: { amount: number; currency: string }
   price: { amount: number; currency: string }
+  /**
+   * The artist's download choice. `null` means "not chosen yet" and is distinct from `false`
+   * ("chosen: no") — collapsing the two with `?? false` would silently satisfy the publish guard
+   * with an answer the artist never gave, so it is carried through as `null`, never defaulted.
+   */
+  downloadable: boolean | null
 }
 export function toStudioRelease(w: StudioReleaseWire): StudioRelease {
   return {
@@ -577,6 +583,7 @@ export function toStudioRelease(w: StudioReleaseWire): StudioRelease {
     streams: w.streams,
     revenue: w.revenue?.amount ?? 0,
     price: w.price?.amount ?? 0,
+    downloadable: w.downloadable ?? null,
   }
 }
 

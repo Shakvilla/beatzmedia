@@ -55,10 +55,12 @@ import {
   toComplianceRequest,
   toPlatformSettings,
   toSettingsRequest,
+  toStudioRelease,
   type RiskSignalWire,
   type RiskBoardWire,
   type ComplianceRequestWire,
   type PlatformSettingsWire,
+  type StudioReleaseWire,
 } from './mappers'
 
 describe('toArtist', () => {
@@ -1107,5 +1109,28 @@ describe('platform settings mappers', () => {
     )
     expect(body.providers).toEqual(wire.providers)
     expect(body.flags).toEqual(wire.flags)
+  })
+})
+
+describe('toStudioRelease', () => {
+  const base: StudioReleaseWire = {
+    id: 'r1', title: 'Iron Boy', type: 'album', status: 'draft', date: '—',
+    trackCount: 14, streams: 0, revenue: { amount: 0, currency: 'GHS' }, price: { amount: 2.5, currency: 'GHS' },
+    downloadable: null,
+  }
+
+  it('carries a missing download choice through as null rather than false', () => {
+    const wire: StudioReleaseWire = { ...base, downloadable: null }
+    expect(toStudioRelease(wire).downloadable).toBeNull()
+  })
+
+  it('carries an explicit "no downloads" choice through as false, not null', () => {
+    const wire: StudioReleaseWire = { ...base, downloadable: false }
+    expect(toStudioRelease(wire).downloadable).toBe(false)
+  })
+
+  it('carries an explicit "allow downloads" choice through as true', () => {
+    const wire: StudioReleaseWire = { ...base, downloadable: true }
+    expect(toStudioRelease(wire).downloadable).toBe(true)
   })
 })

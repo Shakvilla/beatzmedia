@@ -118,6 +118,9 @@ function WizardChrome() {
     if (draft.tracks.length === 0) { toast('Upload at least one track', 'error'); return }
     const badSplit = draft.tracks.find((t) => (draft.splits[t.id] ?? []).reduce((s, e) => s + e.percent, 0) !== 100)
     if (badSplit) { toast(`Splits for “${badSplit.title || 'a track'}” must total 100%`, 'error'); return }
+    // No default: the artist must actively pick whether buyers can download this release before it
+    // can go out. The button is also disabled below for the same reason, visibly.
+    if (draft.downloadable === null) { toast('Choose whether buyers can download this release before submitting', 'error'); return }
     if (!draft.agreementAccepted) { toast('Accept the distribution agreement to submit', 'error'); return }
     const countErr = trackCountError(draft.releaseType, draft.tracks.length)
     if (countErr) { toast(countErr, 'error'); return }
@@ -174,9 +177,10 @@ function WizardChrome() {
           )}
           <button
             onClick={handleContinue}
-            disabled={busy}
+            disabled={busy || (isLast && draft.downloadable === null)}
+            title={isLast && draft.downloadable === null ? 'Choose whether buyers can download this release before publishing.' : undefined}
             className={cn(
-              'h-11 px-6 rounded-full font-bold text-sm flex items-center gap-2 hover:scale-105 transition-transform disabled:opacity-50 disabled:hover:scale-100',
+              'h-11 px-6 rounded-full font-bold text-sm flex items-center gap-2 hover:scale-105 transition-transform disabled:opacity-50 disabled:hover:scale-100 disabled:cursor-not-allowed',
               isLast ? 'bg-beatz-green text-black shadow-lg shadow-beatz-green/20' : 'bg-beatz-dark-bg dark:bg-white text-white dark:text-black',
             )}
           >

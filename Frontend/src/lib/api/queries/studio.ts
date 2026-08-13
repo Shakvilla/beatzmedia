@@ -142,6 +142,8 @@ export interface CreateDraftInput {
   description?: string
   visibility?: 'public' | 'scheduled'
   scheduledAt?: string
+  /** Omitted (not `false`) leaves the download choice unanswered (`null`) — never send a bare `null`. */
+  downloadable?: boolean
 }
 
 export interface TrackPatch { trackId: string; position: number; priceMinor: number }
@@ -153,6 +155,8 @@ export interface UpdateReleaseInput {
   visibility?: 'public' | 'scheduled'
   scheduledAt?: string
   tracks?: TrackPatch[]
+  /** Editable on any status. Omitted (not `false`) leaves a previously-made choice unchanged. */
+  downloadable?: boolean
 }
 
 /** `POST /v1/studio/releases` — create a metadata-only draft; returns the new id. */

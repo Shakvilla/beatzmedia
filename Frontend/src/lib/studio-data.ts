@@ -78,16 +78,22 @@ export interface StudioRelease {
   streams: number
   revenue: number
   price: number
+  /**
+   * Whether buyers may download this release's audio. `null` means the artist hasn't chosen yet —
+   * distinct from `false` ("chosen: no download"). A live/in-review/scheduled release always has
+   * this set (the publish guard enforces it); only a draft can still be `null`.
+   */
+  downloadable: boolean | null
 }
 
 export function getReleases(): StudioRelease[] {
   return [
-    { id: 'r1', title: 'Iron Boy', type: 'album', status: 'in_review', date: 'Jul 14, 2026', trackCount: 14, streams: 0, revenue: 0, price: 2.5 },
-    { id: 'r5', title: '45', type: 'single', status: 'scheduled', date: 'Jun 28, 2026', trackCount: 1, streams: 0, revenue: 0, price: 2.5 },
-    { id: 'r2', title: 'The Villain I Never Was', type: 'album', status: 'live', date: 'Oct 5, 2024', trackCount: 14, streams: 2_400_000, revenue: 48_900, price: 18.99 },
-    { id: 'r4', title: 'Soja', type: 'single', status: 'live', date: 'Aug 2, 2024', trackCount: 1, streams: 98_000, revenue: 3_890, price: 2.5 },
-    { id: 'r3', title: 'Kwaku the Traveller', type: 'single', status: 'live', date: 'Apr 8, 2024', trackCount: 1, streams: 142_000, revenue: 6_420, price: 2.5 },
-    { id: 'r6', title: 'Untitled session', type: 'single', status: 'draft', date: '—', trackCount: 2, streams: 0, revenue: 0, price: 2.5 },
+    { id: 'r1', title: 'Iron Boy', type: 'album', status: 'in_review', date: 'Jul 14, 2026', trackCount: 14, streams: 0, revenue: 0, price: 2.5, downloadable: true },
+    { id: 'r5', title: '45', type: 'single', status: 'scheduled', date: 'Jun 28, 2026', trackCount: 1, streams: 0, revenue: 0, price: 2.5, downloadable: false },
+    { id: 'r2', title: 'The Villain I Never Was', type: 'album', status: 'live', date: 'Oct 5, 2024', trackCount: 14, streams: 2_400_000, revenue: 48_900, price: 18.99, downloadable: true },
+    { id: 'r4', title: 'Soja', type: 'single', status: 'live', date: 'Aug 2, 2024', trackCount: 1, streams: 98_000, revenue: 3_890, price: 2.5, downloadable: true },
+    { id: 'r3', title: 'Kwaku the Traveller', type: 'single', status: 'live', date: 'Apr 8, 2024', trackCount: 1, streams: 142_000, revenue: 6_420, price: 2.5, downloadable: false },
+    { id: 'r6', title: 'Untitled session', type: 'single', status: 'draft', date: '—', trackCount: 2, streams: 0, revenue: 0, price: 2.5, downloadable: null },
   ]
 }
 

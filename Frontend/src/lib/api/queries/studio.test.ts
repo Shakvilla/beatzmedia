@@ -183,6 +183,7 @@ describe('apiSaveStudioSettings', () => {
 const releaseWire = {
   id: 'r1', title: 'Iron Boy', type: 'album', status: 'in_review', date: 'Jul 14, 2026',
   trackCount: 14, streams: 0, revenue: { amount: 0, currency: 'GHS' }, price: { amount: 2.5, currency: 'GHS' },
+  downloadable: null,
 }
 
 describe('studioReleasesQuery', () => {
@@ -190,7 +191,7 @@ describe('studioReleasesQuery', () => {
     vi.mocked(client.apiFetch).mockResolvedValue({ items: [releaseWire], page: 0, size: 100, total: 1 })
     const rows = await studioReleasesQuery().queryFn!({} as never)
     expect(client.apiFetch).toHaveBeenCalledWith('/studio/releases?size=100')
-    expect(rows[0]).toEqual({ id: 'r1', title: 'Iron Boy', type: 'album', status: 'in_review', date: 'Jul 14, 2026', trackCount: 14, streams: 0, revenue: 0, price: 2.5 })
+    expect(rows[0]).toEqual({ id: 'r1', title: 'Iron Boy', type: 'album', status: 'in_review', date: 'Jul 14, 2026', trackCount: 14, streams: 0, revenue: 0, price: 2.5, downloadable: null })
   })
 })
 

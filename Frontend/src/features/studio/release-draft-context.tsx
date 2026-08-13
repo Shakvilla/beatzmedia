@@ -82,6 +82,13 @@ export interface ReleaseDraft {
   splits: Record<string, SplitEntry[]>
   agreementAccepted: boolean
   presaveGenerated: boolean
+  /**
+   * Whether buyers may download this release's audio. `null` means the artist has not chosen yet
+   * and must stay `null` (never defaulted to `false`) until they actively pick — the publish guard
+   * blocks submission on `null`, and collapsing it to `false` would silently satisfy that guard
+   * with an answer the artist never gave.
+   */
+  downloadable: boolean | null
 }
 
 const initialDraft: ReleaseDraft = {
@@ -101,6 +108,7 @@ const initialDraft: ReleaseDraft = {
   splits: {},
   agreementAccepted: false,
   presaveGenerated: false,
+  downloadable: null,
 }
 
 type DraftAction =
@@ -192,6 +200,9 @@ function toCreateInput(d: ReleaseDraft): CreateDraftInput {
     visibility: d.visibility,
     scheduledAt:
       d.visibility === 'scheduled' && d.releaseDate ? new Date(d.releaseDate).toISOString() : undefined,
+    // `null` (not chosen yet) is omitted rather than sent — the wire field is a plain optional
+    // boolean, and omitting it is exactly what leaves the choice unanswered server-side.
+    downloadable: d.downloadable ?? undefined,
   }
 }
 
@@ -204,6 +215,10 @@ function toMetaPatch(d: ReleaseDraft): UpdateReleaseInput {
     visibility: d.visibility,
     scheduledAt:
       d.visibility === 'scheduled' && d.releaseDate ? new Date(d.releaseDate).toISOString() : undefined,
+    // Same rule as toCreateInput: `null` must stay omitted, never coerced to `false`, or a PATCH
+    // sent before the artist has chosen would clear/overwrite nothing but still risk one day being
+    // read as an explicit "no".
+    downloadable: d.downloadable ?? undefined,
   }
 }
 
@@ -363,6 +378,7 @@ export function ReleaseDraftProvider({ children, initial }: { children: ReactNod
             // The wizard's date input is a plain yyyy-mm-dd, not an ISO instant.
             releaseDate: d.scheduledAt ? d.scheduledAt.slice(0, 10) : '',
             price: d.price?.amount ?? initialDraft.price,
+            downloadable: d.downloadable ?? null,
             tracks: (d.tracks ?? [])
               .slice()
               .sort((a, b) => a.position - b.position)
