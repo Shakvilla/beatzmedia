@@ -65,9 +65,10 @@ function ReleaseManage() {
     const previous = release
     try {
       const patch: UpdateReleaseInput = { title: draft.title }
-      // Omit the field entirely when unchanged — a PATCH is partial, and sending `downloadable`
-      // every time would be harmless here (release.downloadable is never null on this page) but
-      // there is no reason to widen the request beyond what actually changed.
+      // Omit the field entirely when unchanged — a PATCH is partial. release.downloadable CAN be
+      // null here (a draft reached from the releases list hasn't had the choice made yet), so the
+      // `?? undefined` below turns that null into "omit the field", not into an accidental
+      // `downloadable: null` on the wire.
       if (draft.downloadable !== release.downloadable) patch.downloadable = draft.downloadable ?? undefined
       await apiUpdateRelease(release.id, patch)
       queryClient.setQueryData(studioReleaseQuery(release.id).queryKey, { ...release, ...draft })

@@ -70,8 +70,7 @@ UI: home, search, artist, album, track, playlist pages. Shapes: `Artist`, `Album
 | GET | `/playlists/:id` | + tracks | `Playlist` (+ `tracks: Track[]`) |
 | POST | `/catalog/resolve` | batch-resolve id-lists → full objects in one call (for list screens that hold only ids, e.g. the library); every request field optional | `{ tracks: Track[], artists: Artist[], albums: Album[], playlists: Playlist[] }` |
 
-> **`downloadable: boolean`** on `Track` and `Album` (not yet in `Frontend/src/types/index.ts` —
-> added by the backend ahead of the UI slice that reads it): whether the underlying release permits
+> **`downloadable: boolean`** on `Track` and `Album`: whether the underlying release permits
 > buyer downloads (`GET /tracks/:id/download`, §4). Always a plain boolean here, never `null` — a
 > published release always has the artist's choice recorded (the publish guard enforces it before
 > a release can go live). Contrast the Studio surface (§11), which serves the artist's own
