@@ -28,7 +28,7 @@ function HifiTab() {
 
   return (
     <div className="flex flex-col gap-8">
-      <StoreTabHeading title="Hi-Fi lossless" subtitle="Studio-grade masters, downloaded and owned forever" count={items.length} />
+      <StoreTabHeading title="Hi-Fi lossless" subtitle="Studio-grade lossless masters, owned forever" count={items.length} />
       <CatalogGrid items={items} onAdd={addToCart} emptyHint="No lossless releases match your search." />
     </div>
   )

@@ -68,10 +68,10 @@ describe('searchQuery', () => {
 describe('resolveTopResult (pure)', () => {
   const tracks: Track[] = [{
     id: 't1', title: 'Second Sermon', artistId: 'a1', artistName: 'Black Sherif', duration: 200,
-    image: 'track.jpg', ownership: 'for-sale', price: { amount: 5, currency: 'GHS' },
+    image: 'track.jpg', ownership: 'for-sale', price: { amount: 5, currency: 'GHS' }, downloadable: true,
   }]
   const artists: Artist[] = [{ id: 'a1', name: 'Black Sherif', image: 'artist.jpg' }]
-  const albums: Album[] = [{ id: 'al1', title: 'The Villain I Never Was', artistId: 'a1', artistName: 'Black Sherif', year: 2022, coverImage: 'album.jpg', trackIds: ['t1'] }]
+  const albums: Album[] = [{ id: 'al1', title: 'The Villain I Never Was', artistId: 'a1', artistName: 'Black Sherif', year: 2022, coverImage: 'album.jpg', trackIds: ['t1'], downloadable: true }]
   const playlists: Playlist[] = [{ id: 'p1', title: 'Afrobeats Mix', creator: 'BeatzClik', image: 'playlist.jpg', isPublic: true, trackIds: ['t1'] }]
 
   it('returns undefined when the wire topResult is null', () => {

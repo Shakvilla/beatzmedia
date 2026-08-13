@@ -54,6 +54,8 @@ function episodeToTrack(ep: PodcastEpisode): Track {
     duration: ep.duration,
     image: ep.image,
     ownership: 'free',
+    // Episodes are structurally never downloadable — there is no episode-download endpoint.
+    downloadable: false,
   }
 }
 

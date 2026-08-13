@@ -137,6 +137,15 @@ function Album({ albumId }: { albumId: string }) {
               <span>{tracks.length} songs</span>
               <span className="text-gray-400">•</span>
               <span className="text-gray-500 dark:text-gray-300">{formatTotalDuration(totalSeconds)}</span>
+              <span className="text-gray-400">•</span>
+              {/*
+                Visible before checkout, not after: the download permission is captured at
+                purchase and never changes for that buyer afterwards, so it's part of what a fan
+                is agreeing to when they buy.
+              */}
+              <span className={cn('font-bold', album.downloadable ? 'text-beatz-green' : 'text-gray-500 dark:text-gray-300')}>
+                {album.downloadable ? 'Download available' : 'Streaming only'}
+              </span>
               {album.genres && album.genres.length > 0 && (
                 <span className="flex gap-2 ml-1">
                   {album.genres.map((genre) => (

@@ -1,6 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest'
 import { apiFetch } from '../client'
-import { homeQuery, artistQuery, albumQuery, trackQuery, lyricsQuery, resolveQuery } from './catalog'
+import { homeQuery, artistQuery, albumQuery, trackQuery, lyricsQuery, resolveQuery, apiDownloadTrack } from './catalog'
 
 vi.mock('../client', () => ({ apiFetch: vi.fn() }))
 
@@ -109,5 +109,16 @@ describe('catalog query factories', () => {
     expect(result.albums[0].id).toBe('al1')
     expect(result.playlists[0].id).toBe('p1')
     expect(result.playlists[0].creator).toBe('C')
+  })
+
+  it('apiDownloadTrack fetches /tracks/:id/download and returns the wire shape unmapped', async () => {
+    vi.mocked(apiFetch).mockResolvedValue({
+      downloadUrl: 'https://cdn.example/signed', expiresAt: '2026-08-13T00:00:00Z', format: 'flac',
+    })
+
+    const result = await apiDownloadTrack('t1')
+
+    expect(apiFetch).toHaveBeenCalledWith('/tracks/t1/download')
+    expect(result).toEqual({ downloadUrl: 'https://cdn.example/signed', expiresAt: '2026-08-13T00:00:00Z', format: 'flac' })
   })
 })

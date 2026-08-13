@@ -1,7 +1,7 @@
 import { createFileRoute, Link } from '@tanstack/react-router'
 import { useSuspenseQuery } from '@tanstack/react-query'
 import { useState } from 'react'
-import { Play, Pause, Share2, Heart, Plus, ListPlus, Info, Users, Check, ShoppingCart, Mic2, Clock, CalendarDays } from 'lucide-react'
+import { Play, Pause, Share2, Heart, Plus, ListPlus, Info, Users, Check, ShoppingCart, Mic2, Clock, CalendarDays, Download } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { copyLink, currentUrl } from '../utils/share'
 import { LyricsView } from '../components/music/lyrics-view'
@@ -282,6 +282,16 @@ function TrackPageComponent() {
               <InfoRow icon={<Clock size={18} />} label="Duration" value={formatDuration(track.duration)} />
               {track.plays != null && <InfoRow icon={<Info size={18} />} label="Plays" value={`${formatCount(track.plays)}`} />}
               {track.quality && <InfoRow icon={<Info size={18} />} label="Audio quality" value={track.quality} />}
+              {/*
+                Visible regardless of ownership, before checkout: the download permission is
+                captured at purchase and never changes for that buyer afterwards, so it's part of
+                what a fan is agreeing to when they buy — not something to discover after paying.
+              */}
+              <InfoRow
+                icon={<Download size={18} />}
+                label="Downloads"
+                value={track.downloadable ? 'Download available' : 'Streaming only'}
+              />
               <button
                 onClick={() => (track.ownership === 'for-sale' ? buyCurrent() : setAddOpen(true))}
                 className="flex items-center gap-3 text-left group pt-1"

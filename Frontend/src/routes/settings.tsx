@@ -21,7 +21,6 @@ interface FanPrefs {
   country: string
   phone: string
   streamingQuality: string
-  downloadQuality: string
   crossfade: string
   dataSaver: boolean
   notif: { newReleases: boolean; playlistUpdates: boolean; dropsOffers: boolean }
@@ -31,7 +30,6 @@ const DEFAULTS: FanPrefs = {
   country: 'Ghana',
   phone: '0244 ··· 9210',
   streamingQuality: 'High (256 kbps)',
-  downloadQuality: 'Very high (320 kbps)',
   crossfade: 'Off',
   dataSaver: false,
   notif: { newReleases: true, playlistUpdates: true, dropsOffers: false },
@@ -155,11 +153,6 @@ function SettingsComponent() {
                 {['Normal (128 kbps)', 'High (256 kbps)', 'Very high (320 kbps)'].map((q) => <option key={q} value={q}>{q}</option>)}
               </select>
             </Row>
-            <Row label="Download quality">
-              <select className={SELECT} value={prefs.downloadQuality} onChange={(e) => set('downloadQuality', e.target.value)}>
-                {['High (256 kbps)', 'Very high (320 kbps)', 'Lossless'].map((q) => <option key={q} value={q}>{q}</option>)}
-              </select>
-            </Row>
             <Row label="Crossfade" last>
               <select className={SELECT} value={prefs.crossfade} onChange={(e) => set('crossfade', e.target.value)}>
                 {['Off', '3s', '6s', '12s'].map((q) => <option key={q} value={q}>{q}</option>)}
@@ -169,7 +162,7 @@ function SettingsComponent() {
 
           <Group title="Data & storage">
             <ToggleRow label="Data saver" desc="Lower quality on mobile data" checked={prefs.dataSaver} onChange={(v) => set('dataSaver', v)} />
-            <Row label="Downloads" desc={`${ownedTracks.length} tracks · 1.4 GB`} />
+            <Row label="Downloads" desc={`${ownedTracks.length} tracks`} />
             <Row label="Cache" desc="Cached artwork and API responses" last>
               <button onClick={clearCache} className="text-sm font-bold text-beatz-green hover:underline">Clear</button>
             </Row>

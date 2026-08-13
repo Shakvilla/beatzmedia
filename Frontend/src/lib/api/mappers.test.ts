@@ -111,11 +111,13 @@ describe('toTrack', () => {
       credits: null,
       quality: null,
       year: 2024,
+      downloadable: true,
     })
 
     expect(track.ownership).toBe('for-sale')
     expect(track.price).toEqual({ amount: 5, currency: 'GHS' })
     expect(track.albumId).toBeUndefined()
+    expect(track.downloadable).toBe(true)
   })
 })
 
@@ -129,6 +131,7 @@ describe('toAlbum / toAlbumTracks', () => {
     coverImage: 'c.jpg',
     genres: ['Afrobeats'],
     trackIds: ['t1'],
+    downloadable: true,
     tracks: [
       {
         id: 't1',
@@ -146,6 +149,7 @@ describe('toAlbum / toAlbumTracks', () => {
         credits: null,
         quality: null,
         year: 2024,
+        downloadable: false,
       },
     ],
   }
@@ -161,6 +165,7 @@ describe('toAlbum / toAlbumTracks', () => {
       coverImage: 'c.jpg',
       genres: ['Afrobeats'],
       trackIds: ['t1'],
+      downloadable: true,
     })
   })
 
