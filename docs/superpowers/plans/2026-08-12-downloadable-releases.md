@@ -1099,6 +1099,82 @@ git commit -m "feat(download): disclose the download permission and wire the lib
 
 ---
 
+## Task 9b: Gate the library on the GRANT, not the release
+
+**Added during execution.** Task 9 gates the library's download control on `track.downloadable`, which
+is the release's **current** setting. The grant's captured permission can differ — that is the entire
+point of Decision 2.
+
+The failure: a fan buys while downloads are on (grant captures `true`); the artist later switches the
+release off. The endpoint correctly still serves the file, but `library.tsx` hides the button, so the
+buyer keeps a right they can no longer exercise. Grandfathering survives in the database and dies in
+the UI.
+
+Zero production impact today (no grants exist anywhere), which is why this is a task rather than a
+hotfix — but shipping it this way would make the feature's headline promise decorative.
+
+**Files:**
+- Modify: `backend/src/main/java/org/shakvilla/beatzmedia/commerce/application/port/in/GetTrackDownloadPermission.java` — add a batch query
+- Modify: `backend/src/main/java/org/shakvilla/beatzmedia/library/application/port/in/CollectionView.java` — per-track `downloadable`
+- Modify: library's collection service + its adapter
+- Modify: `Frontend/src/routes/library.tsx`
+- Test: commerce batch-permission test; library collection test
+
+**Interfaces:**
+- Consumes: `GetTrackDownloadPermission.mayDownload(AccountId, String trackId)` (Task 6)
+- Produces: `Set<String> downloadableTrackIds(AccountId, Collection<String> trackIds)`; `CollectionView`
+  tracks carry `downloadable` sourced from the grant.
+
+- [ ] **Step 1: Write the failing test**
+
+```java
+  @Test
+  void theLibraryReportsTheGrantsPermissionNotTheReleasesCurrentSetting() {
+    grantFor("acct-1", "t1", true);      // bought while downloads were allowed
+    releaseNowForbids("t1");             // artist has since changed their mind
+
+    CollectionView view = getCollection.forAccount(new AccountId("acct-1"));
+
+    assertTrue(
+        view.tracks().stream().filter(t -> t.id().equals("t1")).findFirst().orElseThrow()
+            .downloadable(),
+        "a buyer must keep the download they paid for, and must be able to SEE that they have it");
+  }
+```
+
+- [ ] **Step 2: Run it and confirm it fails**
+
+```bash
+cd backend && ./mvnw -o test -Dtest=GetCollectionServiceTest
+```
+
+- [ ] **Step 3: Add the batch permission query**
+
+Batch, not per-track: a library page with 200 owned tracks must not issue 200 queries.
+
+- [ ] **Step 4: Carry it into `CollectionView` and the frontend**
+
+`library.tsx` gates on the collection's per-track `downloadable`, not the catalog track's.
+
+- [ ] **Step 5: Run backend and frontend gates**
+
+```bash
+cd backend && ./mvnw -o test -Dtest=GetCollectionServiceTest
+export PATH="$HOME/.nvm/versions/node/v22.17.1/bin:$PATH"
+cd Frontend && npm run build && npx vitest run
+```
+
+- [ ] **Step 6: Commit**
+
+```bash
+cd backend && ./mvnw -o spotless:apply
+git add backend/src Frontend/src
+git commit -m "fix(download): gate the library on the grant so grandfathered downloads stay reachable"
+```
+
+
+---
+
 ## Task 10: Integration test — the guard table against a real database
 
 **Files:**
