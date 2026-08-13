@@ -125,9 +125,17 @@ charged, and INV-3 preview enforcement never once fired because no track was eve
   reinstate (which re-fires `ReleaseWentLive`) is free.
 - **Not wired to `ContentTakenDown`.** A takedown removes discoverability, but existing owners keep
   their access (PRD OQ-8); resetting a taken-down track's price would misreport what it sold for.
-- **Known limitation:** editing the price of an already-live release does not re-project, because
-  `ReleaseWentLive` fires only on publish, reinstate and the go-live sweep. `track` then goes stale
-  against `release_track`.
+- **The projection cannot go stale, because prices are frozen before go-live.** Every track
+  mutation — including the per-track price — is draft-only (`Release.requireDraft`, guarding
+  `addTrack` / `removeTrack` / `replaceTracks`), and **there is no transition back to `draft`**:
+  `ReleaseStatus.draft` is assigned in exactly one place, `Release.create`. A release's prices are
+  therefore settled before it ever leaves draft, and `ReleaseWentLive` always fires afterwards, so
+  the projection reads final values. The aggregate is the only door — `release_track.price_minor` is
+  written solely by `saveRelease` from the aggregate's track list. Pinned by
+  `UpdateReleaseServiceTest.tracksPatch_onNonDraft_throwsIllegalTransition`.
+- **If repricing a live release is ever allowed, that test fails first — and this projection must
+  gain a re-projection trigger in the same change**, or `track` will silently disagree with
+  `release_track` and fans will be charged the old price.
 
 - `ReleaseStatus = live | scheduled | in_review | draft | takedown` (PRD R6: `takedown` added for moderation parity)
 - `SplitConfirmation = self | confirmed | pending | auto`
