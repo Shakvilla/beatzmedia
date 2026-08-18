@@ -6,83 +6,13 @@
 #
 # Wired into the image-scan gate via the `trivyignores:` input in
 # .github/workflows/security.yml. Keep this list as small as possible.
+#
+# 2026-08-18: EMPTY — nothing is suppressed. All four previous entries
+# (CVE-2026-11940, CVE-2026-15308, CVE-2026-58016, CVE-2026-54369) were base-image
+# OS packages awaiting a Red Hat UBI9 rebuild. Bumping Dockerfile.jvm to
+# openjdk-25-runtime 1.24-3.1786536503 satisfied every stated removal condition, so
+# the entries were deleted rather than re-dated. Prefer bumping the base image over
+# renewing a suppression: an expiry date that keeps moving is a suppression that has
+# stopped being temporary.
 
-vulnerabilities:
-  - id: CVE-2026-11940
-    # HIGH — tarfile extraction filter bypass in CPython: a crafted archive can escape
-    # the destination directory during extraction. Ships in the Red Hat UBI9 base image
-    # (packages python3 / python3-libs, 3.9.25-7.el9_8.2); fixed upstream in
-    # 3.9.25-7.el9_8.3, pending a Red Hat rebuild of
-    # registry.access.redhat.com/ubi9/openjdk-25-runtime.
-    #
-    # No newer base image exists to bump to — verified 2026-08-13 against the registry:
-    # 1.24 is the only version line, 1.24-3.1785873418 (sha256:989d363…) is the newest
-    # tag, and that is already what Dockerfile.jvm pins. The floating 1.24-3 tag resolves
-    # to the OLDER sha256:de073e98…, which #201 already moved us off.
-    #
-    # Not reachable from beatzmedia: the service is a JVM application, ships no Python of
-    # its own, and never extracts tar archives via CPython; python3 is present only as a
-    # base-image OS package. Newly disclosed after master last scanned clean
-    # (2026-08-12T17:21Z), so it affects every branch equally — not introduced by any
-    # application change.
-    #
-    # Remove once the base image ships python3 >= 3.9.25-7.el9_8.3 (bump the tag in
-    # src/main/docker/Dockerfile.jvm and delete this block).
-    statement: >-
-      Base-image-only OS package (python3/python3-libs); tarfile extraction not invoked
-      by the application. Temporary suppression pending a Red Hat UBI9 rebuild carrying
-      python3 >= 3.9.25-7.el9_8.3.
-    expired_at: 2026-08-16
-  - id: CVE-2026-15308
-    # HIGH — CPU denial-of-service in CPython's html.parser via crafted markup.
-    # Ships in the Red Hat UBI9 base image (packages python3 / python3-libs,
-    # version 3.9.25-7.el9_8); fixed upstream in 3.9.25-7.el9_8.2, pending a
-    # Red Hat rebuild of registry.access.redhat.com/ubi9/openjdk-25-runtime.
-    #
-    # Not reachable from beatzmedia: the service ships no Python of its own and
-    # never invokes html.parser; python3 is present only as a base-image OS
-    # package. Newly disclosed after master last scanned clean (2026-07-15), so it
-    # affects every branch equally — not introduced by any application change.
-    #
-    # Remove this entry once the base image ships python3 >= 3.9.25-7.el9_8.2
-    # (bump the tag in src/main/docker/Dockerfile.jvm and delete this block).
-    statement: >-
-      Base-image-only OS package (python3/python3-libs); not invoked by the
-      application. Temporary suppression pending a Red Hat UBI9 rebuild carrying
-      python3 >= 3.9.25-7.el9_8.2.
-    expired_at: 2026-08-16
-  - id: CVE-2026-58016
-    # HIGH — integer underflow in glib gio/gdbusintrospection.c (D-Bus introspection
-    # XML parsing). Ships in the Red Hat UBI9 base image (package glib2,
-    # 2.68.4-19.el9_8.1); fixed in 2.68.4-19.el9_8.2, pending a Red Hat rebuild of
-    # registry.access.redhat.com/ubi9/openjdk-25-runtime.
-    #
-    # Not reachable from beatzmedia: the JVM service never uses glib/GDBus; glib2 is
-    # present only as a transitive base-image OS package. Newly disclosed (master last
-    # scanned clean before 2026-07-22), so it affects every branch equally — not
-    # introduced by any application change.
-    #
-    # Remove once the base image ships glib2 >= 2.68.4-19.el9_8.2 (bump the tag in
-    # src/main/docker/Dockerfile.jvm and delete this block).
-    statement: >-
-      Base-image-only OS package (glib2); GDBus introspection not invoked by the
-      application. Temporary suppression pending a Red Hat UBI9 rebuild carrying
-      glib2 >= 2.68.4-19.el9_8.2.
-    expired_at: 2026-08-16
-  - id: CVE-2026-54369
-    # HIGH — symlink-traversal privilege escalation via libacl. Ships in the Red Hat
-    # UBI9 base image (package libacl, 2.3.1-4.el9); fixed in 2.4.0-1.el9_8, pending a
-    # Red Hat rebuild of registry.access.redhat.com/ubi9/openjdk-25-runtime.
-    #
-    # Not reachable from beatzmedia: the JVM service performs no setfacl/ACL symlink
-    # operations; libacl is present only as a transitive base-image OS package. Newly
-    # disclosed (master last scanned clean before 2026-07-22), so it affects every
-    # branch equally — not introduced by any application change.
-    #
-    # Remove once the base image ships libacl >= 2.4.0-1.el9_8 (bump the tag in
-    # src/main/docker/Dockerfile.jvm and delete this block).
-    statement: >-
-      Base-image-only OS package (libacl); ACL/symlink operations not performed by
-      the application. Temporary suppression pending a Red Hat UBI9 rebuild carrying
-      libacl >= 2.4.0-1.el9_8.
-    expired_at: 2026-08-16
+vulnerabilities: []
