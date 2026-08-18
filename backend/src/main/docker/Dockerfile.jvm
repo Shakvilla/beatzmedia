@@ -91,6 +91,12 @@
 # would not pin anything. The digest is the multi-arch manifest list
 # (amd64/arm64/ppc64le/s390x), so it resolves on CI and on developer machines.
 #
+# 2026-08-18: bumped from 1.24-3.1785873418 to clear the last base-image CVE
+# suppression. This rebuild ships python3/python3-libs 3.9.25-7.el9_8.3 (the fix
+# for CVE-2026-11940, tarfile extraction filter bypass); the previous pin was
+# stuck on .el9_8.2. glib2 2.68.4-19.el9_8.2 and libacl 2.4.0-1.el9_8 were already
+# current. With this bump .trivyignore.yaml is empty — no CVE is suppressed.
+#
 # 2026-08-01: bumped from 1.24-2.1781533370, which shipped
 # java-25-openjdk 25.0.3.0.9-1.el9 and failed the Trivy gate on CVE-2026-47063
 # (HIGH, "Enhance Jar handling", Oracle CPU 2026-07). This rebuild ships
@@ -106,7 +112,7 @@
 FROM mwader/static-ffmpeg:9.0 AS ffmpeg-stage
 
 # ── Stage 2: Quarkus JVM runtime ─────────────────────────────────────────────
-FROM registry.access.redhat.com/ubi9/openjdk-25-runtime:1.24-3.1785873418@sha256:989d363432e3154216e7e812d18d602aa0cef41b7c46437fcce4dd21c4ee5ab1
+FROM registry.access.redhat.com/ubi9/openjdk-25-runtime:1.24-3.1786536503@sha256:6b320cbb20bd8b74ed4b44d0ea086cc9651bfc64396fbe6c0d906a8da12bdd20
 
 ENV LANGUAGE='en_US:en'
 
