@@ -343,7 +343,7 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
           # Read from Frontend/.nvmrc so CI and local developers cannot drift.
           node-version-file: Frontend/.nvmrc
