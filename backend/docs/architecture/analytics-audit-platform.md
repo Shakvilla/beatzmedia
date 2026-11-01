@@ -160,6 +160,8 @@ repo exposes only `append` + read.
 | `PlatformSettings` | aggregate (single row) | fields below | economic constants + maintenance flag |
 | `FeatureFlag` | entity | `key`, `enabled` | runtime flag, one row per flag |
 | `Clock` / `IdGenerator` | ports | — | UTC clock; UUIDv7/ULID ids |
+| `DurableEventRecord` | operator read model | event/aggregate identity, status, attempts, replay metadata | payload deliberately excluded |
+| `DurableQueueHealth` | VO | queue counts, recent completions, oldest age, derived status | operational signal |
 
 **`PlatformSettings` fields** (from `admin-data.ts` `PlatformSettings`): `platformFeePct=30`,
 `creatorSharePct=70`, `tipFeePct=10`, `bundleDiscountPct=24`, `payoutDay="Friday"`,
@@ -170,6 +172,14 @@ repo exposes only `append` + read.
 **Invariants.** **INV-11** — money stored as `BIGINT` minor units; conversion only at the adapter
 boundary; split/fee math half-up with remainder reconciled. Economic constants come from
 `PlatformSettings`, never hard-coded (conventions §2).
+
+**Durable publication operations (Stage 1).** Publication state changes append versioned events to
+`platform_outbox_event` in the same transaction. The scheduler claims them with short
+`FOR UPDATE SKIP LOCKED` leases and records per-consumer receipts in `platform_inbox_receipt`.
+Super-admin/support may inspect redacted event metadata and queue health; only super-admin may replay
+a terminally failed event. Replay requires an exact registered event-type/schema-version handler,
+uses a conditional failed-to-pending update, records replay metadata, and appends a reasoned audit
+entry atomically. The serialized payload is never returned by the operator API.
 
 ```mermaid
 erDiagram
@@ -553,6 +563,8 @@ CREATE TABLE feature_flag (
 - *(WU-PLT-2: no migration required — advisory locks are transient Postgres session state, no DDL needed)*
 - `V3__audit_entry.sql` — `audit_entry` + indexes + append-only guard trigger (WU-AUD-1).
 - `V4__analytics_rollups.sql` — `sales_rollup`, `audience_rollup` + indexes (WU-ANA-1).
+- `V990__durable_publication_outbox.sql` — transactional outbox, inbox receipts, claim indexes.
+- `V991__durable_event_replay_metadata.sql` — replay metadata and operator-search index.
 - `R__seed_dev_data.sql` contribution — sample rollups + audit rows for local rendering (dev/test only).
 
 ---

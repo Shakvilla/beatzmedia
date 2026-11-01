@@ -35,6 +35,11 @@ public class ReleaseWentLiveDurableEventHandler implements DurableEventHandler {
   }
 
   @Override
+  public int schemaVersion() {
+    return SCHEMA_VERSION;
+  }
+
+  @Override
   public void handle(DurableEventEnvelope event) {
     if (event.schemaVersion() != SCHEMA_VERSION) {
       throw new IllegalArgumentException(

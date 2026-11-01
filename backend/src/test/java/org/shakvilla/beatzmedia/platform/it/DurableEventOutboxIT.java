@@ -23,6 +23,7 @@ import jakarta.inject.Inject;
 
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.shakvilla.beatzmedia.platform.application.port.in.ReplayDurableEvent;
 import org.shakvilla.beatzmedia.platform.application.port.out.DurableEventPublisher;
 import org.shakvilla.beatzmedia.platform.application.port.out.DurableEventStore;
 import org.shakvilla.beatzmedia.platform.domain.DurableEventEnvelope;
@@ -40,6 +41,7 @@ class DurableEventOutboxIT {
 
   @Inject DurableEventPublisher publisher;
   @Inject DurableEventStore store;
+  @Inject ReplayDurableEvent replay;
   @Inject AgroalDataSource dataSource;
 
   @Test
@@ -108,6 +110,34 @@ class DurableEventOutboxIT {
     assertEquals(expected, firstIds);
   }
 
+  @Test
+  void concurrentReplayAllowsExactlyOneOperatorToRequeueTheEvent() throws Exception {
+    String id = unique("concurrent-replay");
+    publisher.append(message(id, BASE));
+    store.releaseForRetry(id, BASE, "terminal", true);
+
+    CyclicBarrier barrier = new CyclicBarrier(2);
+    ExecutorService pool = Executors.newFixedThreadPool(2);
+    java.util.concurrent.Callable<Boolean> operation = () -> {
+      barrier.await(5, TimeUnit.SECONDS);
+      try {
+        replay.replay(id, "operator-" + Thread.currentThread().threadId());
+        return true;
+      } catch (org.shakvilla.beatzmedia.platform.domain.ConflictException lostRace) {
+        return false;
+      }
+    };
+    Future<Boolean> first = pool.submit(operation);
+    Future<Boolean> second = pool.submit(operation);
+    int successes = (first.get(20, TimeUnit.SECONDS) ? 1 : 0)
+        + (second.get(20, TimeUnit.SECONDS) ? 1 : 0);
+    pool.shutdownNow();
+
+    assertEquals(1, successes);
+    assertEquals("pending", status(id));
+    assertEquals(1, replayCount(id));
+  }
+
   private DurableEventMessage message(String id, Instant occurredAt) {
     return new DurableEventMessage(
         id,
@@ -138,6 +168,10 @@ class DurableEventOutboxIT {
         "select count(*) from platform_inbox_receipt where event_id = ? and consumer_name = ?",
         id,
         consumer);
+  }
+
+  private int replayCount(String id) {
+    return number("select replay_count from platform_outbox_event where id = ?", id);
   }
 
   private int number(String sql, String... parameters) {

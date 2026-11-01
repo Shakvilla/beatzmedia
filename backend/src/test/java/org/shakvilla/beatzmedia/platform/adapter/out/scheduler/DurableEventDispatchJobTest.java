@@ -23,7 +23,11 @@ import org.shakvilla.beatzmedia.platform.application.port.in.DurableEventHandler
 import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
 import org.shakvilla.beatzmedia.platform.application.port.out.DurableEventStore;
 import org.shakvilla.beatzmedia.platform.domain.DurableEventEnvelope;
+import org.shakvilla.beatzmedia.platform.domain.DurableEventFilter;
+import org.shakvilla.beatzmedia.platform.domain.DurableEventRecord;
+import org.shakvilla.beatzmedia.platform.domain.DurableQueueHealth;
 import org.shakvilla.beatzmedia.platform.domain.OutboxQueueSnapshot;
+import org.shakvilla.beatzmedia.platform.domain.Page;
 
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 
@@ -105,6 +109,7 @@ class DurableEventDispatchJobTest {
 
     @Override public String eventType() { return "catalog.release-went-live"; }
     @Override public String consumerName() { return consumer; }
+    @Override public int schemaVersion() { return 1; }
 
     @Override
     public void handle(DurableEventEnvelope event) {
@@ -152,6 +157,22 @@ class DurableEventDispatchJobTest {
 
     @Override public OutboxQueueSnapshot snapshot(Instant now) {
       return new OutboxQueueSnapshot(0, 0, terminalFailures.size(), 0);
+    }
+
+    @Override public Page<DurableEventRecord> search(DurableEventFilter filter) {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override public DurableEventRecord find(String eventId) {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override public DurableEventRecord replay(String eventId, String actorId, Instant replayedAt) {
+      throw new UnsupportedOperationException();
+    }
+
+    @Override public DurableQueueHealth health(Instant now) {
+      return new DurableQueueHealth("healthy", 0, 0, terminalFailures.size(), 0, 0);
     }
   }
 

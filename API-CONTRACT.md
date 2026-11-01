@@ -347,6 +347,16 @@ client can point the artist straight at the download toggle.
 | GET | `/admin/overview?range=24h\|7d\|30d` | KPIs, GMV series, needs-attention, top artists, payment mix |
 | GET | `/admin/health` | status, metrics, concurrent-listeners series, incidents |
 
+### Publication operations
+| GET | `/admin/publication-events?status=&eventType=&aggregateId=&occurredFrom=&occurredTo=&page=&size=` | paged durable-event metadata; super-admin/support; payload omitted |
+| GET | `/admin/publication-events/health` | queue counts, recent throughput, oldest incomplete age, derived status |
+| POST | `/admin/publication-events/:id/replay` | `{ reason }`; failed events only; super-admin; audited |
+
+`PublicationEvent { id, eventType, schemaVersion, aggregateType, aggregateId, occurredAt,
+availableAt, status, attemptCount, replayCount, claimedUntil?, completedAt?, lastError?,
+lastReplayedAt?, lastReplayedBy? }`. Replay returns `409 CONFLICT` unless the event is terminally
+failed and an exact event-type/schema-version handler is registered.
+
 ### Users
 | GET | `/admin/users?q=&filter=fans\|artists\|verified\|suspended&page=&size=` | paged list + counts |
 | GET | `/admin/users/:id` | detail (activity, orders, devices, action log) |

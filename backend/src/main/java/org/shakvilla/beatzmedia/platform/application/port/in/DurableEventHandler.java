@@ -9,5 +9,7 @@ public interface DurableEventHandler {
 
   String consumerName();
 
+  int schemaVersion();
+
   void handle(DurableEventEnvelope event);
 }
