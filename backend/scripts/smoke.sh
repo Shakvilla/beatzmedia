@@ -164,12 +164,12 @@ fi
 
 # Representative application assertion. Health alone is insufficient: the
 # public catalog must respond successfully for the smoke gate to pass.
-CATALOG_URL="http://localhost:${APP_HOST_PORT:-8080}/v1/catalog/releases?page=1&size=1"
+CATALOG_URL="http://localhost:${APP_HOST_PORT:-8080}/v1/home"
 code="$(curl -s -o /dev/null -w '%{http_code}' -H 'Accept: application/json' "$CATALOG_URL" 2>/dev/null || echo 000)"
 case "$code" in
-  2*) status_row OK   "GET /v1/catalog/releases" "HTTP $code" ;;
-  000) status_row FAIL "GET /v1/catalog/releases" "no response"; SMOKE_FAIL=1 ;;
-  *)  status_row FAIL "GET /v1/catalog/releases" "HTTP $code"; SMOKE_FAIL=1 ;;
+  2*) status_row OK   "GET /v1/home" "HTTP $code" ;;
+  000) status_row FAIL "GET /v1/home" "no response"; SMOKE_FAIL=1 ;;
+  *)  status_row FAIL "GET /v1/home" "HTTP $code"; SMOKE_FAIL=1 ;;
 esac
 
 section "Smoke result"

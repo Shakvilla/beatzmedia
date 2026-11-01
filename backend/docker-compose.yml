@@ -164,6 +164,8 @@ services:
       BEATZ_JWT_PUBLIC_KEY: ${BEATZ_JWT_PUBLIC_KEY:-}
       # --- payment providers: dev sandbox / disabled ---
       BEATZ_PAYMENT_WEBHOOK_SECRET: dev-webhook-secret
+      # Local-stack fallback only; production must supply an independently generated key.
+      BEATZ_PROVIDER_CONFIG_ENCRYPTION_KEY: ${BEATZ_PROVIDER_CONFIG_ENCRYPTION_KEY:-MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=}
       # --- platform settings seeds ---
       BEATZ_PLATFORM_FEE_PCT: "30"
       BEATZ_CREATOR_SHARE_PCT: "70"

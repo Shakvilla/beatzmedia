@@ -339,8 +339,8 @@ jobs:
           # process with a broken/missing public API must not pass compose smoke.
           curl -fsS \
             -H "Accept: application/json" \
-            "http://localhost:8080/v1/catalog/releases?page=1&size=1" \
-            | tee /tmp/releases.json
+            "http://localhost:8080/v1/home" \
+            | tee /tmp/home.json
       - name: Dump logs on failure
         if: failure()
         working-directory: backend
