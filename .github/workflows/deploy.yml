@@ -25,9 +25,9 @@ on:
         options: [staging, production]
         default: production
       image_tag:
-        description: Image tag to deploy (e.g. 1.2.3 or a sha; defaults to latest)
+        description: Immutable image tag to deploy (for example 1.2.3 or sha-<40-char-commit>)
         type: string
-        default: latest
+        required: true
 
 concurrency:
   group: deploy-${{ github.event.inputs.environment || 'production' }}
@@ -47,11 +47,10 @@ jobs:
     env:
       # On a release event, github.event.release.tag_name is e.g. v1.2.3; strip
       # the leading v to match the published image tag. On manual dispatch use
-      # the provided tag. Falls back to latest.
+      # the provided immutable tag.
       IMAGE_TAG: >-
         ${{ github.event.inputs.image_tag
-            || (github.event.release.tag_name && github.event.release.tag_name)
-            || 'latest' }}
+            || github.event.release.tag_name }}
     steps:
       - uses: actions/checkout@v4
 
@@ -85,6 +84,10 @@ jobs:
           fi
           # Normalise IMAGE_TAG: strip a leading 'v' from release tags.
           TAG="${IMAGE_TAG#v}"
+          if [ -z "$TAG" ] || [ "$TAG" = "latest" ]; then
+            echo "::error::Refusing mutable or empty image tag '$TAG'. Use SemVer or sha-<commit>."
+            exit 1
+          fi
           echo "IMAGE=ghcr.io/${{ github.repository }}:${TAG}" >> "$GITHUB_ENV"
           echo "Deploying image: ghcr.io/${{ github.repository }}:${TAG}"
 
@@ -160,7 +163,12 @@ jobs:
           script: |
             set -euo pipefail
             cd /opt/beatzmedia
-            export BEATZ_IMAGE="$(cat .last_good_image 2>/dev/null || echo ghcr.io/${{ github.repository }}:latest)"
+            BEATZ_IMAGE="$(cat .last_good_image 2>/dev/null || true)"
+            if [ -z "$BEATZ_IMAGE" ]; then
+              echo "No immutable last-good image recorded; automatic rollback cannot proceed."
+              exit 1
+            fi
+            export BEATZ_IMAGE
             docker compose up -d app
             echo "Rolled back to $BEATZ_IMAGE (schema is forward-only; not reverted)."
 

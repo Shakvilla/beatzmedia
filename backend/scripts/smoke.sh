@@ -162,19 +162,19 @@ else
   SMOKE_FAIL=1
 fi
 
-# Optional representative read endpoint. Treated as best-effort: a 404 on an
-# early project (endpoint not built yet) is a WARN, not a failure.
+# Representative application assertion. Health alone is insufficient: the
+# public catalog must respond successfully for the smoke gate to pass.
 CATALOG_URL="http://localhost:${APP_HOST_PORT:-8080}/v1/catalog/releases?page=1&size=1"
 code="$(curl -s -o /dev/null -w '%{http_code}' -H 'Accept: application/json' "$CATALOG_URL" 2>/dev/null || echo 000)"
 case "$code" in
   2*) status_row OK   "GET /v1/catalog/releases" "HTTP $code" ;;
-  000) status_row WARN "GET /v1/catalog/releases" "no response (endpoint not built yet?)" ;;
-  *)  status_row WARN "GET /v1/catalog/releases" "HTTP $code (endpoint not built yet?)" ;;
+  000) status_row FAIL "GET /v1/catalog/releases" "no response"; SMOKE_FAIL=1 ;;
+  *)  status_row FAIL "GET /v1/catalog/releases" "HTTP $code"; SMOKE_FAIL=1 ;;
 esac
 
 section "Smoke result"
 if [ "$SMOKE_FAIL" -ne 0 ]; then
-  err "Health checks FAILED."
+  err "Smoke checks FAILED."
   DC logs --no-color 2>/dev/null | tail -n 60 || true
   exit 1
 fi

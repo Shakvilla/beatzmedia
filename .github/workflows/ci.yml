@@ -335,17 +335,12 @@ jobs:
           # Health endpoints are hard assertions — the app must be live and ready.
           curl -fsS http://localhost:8080/q/health/live | tee /tmp/live.json
           curl -fsS http://localhost:8080/q/health/ready | tee /tmp/ready.json
-          # Catalog endpoint is best-effort at bootstrap: WU-CAT-1 (Phase 1) has
-          # not landed yet, so a 404 is expected and must not fail the job.
-          # TODO: once WU-CAT-1 lands, make /v1/catalog/releases a hard assertion.
-          CATALOG_CODE=$(curl -s -o /tmp/releases.json -w '%{http_code}' \
+          # Catalog is a mandatory representative application assertion. A healthy
+          # process with a broken/missing public API must not pass compose smoke.
+          curl -fsS \
             -H "Accept: application/json" \
-            "http://localhost:8080/v1/catalog/releases?page=1&size=1" || echo "000")
-          if echo "$CATALOG_CODE" | grep -qE '^2'; then
-            echo "CATALOG OK: HTTP $CATALOG_CODE"
-          else
-            echo "CATALOG WARN: HTTP $CATALOG_CODE (endpoint not built yet — WU-CAT-1 pending)"
-          fi
+            "http://localhost:8080/v1/catalog/releases?page=1&size=1" \
+            | tee /tmp/releases.json
       - name: Dump logs on failure
         if: failure()
         working-directory: backend
