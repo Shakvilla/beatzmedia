@@ -465,6 +465,7 @@ From PRD §5.2. **Secret?** marks values that must never be committed and must c
 | Variable | Purpose | Example (dev) | Secret? | Notes per env |
 |---|---|---|---|---|
 | `QUARKUS_PROFILE` | Active profile | `dev` | no | `prod` in staging+prod |
+| `BEATZ_CORS_ORIGINS` | Browser origins allowed to call the API | `http://localhost:5173,http://localhost:4173` | no | required in `%prod`; explicit HTTPS origins only, never `*` |
 | `QUARKUS_DATASOURCE_JDBC_URL` | Postgres JDBC URL | `jdbc:postgresql://db:5432/beatzmedia` | no | managed host in prod |
 | `QUARKUS_DATASOURCE_USERNAME` | DB user | `beatz` | no | least-priv role in prod |
 | `QUARKUS_DATASOURCE_PASSWORD` | DB password | `beatz` | **yes** | from secret store |
@@ -476,8 +477,8 @@ From PRD §5.2. **Secret?** marks values that must never be committed and must c
 | `BEATZ_S3_BUCKET_DELIVERY` | Delivery bucket | `beatz-media-delivery` | no | per-env bucket name |
 | `BEATZ_SIGNED_URL_TTL_SECONDS` | Signed URL lifetime | `300` | no | tune per env |
 | `BEATZ_PREVIEW_SECONDS` | Preview clip length | `30` | no | INV-3 |
-| `BEATZ_JWT_PRIVATE_KEY` | JWT signing key (PEM/PKCS8) | dev key | **yes** | unique per env, rotate |
-| `BEATZ_JWT_PUBLIC_KEY` | JWT verify key | dev key | no* | public, but env-specific |
+| `BEATZ_JWT_PRIVATE_KEY_LOCATION` | JWT signing-key file path or HTTPS URL | classpath dev key | **yes** | required in `%prod`; unique per env, rotate |
+| `BEATZ_JWT_PUBLIC_KEY_LOCATION` | JWT verification-key file path or HTTPS URL | classpath dev key | no* | required in `%prod`; paired with signing key |
 | `BEATZ_JWT_ISSUER` | Token issuer claim | `https://beatzclik` | no | per env |
 | `QUARKUS_MAILER_HOST` | SMTP host | `mail` | no | provider host in prod |
 | `QUARKUS_MAILER_PORT` | SMTP port | `1025` | no | `587`/`465` in prod |
@@ -502,6 +503,19 @@ From PRD §5.2. **Secret?** marks values that must never be committed and must c
 
 > *Public JWT key is not a secret per se, but is environment-specific and paired with the private key —
 > keep it in the same secret store for clean rotation.
+
+### 4.1 Production configuration preflight
+
+The deploy workflow checks the runtime environment on the deploy host before pulling or restarting
+the application. It requires non-empty values for the production CORS origin list, database
+password, S3 access/secret keys, JWT key locations, payment-webhook secret, and provider-config
+encryption key. The check prints missing variable **names only**; it never prints their values.
+
+The application repeats this check during `%prod` startup. An unresolved or blank mandatory value
+stops startup before the service accepts traffic. Development and test retain their local defaults.
+For CORS, production must list each approved HTTPS frontend origin explicitly. The API permits
+`GET`, `POST`, `PUT`, `PATCH`, and `DELETE` preflights with `Content-Type`, `Authorization`, and
+`Idempotency-Key`; wildcard production origins are forbidden.
 
 ---
 

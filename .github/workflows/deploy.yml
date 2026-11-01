@@ -103,8 +103,35 @@ jobs:
           envs: IMAGE
           script: |
             set -euo pipefail
-            echo "${{ secrets.GHCR_PULL_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             cd /opt/beatzmedia
+
+            # Validate names only. Values remain in the host's compose environment and are never
+            # printed or sent back through the Actions runner.
+            required_runtime_config=(
+              BEATZ_CORS_ORIGINS
+              QUARKUS_DATASOURCE_PASSWORD
+              BEATZ_S3_ACCESS_KEY
+              BEATZ_S3_SECRET_KEY
+              BEATZ_JWT_PUBLIC_KEY_LOCATION
+              BEATZ_JWT_PRIVATE_KEY_LOCATION
+              BEATZ_PAYMENT_WEBHOOK_SECRET
+              BEATZ_PROVIDER_CONFIG_ENCRYPTION_KEY
+            )
+            compose_environment="$(docker compose config --environment)"
+            missing_runtime_config=()
+            for name in "${required_runtime_config[@]}"; do
+              if ! printf '%s\n' "$compose_environment" \
+                | awk -F= -v key="$name" '$1 == key && length($0) > length(key) + 1 { found=1 } END { exit !found }'; then
+                missing_runtime_config+=("$name")
+              fi
+            done
+            unset compose_environment
+            if [ ${#missing_runtime_config[@]} -gt 0 ]; then
+              echo "::error::Refusing to deploy — host runtime configuration is incomplete: ${missing_runtime_config[*]}"
+              exit 1
+            fi
+
+            echo "${{ secrets.GHCR_PULL_TOKEN }}" | docker login ghcr.io -u ${{ github.actor }} --password-stdin
             export BEATZ_IMAGE="$IMAGE"
             docker compose pull app
             # Flyway migrates at boot (QUARKUS_FLYWAY_MIGRATE_AT_START=true).
