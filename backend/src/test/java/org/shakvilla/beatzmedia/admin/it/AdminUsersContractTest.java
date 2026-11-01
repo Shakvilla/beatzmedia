@@ -37,6 +37,7 @@ import org.shakvilla.beatzmedia.admin.application.port.out.IdentityReader.UserCo
  * </pre>
  */
 @Tag("unit")
+@Tag("contract")
 class AdminUsersContractTest {
 
   private static final Instant NOW = Instant.parse("2026-07-10T10:00:00Z");

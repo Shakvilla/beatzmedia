@@ -37,6 +37,7 @@ import io.restassured.http.ContentType;
  */
 @QuarkusTest
 @Tag("integration")
+@Tag("contract")
 class PodcastContractTest {
 
   private static final String ISO_8601_PATTERN =

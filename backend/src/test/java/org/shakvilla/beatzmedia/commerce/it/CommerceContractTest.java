@@ -24,6 +24,7 @@ import io.restassured.http.ContentType;
  */
 @QuarkusTest
 @Tag("integration")
+@Tag("contract")
 class CommerceContractTest {
 
   private static final String ARTIST_ID = "com-contract-artist-1";

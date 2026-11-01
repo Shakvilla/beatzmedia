@@ -31,6 +31,7 @@ import org.shakvilla.beatzmedia.platform.domain.Money;
  * DoD §11 contract-test requirement.
  */
 @Tag("unit")
+@Tag("contract")
 class DisputeContractTest {
 
   private static final Set<String> VALID_STATUSES =

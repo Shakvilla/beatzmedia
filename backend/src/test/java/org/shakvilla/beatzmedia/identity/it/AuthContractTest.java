@@ -25,6 +25,7 @@ import io.restassured.http.ContentType;
  */
 @QuarkusTest
 @Tag("integration")
+@Tag("contract")
 class AuthContractTest {
 
   private static final String SIGNUP_URL = "/v1/auth/signup";

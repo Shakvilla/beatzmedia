@@ -38,6 +38,7 @@ import io.restassured.response.Response;
 @QuarkusTest
 @QuarkusTestResource(MinioTestResource.class)
 @Tag("integration")
+@Tag("contract")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class StudioPodcastContractTest {
 

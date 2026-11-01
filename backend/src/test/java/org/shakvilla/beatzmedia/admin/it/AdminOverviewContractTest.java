@@ -37,6 +37,7 @@ import org.shakvilla.beatzmedia.admin.application.port.in.HealthView;
  * illustrative {@code Money} prose, same resolution as WU-STU-4's {@code trackPrice}).
  */
 @Tag("unit")
+@Tag("contract")
 class AdminOverviewContractTest {
 
   @Test

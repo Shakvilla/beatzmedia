@@ -31,6 +31,7 @@ import io.restassured.response.Response;
  */
 @QuarkusTest
 @Tag("integration")
+@Tag("contract")
 class CatalogContractTest {
 
   @Inject

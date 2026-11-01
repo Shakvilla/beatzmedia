@@ -35,6 +35,7 @@ import io.restassured.http.ContentType;
  */
 @QuarkusTest
 @Tag("integration")
+@Tag("contract")
 @TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class StudioSettingsContractTest {
 
