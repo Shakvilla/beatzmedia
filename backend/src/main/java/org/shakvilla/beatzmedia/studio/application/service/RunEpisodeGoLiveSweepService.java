@@ -2,6 +2,7 @@ package org.shakvilla.beatzmedia.studio.application.service;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
@@ -10,6 +11,9 @@ import jakarta.transaction.Transactional;
 
 import org.jboss.logging.Logger;
 import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
+import org.shakvilla.beatzmedia.platform.application.port.out.DurableEventPublisher;
+import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
+import org.shakvilla.beatzmedia.platform.domain.DurableEventMessage;
 import org.shakvilla.beatzmedia.studio.application.port.in.RunEpisodeGoLiveSweep;
 import org.shakvilla.beatzmedia.studio.application.port.out.StudioRepository;
 import org.shakvilla.beatzmedia.studio.domain.Episode;
@@ -30,13 +34,21 @@ public class RunEpisodeGoLiveSweepService implements RunEpisodeGoLiveSweep {
 
   private final StudioRepository repo;
   private final Clock clock;
+  private final IdGenerator ids;
+  private final DurableEventPublisher durableEvents;
   private final Event<EpisodePublished> episodePublishedEvent;
 
   @Inject
   public RunEpisodeGoLiveSweepService(
-      StudioRepository repo, Clock clock, Event<EpisodePublished> episodePublishedEvent) {
+      StudioRepository repo,
+      Clock clock,
+      IdGenerator ids,
+      DurableEventPublisher durableEvents,
+      Event<EpisodePublished> episodePublishedEvent) {
     this.repo = repo;
     this.clock = clock;
+    this.ids = ids;
+    this.durableEvents = durableEvents;
     this.episodePublishedEvent = episodePublishedEvent;
   }
 
@@ -50,6 +62,18 @@ public class RunEpisodeGoLiveSweepService implements RunEpisodeGoLiveSweep {
       try {
         episode.goLive(now);
         Episode saved = repo.saveEpisode(episode);
+        durableEvents.append(new DurableEventMessage(
+            ids.newId(),
+            "studio.episode-published",
+            1,
+            "episode",
+            saved.id().value(),
+            Map.of(
+                "episodeId", saved.id().value(),
+                "showId", saved.showId().value(),
+                "artistId", saved.artistId().value(),
+                "occurredAt", now.toString()),
+            now));
         episodePublishedEvent.fire(new EpisodePublished(
             saved.id().value(), saved.showId().value(), saved.artistId().value(), now));
         transitioned++;

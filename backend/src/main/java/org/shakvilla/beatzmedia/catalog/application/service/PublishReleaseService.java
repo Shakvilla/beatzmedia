@@ -1,6 +1,7 @@
 package org.shakvilla.beatzmedia.catalog.application.service;
 
 import java.time.Instant;
+import java.util.Map;
 import java.util.Optional;
 
 import jakarta.enterprise.context.ApplicationScoped;
@@ -25,7 +26,9 @@ import org.shakvilla.beatzmedia.catalog.domain.ReleaseNotFoundException;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseWentLive;
 import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
+import org.shakvilla.beatzmedia.platform.application.port.out.DurableEventPublisher;
 import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
+import org.shakvilla.beatzmedia.platform.domain.DurableEventMessage;
 
 /**
  * Application service for {@link PublishRelease}. Orchestrates the release lifecycle FSM
@@ -42,6 +45,7 @@ public class PublishReleaseService implements PublishRelease {
   private final Clock clock;
   private final IdGenerator ids;
   private final AuditWriter auditWriter;
+  private final DurableEventPublisher durableEvents;
   private final Event<ReleaseApproved> releaseApprovedEvent;
   private final Event<ReleaseWentLive> releaseWentLiveEvent;
   private final Event<ContentTakenDown> contentTakenDownEvent;
@@ -52,6 +56,7 @@ public class PublishReleaseService implements PublishRelease {
       Clock clock,
       IdGenerator ids,
       AuditWriter auditWriter,
+      DurableEventPublisher durableEvents,
       Event<ReleaseApproved> releaseApprovedEvent,
       Event<ReleaseWentLive> releaseWentLiveEvent,
       Event<ContentTakenDown> contentTakenDownEvent) {
@@ -59,6 +64,7 @@ public class PublishReleaseService implements PublishRelease {
     this.clock = clock;
     this.ids = ids;
     this.auditWriter = auditWriter;
+    this.durableEvents = durableEvents;
     this.releaseApprovedEvent = releaseApprovedEvent;
     this.releaseWentLiveEvent = releaseWentLiveEvent;
     this.contentTakenDownEvent = contentTakenDownEvent;
@@ -107,6 +113,7 @@ public class PublishReleaseService implements PublishRelease {
         auditApprove(release, actorId, now);
         releaseApprovedEvent.fire(new ReleaseApproved(
             release.getId(), release.getArtistId(), ReleaseStatus.live, null, actorId, now));
+        appendReleaseWentLive(release, now);
         releaseWentLiveEvent.fire(
             new ReleaseWentLive(release.getId(), release.getArtistId(), now));
       }
@@ -117,6 +124,7 @@ public class PublishReleaseService implements PublishRelease {
         release.goLive(now);
         repo.saveRelease(release);
         repo.markReleaseTracksReady(id);
+        appendReleaseWentLive(release, now);
         releaseWentLiveEvent.fire(
             new ReleaseWentLive(release.getId(), release.getArtistId(), now));
       }
@@ -132,6 +140,7 @@ public class PublishReleaseService implements PublishRelease {
         repo.saveRelease(release);
         repo.markReleaseTracksReady(id);
         auditReinstate(release, actorId, now);
+        appendReleaseWentLive(release, now);
         releaseWentLiveEvent.fire(
             new ReleaseWentLive(release.getId(), release.getArtistId(), now));
       }
@@ -195,6 +204,20 @@ public class PublishReleaseService implements PublishRelease {
         release.getId(),
         AuditType.MODERATION,
         null,
+        now));
+  }
+
+  private void appendReleaseWentLive(Release release, Instant now) {
+    durableEvents.append(new DurableEventMessage(
+        ids.newId(),
+        "catalog.release-went-live",
+        1,
+        "release",
+        release.getId(),
+        Map.of(
+            "releaseId", release.getId(),
+            "artistId", release.getArtistId(),
+            "wentLiveAt", now.toString()),
         now));
   }
 

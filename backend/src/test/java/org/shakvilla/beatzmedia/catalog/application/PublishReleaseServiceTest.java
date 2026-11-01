@@ -38,6 +38,7 @@ import org.shakvilla.beatzmedia.catalog.fakes.FakeCatalogRepository;
 import org.shakvilla.beatzmedia.platform.domain.ErrorCode;
 import org.shakvilla.beatzmedia.platform.fakes.FakeClock;
 import org.shakvilla.beatzmedia.platform.fakes.FakeIds;
+import org.shakvilla.beatzmedia.platform.fakes.RecordingDurableEventPublisher;
 
 /**
  * Unit tests for {@link PublishReleaseService}. Covers LLFR-CATALOG-02.5 acceptance criteria:
@@ -54,6 +55,7 @@ class PublishReleaseServiceTest {
   private FakeCatalogRepository repo;
   private FakeAuditWriter auditWriter;
   private FakeClock clock;
+  private RecordingDurableEventPublisher durableEvents;
   private final RecordingEvent<ReleaseApproved> approvedEvent = new RecordingEvent<>();
   private final RecordingEvent<ReleaseWentLive> wentLiveEvent = new RecordingEvent<>();
   private final RecordingEvent<ContentTakenDown> takenDownEvent = new RecordingEvent<>();
@@ -103,8 +105,10 @@ class PublishReleaseServiceTest {
     repo = new FakeCatalogRepository();
     auditWriter = new FakeAuditWriter();
     clock = FakeClock.at(NOW);
+    durableEvents = new RecordingDurableEventPublisher();
     service = new PublishReleaseService(
         repo, clock, FakeIds.sequential("aud"), auditWriter,
+        durableEvents,
         approvedEvent, wentLiveEvent, takenDownEvent);
   }
 
@@ -137,6 +141,8 @@ class PublishReleaseServiceTest {
     assertEquals(1, repo.markReadyCallCount("rel-2"));
     assertEquals(1, approvedEvent.fired.size());
     assertEquals(1, wentLiveEvent.fired.size());
+    assertEquals(1, durableEvents.messages().size());
+    assertEquals("catalog.release-went-live", durableEvents.messages().get(0).eventType());
   }
 
   @Test

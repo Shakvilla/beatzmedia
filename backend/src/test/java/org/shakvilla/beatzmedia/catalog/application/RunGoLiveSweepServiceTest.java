@@ -26,6 +26,7 @@ import org.shakvilla.beatzmedia.catalog.domain.Visibility;
 import org.shakvilla.beatzmedia.catalog.fakes.FakeCatalogRepository;
 import org.shakvilla.beatzmedia.platform.fakes.FakeClock;
 import org.shakvilla.beatzmedia.platform.fakes.FakeIds;
+import org.shakvilla.beatzmedia.platform.fakes.RecordingDurableEventPublisher;
 
 /**
  * Unit tests for {@link RunGoLiveSweepService} — LLFR-PLATFORM-01.2 / INV-7. Proves: a due
@@ -51,6 +52,7 @@ class RunGoLiveSweepServiceTest {
     clock = FakeClock.at(NOW);
     var publishRelease = new PublishReleaseService(
         repo, clock, FakeIds.sequential("aud"), new FakeAuditWriter(),
+        new RecordingDurableEventPublisher(),
         new NoOpEvent<>(), new NoOpEvent<>(), new NoOpEvent<>());
     sweep = new RunGoLiveSweepService(repo, publishRelease, clock);
   }

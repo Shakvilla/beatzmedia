@@ -1,6 +1,7 @@
 package org.shakvilla.beatzmedia.studio.application.service;
 
 import java.time.Instant;
+import java.util.Map;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.enterprise.event.Event;
@@ -11,7 +12,9 @@ import org.shakvilla.beatzmedia.audit.application.port.out.AuditWriter;
 import org.shakvilla.beatzmedia.audit.domain.AuditEntry;
 import org.shakvilla.beatzmedia.audit.domain.AuditType;
 import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
+import org.shakvilla.beatzmedia.platform.application.port.out.DurableEventPublisher;
 import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
+import org.shakvilla.beatzmedia.platform.domain.DurableEventMessage;
 import org.shakvilla.beatzmedia.platform.domain.Money;
 import org.shakvilla.beatzmedia.platform.domain.UnauthorizedException;
 import org.shakvilla.beatzmedia.platform.domain.ValidationException;
@@ -42,6 +45,7 @@ public class UpdateEpisodeService implements UpdateEpisode {
   private final IdGenerator ids;
   private final Clock clock;
   private final AuditWriter auditWriter;
+  private final DurableEventPublisher durableEvents;
   private final Event<EpisodePublished> episodePublishedEvent;
 
   @Inject
@@ -50,11 +54,13 @@ public class UpdateEpisodeService implements UpdateEpisode {
       IdGenerator ids,
       Clock clock,
       AuditWriter auditWriter,
+      DurableEventPublisher durableEvents,
       Event<EpisodePublished> episodePublishedEvent) {
     this.repo = repo;
     this.ids = ids;
     this.clock = clock;
     this.auditWriter = auditWriter;
+    this.durableEvents = durableEvents;
     this.episodePublishedEvent = episodePublishedEvent;
   }
 
@@ -95,12 +101,28 @@ public class UpdateEpisodeService implements UpdateEpisode {
         null, now));
 
     if (firePublished) {
+      appendEpisodePublished(saved, artist, now);
       episodePublishedEvent.fire(
           new EpisodePublished(saved.id().value(), saved.showId().value(), artist.value(), now));
     }
 
     PodcastShow show = repo.findShow(artist, saved.showId()).orElse(null);
     return EpisodeMapper.toView(saved, show != null ? show.title() : null);
+  }
+
+  private void appendEpisodePublished(Episode episode, ArtistId artist, Instant now) {
+    durableEvents.append(new DurableEventMessage(
+        ids.newId(),
+        "studio.episode-published",
+        1,
+        "episode",
+        episode.id().value(),
+        Map.of(
+            "episodeId", episode.id().value(),
+            "showId", episode.showId().value(),
+            "artistId", artist.value(),
+            "occurredAt", now.toString()),
+        now));
   }
 
   /** Applies the {@code visibility}/{@code date} PATCH fields to the episode's lifecycle. Returns

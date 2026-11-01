@@ -14,6 +14,7 @@ import org.shakvilla.beatzmedia.audit.fakes.FakeAuditWriter;
 import org.shakvilla.beatzmedia.platform.domain.ValidationException;
 import org.shakvilla.beatzmedia.platform.fakes.FakeClock;
 import org.shakvilla.beatzmedia.platform.fakes.FakeIds;
+import org.shakvilla.beatzmedia.platform.fakes.RecordingDurableEventPublisher;
 import org.shakvilla.beatzmedia.studio.application.port.in.CreateEpisode.AudioUpload;
 import org.shakvilla.beatzmedia.studio.application.port.in.CreateEpisode.CreateEpisodeCommand;
 import org.shakvilla.beatzmedia.studio.application.port.in.EpisodeView;
@@ -50,6 +51,7 @@ class CreateEpisodeServiceTest {
   private FakeClock clock;
   private FakeAuditWriter auditWriter;
   private RecordingEvent<EpisodePublished> publishedEvent;
+  private RecordingDurableEventPublisher durableEvents;
   private CreateEpisodeService service;
 
   @BeforeEach
@@ -62,8 +64,10 @@ class CreateEpisodeServiceTest {
     clock = FakeClock.at(NOW);
     auditWriter = new FakeAuditWriter();
     publishedEvent = new RecordingEvent<>();
+    durableEvents = new RecordingDurableEventPublisher();
     service = new CreateEpisodeService(
-        repo, mediaUpload, FakeIds.sequential("ep"), clock, auditWriter, publishedEvent);
+        repo, mediaUpload, FakeIds.sequential("ep"), clock, auditWriter, durableEvents,
+        publishedEvent);
   }
 
   private static AudioUpload wavUpload() {
@@ -86,6 +90,8 @@ class CreateEpisodeServiceTest {
     assertEquals("Konongo Diaries", view.showTitle());
     assertEquals(1, mediaUpload.callCount());
     assertEquals(1, publishedEvent.fired().size());
+    assertEquals(1, durableEvents.messages().size());
+    assertEquals("studio.episode-published", durableEvents.messages().get(0).eventType());
     assertEquals(1, auditWriter.size());
   }
 

@@ -14,6 +14,7 @@ import org.shakvilla.beatzmedia.audit.fakes.FakeAuditWriter;
 import org.shakvilla.beatzmedia.platform.domain.Currency;
 import org.shakvilla.beatzmedia.platform.fakes.FakeClock;
 import org.shakvilla.beatzmedia.platform.fakes.FakeIds;
+import org.shakvilla.beatzmedia.platform.fakes.RecordingDurableEventPublisher;
 import org.shakvilla.beatzmedia.studio.application.port.in.EpisodeView;
 import org.shakvilla.beatzmedia.studio.application.port.in.UpdateEpisode.UpdateEpisodeCommand;
 import org.shakvilla.beatzmedia.studio.application.service.UpdateEpisodeService;
@@ -43,6 +44,7 @@ class UpdateEpisodeServiceTest {
   private FakeClock clock;
   private FakeAuditWriter auditWriter;
   private RecordingEvent<EpisodePublished> publishedEvent;
+  private RecordingDurableEventPublisher durableEvents;
   private UpdateEpisodeService service;
 
   @BeforeEach
@@ -53,7 +55,9 @@ class UpdateEpisodeServiceTest {
     clock = FakeClock.at(NOW);
     auditWriter = new FakeAuditWriter();
     publishedEvent = new RecordingEvent<>();
-    service = new UpdateEpisodeService(repo, FakeIds.sequential("aud"), clock, auditWriter, publishedEvent);
+    durableEvents = new RecordingDurableEventPublisher();
+    service = new UpdateEpisodeService(
+        repo, FakeIds.sequential("aud"), clock, auditWriter, durableEvents, publishedEvent);
   }
 
   private Episode draftEpisode(String id) {
@@ -101,6 +105,7 @@ class UpdateEpisodeServiceTest {
         new UpdateEpisodeCommand(null, null, null, null, "public", null, null));
     assertEquals("published", view.status());
     assertEquals(1, publishedEvent.fired().size());
+    assertEquals(1, durableEvents.messages().size());
   }
 
   @Test

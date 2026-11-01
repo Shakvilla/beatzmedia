@@ -5,6 +5,7 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.HexFormat;
+import java.util.Map;
 import java.util.Optional;
 
 import jakarta.enterprise.context.ApplicationScoped;
@@ -22,8 +23,10 @@ import org.shakvilla.beatzmedia.media.domain.MediaHandle;
 import org.shakvilla.beatzmedia.media.domain.MediaKind;
 import org.shakvilla.beatzmedia.media.domain.OwnerRef;
 import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
+import org.shakvilla.beatzmedia.platform.application.port.out.DurableEventPublisher;
 import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
 import org.shakvilla.beatzmedia.platform.domain.Currency;
+import org.shakvilla.beatzmedia.platform.domain.DurableEventMessage;
 import org.shakvilla.beatzmedia.platform.domain.Money;
 import org.shakvilla.beatzmedia.platform.domain.ValidationException;
 import org.shakvilla.beatzmedia.studio.application.port.in.CreateEpisode;
@@ -69,6 +72,7 @@ public class CreateEpisodeService implements CreateEpisode {
   private final IdGenerator ids;
   private final Clock clock;
   private final AuditWriter auditWriter;
+  private final DurableEventPublisher durableEvents;
   private final Event<EpisodePublished> episodePublishedEvent;
 
   @Inject
@@ -78,12 +82,14 @@ public class CreateEpisodeService implements CreateEpisode {
       IdGenerator ids,
       Clock clock,
       AuditWriter auditWriter,
+      DurableEventPublisher durableEvents,
       Event<EpisodePublished> episodePublishedEvent) {
     this.repo = repo;
     this.uploadOriginalUseCase = uploadOriginalUseCase;
     this.ids = ids;
     this.clock = clock;
     this.auditWriter = auditWriter;
+    this.durableEvents = durableEvents;
     this.episodePublishedEvent = episodePublishedEvent;
   }
 
@@ -188,11 +194,27 @@ public class CreateEpisodeService implements CreateEpisode {
         null, now));
 
     if (publishNow) {
+      appendEpisodePublished(saved, artist, now);
       episodePublishedEvent.fire(
           new EpisodePublished(saved.id().value(), saved.showId().value(), artist.value(), now));
     }
 
     return EpisodeMapper.toView(saved, show.title());
+  }
+
+  private void appendEpisodePublished(Episode episode, ArtistId artist, Instant now) {
+    durableEvents.append(new DurableEventMessage(
+        ids.newId(),
+        "studio.episode-published",
+        1,
+        "episode",
+        episode.id().value(),
+        Map.of(
+            "episodeId", episode.id().value(),
+            "showId", episode.showId().value(),
+            "artistId", artist.value(),
+            "occurredAt", now.toString()),
+        now));
   }
 
   private PodcastShow resolveShow(ArtistId artist, CreateEpisodeCommand cmd) {

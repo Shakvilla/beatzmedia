@@ -83,6 +83,7 @@ public class SchedulerRegistry {
   private static final String JOB_DELIVERY_RETRY   = "notifications.delivery-retry-sweep";
   private static final String JOB_ANALYTICS_ROLLUP = "analytics.rollup";
   private static final String JOB_SEARCH_REINDEX   = "search.reindex";
+  private static final String JOB_PUBLICATION_OUTBOX = "platform.publication-outbox";
 
   @Inject
   Instance<ScheduledJob> jobBeans;
@@ -164,6 +165,13 @@ public class SchedulerRegistry {
       concurrentExecution = ConcurrentExecution.SKIP)
   void reindexSearch() {
     runWithLock(JOB_SEARCH_REINDEX);
+  }
+
+  /** Durable publication outbox — frequent, small, non-blocking batches. */
+  @Scheduled(every = "5s", identity = "publication-outbox",
+      concurrentExecution = ConcurrentExecution.SKIP)
+  void dispatchPublicationOutbox() {
+    runWithLock(JOB_PUBLICATION_OUTBOX);
   }
 
   // -------------------------------------------------------------------------

@@ -9,6 +9,8 @@ import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.shakvilla.beatzmedia.platform.domain.Currency;
 import org.shakvilla.beatzmedia.platform.fakes.FakeClock;
+import org.shakvilla.beatzmedia.platform.fakes.FakeIds;
+import org.shakvilla.beatzmedia.platform.fakes.RecordingDurableEventPublisher;
 import org.shakvilla.beatzmedia.studio.application.service.RunEpisodeGoLiveSweepService;
 import org.shakvilla.beatzmedia.studio.domain.ArtistId;
 import org.shakvilla.beatzmedia.studio.domain.Episode;
@@ -38,7 +40,12 @@ class RunEpisodeGoLiveSweepServiceTest {
   void setUp() {
     repo = new FakeStudioRepository();
     publishedEvent = new RecordingEvent<>();
-    service = new RunEpisodeGoLiveSweepService(repo, FakeClock.at(NOW), publishedEvent);
+    service = new RunEpisodeGoLiveSweepService(
+        repo,
+        FakeClock.at(NOW),
+        FakeIds.sequential("outbox"),
+        new RecordingDurableEventPublisher(),
+        publishedEvent);
   }
 
   private Episode scheduledEpisode(String id, Instant scheduledAt) {
