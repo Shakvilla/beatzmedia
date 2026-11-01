@@ -186,6 +186,15 @@ const releaseWire = {
   downloadable: null,
 }
 
+const releaseDetailWire = {
+  ...releaseWire,
+  genre: null,
+  description: null,
+  visibility: null,
+  scheduledAt: null,
+  tracks: [],
+}
+
 describe('studioReleasesQuery', () => {
   it('requests one large page and unwraps + maps money to numbers', async () => {
     vi.mocked(client.apiFetch).mockResolvedValue({ items: [releaseWire], page: 0, size: 100, total: 1 })
@@ -197,7 +206,7 @@ describe('studioReleasesQuery', () => {
 
 describe('studioReleaseQuery / mutations', () => {
   it('gets one release by id', async () => {
-    vi.mocked(client.apiFetch).mockResolvedValue(releaseWire)
+    vi.mocked(client.apiFetch).mockResolvedValue(releaseDetailWire)
     const r = await studioReleaseQuery('r1').queryFn!({} as never)
     expect(client.apiFetch).toHaveBeenCalledWith('/studio/releases/r1')
     expect(r.price).toBe(2.5)
@@ -206,11 +215,11 @@ describe('studioReleaseQuery / mutations', () => {
     // studioReleaseQuery hits the single-release DETAIL endpoint, which (unlike the list) really
     // does serve `downloadable` — toStudioRelease alone would default it to null (it's shared
     // with the list mapping), so this pins that studioReleaseQuery overrides it correctly.
-    vi.mocked(client.apiFetch).mockResolvedValue({ ...releaseWire, downloadable: true })
+    vi.mocked(client.apiFetch).mockResolvedValue({ ...releaseDetailWire, downloadable: true })
     const allowed = await studioReleaseQuery('r1').queryFn!({} as never)
     expect(allowed.downloadable).toBe(true)
 
-    vi.mocked(client.apiFetch).mockResolvedValue({ ...releaseWire, downloadable: false })
+    vi.mocked(client.apiFetch).mockResolvedValue({ ...releaseDetailWire, downloadable: false })
     const disallowed = await studioReleaseQuery('r1').queryFn!({} as never)
     expect(disallowed.downloadable).toBe(false)
   })
