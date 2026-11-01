@@ -92,6 +92,12 @@ jobs:
       - name: Unit tests (surefire)
         working-directory: backend
         run: ./mvnw $MAVEN_ARGS test
+      - name: Verify unit test class count
+        working-directory: backend
+        run: |
+          expected=$(find src/test/java -name '*Test.java' ! -name '*ContractTest.java' ! -name 'ArchitectureRulesTest.java' | wc -l | tr -d ' ')
+          actual=$(find target/surefire-reports -name 'TEST-*.xml' | wc -l | tr -d ' ')
+          test "$actual" -eq "$expected"
       - name: Upload surefire reports
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
@@ -126,10 +132,16 @@ jobs:
       # See the action for the full history of how this went wrong twice.
       - name: Install ffmpeg (same build as the runtime image — RealTranscodeIT / INV-3 coverage)
         uses: ./.github/actions/install-runtime-ffmpeg
-      - name: Integration tests (failsafe + Testcontainers)
+      - name: Integration tests only (Failsafe + Testcontainers)
         working-directory: backend
-        # -DskipITs=false activates failsafe via `verify`.
-        run: ./mvnw $MAVEN_ARGS verify -DskipITs=false
+        # The profile skips Surefire and activates Failsafe, so this job cannot duplicate unit tests.
+        run: ./mvnw $MAVEN_ARGS verify -Pintegration-tests
+      - name: Verify integration test class count
+        working-directory: backend
+        run: |
+          expected=$(find src/test/java -name '*IT.java' | wc -l | tr -d ' ')
+          actual=$(find target/failsafe-reports -name 'TEST-*.xml' | wc -l | tr -d ' ')
+          test "$actual" -eq "$expected"
       - name: Upload failsafe reports
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
@@ -155,7 +167,17 @@ jobs:
           cache: maven
       - name: Run ArchUnit suite
         working-directory: backend
-        run: ./mvnw $MAVEN_ARGS test -Dgroups=arch
+        run: ./mvnw $MAVEN_ARGS test -Parchitecture-tests
+      - name: Verify architecture test class count
+        working-directory: backend
+        run: test "$(find target/surefire-reports -name 'TEST-*ArchitectureRulesTest.xml' | wc -l | tr -d ' ')" -eq 1
+      - name: Upload ArchUnit reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: archunit-reports
+          path: backend/target/surefire-reports/
+          retention-days: 7
 
   # ---------------------------------------------------------------------------
   # coverage-gate — JaCoCo check rule fails the build below the gate.
@@ -211,7 +233,20 @@ jobs:
         run: ./mvnw $MAVEN_ARGS quarkus:build -Dquarkus.smallrye-openapi.store-schema-directory=target/openapi
       - name: Contract conformance tests
         working-directory: backend
-        run: ./mvnw $MAVEN_ARGS verify -DskipITs=false -Dgroups=contract
+        run: ./mvnw $MAVEN_ARGS test -Pcontract-tests
+      - name: Verify contract test class count
+        working-directory: backend
+        run: |
+          expected=$(find src/test/java -name '*ContractTest.java' | wc -l | tr -d ' ')
+          actual=$(find target/surefire-reports -name 'TEST-*ContractTest.xml' | wc -l | tr -d ' ')
+          test "$actual" -eq "$expected"
+      - name: Upload contract test reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: contract-test-reports
+          path: backend/target/surefire-reports/
+          retention-days: 7
       - name: Upload generated OpenAPI
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
