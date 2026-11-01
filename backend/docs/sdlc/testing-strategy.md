@@ -57,6 +57,14 @@ a green result. The integration profile skips Surefire so the integration job ca
 the unit suite; contract and architecture tests are excluded from both the default unit phase and the
 `*IT` phase, so they execute once in their dedicated jobs.
 
+The CI class-count checks derive their expected value from the source tree and compare it with the
+JUnit XML reports. At the 2026-11-01 Stage 0 split the source baselines are 203 unit classes, 100
+integration classes, 21 contract classes, and one architecture class. The verified Surefire results
+are 1,392 unit tests, 113 contract tests, and 7 architecture rules — exactly the previous 1,512-test
+Surefire baseline without duplication. The complete 100-class integration count is recorded by CI
+and must be captured in the Stage 0 certification report; a local verification run reached 72 passing
+tests across eight classes before it was stopped for runtime, so it is not completion evidence.
+
 ---
 
 ## 2. Layer 1 — Unit tests (domain + use cases, no Quarkus)
