@@ -15,11 +15,9 @@ import org.shakvilla.beatzmedia.studio.application.service.RunEpisodeGoLiveSweep
 import org.shakvilla.beatzmedia.studio.domain.ArtistId;
 import org.shakvilla.beatzmedia.studio.domain.Episode;
 import org.shakvilla.beatzmedia.studio.domain.EpisodeId;
-import org.shakvilla.beatzmedia.studio.domain.EpisodePublished;
 import org.shakvilla.beatzmedia.studio.domain.EpisodeStatus;
 import org.shakvilla.beatzmedia.studio.domain.ShowId;
 import org.shakvilla.beatzmedia.studio.fakes.FakeStudioRepository;
-import org.shakvilla.beatzmedia.studio.fakes.RecordingEvent;
 
 /**
  * Unit tests for {@link RunEpisodeGoLiveSweepService} — INV-7 scheduled go-live. Mirrors {@code
@@ -33,19 +31,18 @@ class RunEpisodeGoLiveSweepServiceTest {
   private static final Instant NOW = Instant.parse("2026-07-01T00:00:00Z");
 
   private FakeStudioRepository repo;
-  private RecordingEvent<EpisodePublished> publishedEvent;
+  private RecordingDurableEventPublisher durableEvents;
   private RunEpisodeGoLiveSweepService service;
 
   @BeforeEach
   void setUp() {
     repo = new FakeStudioRepository();
-    publishedEvent = new RecordingEvent<>();
+    durableEvents = new RecordingDurableEventPublisher();
     service = new RunEpisodeGoLiveSweepService(
         repo,
         FakeClock.at(NOW),
         FakeIds.sequential("outbox"),
-        new RecordingDurableEventPublisher(),
-        publishedEvent);
+        durableEvents);
   }
 
   private Episode scheduledEpisode(String id, Instant scheduledAt) {
@@ -58,14 +55,14 @@ class RunEpisodeGoLiveSweepServiceTest {
   }
 
   @Test
-  void run_dueScheduledEpisode_transitionsToPublishedAndFiresEventOnce() {
+  void run_dueScheduledEpisode_transitionsToPublishedAndAppendsDurableEventOnce() {
     scheduledEpisode("ep-1", NOW.minusSeconds(60));
 
     int count = service.run();
 
     assertEquals(1, count);
     assertEquals(EpisodeStatus.published, repo.findEpisode(ARTIST, new EpisodeId("ep-1")).orElseThrow().status());
-    assertEquals(1, publishedEvent.fired().size());
+    assertEquals(1, durableEvents.messages().size());
   }
 
   @Test
@@ -76,7 +73,7 @@ class RunEpisodeGoLiveSweepServiceTest {
 
     assertEquals(0, count);
     assertEquals(EpisodeStatus.scheduled, repo.findEpisode(ARTIST, new EpisodeId("ep-1")).orElseThrow().status());
-    assertEquals(0, publishedEvent.fired().size());
+    assertEquals(0, durableEvents.messages().size());
   }
 
   @Test
@@ -87,7 +84,7 @@ class RunEpisodeGoLiveSweepServiceTest {
     int secondRunCount = service.run();
 
     assertEquals(0, secondRunCount, "already-published episode is no longer due; re-run is a no-op");
-    assertEquals(1, publishedEvent.fired().size(), "EpisodePublished fired exactly once across both runs");
+    assertEquals(1, durableEvents.messages().size(), "durable event appended exactly once across both runs");
   }
 
   @Test

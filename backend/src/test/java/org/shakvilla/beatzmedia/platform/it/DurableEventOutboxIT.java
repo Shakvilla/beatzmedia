@@ -145,7 +145,10 @@ class DurableEventOutboxIT {
         1,
         "release",
         "release-" + id,
-        java.util.Map.of("releaseId", "release-" + id),
+        java.util.Map.of(
+            "releaseId", "release-" + id,
+            "artistId", "artist-" + id,
+            "wentLiveAt", occurredAt.toString()),
         occurredAt);
   }
 

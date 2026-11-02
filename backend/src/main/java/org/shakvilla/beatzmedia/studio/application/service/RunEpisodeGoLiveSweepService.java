@@ -5,7 +5,6 @@ import java.util.List;
 import java.util.Map;
 
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 
@@ -17,13 +16,12 @@ import org.shakvilla.beatzmedia.platform.domain.DurableEventMessage;
 import org.shakvilla.beatzmedia.studio.application.port.in.RunEpisodeGoLiveSweep;
 import org.shakvilla.beatzmedia.studio.application.port.out.StudioRepository;
 import org.shakvilla.beatzmedia.studio.domain.Episode;
-import org.shakvilla.beatzmedia.studio.domain.EpisodePublished;
 import org.shakvilla.beatzmedia.studio.domain.IllegalEpisodeTransitionException;
 
 /**
  * Application service for {@link RunEpisodeGoLiveSweep}. Enumerates due {@code scheduled} episodes
  * via {@link StudioRepository#findDueScheduled} and transitions each via {@link Episode#goLive}
- * (the single source of FSM truth), persists, and fires {@code EpisodePublished} exactly once per
+ * (the single source of FSM truth), persists, and appends one durable publication event per
  * episode. INV-7 / LLFR-STUDIO-02.3. Mirrors {@code catalog.RunGoLiveSweepService} exactly. Studio
  * ADD §4.1 / §8 (WU-STU-2).
  */
@@ -36,20 +34,15 @@ public class RunEpisodeGoLiveSweepService implements RunEpisodeGoLiveSweep {
   private final Clock clock;
   private final IdGenerator ids;
   private final DurableEventPublisher durableEvents;
-  private final Event<EpisodePublished> episodePublishedEvent;
 
   @Inject
   public RunEpisodeGoLiveSweepService(
       StudioRepository repo,
-      Clock clock,
-      IdGenerator ids,
-      DurableEventPublisher durableEvents,
-      Event<EpisodePublished> episodePublishedEvent) {
+      Clock clock, IdGenerator ids, DurableEventPublisher durableEvents) {
     this.repo = repo;
     this.clock = clock;
     this.ids = ids;
     this.durableEvents = durableEvents;
-    this.episodePublishedEvent = episodePublishedEvent;
   }
 
   @Override
@@ -74,8 +67,6 @@ public class RunEpisodeGoLiveSweepService implements RunEpisodeGoLiveSweep {
                 "artistId", saved.artistId().value(),
                 "occurredAt", now.toString()),
             now));
-        episodePublishedEvent.fire(new EpisodePublished(
-            saved.id().value(), saved.showId().value(), saved.artistId().value(), now));
         transitioned++;
       } catch (IllegalEpisodeTransitionException e) {
         // Already left 'scheduled' between enumeration and transition (e.g. raced by a PATCH

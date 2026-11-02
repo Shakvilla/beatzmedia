@@ -9,7 +9,6 @@ import java.util.Map;
 import java.util.Optional;
 
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 
@@ -35,7 +34,6 @@ import org.shakvilla.beatzmedia.studio.application.port.out.StudioRepository;
 import org.shakvilla.beatzmedia.studio.domain.ArtistId;
 import org.shakvilla.beatzmedia.studio.domain.Episode;
 import org.shakvilla.beatzmedia.studio.domain.EpisodeId;
-import org.shakvilla.beatzmedia.studio.domain.EpisodePublished;
 import org.shakvilla.beatzmedia.studio.domain.IdempotencyConflictException;
 import org.shakvilla.beatzmedia.studio.domain.InvalidPriceException;
 import org.shakvilla.beatzmedia.studio.domain.MediaInvalidException;
@@ -61,7 +59,7 @@ import org.shakvilla.beatzmedia.studio.domain.ShowNotFoundException;
  *   <li><strong>Premium ⇒ price &gt; 0</strong> (422 {@code INVALID_PRICE}); <strong>scheduled ⇒
  *       date required &amp; future</strong> (422 {@code SCHEDULE_DATE_REQUIRED}); unknown/missing
  *       show (404 {@code SHOW_NOT_FOUND}).
- *   <li>Fires {@code EpisodePublished} exactly once when {@code visibility == public} (publish-now).
+ *   <li>Appends one durable publication event when {@code visibility == public} (publish-now).
  * </ul>
  */
 @ApplicationScoped
@@ -73,7 +71,6 @@ public class CreateEpisodeService implements CreateEpisode {
   private final Clock clock;
   private final AuditWriter auditWriter;
   private final DurableEventPublisher durableEvents;
-  private final Event<EpisodePublished> episodePublishedEvent;
 
   @Inject
   public CreateEpisodeService(
@@ -82,15 +79,13 @@ public class CreateEpisodeService implements CreateEpisode {
       IdGenerator ids,
       Clock clock,
       AuditWriter auditWriter,
-      DurableEventPublisher durableEvents,
-      Event<EpisodePublished> episodePublishedEvent) {
+      DurableEventPublisher durableEvents) {
     this.repo = repo;
     this.uploadOriginalUseCase = uploadOriginalUseCase;
     this.ids = ids;
     this.clock = clock;
     this.auditWriter = auditWriter;
     this.durableEvents = durableEvents;
-    this.episodePublishedEvent = episodePublishedEvent;
   }
 
   @Override
@@ -195,8 +190,6 @@ public class CreateEpisodeService implements CreateEpisode {
 
     if (publishNow) {
       appendEpisodePublished(saved, artist, now);
-      episodePublishedEvent.fire(
-          new EpisodePublished(saved.id().value(), saved.showId().value(), artist.value(), now));
     }
 
     return EpisodeMapper.toView(saved, show.title());

@@ -17,10 +17,9 @@ import org.shakvilla.beatzmedia.studio.domain.EpisodePublished;
 /**
  * Projects an episode into the fan-facing podcast catalogue when the artist publishes it.
  *
- * <p><strong>Why this exists.</strong> {@code EpisodePublished} is fired on both publish paths —
- * publish-now in {@code CreateEpisodeService} and the scheduled sweep in
- * {@code RunEpisodeGoLiveSweepService} — and had no observers at all, so a Studio podcast never
- * reached fans.
+ * <p><strong>Why this exists.</strong> The durable outbox dispatcher fires {@code EpisodePublished}
+ * for both publish-now and scheduled go-live messages. Without this observer, a Studio podcast
+ * never reaches fans.
  *
  * <p><strong>Ordering.</strong> Publish and transcode race. This covers "published after the audio
  * was ready"; {@link StudioMediaReadyObserver} covers the opposite order by re-running the

@@ -20,7 +20,6 @@ import org.shakvilla.beatzmedia.studio.application.port.in.CreateEpisode.CreateE
 import org.shakvilla.beatzmedia.studio.application.port.in.EpisodeView;
 import org.shakvilla.beatzmedia.studio.application.service.CreateEpisodeService;
 import org.shakvilla.beatzmedia.studio.domain.ArtistId;
-import org.shakvilla.beatzmedia.studio.domain.EpisodePublished;
 import org.shakvilla.beatzmedia.studio.domain.IdempotencyConflictException;
 import org.shakvilla.beatzmedia.studio.domain.InvalidPriceException;
 import org.shakvilla.beatzmedia.studio.domain.MediaInvalidException;
@@ -30,7 +29,6 @@ import org.shakvilla.beatzmedia.studio.domain.ShowId;
 import org.shakvilla.beatzmedia.studio.domain.ShowNotFoundException;
 import org.shakvilla.beatzmedia.studio.fakes.FakeStudioRepository;
 import org.shakvilla.beatzmedia.studio.fakes.FakeUploadOriginalUseCase;
-import org.shakvilla.beatzmedia.studio.fakes.RecordingEvent;
 
 /**
  * Unit tests for {@link CreateEpisodeService} — LLFR-STUDIO-02.3. Fakes for {@link
@@ -50,7 +48,6 @@ class CreateEpisodeServiceTest {
   private FakeUploadOriginalUseCase mediaUpload;
   private FakeClock clock;
   private FakeAuditWriter auditWriter;
-  private RecordingEvent<EpisodePublished> publishedEvent;
   private RecordingDurableEventPublisher durableEvents;
   private CreateEpisodeService service;
 
@@ -63,11 +60,9 @@ class CreateEpisodeServiceTest {
     mediaUpload = new FakeUploadOriginalUseCase();
     clock = FakeClock.at(NOW);
     auditWriter = new FakeAuditWriter();
-    publishedEvent = new RecordingEvent<>();
     durableEvents = new RecordingDurableEventPublisher();
     service = new CreateEpisodeService(
-        repo, mediaUpload, FakeIds.sequential("ep"), clock, auditWriter, durableEvents,
-        publishedEvent);
+        repo, mediaUpload, FakeIds.sequential("ep"), clock, auditWriter, durableEvents);
   }
 
   private static AudioUpload wavUpload() {
@@ -82,14 +77,13 @@ class CreateEpisodeServiceTest {
   // ---- Happy path: publish now ----
 
   @Test
-  void create_publicVisibility_publishesNowAndFiresEventExactlyOnce() {
+  void create_publicVisibility_publishesNowAndAppendsDurableEventExactlyOnce() {
     EpisodeView view = service.create(ARTIST, "idem-1", publicCommand(), wavUpload());
 
     assertEquals("published", view.status());
     assertEquals("sh-1", view.showId());
     assertEquals("Konongo Diaries", view.showTitle());
     assertEquals(1, mediaUpload.callCount());
-    assertEquals(1, publishedEvent.fired().size());
     assertEquals(1, durableEvents.messages().size());
     assertEquals("studio.episode-published", durableEvents.messages().get(0).eventType());
     assertEquals(1, auditWriter.size());
@@ -98,7 +92,7 @@ class CreateEpisodeServiceTest {
   // ---- Happy path: schedule ----
 
   @Test
-  void create_scheduledVisibilityWithFutureDate_schedulesAndDoesNotFireEvent() {
+  void create_scheduledVisibilityWithFutureDate_schedulesAndDoesNotAppendEvent() {
     CreateEpisodeCommand cmd = new CreateEpisodeCommand(
         "sh-1", null, null, "Ep 2", "desc", null, "scheduled",
         java.time.Instant.parse(FUTURE), true, new BigDecimal("5"), true);
@@ -107,7 +101,7 @@ class CreateEpisodeServiceTest {
 
     assertEquals("scheduled", view.status());
     assertTrue(view.premium());
-    assertEquals(0, publishedEvent.fired().size());
+    assertEquals(0, durableEvents.messages().size());
   }
 
   // ---- Premium ⇒ price > 0 ----
@@ -203,7 +197,7 @@ class CreateEpisodeServiceTest {
 
     assertEquals(first.id(), replay.id());
     assertEquals(1, mediaUpload.callCount(), "replay must not call the media pipeline a second time");
-    assertEquals(1, publishedEvent.fired().size(), "replay must not re-fire EpisodePublished");
+    assertEquals(1, durableEvents.messages().size(), "replay must not append a second event");
   }
 
   @Test

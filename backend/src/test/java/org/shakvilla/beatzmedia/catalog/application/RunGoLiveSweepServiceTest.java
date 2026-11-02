@@ -53,7 +53,7 @@ class RunGoLiveSweepServiceTest {
     var publishRelease = new PublishReleaseService(
         repo, clock, FakeIds.sequential("aud"), new FakeAuditWriter(),
         new RecordingDurableEventPublisher(),
-        new NoOpEvent<>(), new NoOpEvent<>(), new NoOpEvent<>());
+        new NoOpEvent<>(), new NoOpEvent<>());
     sweep = new RunGoLiveSweepService(repo, publishRelease, clock);
   }
 

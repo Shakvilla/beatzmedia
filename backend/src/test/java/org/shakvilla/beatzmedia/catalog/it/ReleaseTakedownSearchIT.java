@@ -19,6 +19,7 @@ import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
+import org.shakvilla.beatzmedia.platform.adapter.out.scheduler.DurableEventDispatchJob;
 
 import io.agroal.api.AgroalDataSource;
 import io.quarkus.test.junit.QuarkusTest;
@@ -57,6 +58,7 @@ class ReleaseTakedownSearchIT {
 
   @Inject AgroalDataSource dataSource;
   @Inject EntityManager em;
+  @Inject DurableEventDispatchJob publicationDispatcher;
 
   private static String moderatorToken;
   private static String releaseId;
@@ -89,6 +91,7 @@ class ReleaseTakedownSearchIT {
         .contentType(ContentType.JSON).body("{}")
         .when().post(CATALOG_URL + "/" + releaseId + "/approve")
         .then().statusCode(200);
+    publicationDispatcher.runOnce();
   }
 
   @Test
@@ -122,6 +125,7 @@ class ReleaseTakedownSearchIT {
     given().header("Authorization", "Bearer " + moderatorToken)
         .when().post(CATALOG_URL + "/" + releaseId + "/reinstate")
         .then().statusCode(200);
+    publicationDispatcher.runOnce();
 
     assertTrue(albumRowExists(), "reinstate should re-project the album row");
     assertTrue(albumDocumentIsVisible(), "reinstate should re-index the album");

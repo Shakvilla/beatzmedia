@@ -4,7 +4,6 @@ import java.time.Instant;
 import java.util.Map;
 
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 
@@ -25,7 +24,6 @@ import org.shakvilla.beatzmedia.studio.domain.ArtistId;
 import org.shakvilla.beatzmedia.studio.domain.Episode;
 import org.shakvilla.beatzmedia.studio.domain.EpisodeId;
 import org.shakvilla.beatzmedia.studio.domain.EpisodeNotFoundException;
-import org.shakvilla.beatzmedia.studio.domain.EpisodePublished;
 import org.shakvilla.beatzmedia.studio.domain.EpisodeStatus;
 import org.shakvilla.beatzmedia.studio.domain.IllegalEpisodeTransitionException;
 import org.shakvilla.beatzmedia.studio.domain.PodcastShow;
@@ -34,8 +32,8 @@ import org.shakvilla.beatzmedia.studio.domain.ScheduleDateRequiredException;
 /**
  * Application service for {@link UpdateEpisode} — LLFR-STUDIO-02.4. PATCH semantics ({@code null}
  * = no change). {@code visibility} drives the lifecycle transition ({@code public|scheduled|draft}
- * — see {@link Episode}'s state machine); every other field is a plain metadata mutation. Fires
- * {@code EpisodePublished} exactly once when the update transitions {@code draft -> published}.
+ * — see {@link Episode}'s state machine); every other field is a plain metadata mutation. Appends
+ * one durable publication event when the update transitions {@code draft -> published}.
  * Studio ADD §4.1 / §9.
  */
 @ApplicationScoped
@@ -46,7 +44,6 @@ public class UpdateEpisodeService implements UpdateEpisode {
   private final Clock clock;
   private final AuditWriter auditWriter;
   private final DurableEventPublisher durableEvents;
-  private final Event<EpisodePublished> episodePublishedEvent;
 
   @Inject
   public UpdateEpisodeService(
@@ -54,14 +51,12 @@ public class UpdateEpisodeService implements UpdateEpisode {
       IdGenerator ids,
       Clock clock,
       AuditWriter auditWriter,
-      DurableEventPublisher durableEvents,
-      Event<EpisodePublished> episodePublishedEvent) {
+      DurableEventPublisher durableEvents) {
     this.repo = repo;
     this.ids = ids;
     this.clock = clock;
     this.auditWriter = auditWriter;
     this.durableEvents = durableEvents;
-    this.episodePublishedEvent = episodePublishedEvent;
   }
 
   @Override
@@ -102,8 +97,6 @@ public class UpdateEpisodeService implements UpdateEpisode {
 
     if (firePublished) {
       appendEpisodePublished(saved, artist, now);
-      episodePublishedEvent.fire(
-          new EpisodePublished(saved.id().value(), saved.showId().value(), artist.value(), now));
     }
 
     PodcastShow show = repo.findShow(artist, saved.showId()).orElse(null);
@@ -127,7 +120,7 @@ public class UpdateEpisodeService implements UpdateEpisode {
 
   /** Applies the {@code visibility}/{@code date} PATCH fields to the episode's lifecycle. Returns
    * {@code true} if this call transitioned the episode {@code draft -> published} (so the caller
-   * must fire {@code EpisodePublished} exactly once). */
+   * must append one durable publication event). */
   private boolean applyVisibility(Episode episode, UpdateEpisodeCommand cmd, Instant now) {
     if (cmd.visibility() == null) {
       // No explicit visibility change requested — a bare 'date' on an already-scheduled episode is
