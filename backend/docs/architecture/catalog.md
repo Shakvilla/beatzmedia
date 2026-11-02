@@ -66,7 +66,10 @@ itself — `admin` calls `PublishRelease` in-process via its own `CatalogAdminPo
 (admin ADD §4.3/§13); `catalog` requires no admin scope of its own any more since it no longer
 serves that REST surface. **Persistence is never shared**: `catalog`
 reads/writes only its own tables; other modules reference its rows by id. **Events published:**
-`ReleaseApproved`, `ReleaseWentLive`, `ContentTakenDown` (after-commit, ids + minimal snapshot).
+`ReleaseApproved` and `ContentTakenDown` remain local after-commit CDI events. Live-bound
+transitions atomically append durable `catalog.release-went-live` v1; the five-second platform
+outbox dispatcher is the sole emitter of `ReleaseWentLive` for album, pricing, and search
+projections.
 
 ## 3. Domain model
 
@@ -357,10 +360,10 @@ note and admin ADD §15; `super-admin`/`moderator` write, `support` read),
 idempotent; `FinalizeRelease` (`POST .../submit`, WU-CAT-5 — supersedes the retired `SubmitRelease`)
 is keyed by `Idempotency-Key`; FSM transitions are guard-idempotent
 (re-issuing a settled transition throws `IllegalTransitionException` → 409 `ILLEGAL_TRANSITION`
-rather than repeating a side effect). **Emitted events** (CDI `Event<T>.fire()`, mirroring the
-`AccountRegistered` pattern — no separate `EventPublisher` port yet exists in the codebase):
-`FinalizeRelease` → none public; `APPROVE_*` → `ReleaseApproved`; `GO_LIVE`/immediate approve →
-`ReleaseWentLive`; `TAKEDOWN` → `ContentTakenDown`. **Audit (INV-10):** `PublishReleaseService`
+rather than repeating a side effect). **Emitted events:** `FinalizeRelease` → none public;
+`APPROVE_*` → local `ReleaseApproved`; `GO_LIVE`/immediate approve/reinstate → durable
+`catalog.release-went-live` v1; `TAKEDOWN` → local `ContentTakenDown`. The dispatcher later emits
+`ReleaseWentLive` as the sole projection trigger. **Audit (INV-10):** `PublishReleaseService`
 appends exactly one `AuditEntry` (type `MODERATION`) per admin-triggered transition
 (`APPROVE_SCHEDULED`, `APPROVE_IMMEDIATE`, `TAKEDOWN`, `REINSTATE`); `GO_LIVE` is system-initiated
 and does not audit (no admin actor).

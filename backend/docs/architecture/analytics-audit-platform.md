@@ -176,6 +176,9 @@ boundary; split/fee math half-up with remainder reconciled. Economic constants c
 **Durable publication operations (Stage 1).** Publication state changes append versioned events to
 `platform_outbox_event` in the same transaction. The scheduler claims them with short
 `FOR UPDATE SKIP LOCKED` leases and records per-consumer receipts in `platform_inbox_receipt`.
+As of `ST1-03`, this five-second polling dispatcher is the sole trigger for release and podcast
+publication projections; a successful publish response means durable acceptance, while fan-facing
+catalogue, search, pricing, album, and podcast views converge within the polling window.
 Super-admin/support may inspect redacted event metadata and queue health; only super-admin may replay
 a terminally failed event. Replay requires an exact registered event-type/schema-version handler,
 uses a conditional failed-to-pending update, records replay metadata, and appends a reasoned audit
