@@ -553,6 +553,46 @@ buy-to-own model (INV-3).
   to prevent inflation (§9). Emits `PlayRecorded`. Auth: optional. *AC:* **Given** rapid repeated
   calls **Then** only de-duped/valid plays increment the counter (anti-bot, §6.13/§9).
 
+### 6.3A Listening Engagement (`engagement`)
+
+**Responsibilities:** persist account-scoped listening sessions and monotonic checkpoints for music
+and podcasts; derive personal history, podcast resume state, and privacy-safe aggregates. Engagement
+is behavioral product data only: it cannot grant ownership, create revenue, or write playback's
+financial `play_event`. **Owned tables:** `listening_session`, `listening_checkpoint`,
+`listening_progress`, `listening_preference`, `engagement_daily_rollup`. **Input ports:**
+`StartListeningSession`, `IngestListeningCheckpoint`, `GetRecentlyPlayed`, `GetContinueListening`,
+`ClearListeningHistory`, `UpdateListeningPreference`. **Output ports:** `EngagementRepository`,
+`CatalogReader`, `PodcastReader`, `Clock`, `IdGenerator`.
+
+**HLFR-ENGAGEMENT-01 — Account listening history and resume.** The system must provide authenticated
+fans with reliable cross-device listening history and podcast resume state without changing counted
+plays, ownership, royalties, or exposing raw fan activity to creators. Anonymous listening remains
+available through playback, but anonymous history and resume state stay device-local and are not
+persisted by this service. *Actors:* Fan. *Surfaces:* global web player, Recently Played, podcast
+Continue Listening, privacy settings. *Rationale:* establishes the behavioral foundation for later
+discovery and creator analytics while preserving financial and privacy boundaries.
+
+- **LLFR-ENGAGEMENT-01.1 — Start a session.** `POST /v1/me/listening-sessions` returns a server-issued
+  session ID. Auth: fan. A session belongs to exactly one account and cannot be read or updated by a
+  different account.
+- **LLFR-ENGAGEMENT-01.2 — Ingest monotonic checkpoints.** An authenticated client records `start`,
+  `qualified-play`, `progress`, `completion`, `skip`, or `repeat` checkpoints with content kind,
+  content ID, position, duration, and a session-local sequence. Repeating the same sequence is
+  idempotent; a lower sequence cannot overwrite newer progress or inflate aggregates. Invalid content,
+  impossible positions, and cross-account sessions are rejected. Checkpoint ingestion never calls
+  `RecordPlay` and never writes `play_event`.
+- **LLFR-ENGAGEMENT-01.3 — Personal listening reads.** Authenticated fans can page Recently Played and
+  read podcast Continue Listening. Recently Played is ordered by the latest accepted meaningful
+  activity and de-duplicates repeated content. Podcast resume returns the latest meaningful position,
+  excluding completed or near-start episodes.
+- **LLFR-ENGAGEMENT-01.4 — Privacy controls.** Fans can clear their engagement history and disable
+  future server-side history. Disabling history prevents new durable checkpoints and removes derived
+  personal resume/history state; playback and financial play counting continue under their separate
+  policies. Creators and admins receive aggregates only, never raw per-account listening history.
+- **LLFR-ENGAGEMENT-01.5 — Privacy-safe aggregates.** Accepted checkpoints update idempotent daily
+  content aggregates for starts, qualified plays, completions, skips, repeats, and listened duration.
+  Aggregates contain no account identifier and cannot be used as royalty or ownership evidence.
+
 ### 6.4 Library & Collection (`library`)
 
 **Responsibilities:** per-user likes, follows (artists, playlists, shows), saved albums, user-created
@@ -1067,6 +1107,7 @@ unit IDs `WU-*` are defined in §8.)
 | HLFR-CATALOG-01 | Public catalog | 01.1–01.7 | WU-CAT-1, WU-CAT-2 | catalog | §3 `/home`,`/search`,`/artists*`,`/albums*`,`/tracks*`,`/playlists*` |
 | HLFR-CATALOG-02 | Release lifecycle | 02.1–02.5 | WU-CAT-3, WU-CAT-4, WU-MED-1 | catalog | §11 `/studio/releases*` |
 | HLFR-PLAYBACK-01 | Ownership-aware streaming | 01.1–01.2 | WU-PLY-1 | playback | §4 `/tracks/:id/stream`,`/play` |
+| HLFR-ENGAGEMENT-01 | Listening history, resume & aggregates | 01.1–01.5 | WU-ENG-1 | engagement | Proposed `/me/listening-sessions*`,`/me/listening/recent`,`/me/listening/continue`,`/me/listening/settings` |
 | HLFR-LIBRARY-01 | Collection mgmt | 01.1–01.6 | WU-LIB-1 | library | §5 `/me/collection`,`/me/likes*`,`/me/follows*`,`/me/saved*`,`/me/playlists*`,`/me/owned` |
 | HLFR-COMMERCE-01 | Cart | 01.1–01.3 | WU-COM-1 | commerce | §6 `/me/cart*` |
 | HLFR-COMMERCE-02 | Checkout & ownership | 02.1–02.5 | WU-COM-2, WU-PAY-1 | commerce | §6 `/checkout`,`/me/orders` |
@@ -1128,6 +1169,7 @@ effects are involved.
 | **WU-CAT-3** | Release wizard submit + manage + track upload (CATALOG-02.1–02.4) | release ports; catalog repo; MediaService | release, release_track, split_entry | WU-CAT-1, WU-MED-1, WU-IDN-3 |
 | **WU-CAT-4** | Release state machine + scheduled go-live (CATALOG-02.5, PLATFORM-01.2) | release domain; scheduler | release | WU-CAT-3, WU-PLT-2 |
 | **WU-PLY-1** | Stream URL (ownership-aware) + record play (PLAYBACK-01.*) | GetStreamUrl/RecordPlay; MediaService; OwnershipReader | play_event | WU-MED-1, WU-CAT-1, WU-COM-2 |
+| **WU-ENG-1** | Authenticated listening sessions, monotonic checkpoint ingestion, Recently Played, podcast resume, history privacy controls, and non-financial aggregates (ENGAGEMENT-01.*) | engagement ports/repo; CatalogReader; PodcastReader | listening_session, listening_checkpoint, listening_progress, listening_preference, engagement_daily_rollup | WU-PLY-1, WU-IDN-1, WU-POD-1, WU-PLT-1 |
 | **WU-LIB-1** | Collection: likes/follows/saved/user playlists/owned (LIBRARY-01.*) | collection ports; collection repo; OwnershipReader | liked_track, followed_*, saved_album, user_playlist* | WU-IDN-1, WU-CAT-1 |
 | **WU-COM-1** | Cart with stackability + totals (COMMERCE-01.*) | cart ports; cart repo; PricingService | cart, cart_item | WU-PLT-1, WU-CAT-1 |
 | **WU-PAY-1** | PaymentIntent + InitiateCharge + idempotency (PAYMENTS-01.1) | PaymentGateway port; payment repo | payment_intent | WU-PLT-1 |
@@ -1164,6 +1206,7 @@ WU-CAT-2 ; WU-CAT-3 → WU-CAT-4 ; WU-LIB-1.
 **Phase 3 (money completion):** WU-PAY-4 (payouts/KYC) ; WU-PAY-5 (refunds/disputes).
 **Phase 4 (surfaces & proposals):** WU-STO-1, WU-POD-1 → WU-POD-2, WU-EVT-1, WU-NOT-1 → WU-NOT-2,
 WU-STU-1..4, WU-ANA-1 → WU-STU-3, WU-ADM-1..8.
+**Phase 6 (web listening and engagement):** WU-ENG-1 (after playback, identity, podcasts, and platform).
 
 The strict rules the graph encodes: **identity + persistence foundations before commerce; payment
 charging before ledger; ledger before payouts; checkout/ownership before playback unlock and before
