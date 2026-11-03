@@ -10,6 +10,7 @@ import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistProfile;
 import org.shakvilla.beatzmedia.catalog.domain.InviteOutcome;
 import org.shakvilla.beatzmedia.catalog.domain.Lyrics;
+import org.shakvilla.beatzmedia.catalog.domain.LyricLine;
 import org.shakvilla.beatzmedia.catalog.domain.Playlist;
 import org.shakvilla.beatzmedia.catalog.domain.PlaylistId;
 import org.shakvilla.beatzmedia.catalog.domain.Release;
@@ -73,6 +74,12 @@ public interface CatalogRepository {
   Optional<Track> findTrack(TrackId id);
 
   Optional<Lyrics> findLyrics(TrackId id);
+
+  /** Returns lyrics only when the track is ready and belongs to a live release. */
+  Optional<Lyrics> findPublishedLyrics(TrackId id);
+
+  /** Replaces a track's lyrics; an empty list clears them. */
+  void saveLyrics(TrackId id, List<LyricLine> lines);
 
   Optional<Playlist> findPlaylist(PlaylistId id);
 

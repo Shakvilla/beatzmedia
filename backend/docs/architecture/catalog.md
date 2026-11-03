@@ -85,7 +85,7 @@ projections.
 | `TrackCredit` | Value object | `role`, `names[]` | Track detail credits. |
 | `Album` | Aggregate root | `id`, `title`, `artistId`, `artistName`, `year`, `coverImage`, `trackIds[]` | List price derived via INV-5 from constituent tracks. **Projected from a live release** — see below. |
 | `Lyrics` | Entity | `trackId`, `lines: LyricLine[]` | One-to-zero/one with Track. |
-| `LyricLine` | Value object | `tSec`, `text` | Time in **whole seconds** (frontend formats). |
+| `LyricLine` | Value object | `tSec?`, `text` | Null time is plain text; otherwise time is in whole seconds. Artist saves publish immediately. |
 | `ArtistProfile` | Aggregate root | `id`, `name`, `image`, `coverImage?`, `verified`, `monthlyListeners`, `followers`, `bio`, `location`, `genres[]`, `shows[]` | Public artist page + sub-collections. |
 | `Show` | Value object | `date`, `city`, `venue` | ISO date; surfaced on artist page. |
 | `Playlist` | Aggregate root | `id`, `title`, `description?`, `creator`, `image`, `isPublic`, `followers`, `trackIds[]` | Editorial/public; private hidden as 404 to non-owner. |
@@ -211,7 +211,8 @@ erDiagram
   }
   LYRIC_LINE {
     string track_id FK
-    int t_sec
+    int position
+    int t_sec "nullable"
     string text
   }
   PLAYLIST {
@@ -437,7 +438,9 @@ role; public reads accept anonymous (token, if present, decorates `ownership`/`p
 | GET | `/artists/:id/shows` | public | — | `Show[]` | 200 | 404 `ARTIST_NOT_FOUND` | 01.4 |
 | GET | `/albums/:id?tracks=true` | public | `tracks` flag | `Album (+tracks)` | 200 | 404 `ALBUM_NOT_FOUND` | 01.5 |
 | GET | `/tracks/:id` | public | — | `Track` | 200 | 404 `TRACK_NOT_FOUND` | 01.6 |
-| GET | `/tracks/:id/lyrics` | public | — | `{ lines: {time,text}[] }` | 200 | 404 `LYRICS_NOT_FOUND` | 01.6 |
+| GET | `/tracks/:id/lyrics` | public | — | `{ lines: {time:number|null,text}[] }` | 200 | 404 `LYRICS_NOT_FOUND` | 01.6 |
+| GET | `/studio/releases/:id/tracks/:trackId/lyrics` | artist (owner) | — | `{ lines }` | 200 | 404 | — |
+| PUT | `/studio/releases/:id/tracks/:trackId/lyrics` | artist (owner) | `{ lines }` | — | 204 | 404/422 | — |
 | GET | `/playlists/:id` | public | — | `Playlist (+tracks)` | 200 | 404 (private→404) | 01.7 |
 | POST | `/catalog/resolve` | public | `ResolveCatalogRequest` | `ResolvedCatalogView` | 200 | 422 `VALIDATION` (over-cap) | — |
 
@@ -615,9 +618,10 @@ CREATE TABLE lyrics (
 );
 CREATE TABLE lyric_line (
   track_id         TEXT NOT NULL REFERENCES lyrics(track_id) ON DELETE CASCADE,
-  t_sec            INT  NOT NULL,
+  position         INT  NOT NULL,
+  t_sec            INT,
   text             TEXT NOT NULL,
-  PRIMARY KEY (track_id, t_sec)
+  PRIMARY KEY (track_id, position)
 );
 
 CREATE TABLE playlist (

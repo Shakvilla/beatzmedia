@@ -28,19 +28,15 @@ export function LyricsView({ onClose, showCloseButton = true }: LyricsViewProps)
   /**
    * Real lyrics, from `GET /v1/tracks/:id/lyrics`.
    *
-   * This called `getLyrics(trackId, duration)` from `lyrics-data.ts`, which returned a generic
-   * block of placeholder lines evenly spread across the song's duration for any track without a
-   * hardcoded entry — which is every track a real artist uploads. Because they were time-spread
-   * they looked synced, so they did not read as missing data; they read as *this artist's lyrics*.
-   *
-   * The endpoint answers 404 for the many tracks that have none, and `lyricsQuery` maps that to an
-   * empty list, so "no lyrics" now renders as no lyrics.
+   * The endpoint answers 404 for tracks without public lyrics, and `lyricsQuery` maps that to an
+   * empty list. Draft lyrics remain private through the studio-only lyrics endpoint.
    */
   const { data: lines = [] } = useQuery({
     ...lyricsQuery(currentTrack?.id ?? ''),
     enabled: !!currentTrack,
   })
-  const activeIndex = activeLyricIndex(lines, progress)
+  const hasSyncedLyrics = lines.length > 0 && lines.every((line) => line.time !== null)
+  const activeIndex = hasSyncedLyrics ? activeLyricIndex(lines, progress) : -1
 
   // Auto-scroll the active line into the middle of the lyrics column.
   useEffect(() => {
@@ -124,12 +120,16 @@ export function LyricsView({ onClose, showCloseButton = true }: LyricsViewProps)
             </div>
           )}
           {lines.map((line, idx) => {
+            const time = line.time
+            if (time === null) {
+              return <p key={idx} className="text-left text-2xl lg:text-3xl font-bold text-white/80">{line.text}</p>
+            }
             const isActive = idx === activeIndex
             return (
               <button
                 key={idx}
                 ref={isActive ? activeRef : undefined}
-                onClick={() => seekToSeconds(line.time)}
+                onClick={() => seekToSeconds(time)}
                 className={cn(
                   'text-left font-bold origin-left transition-all duration-500',
                   isActive

@@ -9,6 +9,7 @@ import { useReleaseDraft, type UploadedTrack } from '../features/studio/release-
 import { PRICE_OPTIONS, CREATOR_REVENUE_SHARE, BUNDLE_DISCOUNT, isMultiTrack } from '../lib/studio-data'
 import { useToast } from '../components/ui/toast-provider'
 import { ApiError } from '../lib/api/errors'
+import { TrackLyricsEditor } from '../features/studio/track-lyrics-editor'
 
 export const Route = createFileRoute('/studio/release/new/tracks')({
   component: UploadTracksStep,
@@ -108,6 +109,7 @@ function UploadTracksStep() {
           onBulkPrice={setAllPrices}
           onToggleExplicit={(id, explicit) => updateTrack(id, { explicit })}
           onArtwork={uploadArtwork}
+          releaseId={draft.releaseId}
         />
       ) : (
         <SingleUpload
@@ -118,6 +120,7 @@ function UploadTracksStep() {
           onRemove={removeTrack}
           onPrice={(price) => setField('price', price)}
           onCover={(url) => setField('coverImage', url)}
+          releaseId={draft.releaseId}
         />
       )}
     </>
@@ -127,7 +130,7 @@ function UploadTracksStep() {
 /* ----------------------------- Single mode ----------------------------- */
 
 function SingleUpload({
-  ingest, playingId, onTogglePlay, onRename, onRemove, onPrice, onCover,
+  ingest, playingId, onTogglePlay, onRename, onRemove, onPrice, onCover, releaseId,
 }: {
   ingest: (f: FileList | null) => void
   playingId: string | null
@@ -136,6 +139,7 @@ function SingleUpload({
   onRemove: (id: string) => void
   onPrice: (price: number) => void
   onCover: (url: string) => void
+  releaseId: string | null
 }) {
   const { draft } = useReleaseDraft()
   const audioInput = useRef<HTMLInputElement>(null)
@@ -190,6 +194,8 @@ function SingleUpload({
           </div>
         )}
 
+        {track && releaseId && <TrackLyricsEditor releaseId={releaseId} trackId={track.id} trackTitle={track.title} />}
+
         <LossySourceNotice tracks={draft.tracks} />
       </div>
 
@@ -242,7 +248,7 @@ function SingleUpload({
 /* ------------------------------ Album mode ------------------------------ */
 
 function AlbumUpload({
-  ingest, playingId, onTogglePlay, onRename, onRemove, onMove, onReorder, onPrice, onBulkPrice, onToggleExplicit, onArtwork,
+  ingest, playingId, onTogglePlay, onRename, onRemove, onMove, onReorder, onPrice, onBulkPrice, onToggleExplicit, onArtwork, releaseId,
 }: {
   ingest: (f: FileList | null) => void
   playingId: string | null
@@ -255,6 +261,7 @@ function AlbumUpload({
   onBulkPrice: (price: number) => void
   onToggleExplicit: (id: string, explicit: boolean) => void
   onArtwork: (id: string, file: File) => Promise<void>
+  releaseId: string | null
 }) {
   const { draft } = useReleaseDraft()
   const fileInput = useRef<HTMLInputElement>(null)
@@ -349,6 +356,7 @@ function AlbumUpload({
               onPrice={(p) => onPrice(track.id, p)}
               onToggleExplicit={() => onToggleExplicit(track.id, !track.explicit)}
               onArtwork={(file) => onArtwork(track.id, file)}
+              releaseId={releaseId}
               onDragStart={() => { dragFrom.current = i }}
               onDropRow={() => { if (dragFrom.current !== null) { onReorder(dragFrom.current, i); dragFrom.current = null } }}
             />
@@ -367,7 +375,7 @@ function AlbumUpload({
 }
 
 function AlbumRow({
-  track, index, isFirst, isLast, reorderMode, playing, onArtwork,
+  track, index, isFirst, isLast, reorderMode, playing, onArtwork, releaseId,
   onTogglePlay, onRename, onRemove, onMove, onPrice, onToggleExplicit, onDragStart, onDropRow,
 }: {
   track: UploadedTrack
@@ -377,6 +385,7 @@ function AlbumRow({
   reorderMode: boolean
   playing: boolean
   onArtwork: (file: File) => Promise<void>
+  releaseId: string | null
   onTogglePlay: () => void
   onRename: (title: string) => void
   onRemove: () => void
@@ -397,6 +406,7 @@ function AlbumRow({
   }
 
   return (
+    <>
     <div
       draggable={reorderMode}
       onDragStart={onDragStart}
@@ -479,6 +489,8 @@ function AlbumRow({
         </button>
       </div>
     </div>
+    {releaseId && <div className="px-2 pb-3 border-b border-dashed border-gray-200 dark:border-white/5"><TrackLyricsEditor releaseId={releaseId} trackId={track.id} trackTitle={track.title} /></div>}
+    </>
   )
 }
 

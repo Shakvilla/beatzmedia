@@ -4,7 +4,7 @@ class StreamResponse {
   factory StreamResponse.fromJson(Map<String, dynamic> j) => StreamResponse(audioUrl: j['audioUrl'] as String, expiresAt: j['expiresAt'] as String, previewSeconds: (j['previewSeconds'] as num?)?.toInt());
 }
 
-class LyricsLine { const LyricsLine({required this.time, required this.text}); final int time; final String text; factory LyricsLine.fromJson(Map<String, dynamic> j) => LyricsLine(time: (j['time'] as num).toInt(), text: j['text'] as String); }
+class LyricsLine { const LyricsLine({required this.time, required this.text}); final int? time; final String text; factory LyricsLine.fromJson(Map<String, dynamic> j) => LyricsLine(time: (j['time'] as num?)?.toInt(), text: j['text'] as String); }
 
 class LyricsResponse {
   const LyricsResponse({required this.lines});

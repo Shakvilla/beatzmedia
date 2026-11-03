@@ -151,7 +151,7 @@ export function toAlbumTracks(wire: AlbumWire): Track[] {
 
 
 export interface LyricLineWire {
-  time: number
+  time: number | null
   text: string
 }
 

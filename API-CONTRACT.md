@@ -71,7 +71,7 @@ UI: home, search, artist, album, track, playlist pages. Shapes: `Artist`, `Album
 | GET | `/artists/:id/shows` | upcoming shows | `Show[]` |
 | GET | `/albums/:id` | + `?tracks=true` to embed | `Album` (+ `tracks: Track[]`) |
 | GET | `/tracks/:id` | track detail (credits, lyrics ref) | `Track` |
-| GET | `/tracks/:id/lyrics` | timed lyrics | `{ lines: { time, text }[] }` |
+| GET | `/tracks/:id/lyrics` | optional timed or plain lyrics; `time` is null for plain lines | `{ lines: { time: number|null, text }[] }` |
 | GET | `/playlists/:id` | + tracks | `Playlist` (+ `tracks: Track[]`) |
 | POST | `/catalog/resolve` | batch-resolve id-lists → full objects in one call (for list screens that hold only ids, e.g. the library); every request field optional | `{ tracks: Track[], artists: Artist[], albums: Album[], playlists: Playlist[] }` |
 
@@ -339,6 +339,8 @@ client can point the artist straight at the download toggle.
 | DELETE | `/studio/releases/:id` | delete a `draft`/`in_review` release (409 `RELEASE_LIVE` for `live`) |
 | POST | `/studio/releases/:id/tracks` | multipart audio upload (WAV/FLAC, ≤500MB) → **201** `UploadedTrack` (`{ id, title, duration, status, progress, src, price, explicit, position, image, customArtwork }`) — the track is **attached** to the release as a `TrackDraft` (draft-only; 409 `ILLEGAL_TRANSITION` on a non-draft release) |
 | POST | `/studio/releases/:id/tracks/:trackId/cover` | multipart `image` upload → `{ image }`; stores artwork for that release track and marks `customArtwork:true`. Artist must own the release and the track must belong to it. |
+| GET | `/studio/releases/:id/tracks/:trackId/lyrics` | artist-only lyrics read, including draft releases |
+| PUT | `/studio/releases/:id/tracks/:trackId/lyrics` | `{ lines: { time: number|null, text: string }[] }`; artist-owned track lyrics publish immediately, outside release review. Empty `lines` clears lyrics. Use a timestamp on every line for synced lyrics, or null on every line for plain lyrics. |
 | DELETE | `/studio/releases/:id/tracks/:trackId` | remove a draft track → **204**. Draft-only (409); unknown `trackId` → 404 `TRACK_NOT_FOUND` |
 | POST | `/studio/releases/:id/submit` | **finalize**: `draft → in_review`. Requires `Idempotency-Key` header (400 `MISSING_IDEMPOTENCY_KEY` if absent). Validates the track-count matrix per `type` (`single`=1, `ep`=3–6, `album`=7+, `mixtape`≥1 — else 422 `TRACK_COUNT_INVALID`), requires custom artwork for every track in a multi-track release (else 422 `TRACK_ARTWORK_REQUIRED`), and per track `Σ splits.percent ≤ 100` (else 422 `SPLIT_OVER_100`, INV-12), recomputes `price` (bundle discount), transitions the release → **200** `StudioReleaseDetail` with `status:"in_review"`. Not-draft → 409 `ILLEGAL_TRANSITION`. A reused `Idempotency-Key` whose stored release/artist doesn't match the caller → 409 `IDEMPOTENCY_KEY_CONFLICT` (no data leak). On success, catalog issues one **collaborator split invite** per distinct pending `splits[].email` on the release (WU-CAT-9, see below); a replayed `Idempotency-Key` does not re-issue. |
 | POST | `/studio/releases/:id/resend-invites` | artist (owner) — re-issue invites for every collaborator still `confirmation:"pending"` on the release → **204**. 403 if not the owning artist. No `Idempotency-Key`; intentionally repeatable (a double-call re-emails). |

@@ -2,6 +2,7 @@ import { queryOptions } from '@tanstack/react-query'
 import type { AnalyticsRange, AudienceRange } from '../../studio-analytics'
 import type { StudioProfile, StudioReleaseDetail, StudioSettings } from '../../studio-data'
 import type { ReleaseType } from '../../studio-data'
+import { toLyricLines, type LyricsWire, type LyricLineWire } from '../mappers'
 import type { UploadedTrack } from '../../../features/studio/release-draft-context'
 import { apiFetch } from '../client'
 import { unwrapPage, type PageWire } from '../pagination'
@@ -226,6 +227,25 @@ export function apiUploadRevisionTrackAudio(id: string, trackId: string, audio: 
   form.append('file', audio)
   return apiFetch<unknown>(`/studio/releases/${id}/revision/tracks/${trackId}/audio`, { method: 'POST', body: form })
     .then(() => undefined)
+}
+
+/** Save and publish track lyrics immediately; this is separate from release revision review. */
+export function studioTrackLyricsQuery(releaseId: string, trackId: string) {
+  return queryOptions({
+    queryKey: ['studio', 'release', releaseId, 'track', trackId, 'lyrics'],
+    queryFn: async () => toLyricLines(await apiFetch<LyricsWire>(`/studio/releases/${releaseId}/tracks/${trackId}/lyrics`)),
+  })
+}
+
+export function apiSaveTrackLyrics(
+  releaseId: string,
+  trackId: string,
+  lines: LyricLineWire[],
+): Promise<void> {
+  return apiFetch<unknown>(`/studio/releases/${releaseId}/tracks/${trackId}/lyrics`, {
+    method: 'PUT',
+    body: { lines },
+  }).then(() => undefined)
 }
 
 /** Imperative fetch of the same detail — used by the wizard's resume path, outside a query. */

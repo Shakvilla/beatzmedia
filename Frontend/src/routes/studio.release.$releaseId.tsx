@@ -13,6 +13,7 @@ import { releaseTypeLabel, type ReleaseStatus, type StudioReleaseDetail } from '
 import type { ReleaseRevisionWire } from '../lib/api/queries/studio'
 import { formatDuration } from '../lib/format'
 import { useCreatorIdentity } from '../features/studio/use-creator-identity'
+import { TrackLyricsEditor } from '../features/studio/track-lyrics-editor'
 
 export const Route = createFileRoute('/studio/release/$releaseId')({
   loader: ({ context: { queryClient }, params: { releaseId } }) =>
@@ -307,7 +308,8 @@ function ReleaseManage() {
         </div>
         <ol className="divide-y divide-gray-200 dark:divide-white/10">
           {draft.tracks.map((track, index) => (
-            <li key={track.trackId} className="flex items-center gap-3 py-4 flex-wrap">
+            <li key={track.trackId} className="py-4">
+              <div className="flex items-center gap-3 flex-wrap">
               <span className="w-7 shrink-0 text-center text-xs font-mono text-gray-400">{String(index + 1).padStart(2, '0')}</span>
               <div className="relative w-12 h-12 rounded-lg overflow-hidden bg-gray-100 dark:bg-white/5 shrink-0">
                 {track.image ? <img src={track.image} alt="" className="w-full h-full object-cover" /> : <Music2 className="m-auto mt-3 text-beatz-green" size={20} />}
@@ -322,6 +324,8 @@ function ReleaseManage() {
                 <button disabled={!editable || index === 0 || busy} aria-label={`Move ${track.title} up`} onClick={() => moveTrack(index, -1)} className="w-8 h-8 rounded-full hover:bg-gray-100 dark:hover:bg-white/10 disabled:opacity-30"><ArrowUp size={15} className="mx-auto" /></button>
                 <button disabled={!editable || index === draft.tracks.length - 1 || busy} aria-label={`Move ${track.title} down`} onClick={() => moveTrack(index, 1)} className="w-8 h-8 rounded-full hover:bg-gray-100 dark:hover:bg-white/10 disabled:opacity-30"><ArrowDown size={15} className="mx-auto" /></button>
               </div>
+              </div>
+              <TrackLyricsEditor releaseId={release.id} trackId={track.trackId} trackTitle={track.title} />
             </li>
           ))}
         </ol>

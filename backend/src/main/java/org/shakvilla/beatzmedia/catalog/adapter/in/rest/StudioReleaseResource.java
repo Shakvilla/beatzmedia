@@ -37,6 +37,9 @@ import org.shakvilla.beatzmedia.catalog.application.port.in.ListStudioReleases;
 import org.shakvilla.beatzmedia.catalog.application.port.in.ManageReleaseRevision;
 import org.shakvilla.beatzmedia.catalog.application.port.in.ManageReleaseRevision.EditCommand;
 import org.shakvilla.beatzmedia.catalog.application.port.in.ManageReleaseRevision.TrackEdit;
+import org.shakvilla.beatzmedia.catalog.application.port.in.ManageTrackLyrics;
+import org.shakvilla.beatzmedia.catalog.application.port.in.LyricLineView;
+import org.shakvilla.beatzmedia.catalog.application.port.in.LyricsView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.PageView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.RemoveReleaseTrack;
 import org.shakvilla.beatzmedia.catalog.application.port.in.ResendSplitInvites;
@@ -51,6 +54,7 @@ import org.shakvilla.beatzmedia.catalog.application.port.in.UploadReleaseTrack;
 import org.shakvilla.beatzmedia.catalog.application.port.in.UploadReleaseTrack.AudioUpload;
 import org.shakvilla.beatzmedia.catalog.application.port.in.UploadedTrackView;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
+import org.shakvilla.beatzmedia.catalog.domain.LyricLine;
 import org.shakvilla.beatzmedia.catalog.domain.MissingIdempotencyKeyException;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
@@ -93,6 +97,7 @@ public class StudioReleaseResource {
   private final FinalizeRelease finalizeRelease;
   private final ResendSplitInvites resendSplitInvites;
   private final ManageReleaseRevision manageRevision;
+  private final ManageTrackLyrics manageTrackLyrics;
   private final JsonWebToken jwt;
 
   @Inject
@@ -109,6 +114,7 @@ public class StudioReleaseResource {
       FinalizeRelease finalizeRelease,
       ResendSplitInvites resendSplitInvites,
       ManageReleaseRevision manageRevision,
+      ManageTrackLyrics manageTrackLyrics,
       JsonWebToken jwt) {
     this.listStudioReleases = listStudioReleases;
     this.createReleaseDraft = createReleaseDraft;
@@ -122,6 +128,7 @@ public class StudioReleaseResource {
     this.finalizeRelease = finalizeRelease;
     this.resendSplitInvites = resendSplitInvites;
     this.manageRevision = manageRevision;
+    this.manageTrackLyrics = manageTrackLyrics;
     this.jwt = jwt;
   }
 
@@ -396,6 +403,33 @@ public class StudioReleaseResource {
     }
   }
 
+  /** GET /v1/studio/releases/:id/tracks/:trackId/lyrics — read artist-owned lyrics. */
+  @GET
+  @Path("/{id}/tracks/{trackId}/lyrics")
+  public LyricsView getStudioTrackLyrics(
+      @PathParam("id") String releaseId,
+      @PathParam("trackId") String trackId) {
+    List<LyricLine> lines = manageTrackLyrics.get(new ReleaseId(releaseId), new TrackId(trackId), artistId());
+    return new LyricsView(lines.stream().map(line -> new LyricLineView(line.tSec(), line.text())).toList());
+  }
+
+  /** PUT /v1/studio/releases/:id/tracks/:trackId/lyrics — publish lyrics immediately. */
+  @PUT
+  @Path("/{id}/tracks/{trackId}/lyrics")
+  @Consumes(MediaType.APPLICATION_JSON)
+  public Response saveTrackLyrics(
+      @PathParam("id") String releaseId,
+      @PathParam("trackId") String trackId,
+      SaveTrackLyricsBody body) {
+    if (body == null || body.lines() == null) {
+      throw new ValidationException("'lines' is required", "lines");
+    }
+    manageTrackLyrics.save(
+        new ReleaseId(releaseId), new TrackId(trackId), artistId(),
+        body.lines().stream().map(line -> new LyricLine(line.time(), line.text())).toList());
+    return Response.noContent().build();
+  }
+
   private static String fileHash(FileUpload file) throws IOException, NoSuchAlgorithmException {
     MessageDigest digest = MessageDigest.getInstance("SHA-256");
     try (InputStream input = java.nio.file.Files.newInputStream(file.uploadedFile());
@@ -491,4 +525,8 @@ public class StudioReleaseResource {
       String coverImage, Boolean downloadable, @jakarta.validation.Valid List<RevisionTrackBody> tracks) {}
 
   public record RevisionTrackBody(String trackId, int position, long priceMinor, String title, String image) {}
+
+  public record SaveTrackLyricsBody(List<LyricLineBody> lines) {}
+
+  public record LyricLineBody(Integer time, String text) {}
 }

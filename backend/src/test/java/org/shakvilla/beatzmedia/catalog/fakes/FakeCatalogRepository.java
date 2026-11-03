@@ -168,6 +168,20 @@ public class FakeCatalogRepository implements CatalogRepository {
   }
 
   @Override
+  public Optional<Lyrics> findPublishedLyrics(TrackId id) {
+    return Optional.ofNullable(lyrics.get(id.value()));
+  }
+
+  @Override
+  public void saveLyrics(TrackId id, List<org.shakvilla.beatzmedia.catalog.domain.LyricLine> lines) {
+    if (lines.isEmpty()) {
+      lyrics.remove(id.value());
+    } else {
+      lyrics.put(id.value(), new Lyrics(id, List.copyOf(lines)));
+    }
+  }
+
+  @Override
   public Optional<Playlist> findPlaylist(PlaylistId id) {
     return Optional.ofNullable(playlists.get(id.value()));
   }

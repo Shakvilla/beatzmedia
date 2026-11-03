@@ -213,17 +213,59 @@ public class JpaCatalogRepository implements CatalogRepository {
   @Override
   public Optional<Lyrics> findLyrics(TrackId id) {
     LyricsEntity header = em.find(LyricsEntity.class, id.value());
-    if (header == null) {
-      return Optional.empty();
-    }
+    return header == null ? Optional.empty() : loadLyrics(id);
+  }
+
+  @Override
+  public Optional<Lyrics> findPublishedLyrics(TrackId id) {
+    List<LyricsEntity> headers = em.createQuery(
+            "SELECT l FROM LyricsEntity l WHERE l.trackId = :tid AND EXISTS ("
+                + "SELECT t.id FROM TrackEntity t, ReleaseTrackEntity rt, ReleaseEntity r "
+                + "WHERE t.id = l.trackId AND t.status = 'ready' AND rt.trackId = t.id "
+                + "AND r.id = rt.pk.releaseId AND r.status = 'live')",
+            LyricsEntity.class)
+        .setParameter("tid", id.value())
+        .setMaxResults(1)
+        .getResultList();
+    return headers.isEmpty() ? Optional.empty() : loadLyrics(id);
+  }
+
+  private Optional<Lyrics> loadLyrics(TrackId id) {
     List<LyricLineEntity> lines =
         em.createQuery(
-                "SELECT l FROM LyricLineEntity l WHERE l.trackId = :tid ORDER BY l.tSec",
+                "SELECT l FROM LyricLineEntity l WHERE l.trackId = :tid ORDER BY l.position",
                 LyricLineEntity.class)
             .setParameter("tid", id.value())
             .getResultList();
     List<LyricLine> domainLines = lines.stream().map(l -> new LyricLine(l.tSec, l.text)).toList();
     return Optional.of(new Lyrics(id, domainLines));
+  }
+
+  @Override
+  public void saveLyrics(TrackId id, List<LyricLine> lines) {
+    LyricsEntity header = em.find(LyricsEntity.class, id.value(), LockModeType.PESSIMISTIC_WRITE);
+    if (lines.isEmpty()) {
+      if (header != null) em.remove(header);
+      return;
+    }
+    if (header == null) {
+      header = new LyricsEntity();
+      header.trackId = id.value();
+      em.persist(header);
+      em.flush();
+    }
+    em.createQuery("DELETE FROM LyricLineEntity l WHERE l.trackId = :tid")
+        .setParameter("tid", id.value())
+        .executeUpdate();
+    for (int position = 0; position < lines.size(); position++) {
+      LyricLine line = lines.get(position);
+      LyricLineEntity entity = new LyricLineEntity();
+      entity.trackId = id.value();
+      entity.position = position;
+      entity.tSec = line.tSec();
+      entity.text = line.text().trim();
+      em.persist(entity);
+    }
   }
 
   @Override
