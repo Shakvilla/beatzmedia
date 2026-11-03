@@ -50,7 +50,9 @@ class GetHomeFeedServiceTest {
     assertNotNull(view.trending());
     assertNotNull(view.top10());
     assertNotNull(view.featuredAlbums());
-    assertEquals(2, view.trending().size());
+    assertEquals(3, view.trending().size());
+    assertEquals(2, view.trending().stream().filter(item -> item.track() != null).count());
+    assertEquals(1, view.trending().stream().filter(item -> item.album() != null).count());
     assertEquals(1, view.featuredAlbums().size());
   }
 
