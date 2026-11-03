@@ -710,4 +710,4 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-ENG-1, WU-LIB-1, WU-CAT-2, WU-POD-1, WU-PLT-1]
     llfrs: [LLFR-DISCOVERY-01.1, LLFR-DISCOVERY-01.2]
-    status: in_progress   # Foundation implemented 2026-11-02; notification fanout is the next slice.
+    status: done   # Following feed plus durable, paged, retryable publication notification fanout completed 2026-11-03.

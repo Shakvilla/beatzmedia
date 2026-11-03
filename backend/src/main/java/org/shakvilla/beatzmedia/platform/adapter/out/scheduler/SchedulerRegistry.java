@@ -51,6 +51,7 @@ import io.quarkus.scheduler.Scheduled.ConcurrentExecution;
  *   payment-recon    every 30 s   — payment reconciliation / timeout poll
  *   digest           daily 08:00  — digest emails
  *   delivery-retry-sweep every 60 s — notifications email/SMS delivery_attempt retry/backoff sweep
+ *   publication-fanout every 5 s — resumable publication notifications to current followers
  *   analytics-rollup every 5 min  — analytics rollups
  *   search-reindex   every 10 min — search re-index
  * </pre>
@@ -81,6 +82,7 @@ public class SchedulerRegistry {
   private static final String JOB_PAYOUT_RECON     = "payments.payout-recon";
   private static final String JOB_DIGEST           = "notifications.digest";
   private static final String JOB_DELIVERY_RETRY   = "notifications.delivery-retry-sweep";
+  private static final String JOB_PUBLICATION_FANOUT = "notifications.publication-fanout";
   private static final String JOB_ANALYTICS_ROLLUP = "analytics.rollup";
   private static final String JOB_SEARCH_REINDEX   = "search.reindex";
   private static final String JOB_PUBLICATION_OUTBOX = "platform.publication-outbox";
@@ -152,6 +154,13 @@ public class SchedulerRegistry {
       concurrentExecution = ConcurrentExecution.SKIP)
   void sweepDeliveryRetries() {
     runWithLock(JOB_DELIVERY_RETRY);
+  }
+
+  /** Durable follower notification fanout — frequent bounded pages. */
+  @Scheduled(every = "5s", identity = "publication-fanout",
+      concurrentExecution = ConcurrentExecution.SKIP)
+  void fanOutPublicationNotifications() {
+    runWithLock(JOB_PUBLICATION_FANOUT);
   }
 
   /** Analytics rollups — every 5 minutes. */

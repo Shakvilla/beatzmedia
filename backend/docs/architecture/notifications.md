@@ -519,3 +519,23 @@ adapters, and the `delivery_attempt` table. Deviations from the §4/§8 sketches
   through this shared transport. Resend's
   idempotency keys expire after 24 hours, so retries beyond that window require reconciliation or
   a policy preventing blind duplicate sends.
+
+## 16. As-built (WU-DIS-1 publication fanout)
+
+- `ReleaseWentLive` and `EpisodePublished` transactional observers insert one durable
+  `publication_notification_fanout` job per `(publication_kind, content_id)`. The insert uses
+  `ON CONFLICT DO NOTHING`, so publication-event replay never resets a cursor or completed job.
+- `notifications.publication-fanout` runs every five seconds through the platform scheduler and
+  processes at most 20 due jobs per tick. Each job resolves at most 100 current followers through
+  library's `ResolveFollowers` input port; notification persistence and cursor advancement share
+  one transaction.
+- A failed page rolls back its notifications and cursor, then records a bounded error, retry count,
+  and exponentially delayed `next_attempt_at` in a new transaction. A successful final page marks
+  the job complete; intermediate pages persist the account-id keyset cursor.
+- Per-recipient dedupe keys are
+  `publication:<release|podcast_episode>:<content_id>:<account_id>`. The existing `NotifyUseCase`
+  unique-key guard makes page retry and event replay duplicate-free. The normal
+  `NotificationCreated` flow still owns email/SMS opt-in checks, delivery-attempt creation, provider
+  pinning, and delivery retry.
+- Both music and podcast publication notifications use the existing `release` wire type. No REST
+  or frontend notification contract change was required. V997 owns the fanout table and due index.

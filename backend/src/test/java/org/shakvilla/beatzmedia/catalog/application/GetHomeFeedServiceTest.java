@@ -61,7 +61,7 @@ class GetHomeFeedServiceTest {
 
     HomeFeedView view = service.get(Optional.empty());
 
-    assertEquals("high-plays", view.trending().get(0).id());
+    assertEquals("high-plays", view.trending().get(0).track().id());
   }
 
   @Test
