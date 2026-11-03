@@ -4,11 +4,15 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway;
+import org.shakvilla.beatzmedia.payments.domain.GatewayVendor;
 import org.shakvilla.beatzmedia.payments.domain.OrderRef;
 import org.shakvilla.beatzmedia.payments.domain.PaymentMethodRef;
 import org.shakvilla.beatzmedia.payments.domain.PayoutDestination;
 import org.shakvilla.beatzmedia.payments.domain.Provider;
+import org.shakvilla.beatzmedia.payments.domain.ProviderDisabledException;
+import org.shakvilla.beatzmedia.payments.domain.ProviderException;
 import org.shakvilla.beatzmedia.payments.domain.WithdrawalId;
+import org.shakvilla.beatzmedia.platform.application.port.in.ManageProviderSelections;
 import org.shakvilla.beatzmedia.platform.application.port.out.FeatureFlags;
 import org.shakvilla.beatzmedia.platform.domain.FeatureKey;
 import org.shakvilla.beatzmedia.platform.domain.Money;
@@ -38,15 +42,118 @@ public class PaymentGatewayRouter implements PaymentGateway {
   private final PaymentGateway sandbox;
   private final PaymentGateway redde;
   private final FeatureFlags featureFlags;
+  private final ManageProviderSelections selections;
 
   @Inject
   public PaymentGatewayRouter(
       @PspGateway(PspGateway.Vendor.SANDBOX) PaymentGateway sandbox,
       @PspGateway(PspGateway.Vendor.REDDE) PaymentGateway redde,
-      FeatureFlags featureFlags) {
+      FeatureFlags featureFlags,
+      ManageProviderSelections selections) {
     this.sandbox = sandbox;
     this.redde = redde;
     this.featureFlags = featureFlags;
+    this.selections = selections;
+  }
+
+  /** Compatibility constructor for unit tests of the legacy per-call adapter methods. */
+  PaymentGatewayRouter(
+      PaymentGateway sandbox, PaymentGateway redde, FeatureFlags featureFlags) {
+    this(
+        sandbox,
+        redde,
+        featureFlags,
+        new ManageProviderSelections() {
+          @Override
+          public java.util.List<ProviderSelectionView> list() {
+            return java.util.List.of();
+          }
+
+          @Override
+          public ProviderSelectionView change(
+              String actorId, String capability, String provider, long expectedVersion) {
+            throw new UnsupportedOperationException("selection unavailable in legacy adapter test");
+          }
+        });
+  }
+
+  @Override
+  public GatewayVendor selectedVendor() {
+    return selections.list().stream()
+        .filter(selection -> selection.capability().equals("payment"))
+        .findFirst()
+        .map(
+            selection -> {
+              if (!selection.ready()) {
+                throw new ProviderException("selected payment gateway is not ready");
+              }
+              return GatewayVendor.fromWireValue(selection.provider());
+            })
+        .orElseThrow(() -> new ProviderException("payment gateway selection is unavailable"));
+  }
+
+  private PaymentGateway gateway(GatewayVendor vendor, Provider rail) {
+    return switch (vendor) {
+      case SANDBOX -> sandbox;
+      case REDDE -> redde;
+      case DISABLED -> throw new ProviderDisabledException(rail);
+      case UNKNOWN -> throw new ProviderException("payment operation gateway is unknown; manual reconciliation required");
+    };
+  }
+
+  @Override
+  public ChargeHandle initiate(
+      GatewayVendor vendor, Provider provider, OrderRef ref, Money amount, PaymentMethodRef method) {
+    return gateway(vendor, provider).initiate(provider, ref, amount, method);
+  }
+
+  @Override
+  public boolean verifySignature(
+      GatewayVendor vendor, Provider provider, String signature, byte[] rawBody) {
+    return vendor != GatewayVendor.DISABLED
+        && gateway(vendor, provider).verifySignature(provider, signature, rawBody);
+  }
+
+  @Override
+  public GatewayVendor verifySignatureFromAnyGateway(
+      Provider provider, String signature, byte[] rawBody) {
+    if (sandbox.verifySignature(provider, signature, rawBody)) {
+      return GatewayVendor.SANDBOX;
+    }
+    if (redde.verifySignature(provider, signature, rawBody)) {
+      return GatewayVendor.REDDE;
+    }
+    return null;
+  }
+
+  @Override
+  public ProviderStatus queryStatus(GatewayVendor vendor, Provider provider, String providerRef) {
+    return gateway(vendor, provider).queryStatus(provider, providerRef);
+  }
+
+  @Override
+  public boolean supportsDirectCharge(GatewayVendor vendor, Provider provider) {
+    return gateway(vendor, provider).supportsDirectCharge(provider);
+  }
+
+  @Override
+  public CheckoutHandle initiateCheckout(GatewayVendor vendor, OrderRef ref, Money amount) {
+    return gateway(vendor, Provider.card).initiateCheckout(ref, amount);
+  }
+
+  @Override
+  public DisburseHandle disburse(
+      GatewayVendor vendor,
+      Provider provider,
+      WithdrawalId withdrawalId,
+      Money amount,
+      PayoutDestination destination) {
+    return gateway(vendor, provider).disburse(provider, withdrawalId, amount, destination);
+  }
+
+  @Override
+  public boolean confirmsDisbursementAsync(GatewayVendor vendor) {
+    return gateway(vendor, Provider.bank).confirmsDisbursementAsync();
   }
 
   /** The active gateway for this call: Redde iff {@link FeatureKey#PSP_REDDE} is enabled. */

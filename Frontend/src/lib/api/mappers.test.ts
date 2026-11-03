@@ -525,6 +525,7 @@ describe('toWizardTrack', () => {
     expect(t).toEqual({
       id: 'trk-1', title: 'Intro', duration: 181, status: 'ready',
       progress: 100, src: '/audio/trk-1.m3u8', price: 2.5, explicit: false,
+      image: '/images/placeholder.svg', customArtwork: false,
     })
   })
 

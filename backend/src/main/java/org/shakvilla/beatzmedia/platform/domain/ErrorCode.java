@@ -43,6 +43,7 @@ public enum ErrorCode {
   MISSING_QUERY,
   // ---- Catalog codes (WU-CAT-3) ----
   TRACK_COUNT_INVALID,
+  TRACK_ARTWORK_REQUIRED,
   SPLIT_OVER_100,
   RELEASE_LIVE,
   RELEASE_NOT_FOUND,
@@ -95,6 +96,10 @@ public enum ErrorCode {
   PROVIDER_DISABLED,
   // ---- Playback codes (WU-PLY-1) ----
   MEDIA_UNAVAILABLE,
+  // ---- Engagement codes (WU-ENG-1) ----
+  SESSION_NOT_FOUND,
+  CONTENT_NOT_FOUND,
+  CHECKPOINT_SEQUENCE_CONFLICT,
   // ---- Playback codes (downloadable releases) ----
   /**
    * The caller does not own the track they asked to download (403). Distinct from

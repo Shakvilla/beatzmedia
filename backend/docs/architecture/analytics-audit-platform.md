@@ -36,7 +36,8 @@ admin module, which queries through an `AuditReader` port. Rows are never update
 **PLATFORM** (`HLFR-PLATFORM-01` [PROPOSAL], `WU-PLT-1` foundation + `WU-PLT-2` scheduler). Owns shared
 primitives importable by any module's domain: `Money` VO (minor units, **INV-11**), error model
 (`ApiError`/`ErrorCode`), pagination (`Page<T>`/`PageRequest`), `Clock` + `IdGenerator` ports,
-`PlatformSettings` + `FeatureFlag` runtime config + maintenance mode, and the scheduler infrastructure
+`PlatformSettings` + `FeatureFlag` runtime config + maintenance mode, versioned external-provider
+selection, and the scheduler infrastructure
 (`quarkus-scheduler`) that registers and fans out to the platform's scheduled jobs (**INV-7**, weekly
 payout window, payment reconciliation, digests, analytics rollups, search reindex).
 
@@ -159,6 +160,7 @@ repo exposes only `append` + read.
 | `ApiError` / `ErrorCode` | VO / enum | `code, message, field` | error envelope (conventions §4) |
 | `PlatformSettings` | aggregate (single row) | fields below | economic constants + maintenance flag |
 | `FeatureFlag` | entity | `key`, `enabled` | runtime flag, one row per flag |
+| `ProviderSelection` | entity | `capability`, `provider`, `version`, `updatedAt`, `updatedBy` | operational choice only; no credentials |
 | `Clock` / `IdGenerator` | ports | — | UTC clock; UUIDv7/ULID ids |
 | `DurableEventRecord` | operator read model | event/aggregate identity, status, attempts, replay metadata | payload deliberately excluded |
 | `DurableQueueHealth` | VO | queue counts, recent completions, oldest age, derived status | operational signal |
@@ -333,6 +335,16 @@ public interface PlatformSettingsProvider {
     PlatformSettings save(PlatformSettings updated);  // admin-only; audited
 }
 
+public interface ManageProviderSelections {
+    List<ProviderSelectionView> list();
+    ProviderSelectionView change(String actorId, String capability, String provider,
+                                 long expectedVersion);
+}
+
+public interface ProviderReadinessProbe {
+    Readiness check(ProviderCapability capability, ProviderCode provider);
+}
+
 public enum FeatureKey { ARTIST_SIGNUPS, PODCASTS, EVENTS, TIPPING, FAN_MESSAGING }
 
 public record Money(long minor, Currency currency) {
@@ -379,6 +391,8 @@ public interface ScheduledJob {
 One line each on adapters: `Clock`→`SystemClockAdapter`; `IdGenerator`→`Uuidv7IdGenerator`;
 `FeatureFlags`/`PlatformSettingsProvider`→ JPA-backed `feature_flag` / `platform_settings` repos with a
 short-TTL in-memory cache; `AuditWriter`/`AuditReader`→`AuditEntryRepository`;
+`ManageProviderSelections`→ atomic compare-and-set updates in `provider_selection` with configuration
+readiness supplied by `ProviderReadinessProbe`;
 `AnalyticsReader`→`RollupQueryAdapter` over `sales_rollup`/`audience_rollup`;
 `ScheduledJob` SPI→`SchedulerRegistry` (outbound adapter, `adapter.out.scheduler`).
 
@@ -395,6 +409,8 @@ endpoints below are the *settings/flag* surface owned by platform (admin) and li
 |---|---|---|---|---|---|---|
 | `GET /v1/admin/settings` | super-admin | — | `PlatformSettingsDTO` | 200 | 401/403 | PLATFORM-01.1 |
 | `PUT /v1/admin/settings` | super-admin | `PlatformSettingsDTO` | `PlatformSettingsDTO` | 200 | 403/422 | PLATFORM-01.1 |
+| `GET /v1/admin/provider-config` | super-admin | — | `{ items: ProviderSelectionView[] }` | 200 | 401/403 | EXT-01.1 |
+| `PUT /v1/admin/provider-config/{capability}` | super-admin | `{ provider, expectedVersion }` | `ProviderSelectionView` | 200 | 403/409/422 | EXT-01.1–01.4 |
 | `GET /v1/admin/audit` | super-admin | `?actor=&type=&page=&size=` | `Page<AuditEntryDTO>` | 200 | 401/403 | ADMIN-11.1 *(admin module, via `AuditReader`)* |
 | `GET /v1/studio/analytics` | artist | `?range=` | `StudioInsightsDTO` | 200 | 401/403 | STUDIO-03.1 *(studio module, via `AnalyticsReader`)* |
 
@@ -484,6 +500,14 @@ minor↔cedis at this boundary only.
 ---
 
 ## 7. Persistence schema & migrations
+
+`V982__provider_selection.sql` adds one platform-owned row per capability. It stores only
+`capability`, `provider_code`, positive `version`, `updated_at`, and `updated_by`; credentials remain
+environment supplied. Database checks close the capability/provider matrix. Safe seeds are MinIO,
+SMTP, capture SMS, and payment disabled. The admin service validates readiness, performs the
+versioned change, and appends exactly one `SETTINGS` audit row in the same transaction. Until
+WU-EXT-2, existing payment routing remains authoritative and production cannot activate a non-disabled
+payment selection.
 
 ```sql
 -- sales_rollup -----------------------------------------------------------
@@ -666,6 +690,7 @@ in logs.
 | **WU-PLT-2** | Scheduler infrastructure + job registration (PLATFORM-01.2) | WU-PLT-1 | 2 |
 | **WU-AUD-1** | `AuditWriter` + `@Audited` interceptor + `AuditReader` read (AUDIT-01, ADMIN-11.1) | WU-IDN-4 (after PLT-1) | 3 (Phase 0, after identity for JWT actor) |
 | **WU-ANA-1** | Analytics rollup jobs maintaining `sales_rollup`/`audience_rollup`; `AnalyticsReader` (ANALYTICS-01.1) | WU-PLY-1, WU-COM-2, WU-PLT-2 | Phase 4 (after settlement + plays exist) |
+| **WU-EXT-1** | Versioned provider selection, readiness validation, super-admin operational API, and atomic audit (EXT-01.1–01.4) | WU-PLT-1, WU-AUD-1, WU-ADM-8 | Phase 5 foundation |
 
 Cross-references PRD §8: Phase 0 = `WU-PLT-1 → WU-PLT-2 → WU-AUD-1`; `WU-ANA-1 → WU-STU-3` in Phase 4.
 Note: WU-PLT-1 is the literal foundation — no other module compiles without the kernel types.

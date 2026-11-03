@@ -202,6 +202,7 @@ public interface SaveStudioSettings {
 |------|---------|------|-------------|--------|------|
 | `GetStudioProfile` | `GET /studio/profile` | artist | read | — | STUDIO-01.1 |
 | `SaveStudioProfile` | `PUT /studio/profile` | artist (owner) | natural (upsert) | — | STUDIO-01.1 |
+| `SetStudioProfileImage` | `POST /studio/profile/images/{avatar\|banner}` | artist (JWT subject) | media content hash | `StudioProfileImagesUpdated` | STUDIO-01.1 |
 | `ListStudioPodcastShows` | `GET /studio/podcasts/shows` | artist | read | — | STUDIO-02.1 |
 | `CreatePodcastShow` | `POST /studio/podcasts/shows` | artist | — | — | STUDIO-02.1 |
 | `ListStudioEpisodes` | `GET /studio/podcasts/episodes` | artist | read | — | STUDIO-02.2 |
@@ -266,6 +267,7 @@ Base path `/v1`. All endpoints require `Authorization: Bearer <jwt>` with `roles
 |---------------|------|-------------|--------------|---------|-------------|------|
 | `GET /studio/profile` | artist | — | `StudioProfileDto` | 200 | 401, 403 `ARTIST_REQUIRED` | STUDIO-01.1 |
 | `PUT /studio/profile` | artist (owner) | `SaveStudioProfileDto` | `StudioProfileDto` | 200 | 403 `ARTIST_REQUIRED`, 409 `USERNAME_TAKEN`, 422 `INVALID_GENRE` | STUDIO-01.1 |
+| `POST /studio/profile/images/{avatar\|banner}` | artist (JWT subject) | multipart `image` | `{image}` stable URL | 200 | 403, 422 `VALIDATION` / `MEDIA_INVALID` | STUDIO-01.1 |
 | `GET /studio/podcasts/shows` | artist | — | `StudioPodcastShowDto[]` | 200 | 401, 403 | STUDIO-02.1 |
 | `POST /studio/podcasts/shows` | artist | `CreateShowDto {title,category}` | `StudioPodcastShowDto` | 201 | 403, 422 `VALIDATION` | STUDIO-02.1 |
 | `GET /studio/podcasts/episodes` | artist | — | `StudioEpisodeDto[]` | 200 | 401, 403 | STUDIO-02.2 |

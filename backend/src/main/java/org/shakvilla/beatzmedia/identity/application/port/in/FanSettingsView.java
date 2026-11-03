@@ -13,8 +13,16 @@ public record FanSettingsView(
     boolean dataSaver,
     NotificationPrefs notifications,
     String country,
-    String phone) {
+    String phone,
+    boolean phoneVerified) {
 
+  public FanSettingsView(
+      String theme, String audioQuality, String streamingQuality, String downloadQuality,
+      String crossfade, boolean dataSaver, NotificationPrefs notifications, String country,
+      String phone) {
+    this(theme, audioQuality, streamingQuality, downloadQuality, crossfade, dataSaver,
+        notifications, country, phone, false);
+  }
   /** Notifications sub-object. Mirrors frontend {@code FanPrefs} notifications field. */
   public record NotificationPrefs(
       boolean newReleases,

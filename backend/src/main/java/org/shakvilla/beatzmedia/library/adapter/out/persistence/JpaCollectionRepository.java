@@ -11,6 +11,7 @@ import jakarta.persistence.EntityManager;
 
 import org.shakvilla.beatzmedia.identity.domain.AccountId;
 import org.shakvilla.beatzmedia.library.application.port.out.CollectionRepository;
+import org.shakvilla.beatzmedia.library.application.port.out.FollowRelationshipReader;
 import org.shakvilla.beatzmedia.library.domain.FollowKind;
 import org.shakvilla.beatzmedia.library.domain.LikeSets;
 import org.shakvilla.beatzmedia.library.domain.PlaylistId;
@@ -23,7 +24,7 @@ import org.shakvilla.beatzmedia.library.domain.UserPlaylist;
  * Library ADD §5.2.
  */
 @ApplicationScoped
-public class JpaCollectionRepository implements CollectionRepository {
+public class JpaCollectionRepository implements CollectionRepository, FollowRelationshipReader {
 
   private final EntityManager em;
 
@@ -160,6 +161,47 @@ public class JpaCollectionRepository implements CollectionRepository {
               .setParameter("tid", targetId)
               .executeUpdate();
     }
+  }
+
+  @Override
+  public List<String> followedTargetIds(AccountId account, FollowKind kind) {
+    UUID aid = uuid(account);
+    return switch (kind) {
+      case artist ->
+          em.createQuery(
+                  "SELECT e.id.artistId FROM FollowedArtistEntity e"
+                      + " WHERE e.id.accountId = :aid ORDER BY e.id.artistId",
+                  String.class)
+              .setParameter("aid", aid)
+              .getResultList();
+      case show ->
+          em.createQuery(
+                  "SELECT e.id.showId FROM FollowedShowEntity e"
+                      + " WHERE e.id.accountId = :aid ORDER BY e.id.showId",
+                  String.class)
+              .setParameter("aid", aid)
+              .getResultList();
+      case playlist -> List.of();
+    };
+  }
+
+  @Override
+  @SuppressWarnings("unchecked")
+  public List<String> followerAccountIds(
+      FollowKind kind, String targetId, String cursor, int limit) {
+    String table = kind == FollowKind.artist ? "followed_artist" : "followed_show";
+    String targetColumn = kind == FollowKind.artist ? "artist_id" : "show_id";
+    String sql =
+        "SELECT account_id::text FROM "
+            + table
+            + " WHERE "
+            + targetColumn
+            + " = :target"
+            + (cursor == null || cursor.isBlank() ? "" : " AND account_id > CAST(:cursor AS uuid)")
+            + " ORDER BY account_id LIMIT :limit";
+    var query = em.createNativeQuery(sql).setParameter("target", targetId).setParameter("limit", limit);
+    if (cursor != null && !cursor.isBlank()) query.setParameter("cursor", cursor);
+    return (List<String>) query.getResultList();
   }
 
   @Override

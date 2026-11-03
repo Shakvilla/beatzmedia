@@ -31,6 +31,9 @@ public class PayoutTxnEntity {
   @Column(name = "status", nullable = false)
   public String status;
 
+  @Column(name = "gateway_vendor", nullable = false)
+  public String gatewayVendor;
+
   @Column(name = "provider_ref")
   public String providerRef;
 

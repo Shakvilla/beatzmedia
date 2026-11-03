@@ -27,6 +27,7 @@ public final class FanSettings {
   private final boolean dropsOffers;
   private final String country;
   private final String phone;
+  private final boolean phoneVerified;
 
   public FanSettings(
       AccountId accountId,
@@ -41,6 +42,24 @@ public final class FanSettings {
       boolean dropsOffers,
       String country,
       String phone) {
+    this(accountId, theme, audioQuality, streamingQuality, downloadQuality, crossfade, dataSaver,
+        newReleases, playlistUpdates, dropsOffers, country, phone, false);
+  }
+
+  public FanSettings(
+      AccountId accountId,
+      String theme,
+      String audioQuality,
+      String streamingQuality,
+      String downloadQuality,
+      String crossfade,
+      boolean dataSaver,
+      boolean newReleases,
+      boolean playlistUpdates,
+      boolean dropsOffers,
+      String country,
+      String phone,
+      boolean phoneVerified) {
     this.accountId = accountId;
     this.theme = theme;
     this.audioQuality = audioQuality;
@@ -53,6 +72,7 @@ public final class FanSettings {
     this.dropsOffers = dropsOffers;
     this.country = country;
     this.phone = phone;
+    this.phoneVerified = phoneVerified && phone != null && !phone.isBlank();
   }
 
   /** Factory for a new FanSettings with all defaults applied. Identity ADD §7. */
@@ -108,5 +128,9 @@ public final class FanSettings {
 
   public String getPhone() {
     return phone;
+  }
+
+  public boolean isPhoneVerified() {
+    return phoneVerified;
   }
 }

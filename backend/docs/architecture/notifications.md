@@ -164,7 +164,7 @@ public interface Clock {                   // kernel port (platform): determinis
 |---|---|
 | `NotificationRepository` | `JpaNotificationRepository` (Panache/Hibernate; maps domain ↔ JPA entity). |
 | `Mailer` | `SmtpMailer` (Quarkus Mailer over SMTP; dev → Mailpit `mail:1025`). |
-| `SmsSender` | `HttpSmsSender` (dev → in-repo SMS capture stub `sms:8026`, per OQ-9; prod → provider client). |
+| `SmsSender` | `ProviderSelectingSmsSender` chooses the current provider for new sends and pins it on the attempt; `HttpSmsSender` is local capture (`sms:8026`), `FrogSmsSender` is WIGAL FROG. |
 | `Clock` | `SystemClock` from `platform` kernel. |
 
 ## 5. Adapters
@@ -185,9 +185,17 @@ shapes lifted from `API-CONTRACT.md` §10.
 
 - **`JpaNotificationRepository`** — owns `notification` + `delivery_attempt`; persists feed rows, counts
   unread, bulk-marks read, dedupe lookups, due-retry fetch. Domain carries no ORM annotations.
-- **`SmtpMailer` / `HttpSmsSender`** — translate `EmailMessage`/`SmsMessage` to provider calls; classify
+- **Provider adapters** — translate `EmailMessage`/`SmsMessage` to provider calls; classify
   failures `TransientDeliveryException` (retry) vs `PermanentDeliveryException` (→`dead`). Dev: email →
-  Mailpit, SMS → in-repo stub (OQ-9).
+  Mailpit, SMS → in-repo stub (OQ-9). Production SMS can route through FROG using the configured
+  API key, username, and approved sender ID. FROG `ACCEPTD` means accepted for processing, not
+  delivered; provider callbacks are not trusted until callback authentication is documented.
+- **Phone verification bridge** — identity owns OTP generation, expiry, attempt limits, and verified
+  state; `IdentityPhoneVerificationSmsAdapter` uses this module's provider router. Each challenge
+  pins its sending provider, stores only a keyed code hash, and is sent independently of email.
+  Email provider changes and SMS provider changes therefore do not create cross-channel fallback.
+- **Verified destination rule** — identity's contact port makes a phone SMS-eligible only after
+  verification; existing email notifications and Resend/Mailpit selection remain independent.
 - **Identity dependency** — synchronous call to `identity`'s FanSettings/contact port for opt-in +
   email/phone; no cross-module FK or table read.
 - **Transaction boundary** — `@Transactional` per app service. `NotifyUseCase` commits `notification` +
@@ -489,3 +497,25 @@ adapters, and the `delivery_attempt` table. Deviations from the §4/§8 sketches
   `idx_delivery_attempt_due` on `next_attempt_at` filtered to `status IN ('pending','failed')`
   (backs the sweep's query), and the unique `uq_delivery_attempt_channel (notification_id, channel)`
   (send-idempotency).
+
+## 15. As-built (WU-EXT-5, partial)
+
+- `ResendMailer` posts the existing plain-text message model to Resend's email endpoint, uses the
+  bearer API key and the provider-supported `Idempotency-Key` header, and classifies rate-limit/5xx
+  and network failures as retryable. HTTP success means accepted by Resend; it does not mean
+  delivered to the recipient.
+- `ProviderSelectingMailer` routes new sends from the audited email provider selection. The
+  selected provider code is persisted on each `delivery_attempt` before sending; retries dispatch
+  through that recorded code. Existing rows retain SMTP attribution in V984, matching the
+  pre-integration transport.
+- Resend acceptance IDs are stored separately in `delivery_attempt.provider_message_id` by V985;
+  SMTP and existing SMS adapters may leave that field empty. This records acceptance correlation,
+  not final delivery.
+- Configuration: `BEATZ_RESEND_API_KEY`, `BEATZ_RESEND_FROM`, and optional
+  `BEATZ_RESEND_ENDPOINT` (default `https://api.resend.com/emails`). Secrets are not included in
+  provider-selection rows or logs.
+- Remaining WU-EXT-5 work: implement signed/deduplicated delivery webhooks if operational delivery
+  status is needed and verify with a Resend sandbox send. WU-EXT-6 now routes identity reset mail
+  through this shared transport. Resend's
+  idempotency keys expire after 24 hours, so retries beyond that window require reconciliation or
+  a policy preventing blind duplicate sends.

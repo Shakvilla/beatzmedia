@@ -15,6 +15,7 @@ import type { ReleaseType } from '../../lib/studio-data'
 import {
   apiCreateDraft, apiUploadTrack, apiUpdateRelease, apiSubmitRelease, apiDeleteTrack,
   apiUploadReleaseCover,
+  apiUploadTrackArtwork,
   apiGetReleaseDetail,
   type CreateDraftInput, type UpdateReleaseInput,
 } from '../../lib/api/queries/studio'
@@ -53,6 +54,11 @@ export interface UploadedTrack {
    * the same way `price` is. Drives the wizard's quality warning (ADR-35).
    */
   lossy?: boolean
+  /** Fan-facing artwork URL; initially the album-cover fallback or shared placeholder. */
+  image: string
+  /** Whether the artist explicitly uploaded artwork for this track. */
+  customArtwork: boolean
+  artworkUploading?: boolean
 }
 
 /**
@@ -243,6 +249,7 @@ interface ReleaseDraftContextValue {
    */
   hydrateFromServer: (releaseId: string) => Promise<void>
   uploadTrack: (file: File) => Promise<void>
+  uploadTrackArtwork: (trackId: string, file: File) => Promise<void>
   /**
    * Remembers the picked cover FILE, not just its preview URL.
    *
@@ -394,6 +401,8 @@ export function ReleaseDraftProvider({ children, initial }: { children: ReactNod
                 src: '',
                 price: t.price?.amount ?? 0,
                 explicit: false,
+                image: t.image ?? '/images/placeholder.svg',
+                customArtwork: t.customArtwork ?? false,
               })),
             splits: Object.fromEntries(
               (d.tracks ?? []).map((t) => [
@@ -427,6 +436,8 @@ export function ReleaseDraftProvider({ children, initial }: { children: ReactNod
             price: stateRef.current.price,
             explicit: false,
             lossy,
+            image: '/images/placeholder.svg',
+            customArtwork: false,
           },
         })
         try {
@@ -466,6 +477,19 @@ export function ReleaseDraftProvider({ children, initial }: { children: ReactNod
           } catch {
             // already removed from the UI; server cleanup can happen via the releases list
           }
+        }
+      },
+
+      uploadTrackArtwork: async (trackId, file) => {
+        const rid = stateRef.current.releaseId
+        if (!rid || !isServerId(trackId)) throw new Error('Upload the audio track before its artwork')
+        dispatch({ type: 'UPDATE_TRACK', id: trackId, patch: { artworkUploading: true } })
+        try {
+          const image = await apiUploadTrackArtwork(rid, trackId, file)
+          dispatch({ type: 'UPDATE_TRACK', id: trackId, patch: { image, customArtwork: true, artworkUploading: false } })
+        } catch (error) {
+          dispatch({ type: 'UPDATE_TRACK', id: trackId, patch: { artworkUploading: false } })
+          throw error
         }
       },
 

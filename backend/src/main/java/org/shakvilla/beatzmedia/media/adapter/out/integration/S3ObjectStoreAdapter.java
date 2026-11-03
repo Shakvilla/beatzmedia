@@ -22,6 +22,7 @@ import org.shakvilla.beatzmedia.media.domain.MediaAssetId;
 import org.shakvilla.beatzmedia.media.domain.MediaKind;
 import org.shakvilla.beatzmedia.media.domain.ObjectKey;
 import org.shakvilla.beatzmedia.media.domain.SignedUrl;
+import org.shakvilla.beatzmedia.platform.application.port.in.ManageProviderSelections;
 import org.shakvilla.beatzmedia.platform.domain.DomainException;
 
 import software.amazon.awssdk.core.ResponseInputStream;
@@ -74,18 +75,40 @@ public class S3ObjectStoreAdapter implements ObjectStorePort, UrlSignerPort {
 
   private final S3Client s3Client;
   private final S3Presigner presigner;
+  private final S3Client s4Client;
+  private final S3Presigner s4Presigner;
+  private final String s4BucketOriginals;
+  private final String s4BucketDelivery;
+  private final ManageProviderSelections selections;
   private final String bucketOriginals;
   private final String bucketDelivery;
   private final long maxSpoolBytes;
 
   @Inject
   public S3ObjectStoreAdapter(
-      S3Client s3Client,
-      S3Presigner presigner,
+      @StorageClient("minio") S3Client s3Client,
+      @StorageClient("minio") S3Presigner presigner,
+      @StorageClient("mega_s4") S3Client s4Client,
+      @StorageClient("mega_s4") S3Presigner s4Presigner,
       @ConfigProperty(name = "beatz.s3.bucket-originals", defaultValue = "beatz-media-originals")
           String bucketOriginals,
       @ConfigProperty(name = "beatz.s3.bucket-delivery", defaultValue = "beatz-media-delivery")
-          String bucketDelivery) {
+          String bucketDelivery,
+      @ConfigProperty(name = "beatz.s4.bucket-originals") java.util.Optional<String> s4BucketOriginals,
+      @ConfigProperty(name = "beatz.s4.bucket-delivery") java.util.Optional<String> s4BucketDelivery,
+      ManageProviderSelections selections) {
+    this(s3Client, presigner, s4Client, s4Presigner, bucketOriginals, bucketDelivery,
+        s4BucketOriginals.filter(v -> !v.isBlank()).orElse("beatz-s4-media-originals"),
+        s4BucketDelivery.filter(v -> !v.isBlank()).orElse("beatz-s4-media-delivery"),
+        MAX_SPOOL_BYTES, selections);
+  }
+
+  /** Visible for testing — lets an integration test drive the unknown-length spool cap small. */
+  public S3ObjectStoreAdapter(
+      S3Client s3Client,
+      S3Presigner presigner,
+      String bucketOriginals,
+      String bucketDelivery) {
     this(s3Client, presigner, bucketOriginals, bucketDelivery, MAX_SPOOL_BYTES);
   }
 
@@ -96,11 +119,24 @@ public class S3ObjectStoreAdapter implements ObjectStorePort, UrlSignerPort {
       String bucketOriginals,
       String bucketDelivery,
       long maxSpoolBytes) {
+    this(s3Client, presigner, null, null, bucketOriginals, bucketDelivery,
+        "beatz-s4-media-originals", "beatz-s4-media-delivery", maxSpoolBytes, null);
+  }
+
+  private S3ObjectStoreAdapter(
+      S3Client s3Client, S3Presigner presigner, S3Client s4Client, S3Presigner s4Presigner,
+      String bucketOriginals, String bucketDelivery, String s4BucketOriginals,
+      String s4BucketDelivery, long maxSpoolBytes, ManageProviderSelections selections) {
     this.s3Client = s3Client;
     this.presigner = presigner;
+    this.s4Client = s4Client;
+    this.s4Presigner = s4Presigner;
     this.bucketOriginals = bucketOriginals;
     this.bucketDelivery = bucketDelivery;
+    this.s4BucketOriginals = s4BucketOriginals;
+    this.s4BucketDelivery = s4BucketDelivery;
     this.maxSpoolBytes = maxSpoolBytes;
+    this.selections = selections;
   }
 
   // ---- ObjectStorePort ----
@@ -109,9 +145,12 @@ public class S3ObjectStoreAdapter implements ObjectStorePort, UrlSignerPort {
   public ObjectKey putOriginal(
       MediaKind kind, MediaAssetId id, InputStream body, String contentType, long contentLength) {
     String key = ORIGINALS_KEY_PREFIX + kind.name().toLowerCase() + "/" + id.value();
+    String store = selectedStore();
+    String bucket = store.equals("mega_s4") ? s4BucketOriginals : bucketOriginals;
+    S3Client client = clientFor(store);
     PutObjectRequest request =
         PutObjectRequest.builder()
-            .bucket(bucketOriginals)
+            .bucket(bucket)
             .key(key)
             .contentType(contentType)
             .build();
@@ -121,7 +160,7 @@ public class S3ObjectStoreAdapter implements ObjectStorePort, UrlSignerPort {
         // AWS SDK v2 sync client may read the payload more than once (SigV4 payload signing,
         // flexible-checksum precompute, or a retry), so it needs a body it can reset — which a
         // mark/reset-capable stream provides. RequestBody.fromInputStream marks/resets it.
-        s3Client.putObject(request, RequestBody.fromInputStream(body, contentLength));
+        client.putObject(request, RequestBody.fromInputStream(body, contentLength));
       } else {
         // Spool to a bounded temp file and PUT via the retryable RequestBody.fromFile. Two cases
         // land here:
@@ -136,7 +175,7 @@ public class S3ObjectStoreAdapter implements ObjectStorePort, UrlSignerPort {
         // fromFile is re-readable (re-opens the file per read) and never heap-buffers, so it is
         // safe up to the 500MB cap for both cases. The spool is bounded (MAX_SPOOL_BYTES) so an
         // untrusted body can never fill the disk.
-        putViaTempSpool(request, body);
+        putViaTempSpool(client, request, body);
       }
     } catch (SdkException e) {
       // The 500MB cap is enforced by the limiting input stream (see MediaApplicationService),
@@ -146,7 +185,7 @@ public class S3ObjectStoreAdapter implements ObjectStorePort, UrlSignerPort {
       // SDK failure is rethrown unchanged. Flagged by security review of WU-MED-1 (PR #11).
       throw unwrapDomainException(e);
     }
-    return new ObjectKey(bucketOriginals, key);
+    return new ObjectKey(store, bucket, key);
   }
 
   /**
@@ -170,9 +209,12 @@ public class S3ObjectStoreAdapter implements ObjectStorePort, UrlSignerPort {
   @Override
   public ObjectKey putDelivery(
       MediaAssetId id, String relativeKey, InputStream body, String contentType) {
+    String store = selectedStore();
+    String bucket = store.equals("mega_s4") ? s4BucketDelivery : bucketDelivery;
+    S3Client client = clientFor(store);
     PutObjectRequest request =
         PutObjectRequest.builder()
-            .bucket(bucketDelivery)
+            .bucket(bucket)
             .key(relativeKey)
             .contentType(contentType)
             .build();
@@ -180,11 +222,11 @@ public class S3ObjectStoreAdapter implements ObjectStorePort, UrlSignerPort {
     // (they are bounded local transcode outputs, not unbounded client uploads)
     try {
       byte[] bytes = body.readAllBytes();
-      s3Client.putObject(request, RequestBody.fromBytes(bytes));
+      client.putObject(request, RequestBody.fromBytes(bytes));
     } catch (IOException e) {
       throw new IllegalStateException("Failed to read delivery body", e);
     }
-    return new ObjectKey(bucketDelivery, relativeKey);
+    return new ObjectKey(store, bucket, relativeKey);
   }
 
   /**
@@ -195,7 +237,7 @@ public class S3ObjectStoreAdapter implements ObjectStorePort, UrlSignerPort {
    * present (the normal path via {@code MediaApplicationService}) it trips at the same point and the
    * domain exception propagates unchanged (→ HTTP 413). The temp file is always deleted.
    */
-  private void putViaTempSpool(PutObjectRequest request, InputStream body) {
+  private void putViaTempSpool(S3Client client, PutObjectRequest request, InputStream body) {
     Path spool;
     try {
       spool = Files.createTempFile("beatz-upload-", ".tmp");
@@ -206,7 +248,7 @@ public class S3ObjectStoreAdapter implements ObjectStorePort, UrlSignerPort {
       // A FileTooLargeException (RuntimeException) raised by the cap propagates out of the copy
       // unchanged; only genuine I/O failures are wrapped.
       spoolBounded(body, spool, maxSpoolBytes);
-      s3Client.putObject(request, RequestBody.fromFile(spool));
+      client.putObject(request, RequestBody.fromFile(spool));
     } catch (IOException e) {
       throw new IllegalStateException("Failed to spool unknown-length upload body", e);
     } finally {
@@ -246,7 +288,7 @@ public class S3ObjectStoreAdapter implements ObjectStorePort, UrlSignerPort {
   @Override
   public boolean exists(ObjectKey key) {
     try {
-      s3Client.headObject(
+      clientFor(key.store()).headObject(
           HeadObjectRequest.builder().bucket(key.bucket()).key(key.key()).build());
       return true;
     } catch (NoSuchKeyException e) {
@@ -257,7 +299,8 @@ public class S3ObjectStoreAdapter implements ObjectStorePort, UrlSignerPort {
   @Override
   public StoredObject open(ObjectKey key) {
     ResponseInputStream<GetObjectResponse> stream =
-        s3Client.getObject(GetObjectRequest.builder().bucket(key.bucket()).key(key.key()).build());
+        clientFor(key.store()).getObject(
+            GetObjectRequest.builder().bucket(key.bucket()).key(key.key()).build());
     GetObjectResponse meta = stream.response();
     return new StoredObject(
         stream,
@@ -268,7 +311,7 @@ public class S3ObjectStoreAdapter implements ObjectStorePort, UrlSignerPort {
   @Override
   public void deleteOriginal(ObjectKey key) {
     // S3 DeleteObject is idempotent — deleting a non-existent key succeeds silently.
-    s3Client.deleteObject(
+    clientFor(key.store()).deleteObject(
         DeleteObjectRequest.builder().bucket(key.bucket()).key(key.key()).build());
   }
 
@@ -279,7 +322,7 @@ public class S3ObjectStoreAdapter implements ObjectStorePort, UrlSignerPort {
     Instant expiresAt = Instant.now().plus(ttl);
 
     PresignedGetObjectRequest presigned =
-        presigner.presignGetObject(
+        presignerFor(key.store()).presignGetObject(
             GetObjectPresignRequest.builder()
                 .signatureDuration(ttl)
                 .getObjectRequest(r -> r.bucket(key.bucket()).key(key.key()))
@@ -291,5 +334,44 @@ public class S3ObjectStoreAdapter implements ObjectStorePort, UrlSignerPort {
   /** Expose the delivery bucket name for adapters that need to build ObjectKey references. */
   public String getBucketDelivery() {
     return bucketDelivery;
+  }
+
+  private String selectedStore() {
+    if (selections == null) {
+      return "minio";
+    }
+    return selections.list().stream()
+        .filter(selection -> selection.capability().equals("storage"))
+        .findFirst()
+        .filter(ManageProviderSelections.ProviderSelectionView::ready)
+        .map(ManageProviderSelections.ProviderSelectionView::provider)
+        .filter(provider -> provider.equals("minio") || provider.equals("mega_s4"))
+        .orElseThrow(() -> new IllegalStateException("selected object store is unavailable"));
+  }
+
+  private S3Client clientFor(String store) {
+    return switch (store) {
+      case "minio" -> s3Client;
+      case "mega_s4" -> {
+        if (s4Client == null) {
+          throw new IllegalStateException("MEGA S4 client is unavailable");
+        }
+        yield s4Client;
+      }
+      default -> throw new IllegalArgumentException("unsupported object store: " + store);
+    };
+  }
+
+  private S3Presigner presignerFor(String store) {
+    return switch (store) {
+      case "minio" -> presigner;
+      case "mega_s4" -> {
+        if (s4Presigner == null) {
+          throw new IllegalStateException("MEGA S4 presigner is unavailable");
+        }
+        yield s4Presigner;
+      }
+      default -> throw new IllegalArgumentException("unsupported object store: " + store);
+    };
   }
 }

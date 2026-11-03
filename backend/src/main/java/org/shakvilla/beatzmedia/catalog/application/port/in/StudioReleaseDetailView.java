@@ -25,6 +25,7 @@ public record StudioReleaseDetailView(
     String description,
     String visibility,
     String scheduledAt,
+    String coverImage,
     List<TrackDraftView> tracks,
     /**
      * Whether buyers may download this release's audio, straight from {@link

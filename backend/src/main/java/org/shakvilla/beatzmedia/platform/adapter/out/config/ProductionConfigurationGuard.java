@@ -27,7 +27,8 @@ public class ProductionConfigurationGuard {
           "mp.jwt.verify.publickey.location",
           "smallrye.jwt.sign.key.location",
           "beatz.payment.webhook-secret",
-          "beatz.provider-config.encryption-key");
+          "beatz.provider-config.encryption-key",
+          "beatz.phone-verification.hmac-key");
 
   private static final Logger LOG = Logger.getLogger(ProductionConfigurationGuard.class);
 

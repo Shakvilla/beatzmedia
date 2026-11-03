@@ -337,6 +337,7 @@ export const topShows = [...podcasts].sort((a, b) => (b.popularity ?? 0) - (a.po
 export function episodeToTrack(ep: PodcastEpisode): Track {
   return {
     id: ep.id,
+    playbackKind: 'podcast_episode',
     title: ep.title,
     artistId: ep.podcastId,
     artistName: ep.showTitle,

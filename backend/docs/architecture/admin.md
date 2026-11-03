@@ -1330,6 +1330,8 @@ are flagged here as explicit follow-up work, not silently dropped.
 
 ## 15. Implementation notes (WU-ADM-3, as-built)
 
+### Prior WU-ADM-3 implementation notes
+
 Deviations and carryovers, recorded here per conventions §11. WU-ADM-3 implements catalog
 moderation (`GET /admin/catalog`, `GET /admin/catalog/:id`, `POST /admin/catalog/:id/{approve,
 flag,takedown,reinstate}` — LLFR-ADMIN-03.1/.2) and the moderation queue (`GET /admin/moderation`,
@@ -1513,3 +1515,19 @@ this ADD's matrix; `super-admin` and `support` (read) are newly correct per the 
 `PlatformSettings` or minor-unit money math (`priceMinor` is passed through read-only from
 catalog's own tables, never recomputed). Every mutation's actor is `jwt.getSubject()` only, never a
 path/body parameter — the same IDOR-prevention convention as every prior admin WU.
+
+## 16. Provider configuration integration (Resend and FROG, as-built)
+
+`AdminProviderConfigResource` exposes redacted, super-admin-only configuration endpoints under
+`/v1/admin/provider-config`. Resend and FROG credentials are encrypted at rest using the platform
+provider-configuration cipher; GET responses report configured/source/encryption state and never
+return secret values. PUT supports optimistic `expectedVersion` checks and appends audit metadata
+without recording credentials. Provider activation is managed separately through the provider
+selection API, so saving credentials does not unexpectedly route traffic. FROG fields are its API
+key, username, and approved sender ID; see `API-CONTRACT.md` §11 and the provider integration plan.
+
+FROG SMS selection applies to new notification deliveries and phone-verification challenges. Each
+delivery/challenge pins its selected provider for retries or completion. The Super Admin Settings
+page configures credentials and selects `capture`, `frog`, or `disabled`; phone verification is
+implemented in identity and its FROG transport is in notifications. Email and SMS routing are
+independent.

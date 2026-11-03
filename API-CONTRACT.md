@@ -45,7 +45,12 @@ Account { id, name, email, avatar?: string|null, isArtist: boolean, isAdmin: boo
 | POST | `/auth/logout` | — | `204` |
 | GET | `/me` | current session | `Account` |
 | POST | `/me/become-artist` | upgrades role to artist | `Account` |
+| GET | `/me/settings` | persisted fan prefs and phone verification state | `FanSettings` |
 | PATCH | `/me/settings` | fan prefs (theme, audio, notifications, country, phone) | `FanSettings` |
+| POST | `/me/phone-verification` | `{ phone }` sends an SMS code; `202 { maskedPhone, alreadyVerified, expiresAt, resendAvailableAt }`; `429 RATE_LIMITED`; SMS is never sent by email fallback | — |
+| POST | `/me/phone-verification/confirm` | `{ code }` verifies the current account's active code and returns `FanSettings`; single-use, 5-minute expiry, maximum 5 attempts | `FanSettings` |
+
+`FanSettings` includes `phone: string|null` and `phoneVerified: boolean`. A phone changed through `PATCH /me/settings` becomes unverified. The phone-verification endpoints operate only on the authenticated caller's account; start responses mask the number and never include the OTP.
 | POST | `/me/password/reset` | `{ email }` | `204` |
 
 ---
@@ -57,7 +62,7 @@ UI: home, search, artist, album, track, playlist pages. Shapes: `Artist`, `Album
 
 | Method | Path | Notes | Returns |
 |---|---|---|---|
-| GET | `/home` | curated feed (trending, top-10, featured albums, discover rails); `rails.newReleases` = albums newest-first (`year DESC`), `rails.popularArtists` = by monthly listeners, `rails.curatedPlaylists` = public playlists by followers — each playlist carries `trackIds` with `tracks` empty (embed via `/playlists/:id`) | `{ trending: Track[], top10: Track[], featuredAlbums: Album[], rails: { newReleases: Album[], popularArtists: Artist[], curatedPlaylists: Playlist[] } }` |
+| GET | `/home` | curated feed; `trending` contains single-release tracks and collective `album`/`ep`/`mixtape` entries ranked by plays. Albums and other multi-track releases use the sum of published track plays, so their tracks are not duplicated as singles. `top10` remains track-based. `rails.newReleases` = releases newest-first (`year DESC`), `rails.popularArtists` = by monthly listeners, `rails.curatedPlaylists` = public playlists by followers — each playlist carries `trackIds` with `tracks` empty (embed via `/playlists/:id`) | `{ trending: ({ type: "track", track: Track, album: null, plays: number } | { type: "album" | "ep" | "mixtape", track: null, album: Album, plays: number })[], top10: Track[], featuredAlbums: Album[], rails: { newReleases: Album[], popularArtists: Artist[], curatedPlaylists: Playlist[] } }` |
 | GET | `/search?q=` | tracks/artists/albums/playlists + a top result; returned playlists carry `trackIds` with `tracks` empty (use `/playlists/:id` to embed) | `{ tracks, artists, albums, playlists }` |
 | GET | `/browse-categories` | search-screen tiles | `BrowseCategory[]` |
 | GET | `/artists/:id` | profile + hero | `Artist` |
@@ -114,6 +119,50 @@ UI: global player, 30s preview gate on for-sale tracks.
 > and never re-read from the release afterwards — an artist toggling their release's download choice
 > off (or on) only affects sales made *after* the change; it does not retroactively add or remove the
 > download permission on grants an owner already holds.
+
+---
+
+## 4A. Authenticated listening engagement
+
+All endpoints require authentication. Anonymous playback remains available through §4, but anonymous
+history and resume state are device-local and are not persisted by this API. Engagement checkpoints
+never write `play_event`, grant ownership, or create revenue.
+
+| Method | Path | Notes | Returns |
+|---|---|---|---|
+| POST | `/me/listening-sessions` | Start durable listening when history is enabled. | `201 { recording:true, sessionId, startedAt }`; disabled: `200 { recording:false }` |
+| PUT | `/me/listening-sessions/:sessionId/checkpoints/:sequence` | Idempotent `start\|qualified-play\|progress\|completion\|skip\|repeat` checkpoint. | `204` |
+| GET | `/me/listening/recent?cursor=&limit=` | De-duplicated Recently Played, keyset paginated. | `{ items: ListeningHistoryItem[], nextCursor? }` |
+| GET | `/me/listening/continue?cursor=&limit=` | Incomplete podcast episodes at a meaningful position. | `{ items: ListeningHistoryItem[], nextCursor? }` |
+| GET | `/me/listening/settings` | Read durable-history preference. | `{ historyEnabled }` |
+| PUT | `/me/listening/settings` | `{ historyEnabled }`; disabling also erases personal history. | `{ historyEnabled }` |
+| DELETE | `/me/listening/history` | Erase sessions, checkpoints, and resume/history state without changing the preference. | `204` |
+
+Checkpoint body:
+`{ contentKind:"track"|"podcast-episode", contentId, eventType, positionSeconds,
+durationSeconds, listenedDeltaSeconds }`. An exact retry or a previously unseen stale sequence returns
+`204`; a stale checkpoint cannot change progress or aggregates. Reusing the same sequence with a
+different payload returns `409 CHECKPOINT_SEQUENCE_CONFLICT`. An absent/cross-account session returns
+`404 SESSION_NOT_FOUND`; absent/unavailable content returns `404 CONTENT_NOT_FOUND`; impossible
+positions, durations, sequence values, or event values return `422`.
+
+`ListeningHistoryItem { contentKind, contentId, title, subtitle, image, positionSeconds,
+durationSeconds, completed, lastActivityAt }`. Continue Listening excludes positions below 10 seconds
+and episodes completed explicitly or at ≥95% of authoritative duration.
+
+---
+
+## 4B. Following feed
+
+`GET /me/following?cursor=&limit=` requires authentication and returns a chronological, keyset-paged
+feed of releases from followed artists and episodes from followed shows:
+
+`{ items: [{ kind:"release"|"podcast-episode", contentId, creatorId, title, subtitle, image,
+route, publishedAt }], nextCursor? }`.
+
+The account is always the JWT subject. Feed projection is idempotent on `(kind, contentId)`, contains
+no account identifier, and is filtered against the caller's current follow graph at read time.
+Limits default to 20 and are clamped to 1–100.
 
 ---
 
@@ -256,6 +305,7 @@ UI: studio overview, releases, 4-step release wizard, analytics, audience, payou
 `StudioProfile { displayName, username, hometown, genres[], bio, avatar, banner, links{instagram,twitter,youtube,website}, shows[], featuredTrackId, bookingEmail, pressAssets[] }`
 
 | GET/PUT | `/studio/profile` | read / save |
+| POST | `/studio/profile/images/{avatar\|banner}` | multipart `image` upload; returns `{ image }` with the persisted media URL |
 
 ### Releases (catalog the artist owns)
 
@@ -272,7 +322,7 @@ transitions) while `downloadable` is still `null` — attempting it returns `422
 DOWNLOAD_CHOICE_REQUIRED` (field `downloadable`), distinct from a generic `VALIDATION` error so a
 client can point the artist straight at the download toggle.
 
-`TrackDraft { trackId, title, duration, status: uploading|ready|error, position, price, splits: SplitEntry[] }` (WU-CAT-6). `SplitEntry { id, name, email, role, percent, confirmation: self|confirmed|pending|declined|auto }` — **collaborators only**: the originating creator's share is implicit and never stored as a row, so `Σ percent ≤ 100` (not `== 100`), per INV-12. `PATCH .../:id` accepts `splits` nested under each `tracks[]` entry on input (`{name, email, role, percent}` — no `id`/`confirmation`, wholesale-replace per track); every persisted collaborator lands with `confirmation:"pending"` until the invite/accept flow (WU-CAT-9, see below) moves it to `confirmed`/`declined` — `declined` is terminal and non-blocking for go-live, same as `confirmed`.
+`TrackDraft { trackId, title, duration, status: uploading|ready|error, position, image, customArtwork, price, splits: SplitEntry[] }` (WU-CAT-6). `image` is the fan-facing artwork URL; `customArtwork` indicates that the artist uploaded track-specific art. Multi-track releases initially use the release cover as a visual fallback until individual art is uploaded. `SplitEntry { id, name, email, role, percent, confirmation: self|confirmed|pending|declined|auto }` — **collaborators only**: the originating creator's share is implicit and never stored as a row, so `Σ percent ≤ 100` (not `== 100`), per INV-12. `PATCH .../:id` accepts `splits` nested under each `tracks[]` entry on input (`{name, email, role, percent}` — no `id`/`confirmation`, wholesale-replace per track); every persisted collaborator lands with `confirmation:"pending"` until the invite/accept flow (WU-CAT-9, see below) moves it to `confirmed`/`declined` — `declined` is terminal and non-blocking for go-live, same as `confirmed`.
 
 > **WU-CAT-5 (release create flow).** The creation flow is **draft → upload-attached → finalize**,
 > replacing the old one-shot "wizard submit" (which posted the full draft — details + tracks +
@@ -287,9 +337,10 @@ client can point the artist straight at the download toggle.
 | GET | `/studio/releases/:id` | → `StudioReleaseDetail` |
 | PATCH | `/studio/releases/:id` | `{ title?, genre?, description?, visibility?, scheduledAt?, tracks?: [{trackId, position, priceMinor, splits?: [{name, email, role, percent}]}], downloadable? }` → `StudioReleaseDetail`. `title`/`downloadable` are editable on any status; `genre`/`description`/`visibility`/`scheduledAt`/`tracks` are **draft-only** (409 `ILLEGAL_TRANSITION` otherwise). `tracks`, when present, **replaces** the whole ordered list (every `trackId` must already belong to the release, else 422 `TRACK_NOT_IN_RELEASE`; a repeated `trackId` or `position` → 422 `DUPLICATE_TRACK_REF`; a `priceMinor` outside `[0, 100_000_000]` → 422 `INVALID_PRICE`). Each track's `splits`, when present, **replaces** that track's collaborator list (`percent` outside `[0, 100]` → a plain 422 field-validation error); every persisted collaborator is `confirmation:"pending"`. `downloadable`, when present, sets the choice; **omitted (not `false`) leaves a previously-made choice unchanged** — a partial PATCH must not silently clear it. Once a purchase captures the choice on its ownership grant, changing `downloadable` here only affects sales made after the change (see §4). |
 | DELETE | `/studio/releases/:id` | delete a `draft`/`in_review` release (409 `RELEASE_LIVE` for `live`) |
-| POST | `/studio/releases/:id/tracks` | multipart audio upload (WAV/FLAC, ≤500MB) → **201** `UploadedTrack` (`{ id, title, duration, status, progress, src, price, explicit, position }`) — the track is **attached** to the release as a `TrackDraft` (draft-only; 409 `ILLEGAL_TRANSITION` on a non-draft release) |
+| POST | `/studio/releases/:id/tracks` | multipart audio upload (WAV/FLAC, ≤500MB) → **201** `UploadedTrack` (`{ id, title, duration, status, progress, src, price, explicit, position, image, customArtwork }`) — the track is **attached** to the release as a `TrackDraft` (draft-only; 409 `ILLEGAL_TRANSITION` on a non-draft release) |
+| POST | `/studio/releases/:id/tracks/:trackId/cover` | multipart `image` upload → `{ image }`; stores artwork for that release track and marks `customArtwork:true`. Artist must own the release and the track must belong to it. |
 | DELETE | `/studio/releases/:id/tracks/:trackId` | remove a draft track → **204**. Draft-only (409); unknown `trackId` → 404 `TRACK_NOT_FOUND` |
-| POST | `/studio/releases/:id/submit` | **finalize**: `draft → in_review`. Requires `Idempotency-Key` header (400 `MISSING_IDEMPOTENCY_KEY` if absent). Validates the track-count matrix per `type` (`single`=1, `ep`=3–6, `album`=7+, `mixtape`≥1 — else 422 `TRACK_COUNT_INVALID`) and, per track, `Σ splits.percent ≤ 100` (else 422 `SPLIT_OVER_100`, INV-12), recomputes `price` (bundle discount), transitions the release → **200** `StudioReleaseDetail` with `status:"in_review"`. Not-draft → 409 `ILLEGAL_TRANSITION`. A reused `Idempotency-Key` whose stored release/artist doesn't match the caller → 409 `IDEMPOTENCY_KEY_CONFLICT` (no data leak). On success, catalog issues one **collaborator split invite** per distinct pending `splits[].email` on the release (WU-CAT-9, see below); a replayed `Idempotency-Key` does not re-issue. |
+| POST | `/studio/releases/:id/submit` | **finalize**: `draft → in_review`. Requires `Idempotency-Key` header (400 `MISSING_IDEMPOTENCY_KEY` if absent). Validates the track-count matrix per `type` (`single`=1, `ep`=3–6, `album`=7+, `mixtape`≥1 — else 422 `TRACK_COUNT_INVALID`), requires custom artwork for every track in a multi-track release (else 422 `TRACK_ARTWORK_REQUIRED`), and per track `Σ splits.percent ≤ 100` (else 422 `SPLIT_OVER_100`, INV-12), recomputes `price` (bundle discount), transitions the release → **200** `StudioReleaseDetail` with `status:"in_review"`. Not-draft → 409 `ILLEGAL_TRANSITION`. A reused `Idempotency-Key` whose stored release/artist doesn't match the caller → 409 `IDEMPOTENCY_KEY_CONFLICT` (no data leak). On success, catalog issues one **collaborator split invite** per distinct pending `splits[].email` on the release (WU-CAT-9, see below); a replayed `Idempotency-Key` does not re-issue. |
 | POST | `/studio/releases/:id/resend-invites` | artist (owner) — re-issue invites for every collaborator still `confirmation:"pending"` on the release → **204**. 403 if not the owning artist. No `Idempotency-Key`; intentionally repeatable (a double-call re-emails). |
 
 ### Collaborator split invites (WU-CAT-9)
@@ -436,6 +487,12 @@ AdminMember { id, name, email, role, lastActive }
 | Method | Path | Notes |
 |---|---|---|
 | GET/PUT | `/admin/settings` | platform config (super-admin only) |
+| GET | `/admin/provider-config` | selected provider and readiness for storage, email, SMS, and payment; never returns credentials (super-admin only) |
+| PUT | `/admin/provider-config/:capability` | `{ provider, expectedVersion }`; audited compare-and-set update, `409` when stale, `422` when invalid or unready (super-admin only) |
+| GET | `/admin/provider-config/resend` | redacted Resend setup status and sender address; never returns the API key (super-admin only) |
+| PUT | `/admin/provider-config/resend` | `{ apiKey?, from, expectedVersion }`; blank/omitted key preserves the saved key; encrypted at rest and audited (super-admin only) |
+| GET | `/admin/provider-config/frog` | redacted FROG setup status and sender ID; API key and username are never returned (super-admin only) |
+| PUT | `/admin/provider-config/frog` | `{ apiKey?, username?, senderId, expectedVersion }`; blank/omitted credentials preserve saved values; encrypted at rest and audited (super-admin only) |
 | GET | `/admin/team` | admin members |
 | POST | `/admin/team/invite` | `{ email, role }` |
 | PATCH/DELETE | `/admin/team/:id` | change role / remove |
@@ -456,3 +513,21 @@ editor = editorial · support = user lookup + read-only elsewhere.
   don't change.
 - `localStorage` persistence is a stand-in for the DB and should be removed once these land.
 - Money/duration stay structured; the server must not pre-format display strings.
+
+## 16. Artist release revisions
+
+Submitted release membership is fixed: artists can edit release metadata and existing tracks, but cannot add or remove tracks. Draft releases continue through the existing upload wizard. Edits to a release still in initial review update that pending submission. Edits to a live or scheduled release are staged as one revision; the current approved release remains visible until moderation approves the revision.
+
+| Method | Path | Notes |
+|---|---|---|
+| GET | `/studio/releases/:id/revision` | Artist-owned revision state; returns the pending submission, latest revision, or active release snapshot |
+| PUT | `/studio/releases/:id/revision` | Save release metadata and the complete fixed track list; changing membership is rejected |
+| POST | `/studio/releases/:id/revision/submit` | Submit a saved live/scheduled revision for review |
+| POST | `/studio/releases/:id/revision/cover` | Upload staged release artwork |
+| POST | `/studio/releases/:id/revision/tracks/:trackId/cover` | Upload staged artwork for an existing track |
+| POST | `/studio/releases/:id/revision/tracks/:trackId/audio` | Upload replacement audio; it must finish processing before submission |
+| GET | `/admin/catalog/:id/revision` | Moderator reads the pending revision for a live/scheduled release |
+| POST | `/admin/catalog/:id/revision/:revisionId/approve` | Approve and atomically promote the staged revision while retaining track IDs and purchase grants |
+| POST | `/admin/catalog/:id/revision/:revisionId/reject` | `{ reason }`; reject the revision while keeping the active release unchanged |
+
+Multi-track revisions require custom artwork on each track. Only one open revision is permitted per release. Rejected revisions can be edited and resubmitted. Moderation approval reindexes tracks and refreshes the album projection.

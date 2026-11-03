@@ -22,6 +22,7 @@ import { Route as LyricsRouteImport } from './routes/lyrics'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as LibraryRouteImport } from './routes/library'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
+import { Route as FollowingRouteImport } from './routes/following'
 import { Route as EventsRouteImport } from './routes/events'
 import { Route as CheckoutRouteImport } from './routes/checkout'
 import { Route as CartRouteImport } from './routes/cart'
@@ -140,6 +141,11 @@ const LibraryRoute = LibraryRouteImport.update({
 const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
   id: '/forgot-password',
   path: '/forgot-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FollowingRoute = FollowingRouteImport.update({
+  id: '/following',
+  path: '/following',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EventsRoute = EventsRouteImport.update({
@@ -420,6 +426,7 @@ export interface FileRoutesByFullPath {
   '/cart': typeof CartRoute
   '/checkout': typeof CheckoutRouteWithChildren
   '/events': typeof EventsRoute
+  '/following': typeof FollowingRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/library': typeof LibraryRoute
   '/login': typeof LoginRoute
@@ -487,6 +494,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/cart': typeof CartRoute
   '/events': typeof EventsRoute
+  '/following': typeof FollowingRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/library': typeof LibraryRoute
   '/login': typeof LoginRoute
@@ -552,6 +560,7 @@ export interface FileRoutesById {
   '/cart': typeof CartRoute
   '/checkout': typeof CheckoutRouteWithChildren
   '/events': typeof EventsRoute
+  '/following': typeof FollowingRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/library': typeof LibraryRoute
   '/login': typeof LoginRoute
@@ -623,6 +632,7 @@ export interface FileRouteTypes {
     | '/cart'
     | '/checkout'
     | '/events'
+    | '/following'
     | '/forgot-password'
     | '/library'
     | '/login'
@@ -690,6 +700,7 @@ export interface FileRouteTypes {
     | '/'
     | '/cart'
     | '/events'
+    | '/following'
     | '/forgot-password'
     | '/library'
     | '/login'
@@ -754,6 +765,7 @@ export interface FileRouteTypes {
     | '/cart'
     | '/checkout'
     | '/events'
+    | '/following'
     | '/forgot-password'
     | '/library'
     | '/login'
@@ -824,6 +836,7 @@ export interface RootRouteChildren {
   CartRoute: typeof CartRoute
   CheckoutRoute: typeof CheckoutRouteWithChildren
   EventsRoute: typeof EventsRoute
+  FollowingRoute: typeof FollowingRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   LibraryRoute: typeof LibraryRoute
   LoginRoute: typeof LoginRoute
@@ -936,6 +949,13 @@ declare module '@tanstack/react-router' {
       path: '/forgot-password'
       fullPath: '/forgot-password'
       preLoaderRoute: typeof ForgotPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/following': {
+      id: '/following'
+      path: '/following'
+      fullPath: '/following'
+      preLoaderRoute: typeof FollowingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/events': {
@@ -1475,6 +1495,7 @@ const rootRouteChildren: RootRouteChildren = {
   CartRoute: CartRoute,
   CheckoutRoute: CheckoutRouteWithChildren,
   EventsRoute: EventsRoute,
+  FollowingRoute: FollowingRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
   LibraryRoute: LibraryRoute,
   LoginRoute: LoginRoute,

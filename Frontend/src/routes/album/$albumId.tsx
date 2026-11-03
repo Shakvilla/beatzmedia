@@ -291,10 +291,7 @@ function TrackRow({
         )}
       </div>
 
-      {/* Art + title */}
-      <div className="w-11 h-11 rounded overflow-hidden shrink-0 bg-beatz-light-surface-2 dark:bg-beatz-dark-surface-3">
-        <img src={track.image} alt={track.title} className="w-full h-full object-cover" />
-      </div>
+      {/* Keep the album art in the album header; track rows are text-led. */}
       <div className="flex flex-col flex-1 min-w-0">
         <Link
           to="/track/$trackId"

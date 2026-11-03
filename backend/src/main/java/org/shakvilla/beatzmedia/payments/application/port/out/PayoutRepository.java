@@ -5,6 +5,7 @@ import java.util.List;
 import java.util.Optional;
 
 import org.shakvilla.beatzmedia.payments.domain.AccountId;
+import org.shakvilla.beatzmedia.payments.domain.GatewayVendor;
 import org.shakvilla.beatzmedia.payments.domain.IdempotencyKey;
 import org.shakvilla.beatzmedia.payments.domain.PaymentEventType;
 import org.shakvilla.beatzmedia.payments.domain.PayoutBatch;
@@ -26,6 +27,11 @@ import org.shakvilla.beatzmedia.payments.domain.WithdrawalRequest;
  * UNIQUE constraint (V704) to reject a double-pay under a re-run.
  */
 public interface PayoutRepository {
+
+  /** Gateway pinned to a payout row; legacy in-memory fakes default to the original sandbox route. */
+  default GatewayVendor findGatewayVendor(WithdrawalId withdrawalId) {
+    return GatewayVendor.SANDBOX;
+  }
 
   // ---- payout methods -----------------------------------------------------
 

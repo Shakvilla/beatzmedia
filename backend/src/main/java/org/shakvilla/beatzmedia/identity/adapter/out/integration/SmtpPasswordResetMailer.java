@@ -2,15 +2,18 @@ package org.shakvilla.beatzmedia.identity.adapter.out.integration;
 
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
 import org.eclipse.microprofile.config.inject.ConfigProperty;
-import org.jboss.logging.Logger;
 import org.shakvilla.beatzmedia.identity.application.port.out.Mailer;
+import org.shakvilla.beatzmedia.notifications.application.port.out.EmailMessage;
 
-import io.quarkus.mailer.Mail;
+import io.quarkus.qute.Location;
+import io.quarkus.qute.Template;
 
 /**
  * Sends identity emails over SMTP.
@@ -33,24 +36,28 @@ import io.quarkus.mailer.Mail;
 @ApplicationScoped
 public class SmtpPasswordResetMailer implements Mailer {
 
-  private static final Logger LOG = Logger.getLogger(SmtpPasswordResetMailer.class);
-
   private static final String SUBJECT = "Reset your BeatzClik password";
 
-  private final io.quarkus.mailer.Mailer mailer;
+  private final org.shakvilla.beatzmedia.notifications.application.port.out.Mailer mailer;
   private final String appBaseUrl;
   private final long ttlSeconds;
+  private final Template passwordResetHtml;
+  private final Template passwordResetText;
 
   @Inject
   public SmtpPasswordResetMailer(
-      io.quarkus.mailer.Mailer mailer,
+      org.shakvilla.beatzmedia.notifications.application.port.out.Mailer mailer,
       @ConfigProperty(name = "beatz.app.base-url", defaultValue = "http://localhost:5173")
           String appBaseUrl,
       @ConfigProperty(name = "beatz.identity.password-reset-ttl-seconds", defaultValue = "1800")
-          long ttlSeconds) {
+          long ttlSeconds,
+      @Location("email/password-reset.html") Template passwordResetHtml,
+      @Location("email/password-reset.txt") Template passwordResetText) {
     this.mailer = mailer;
     this.appBaseUrl = appBaseUrl;
     this.ttlSeconds = ttlSeconds;
+    this.passwordResetHtml = passwordResetHtml;
+    this.passwordResetText = passwordResetText;
   }
 
   @Override
@@ -59,22 +66,20 @@ public class SmtpPasswordResetMailer implements Mailer {
         + "/reset-password?token="
         + URLEncoder.encode(resetToken, StandardCharsets.UTF_8);
 
-    mailer.send(Mail.withText(email, SUBJECT, body(link)));
-    LOG.info("password reset email sent");
-  }
-
-  private String body(String link) {
     long minutes = Math.max(1, ttlSeconds / 60);
-    return """
-        Someone asked to reset the password on your BeatzClik account.
-
-        Open this link to choose a new one:
-        %s
-
-        The link works once and expires in %d minutes.
-
-        If this wasn't you, no action is needed — your password has not changed.
-        """
-        .formatted(link, minutes);
+    String html = passwordResetHtml.data("resetUrl", link).data("expiresMinutes", minutes).render();
+    String text = passwordResetText.data("resetUrl", link).data("expiresMinutes", minutes).render();
+    mailer.send(new EmailMessage(
+        email, SUBJECT, text, html, "password-reset:" + tokenDigest(resetToken)));
   }
+
+  private static String tokenDigest(String token) {
+    try {
+      byte[] digest = MessageDigest.getInstance("SHA-256").digest(token.getBytes(StandardCharsets.UTF_8));
+      return java.util.HexFormat.of().formatHex(digest);
+    } catch (NoSuchAlgorithmException e) {
+      throw new IllegalStateException("SHA-256 is unavailable", e);
+    }
+  }
+
 }

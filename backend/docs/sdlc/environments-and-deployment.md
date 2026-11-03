@@ -238,7 +238,7 @@ docker compose ps                          # all healthy?
 curl localhost:8080/q/health/ready         # {"status":"UP",...}
 # Mailpit UI http://localhost:8025 · MinIO console http://localhost:9001
 docker compose down                        # stop (keeps volumes)
-docker compose down -v                     # stop + wipe pgdata/miniodata
+docker compose down -v                     # DESTRUCTIVE: stop + delete pgdata/miniodata
 ```
 
 For the fastest inner loop, prefer **`./mvnw -f backend/pom.xml quarkus:dev`** (live reload). With no
@@ -330,7 +330,7 @@ served only via time-boxed presigned URLs (INV-3 / `architecture/media.md`).
 ```bash
 docker compose logs -f objectstore createbuckets   # inspect MinIO / bucket-init output
 docker compose down                                 # stop, keep the miniodata volume
-docker compose down -v                              # stop + wipe pgdata/miniodata (createbuckets re-runs on next up)
+docker compose down -v                              # DESTRUCTIVE: delete pgdata/miniodata (createbuckets re-runs on next up)
 ```
 
 - **Path-style access is mandatory** — MinIO doesn't support the AWS virtual-host bucket style. It's
@@ -485,8 +485,14 @@ From PRD §5.2. **Secret?** marks values that must never be committed and must c
 | `QUARKUS_MAILER_FROM` | From address | `no-reply@beatzclik.local` | no | verified domain in prod |
 | `QUARKUS_MAILER_USERNAME` | SMTP user | — | **yes** | prod only |
 | `QUARKUS_MAILER_PASSWORD` | SMTP password | — | **yes** | prod only |
+| `BEATZ_PROVIDER_CONFIG_ENCRYPTION_KEY` | AES-256 key for admin-managed provider credentials (base64, 32 decoded bytes) | — | **yes** | persist/backup per environment; losing it makes saved credentials unreadable |
 | `BEATZ_SMS_ENDPOINT` | SMS send endpoint | `http://sms:8026/send` | no | provider URL in prod |
 | `BEATZ_SMS_API_KEY` | SMS provider key | — | **yes** | prod only |
+| `BEATZ_FROG_BASE_URL` | FROG API base URL | `https://frogapi.wigal.com.gh` | no | override only for a controlled FROG test endpoint |
+| `BEATZ_FROG_API_KEY` | FROG API key (environment fallback) | — | **yes** | or configure in super-admin settings |
+| `BEATZ_FROG_USERNAME` | FROG account username (environment fallback) | — | **yes** | or configure in super-admin settings |
+| `BEATZ_FROG_SENDER_ID` | FROG-approved sender ID (environment fallback) | — | no | or configure in super-admin settings |
+| `BEATZ_PHONE_VERIFICATION_HMAC_KEY` | Base64 key (at least 32 decoded bytes) used to protect stored OTPs | dev/test profile only | **yes** | unique secret per environment; production startup requires it |
 | `BEATZ_MOMO_MTN_API_KEY` | MTN MoMo key | — | **yes** | sandbox (stg) / live (prod) |
 | `BEATZ_MOMO_VODAFONE_API_KEY` | Telecel/Vodafone Cash key | — | **yes** | sandbox / live |
 | `BEATZ_MOMO_AIRTELTIGO_API_KEY` | AirtelTigo Money key | — | **yes** | sandbox / live |

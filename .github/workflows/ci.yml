@@ -388,3 +388,35 @@ jobs:
       - name: Unit tests
         working-directory: Frontend
         run: npx vitest run --reporter=default
+
+  # ---------------------------------------------------------------------------
+  # mobile — Flutter fan app (MOBILE-PRD §12). Required checks per
+  # docs/plans/2026-09-21-beatzclik-fan-mobile-implementation.md M0:
+  # dart format, flutter analyze, flutter test, unsigned release build.
+  # ---------------------------------------------------------------------------
+  mobile:
+    name: mobile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.24.5"
+          channel: stable
+          cache: true
+      - name: Install deps
+        working-directory: mobile
+        run: flutter pub get
+      - name: Dart format
+        working-directory: mobile
+        run: dart format --set-exit-if-changed .
+      - name: Flutter analyze
+        working-directory: mobile
+        run: flutter analyze
+      - name: Flutter test
+        working-directory: mobile
+        run: flutter test
+      - name: Build APK (debug, unsigned)
+        working-directory: mobile
+        run: flutter build apk --debug --no-pub

@@ -26,6 +26,8 @@ const track = (over: Partial<UploadedTrack> = {}): UploadedTrack => ({
   src: '',
   price: 5,
   explicit: false,
+  image: '/images/placeholder.svg',
+  customArtwork: false,
   ...over,
 })
 

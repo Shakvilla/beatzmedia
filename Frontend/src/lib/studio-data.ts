@@ -86,6 +86,26 @@ export interface StudioRelease {
   downloadable: boolean | null
 }
 
+export interface StudioReleaseTrack {
+  trackId: string
+  title: string
+  duration: number
+  status: string
+  position: number
+  price: number
+  image: string | null
+  customArtwork: boolean
+}
+
+export interface StudioReleaseDetail extends StudioRelease {
+  genre: string | null
+  description: string | null
+  visibility: 'public' | 'scheduled'
+  scheduledAt: string | null
+  coverImage: string | null
+  tracks: StudioReleaseTrack[]
+}
+
 export function getReleases(): StudioRelease[] {
   return [
     { id: 'r1', title: 'Iron Boy', type: 'album', status: 'in_review', date: 'Jul 14, 2026', trackCount: 14, streams: 0, revenue: 0, price: 2.5, downloadable: true },

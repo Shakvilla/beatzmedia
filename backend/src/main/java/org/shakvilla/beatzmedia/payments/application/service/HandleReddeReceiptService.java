@@ -88,7 +88,9 @@ public class HandleReddeReceiptService implements HandleReddeReceipt {
 
     ProviderStatus pulled;
     try {
-      pulled = gateway.queryStatus(intent.getProvider(), callback.transactionId());
+      pulled =
+          gateway.queryStatus(
+              intent.getGatewayVendor(), intent.getProvider(), callback.transactionId());
     } catch (ProviderException e) {
       // Could not authenticate the callback right now — do not settle off an unverified body. The
       // recon poll (queryStatus every 30s) will settle it once Redde is reachable. 202, no retry storm.

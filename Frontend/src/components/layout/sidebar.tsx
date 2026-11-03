@@ -1,6 +1,6 @@
 import { Link, useNavigate } from "@tanstack/react-router"
 import { useEffect, useState, type ReactNode } from "react"
-import { Home, Search as SearchIcon, Library, Mic, Store, CalendarDays, ChevronsLeft, ChevronsRight, Plus, Heart, ListMusic, Disc3, type LucideIcon } from "lucide-react"
+import { Home, Search as SearchIcon, Library, Mic, Store, CalendarDays, RadioTower, ChevronsLeft, ChevronsRight, Plus, Heart, ListMusic, Disc3, type LucideIcon } from "lucide-react"
 import { useTheme } from "../theme-provider"
 import { cn } from "../../utils/cn"
 import { SidebarTooltip } from "../ui/sidebar-tooltip"
@@ -17,6 +17,7 @@ const NAV: { to: string; icon: LucideIcon; label: string }[] = [
   { to: "/", icon: Home, label: "Home" },
   { to: "/search", icon: SearchIcon, label: "Search" },
   { to: "/library", icon: Library, label: "Library" },
+  { to: "/following", icon: RadioTower, label: "Following" },
   { to: "/store", icon: Store, label: "Store" },
   { to: "/podcasts", icon: Mic, label: "Podcasts" },
   { to: "/events", icon: CalendarDays, label: "Events" },

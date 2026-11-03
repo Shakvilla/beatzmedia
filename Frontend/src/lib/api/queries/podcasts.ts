@@ -43,3 +43,22 @@ export function podcastEpisodesQuery(id: string) {
       (await apiFetch<PodcastEpisodeWire[]>(`/podcasts/${id}/episodes`)).map(toPodcastEpisode),
   })
 }
+
+export interface EpisodeStreamWire {
+  audioUrl: string
+  previewSeconds: number | null
+  expiresAt: string | null
+}
+
+/** Signed audio URL for a podcast episode. Episodes have their own stream resource. */
+export function episodeStreamQuery(episodeId: string) {
+  return queryOptions({
+    queryKey: ['podcasts', 'episode', episodeId, 'stream'],
+    queryFn: async () =>
+      apiFetch<EpisodeStreamWire>(`/podcasts/episodes/${encodeURIComponent(episodeId)}/stream`),
+    retry: false,
+    staleTime: 0,
+    gcTime: 60_000,
+    refetchOnWindowFocus: false,
+  })
+}

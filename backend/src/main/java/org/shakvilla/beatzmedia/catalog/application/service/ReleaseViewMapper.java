@@ -62,6 +62,8 @@ public final class ReleaseViewMapper {
               t != null ? t.getDurationSec() : 0,
               t != null ? t.getStatus() : "uploading",
               rt.position(),
+              t != null ? t.getImage() : null,
+              t != null && t.hasCustomArtwork(),
               MoneyView.ofMinor(rt.priceMinor()),
               splitViews);
         })
@@ -81,6 +83,7 @@ public final class ReleaseViewMapper {
         r.getDescription(),
         r.getVisibility().toDbValue(),
         r.getScheduledAt() != null ? r.getScheduledAt().toString() : null,
+        r.getCoverImage(),
         trackViews,
         r.getDownloadable());
   }

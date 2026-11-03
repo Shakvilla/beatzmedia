@@ -21,12 +21,16 @@ import org.shakvilla.beatzmedia.catalog.domain.Lyrics;
 import org.shakvilla.beatzmedia.catalog.domain.Playlist;
 import org.shakvilla.beatzmedia.catalog.domain.PlaylistId;
 import org.shakvilla.beatzmedia.catalog.domain.Release;
+import org.shakvilla.beatzmedia.catalog.domain.ReleaseRevision;
+import org.shakvilla.beatzmedia.catalog.domain.ReleaseRevisionStatus;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
+import org.shakvilla.beatzmedia.catalog.domain.ReleaseType;
 import org.shakvilla.beatzmedia.catalog.domain.SplitConfirmation;
 import org.shakvilla.beatzmedia.catalog.domain.SplitEntry;
 import org.shakvilla.beatzmedia.catalog.domain.SplitInvite;
 import org.shakvilla.beatzmedia.catalog.domain.Track;
+import org.shakvilla.beatzmedia.catalog.domain.TrendingAlbum;
 import org.shakvilla.beatzmedia.catalog.domain.TrackId;
 import org.shakvilla.beatzmedia.platform.domain.Page;
 import org.shakvilla.beatzmedia.platform.domain.PageRequest;
@@ -40,6 +44,7 @@ public class FakeCatalogRepository implements CatalogRepository {
   private final Map<String, Lyrics> lyrics = new HashMap<>();
   private final Map<String, Playlist> playlists = new HashMap<>();
   private final Map<String, Release> releases = new HashMap<>();
+  private final Map<String, ReleaseRevision> releaseRevisions = new HashMap<>();
   private final Map<String, String> idempotencyKeys = new HashMap<>(); // key → releaseId
   private final Set<String> releasesWithPendingSplits = new HashSet<>();
   private final Map<String, Integer> markReadyCallCounts = new HashMap<>();
@@ -95,6 +100,25 @@ public class FakeCatalogRepository implements CatalogRepository {
   public void saveArtistProfile(ArtistProfile profile) {
     // Insert-only, mirroring the JPA adapter: never clobber an existing profile.
     artists.putIfAbsent(profile.getId().value(), profile);
+  }
+
+  @Override
+  public void updateArtistProfileImages(ArtistId id, String image, String coverImage, Instant updatedAt) {
+    ArtistProfile current = artists.get(id.value());
+    if (current != null) {
+      artists.put(id.value(), new ArtistProfile(
+          id,
+          current.getName(),
+          image != null ? image : current.getImage(),
+          coverImage != null ? coverImage : current.getCoverImage(),
+          current.isVerified(),
+          current.getMonthlyListeners(),
+          current.getFollowers(),
+          current.getBio(),
+          current.getLocation(),
+          current.getGenres(),
+          current.getShows()));
+    }
   }
 
   @Override
@@ -168,6 +192,36 @@ public class FakeCatalogRepository implements CatalogRepository {
             b.getPlays().orElse(0L), a.getPlays().orElse(0L)))
         .limit(limit)
         .collect(Collectors.toList());
+  }
+
+  @Override
+  public List<Track> trendingSingles(int limit) {
+    return tracks.values().stream()
+        .filter(track -> track.getAlbumId().map(id -> releases.get(id.value()))
+            .map(release -> release.getType() == ReleaseType.single)
+            .orElse(track.getAlbumId().isEmpty()))
+        .sorted((a, b) -> Long.compare(b.getPlays().orElse(0L), a.getPlays().orElse(0L)))
+        .limit(limit)
+        .toList();
+  }
+
+  @Override
+  public List<TrendingAlbum> trendingAlbums(int limit) {
+    return albums.values().stream()
+        .map(album -> {
+          Release release = releases.get(album.getId().value());
+          ReleaseType type = release == null ? ReleaseType.album : release.getType();
+          long plays = album.getTrackIds().stream()
+              .map(tracks::get)
+              .filter(java.util.Objects::nonNull)
+              .mapToLong(track -> track.getPlays().orElse(0L))
+              .sum();
+          return new TrendingAlbum(album, type, plays);
+        })
+        .filter(item -> item.type() != ReleaseType.single)
+        .sorted((a, b) -> Long.compare(b.plays(), a.plays()))
+        .limit(limit)
+        .toList();
   }
 
   @Override
@@ -248,6 +302,31 @@ public class FakeCatalogRepository implements CatalogRepository {
   @Override
   public void saveRelease(Release release) {
     releases.put(release.getId(), release);
+  }
+
+  @Override
+  public Optional<ReleaseRevision> findPendingRevision(ReleaseId releaseId) {
+    return releaseRevisions.values().stream()
+        .filter(r -> r.releaseId().equals(releaseId.value()))
+        .filter(r -> r.status() == ReleaseRevisionStatus.draft || r.status() == ReleaseRevisionStatus.in_review)
+        .findFirst();
+  }
+
+  @Override
+  public Optional<ReleaseRevision> findLatestRevision(ReleaseId releaseId) {
+    return releaseRevisions.values().stream()
+        .filter(r -> r.releaseId().equals(releaseId.value()))
+        .max(java.util.Comparator.comparing(ReleaseRevision::createdAt));
+  }
+
+  @Override
+  public Optional<ReleaseRevision> findRevision(String revisionId) {
+    return Optional.ofNullable(releaseRevisions.get(revisionId));
+  }
+
+  @Override
+  public void saveRevision(ReleaseRevision revision) {
+    releaseRevisions.put(revision.id(), revision);
   }
 
   @Override

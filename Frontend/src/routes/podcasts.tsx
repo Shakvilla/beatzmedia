@@ -14,6 +14,7 @@ import { podcastsListQuery, podcastEpisodesQuery } from '../lib/api/queries/podc
 import { taxonomyQuery } from '../lib/api/queries/taxonomy'
 import type { Podcast, PodcastCategory, PodcastEpisode, Track } from '../types'
 import { cn } from '../utils/cn'
+import { ListeningHistoryRail } from '../features/engagement/listening-history-rail'
 
 export const Route = createFileRoute('/podcasts')({
   loader: async ({ context: { queryClient } }) => {
@@ -48,6 +49,7 @@ const rankByPopularity = (shows: Podcast[]) => [...shows].sort((a, b) => (b.popu
 function episodeToTrack(ep: PodcastEpisode): Track {
   return {
     id: ep.id,
+    playbackKind: 'podcast_episode',
     title: ep.title,
     artistId: ep.podcastId,
     artistName: ep.showTitle,
@@ -116,6 +118,8 @@ function PodcastsComponent() {
           Ghana’s best shows on culture, news, business, sport and more — free to stream, with premium drops.
         </p>
       </div>
+
+      <ListeningHistoryRail mode="continue" contentKind="podcast-episode" />
 
       {/* Featured show */}
       <div className="relative overflow-hidden rounded-3xl min-h-[300px] flex">

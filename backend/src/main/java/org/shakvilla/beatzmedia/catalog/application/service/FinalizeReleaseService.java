@@ -21,6 +21,7 @@ import org.shakvilla.beatzmedia.catalog.domain.ReleaseNotFoundException;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseTrack;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseType;
 import org.shakvilla.beatzmedia.catalog.domain.TrackCountInvalidException;
+import org.shakvilla.beatzmedia.catalog.domain.TrackArtworkRequiredException;
 import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
 import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
 import org.shakvilla.beatzmedia.platform.application.port.out.PlatformSettingsProvider;
@@ -85,6 +86,7 @@ public class FinalizeReleaseService implements FinalizeRelease {
     }
 
     validateTrackCount(release.getType(), release.getTracks().size());
+    validateTrackArtwork(release);
 
     Instant now = clock.now();
     // draft -> in_review; recomputes listPriceMinor (INV-5). Throws IllegalTransitionException
@@ -121,6 +123,20 @@ public class FinalizeReleaseService implements FinalizeRelease {
     if (!valid) {
       throw new TrackCountInvalidException(
           "Track count " + count + " is invalid for release type '" + type + "'");
+    }
+  }
+
+  /** Every track in a multi-track release must have explicit artist-selected artwork. */
+  private void validateTrackArtwork(Release release) {
+    if (release.getType() == ReleaseType.single) return;
+    var ids = release.getTracks().stream().map(ReleaseTrack::trackId).toList();
+    var tracksById = repo.tracksByIds(ids).stream()
+        .collect(java.util.stream.Collectors.toMap(t -> t.getId().value(), t -> t));
+    if (ids.stream().anyMatch(id -> {
+      var track = tracksById.get(id);
+      return track == null || !track.hasCustomArtwork();
+    })) {
+      throw new TrackArtworkRequiredException();
     }
   }
 

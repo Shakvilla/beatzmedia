@@ -1,6 +1,6 @@
 import { queryOptions } from '@tanstack/react-query'
 import type { AnalyticsRange, AudienceRange } from '../../studio-analytics'
-import type { StudioProfile, StudioSettings } from '../../studio-data'
+import type { StudioProfile, StudioReleaseDetail, StudioSettings } from '../../studio-data'
 import type { ReleaseType } from '../../studio-data'
 import type { UploadedTrack } from '../../../features/studio/release-draft-context'
 import { apiFetch } from '../client'
@@ -54,6 +54,16 @@ export function apiSaveStudioProfile(profile: StudioProfile): Promise<StudioProf
   return apiFetch<StudioProfileWire>('/studio/profile', { method: 'PUT', body }).then(toStudioProfile)
 }
 
+/** Upload and persist an artist profile avatar or banner, returning its stable media URL. */
+export function apiUploadStudioProfileImage(type: 'avatar' | 'banner', image: File): Promise<string> {
+  const form = new FormData()
+  form.append('image', image)
+  return apiFetch<{ image: string }>(`/studio/profile/images/${type}`, {
+    method: 'POST',
+    body: form,
+  }).then((response) => response.image)
+}
+
 /** `PUT /v1/studio/settings`. Sends only the Category-A writable subset. */
 export function apiSaveStudioSettings(settings: StudioSettings): Promise<StudioSettings> {
   const body: SaveStudioSettingsBody = toSaveSettingsBody(settings)
@@ -78,9 +88,27 @@ export function studioReleasesQuery() {
 export function studioReleaseQuery(id: string) {
   return queryOptions({
     queryKey: ['studio', 'release', id],
-    queryFn: async () => {
+    queryFn: async (): Promise<StudioReleaseDetail> => {
       const wire = await apiFetch<StudioReleaseDetailWire>(`/studio/releases/${id}`)
-      return { ...toStudioRelease(wire), downloadable: wire.downloadable }
+      return {
+        ...toStudioRelease(wire),
+        downloadable: wire.downloadable,
+        tracks: wire.tracks.map((track) => ({
+          trackId: track.trackId,
+          title: track.title,
+          duration: track.duration,
+          status: track.status,
+          position: track.position,
+          price: track.price.amount,
+          image: track.image,
+          customArtwork: track.customArtwork,
+        })),
+        genre: wire.genre,
+        description: wire.description,
+        visibility: (wire.visibility ?? 'public') as 'public' | 'scheduled',
+        scheduledAt: wire.scheduledAt,
+        coverImage: wire.coverImage,
+      }
     },
   })
 }
@@ -98,6 +126,7 @@ export interface StudioReleaseDetailWire extends StudioReleaseWire {
   description: string | null
   visibility: string | null
   scheduledAt: string | null
+  coverImage: string | null
   /**
    * The artist's download choice. `null` means "not chosen yet" and is distinct from `false`
    * ("chosen: no") — collapsing the two with `?? false` would silently satisfy the publish guard
@@ -113,6 +142,8 @@ export interface StudioReleaseDetailWire extends StudioReleaseWire {
     status: string
     position: number
     price: { amount: number; currency: string }
+    image: string | null
+    customArtwork: boolean
     splits: {
       id: string
       name: string
@@ -122,6 +153,79 @@ export interface StudioReleaseDetailWire extends StudioReleaseWire {
       confirmation: string
     }[]
   }[]
+}
+
+export interface ReleaseRevisionWire {
+  id: string
+  releaseId: string
+  artistId: string
+  status: 'draft' | 'in_review' | 'rejected' | 'approved'
+  version: number
+  title: string
+  genre: string | null
+  description: string | null
+  visibility: string
+  scheduledAt: string | null
+  coverImage: string | null
+  downloadable: boolean | null
+  rejectionReason: string | null
+  tracks: {
+    trackId: string
+    position: number
+    priceMinor: number
+    title: string
+    image: string | null
+    customArtwork: boolean
+    audioAssetId: string | null
+    durationSec: number
+  }[]
+}
+
+export interface SaveReleaseRevisionInput {
+  title: string
+  genre: string | null
+  description: string | null
+  visibility: 'public' | 'scheduled'
+  scheduledAt: string | null
+  coverImage: string | null
+  downloadable: boolean | null
+  tracks: { trackId: string; position: number; priceMinor: number; title: string; image: string | null }[]
+}
+
+export function studioReleaseRevisionQuery(id: string) {
+  return queryOptions({
+    queryKey: ['studio', 'release-revision', id],
+    queryFn: () => apiFetch<ReleaseRevisionWire>(`/studio/releases/${id}/revision`),
+  })
+}
+
+export function apiSaveReleaseRevision(id: string, input: SaveReleaseRevisionInput): Promise<ReleaseRevisionWire> {
+  return apiFetch<ReleaseRevisionWire>(`/studio/releases/${id}/revision`, { method: 'PUT', body: input })
+}
+
+export function apiSubmitReleaseRevision(id: string): Promise<ReleaseRevisionWire> {
+  return apiFetch<ReleaseRevisionWire>(`/studio/releases/${id}/revision/submit`, { method: 'POST' })
+}
+
+export function apiUploadRevisionCover(id: string, image: File): Promise<string> {
+  const form = new FormData()
+  form.append('image', image)
+  return apiFetch<{ image: string }>(`/studio/releases/${id}/revision/cover`, { method: 'POST', body: form })
+    .then((result) => result.image)
+}
+
+export function apiUploadRevisionTrackCover(id: string, trackId: string, image: File): Promise<string> {
+  const form = new FormData()
+  form.append('image', image)
+  return apiFetch<{ image: string }>(`/studio/releases/${id}/revision/tracks/${trackId}/cover`, { method: 'POST', body: form })
+    .then((result) => result.image)
+}
+
+export function apiUploadRevisionTrackAudio(id: string, trackId: string, audio: File): Promise<void> {
+  const form = new FormData()
+  form.append('file', audio)
+  return apiFetch<unknown>(`/studio/releases/${id}/revision/tracks/${trackId}/audio`, { method: 'POST', body: form })
+    .then(() => undefined)
 }
 
 /** Imperative fetch of the same detail — used by the wizard's resume path, outside a query. */
@@ -180,6 +284,16 @@ export function apiUploadTrack(releaseId: string, file: File): Promise<UploadedT
   form.append('file', file)
   return apiFetch<UploadedTrackWire>(`/studio/releases/${releaseId}/tracks`, { method: 'POST', body: form })
     .then(toWizardTrack)
+}
+
+/** Upload distinct artwork for one track in an album release. */
+export function apiUploadTrackArtwork(releaseId: string, trackId: string, image: File): Promise<string> {
+  const form = new FormData()
+  form.append('image', image)
+  return apiFetch<{ image: string }>(`/studio/releases/${releaseId}/tracks/${trackId}/cover`, {
+    method: 'POST',
+    body: form,
+  }).then((response) => response.image)
 }
 
 /** `PATCH /v1/studio/releases/:id` — metadata + wholesale track list (draft-only). */

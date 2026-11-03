@@ -10,7 +10,7 @@ import java.time.Instant;
 public class MediaAsset {
 
   private final MediaAssetId id;
-  private final OwnerRef ownerRef;
+  private OwnerRef ownerRef;
   private final MediaKind kind;
   private MediaStatus status;
   private int durationSec;
@@ -163,6 +163,12 @@ public class MediaAsset {
 
   public OwnerRef getOwnerRef() {
     return ownerRef;
+  }
+
+  /** Reassigns a staged revision asset to the published track only after moderator approval. */
+  public void reassignOwner(OwnerRef newOwner) {
+    if (newOwner == null) throw new IllegalArgumentException("new owner is required");
+    this.ownerRef = newOwner;
   }
 
   public MediaKind getKind() {

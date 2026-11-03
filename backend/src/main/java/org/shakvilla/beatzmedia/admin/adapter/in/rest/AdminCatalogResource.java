@@ -30,6 +30,8 @@ import org.shakvilla.beatzmedia.admin.application.port.in.GetCatalogItem;
 import org.shakvilla.beatzmedia.admin.application.port.in.ListCatalogModeration;
 import org.shakvilla.beatzmedia.admin.application.port.in.ReinstateCatalogItem;
 import org.shakvilla.beatzmedia.admin.application.port.in.TakedownCatalogItem;
+import org.shakvilla.beatzmedia.catalog.application.port.in.ManageReleaseRevision;
+import org.shakvilla.beatzmedia.catalog.domain.ReleaseRevision;
 import org.shakvilla.beatzmedia.admin.domain.CatalogFilter;
 import org.shakvilla.beatzmedia.platform.domain.PageRequest;
 
@@ -67,7 +69,7 @@ import org.shakvilla.beatzmedia.platform.domain.PageRequest;
  */
 @Path("/v1/admin/catalog")
 @Produces(MediaType.APPLICATION_JSON)
-@Tag(name = "admin-catalog")
+@Tag(name = "Administrator Management")
 @SecurityRequirement(name = "BearerAuth")
 public class AdminCatalogResource {
 
@@ -77,6 +79,7 @@ public class AdminCatalogResource {
   private final FlagCatalogItem flagCatalogItem;
   private final TakedownCatalogItem takedownCatalogItem;
   private final ReinstateCatalogItem reinstateCatalogItem;
+  private final ManageReleaseRevision manageRevision;
   private final JsonWebToken jwt;
 
   @Inject
@@ -87,6 +90,7 @@ public class AdminCatalogResource {
       FlagCatalogItem flagCatalogItem,
       TakedownCatalogItem takedownCatalogItem,
       ReinstateCatalogItem reinstateCatalogItem,
+      ManageReleaseRevision manageRevision,
       JsonWebToken jwt) {
     this.listCatalogModeration = listCatalogModeration;
     this.getCatalogItem = getCatalogItem;
@@ -94,6 +98,7 @@ public class AdminCatalogResource {
     this.flagCatalogItem = flagCatalogItem;
     this.takedownCatalogItem = takedownCatalogItem;
     this.reinstateCatalogItem = reinstateCatalogItem;
+    this.manageRevision = manageRevision;
     this.jwt = jwt;
   }
 
@@ -176,6 +181,48 @@ public class AdminCatalogResource {
     return CatalogItemDetailDto.from(reinstateCatalogItem.reinstate(jwt.getSubject(), id));
   }
 
+  /** GET /v1/admin/catalog/:id/revision — active pending artist revision for side-by-side review. */
+  @GET
+  @Path("/{id}/revision")
+  @RolesAllowed({"super-admin", "moderator", "support"})
+  public ReleaseRevision revision(@PathParam("id") String id) {
+    return manageRevision.getForModeration(new org.shakvilla.beatzmedia.catalog.domain.ReleaseId(id));
+  }
+
+  /** POST /v1/admin/catalog/:id/revision/:revisionId/approve — promote the reviewed snapshot. */
+  @POST
+  @Path("/{id}/revision/{revisionId}/approve")
+  @RolesAllowed({"super-admin", "moderator"})
+  public ReleaseRevision approveRevision(
+      @PathParam("id") String id, @PathParam("revisionId") String revisionId) {
+    ReleaseRevision pending = manageRevision.getForModeration(
+        new org.shakvilla.beatzmedia.catalog.domain.ReleaseId(id));
+    if (!pending.id().equals(revisionId)) throw new jakarta.ws.rs.NotFoundException();
+    ReleaseRevision revision = manageRevision.approve(revisionId, jwt.getSubject());
+    if (!revision.releaseId().equals(id)) {
+      throw new jakarta.ws.rs.NotFoundException();
+    }
+    return revision;
+  }
+
+  /** POST /v1/admin/catalog/:id/revision/:revisionId/reject { reason } — keep active release. */
+  @POST
+  @Path("/{id}/revision/{revisionId}/reject")
+  @RolesAllowed({"super-admin", "moderator"})
+  @Consumes(MediaType.APPLICATION_JSON)
+  public ReleaseRevision rejectRevision(
+      @PathParam("id") String id, @PathParam("revisionId") String revisionId,
+      @Valid RevisionRejectionRequest request) {
+    ReleaseRevision pending = manageRevision.getForModeration(
+        new org.shakvilla.beatzmedia.catalog.domain.ReleaseId(id));
+    if (!pending.id().equals(revisionId)) throw new jakarta.ws.rs.NotFoundException();
+    ReleaseRevision revision = manageRevision.reject(revisionId, jwt.getSubject(), request.reason());
+    if (!revision.releaseId().equals(id)) {
+      throw new jakarta.ws.rs.NotFoundException();
+    }
+    return revision;
+  }
+
   private static Optional<Instant> parseInstant(String value) {
     if (value == null || value.isBlank()) {
       return Optional.empty();
@@ -195,4 +242,6 @@ public class AdminCatalogResource {
 
   /** Takedown request body: {@code { reason } } — required, 422 if blank/missing. */
   public record TakedownRequest(@NotBlank String reason) {}
+
+  public record RevisionRejectionRequest(@NotBlank String reason) {}
 }

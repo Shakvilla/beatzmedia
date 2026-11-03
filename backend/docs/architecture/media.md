@@ -73,7 +73,7 @@ Persistence (`media_asset`) is private to this module; consumers reference asset
 |---|---|---|---|
 | `MediaAsset` | Aggregate root | `id`, `ownerRef`, `kind`, `status`, `durationSec`, `originalKey`, `fullKey`, `previewKey`, `losslessKey?` | One row per uploaded binary; lifecycle owner |
 | `OwnerRef` | Value object | `module`, `entityId` | Opaque back-reference to the catalog/studio entity (no cross-module FK) |
-| `ObjectKey` | Value object | `bucket`, `key` | Fully-qualified storage location |
+| `ObjectKey` | Value object | `store`, `bucket`, `key` | Fully-qualified location. New references persist the provider code; legacy `bucket|key` references decode as MinIO. |
 | `SignedUrl` | Value object | `url`, `variant`, `expiresAt` | Result of presigning; ISO-8601 `expiresAt` |
 | `MediaHandle` | Value object | `assetId`, `kind`, `durationSec`, `status` | Returned to caller after upload |
 

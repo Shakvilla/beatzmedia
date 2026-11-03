@@ -84,6 +84,7 @@ public class SchedulerRegistry {
   private static final String JOB_ANALYTICS_ROLLUP = "analytics.rollup";
   private static final String JOB_SEARCH_REINDEX   = "search.reindex";
   private static final String JOB_PUBLICATION_OUTBOX = "platform.publication-outbox";
+  private static final String JOB_ENGAGEMENT_AGGREGATE = "engagement.aggregate";
 
   @Inject
   Instance<ScheduledJob> jobBeans;
@@ -172,6 +173,13 @@ public class SchedulerRegistry {
       concurrentExecution = ConcurrentExecution.SKIP)
   void dispatchPublicationOutbox() {
     runWithLock(JOB_PUBLICATION_OUTBOX);
+  }
+
+  /** Privacy-safe engagement aggregates — frequent bounded batches. */
+  @Scheduled(every = "15s", identity = "engagement-aggregate",
+      concurrentExecution = ConcurrentExecution.SKIP)
+  void projectEngagementAggregates() {
+    runWithLock(JOB_ENGAGEMENT_AGGREGATE);
   }
 
   // -------------------------------------------------------------------------

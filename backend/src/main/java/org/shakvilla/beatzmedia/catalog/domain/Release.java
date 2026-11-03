@@ -183,6 +183,67 @@ public final class Release {
     this.updatedAt = now;
   }
 
+  /** Promotes an already-reviewed snapshot while retaining its lifecycle state. */
+  public void applyApprovedRevision(
+      String title,
+      String genre,
+      String description,
+      Visibility visibility,
+      Instant scheduledAt,
+      String coverImage,
+      Boolean downloadable,
+      List<ReleaseTrack> tracks,
+      int bundleDiscountPct,
+      Instant now) {
+    List<String> currentIds = this.tracks.stream().map(ReleaseTrack::trackId).sorted().toList();
+    List<String> proposedIds = tracks.stream().map(ReleaseTrack::trackId).sorted().toList();
+    if (!currentIds.equals(proposedIds)) {
+      throw new IllegalArgumentException("release revision cannot add or remove tracks");
+    }
+    this.title = title;
+    this.genre = genre;
+    this.description = description;
+    this.visibility = visibility;
+    this.scheduledAt = scheduledAt;
+    this.coverImage = coverImage;
+    this.downloadable = downloadable;
+    this.tracks = List.copyOf(tracks);
+    this.listPriceMinor = computeListPrice(type, tracks, bundleDiscountPct);
+    this.updatedAt = now;
+  }
+
+  /** Updates a submitted but unpublished release without changing its review state. */
+  public void updatePendingSubmission(
+      String title,
+      String genre,
+      String description,
+      Visibility visibility,
+      Instant scheduledAt,
+      String coverImage,
+      Boolean downloadable,
+      List<ReleaseTrack> tracks,
+      int bundleDiscountPct,
+      Instant now) {
+    if (status != ReleaseStatus.draft && status != ReleaseStatus.in_review) {
+      throw new IllegalTransitionException(status, "UPDATE_PENDING_SUBMISSION");
+    }
+    List<String> currentIds = this.tracks.stream().map(ReleaseTrack::trackId).sorted().toList();
+    List<String> proposedIds = tracks.stream().map(ReleaseTrack::trackId).sorted().toList();
+    if (!currentIds.equals(proposedIds)) {
+      throw new IllegalArgumentException("submitted release track membership is fixed");
+    }
+    this.title = title;
+    this.genre = genre;
+    this.description = description;
+    this.visibility = visibility;
+    this.scheduledAt = scheduledAt;
+    this.coverImage = coverImage;
+    this.downloadable = downloadable;
+    this.tracks = List.copyOf(tracks);
+    this.listPriceMinor = computeListPrice(type, tracks, bundleDiscountPct);
+    this.updatedAt = now;
+  }
+
   public void markUpdated(Instant now) {
     this.updatedAt = now;
   }

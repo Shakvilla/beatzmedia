@@ -15,9 +15,11 @@ import org.shakvilla.beatzmedia.catalog.domain.PlaylistId;
 import org.shakvilla.beatzmedia.catalog.domain.Release;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
+import org.shakvilla.beatzmedia.catalog.domain.ReleaseRevision;
 import org.shakvilla.beatzmedia.catalog.domain.SplitEntry;
 import org.shakvilla.beatzmedia.catalog.domain.SplitInvite;
 import org.shakvilla.beatzmedia.catalog.domain.Track;
+import org.shakvilla.beatzmedia.catalog.domain.TrendingAlbum;
 import org.shakvilla.beatzmedia.catalog.domain.TrackId;
 import org.shakvilla.beatzmedia.platform.domain.Page;
 import org.shakvilla.beatzmedia.platform.domain.PageRequest;
@@ -37,6 +39,9 @@ public interface CatalogRepository {
    * curated fields. Catalog ADD §10.
    */
   void saveArtistProfile(ArtistProfile profile);
+
+  /** Updates only the public avatar/banner projection, preserving all other curated artist fields. */
+  void updateArtistProfileImages(ArtistId id, String image, String coverImage, Instant updatedAt);
 
   List<Track> tracksByArtist(ArtistId id);
 
@@ -77,6 +82,12 @@ public interface CatalogRepository {
 
   List<Track> trendingTracks(int limit);
 
+  /** Trending single releases, represented by their one track. */
+  List<Track> trendingSingles(int limit);
+
+  /** Albums ranked by the combined plays of their published tracks. */
+  List<TrendingAlbum> trendingAlbums(int limit);
+
   List<Track> top10Tracks(int limit);
 
   List<Album> featuredAlbums(int limit);
@@ -103,6 +114,14 @@ public interface CatalogRepository {
   Optional<Release> findRelease(ReleaseId id);
 
   void saveRelease(Release release);
+
+  Optional<ReleaseRevision> findPendingRevision(ReleaseId releaseId);
+
+  Optional<ReleaseRevision> findLatestRevision(ReleaseId releaseId);
+
+  Optional<ReleaseRevision> findRevision(String revisionId);
+
+  void saveRevision(ReleaseRevision revision);
 
   void deleteRelease(ReleaseId id);
 

@@ -31,6 +31,8 @@ import org.shakvilla.beatzmedia.catalog.domain.OwnershipStatus;
 import org.shakvilla.beatzmedia.catalog.domain.Playlist;
 import org.shakvilla.beatzmedia.catalog.domain.PlaylistId;
 import org.shakvilla.beatzmedia.catalog.domain.Release;
+import org.shakvilla.beatzmedia.catalog.domain.ReleaseRevision;
+import org.shakvilla.beatzmedia.catalog.domain.ReleaseRevisionStatus;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseTrack;
@@ -42,6 +44,7 @@ import org.shakvilla.beatzmedia.catalog.domain.SplitInvite;
 import org.shakvilla.beatzmedia.catalog.domain.Track;
 import org.shakvilla.beatzmedia.catalog.domain.TrackCredit;
 import org.shakvilla.beatzmedia.catalog.domain.TrackId;
+import org.shakvilla.beatzmedia.catalog.domain.TrendingAlbum;
 import org.shakvilla.beatzmedia.catalog.domain.Visibility;
 import org.shakvilla.beatzmedia.platform.domain.Page;
 import org.shakvilla.beatzmedia.platform.domain.PageRequest;
@@ -78,10 +81,12 @@ public class JpaCatalogRepository implements CatalogRepository {
           + " WHERE rt.trackId = t.id AND r.id = rt.pk.releaseId AND r.status = 'live')";
 
   private final EntityManager em;
+  private final ReleaseRevisionMapper revisionMapper;
 
   @Inject
-  public JpaCatalogRepository(EntityManager em) {
+  public JpaCatalogRepository(EntityManager em, ReleaseRevisionMapper revisionMapper) {
     this.em = em;
+    this.revisionMapper = revisionMapper;
   }
 
   @Override
@@ -284,6 +289,47 @@ public class JpaCatalogRepository implements CatalogRepository {
             .setMaxResults(limit)
             .getResultList();
     return mapTracksWithBatchedCredits(entities);
+  }
+
+  @Override
+  public List<Track> trendingSingles(int limit) {
+    List<TrackEntity> entities = em.createQuery(
+            "SELECT t FROM TrackEntity t WHERE t.status = 'ready' AND " + PUBLISHED
+                + " AND EXISTS (SELECT 1 FROM ReleaseTrackEntity rt, ReleaseEntity r"
+                + " WHERE rt.trackId = t.id AND r.id = rt.pk.releaseId"
+                + " AND r.status = 'live' AND r.type = 'single')"
+                + " ORDER BY t.plays DESC, t.id",
+            TrackEntity.class)
+        .setMaxResults(limit)
+        .getResultList();
+    return mapTracksWithBatchedCredits(entities);
+  }
+
+  @Override
+  public List<TrendingAlbum> trendingAlbums(int limit) {
+    List<Object[]> scores = em.createQuery(
+            "SELECT t.albumId, SUM(t.plays), r.type FROM TrackEntity t,"
+                + " ReleaseTrackEntity rt, ReleaseEntity r"
+                + " WHERE t.albumId IS NOT NULL AND t.status = 'ready'"
+                + " AND rt.trackId = t.id AND r.id = rt.pk.releaseId"
+                + " AND r.status = 'live' AND r.type <> 'single'"
+                + " GROUP BY t.albumId, r.type ORDER BY SUM(t.plays) DESC, t.albumId",
+            Object[].class)
+        .setMaxResults(limit)
+        .getResultList();
+    if (scores.isEmpty()) return List.of();
+
+    List<String> albumIds = scores.stream().map(score -> (String) score[0]).toList();
+    Map<String, Album> albumsById = albumsByIds(albumIds).stream()
+        .collect(Collectors.toMap(album -> album.getId().value(), album -> album));
+    return scores.stream()
+        .map(score -> {
+          Album album = albumsById.get((String) score[0]);
+          return album == null ? null : new TrendingAlbum(
+              album, ReleaseType.valueOf((String) score[2]), ((Number) score[1]).longValue());
+        })
+        .filter(java.util.Objects::nonNull)
+        .toList();
   }
 
   @Override
@@ -561,6 +607,54 @@ public class JpaCatalogRepository implements CatalogRepository {
   }
 
   @Override
+  public Optional<ReleaseRevision> findPendingRevision(ReleaseId releaseId) {
+    return em.createQuery(
+            "SELECT r FROM ReleaseRevisionEntity r WHERE r.releaseId = :rid "
+                + "AND r.status IN ('draft', 'in_review') ORDER BY r.createdAt DESC",
+            ReleaseRevisionEntity.class)
+        .setParameter("rid", releaseId.value())
+        .setMaxResults(1)
+        .setLockMode(LockModeType.PESSIMISTIC_WRITE)
+        .getResultList().stream().findFirst().map(revisionMapper::toDomain);
+  }
+
+  @Override
+  public Optional<ReleaseRevision> findLatestRevision(ReleaseId releaseId) {
+    return em.createQuery(
+            "SELECT r FROM ReleaseRevisionEntity r WHERE r.releaseId = :rid ORDER BY r.createdAt DESC",
+            ReleaseRevisionEntity.class)
+        .setParameter("rid", releaseId.value())
+        .setMaxResults(1)
+        .getResultList().stream().findFirst().map(revisionMapper::toDomain);
+  }
+
+  @Override
+  public Optional<ReleaseRevision> findRevision(String revisionId) {
+    ReleaseRevisionEntity entity = em.find(
+        ReleaseRevisionEntity.class, revisionId, LockModeType.PESSIMISTIC_WRITE);
+    return Optional.ofNullable(entity).map(revisionMapper::toDomain);
+  }
+
+  @Override
+  public void saveRevision(ReleaseRevision revision) {
+    ReleaseRevisionEntity update = revisionMapper.toEntity(revision);
+    ReleaseRevisionEntity existing = em.find(ReleaseRevisionEntity.class, revision.id());
+    if (existing == null) {
+      em.persist(update);
+      return;
+    }
+    existing.releaseId = update.releaseId;
+    existing.artistId = update.artistId;
+    existing.status = update.status;
+    existing.version = update.version;
+    existing.payload = update.payload;
+    existing.rejectionReason = update.rejectionReason;
+    existing.updatedAt = update.updatedAt;
+    existing.submittedAt = update.submittedAt;
+    existing.reviewedAt = update.reviewedAt;
+  }
+
+  @Override
   @Transactional
   public void saveTrackSplits(String trackId, List<SplitEntry> splits) {
     // Remove managed entities (not a bulk JPQL DELETE) so the L1 cache stays in sync.
@@ -604,6 +698,7 @@ public class JpaCatalogRepository implements CatalogRepository {
     e.albumTitle = track.getAlbumTitle().orElse(null);
     e.durationSec = track.getDurationSec();
     e.image = track.getImage();
+    e.customArtwork = track.hasCustomArtwork();
     // wireValue(), not name(): the column is hyphenated ('for-sale'), which the check constraint
     // enforces and every reader compares against. The read path already translates back; only
     // for_sale differs, which is why this survived — nothing ever assigned it.
@@ -654,6 +749,21 @@ public class JpaCatalogRepository implements CatalogRepository {
     e.createdAt = now;
     e.updatedAt = now;
     em.persist(e);
+  }
+
+  @Override
+  public void updateArtistProfileImages(ArtistId id, String image, String coverImage, Instant updatedAt) {
+    ArtistProfileEntity entity = em.find(ArtistProfileEntity.class, id.value());
+    if (entity == null) {
+      return;
+    }
+    if (image != null) {
+      entity.image = image;
+    }
+    if (coverImage != null) {
+      entity.coverImage = coverImage;
+    }
+    entity.updatedAt = updatedAt;
   }
 
   @Override
@@ -1151,6 +1261,7 @@ public class JpaCatalogRepository implements CatalogRepository {
         e.quality,
         e.year,
         e.status,
-        downloadable);
+        downloadable,
+        e.customArtwork);
   }
 }

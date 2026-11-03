@@ -7,7 +7,8 @@
 # (Dockerfile.jvm). Redis and transcoder remain optional.
 #
 # Boot: ./mvnw package -DskipTests && docker compose up -d --build
-# Tear down: docker compose down -v
+# Stop while preserving database/media: docker compose down
+# Destructive reset (deletes Postgres + MinIO volumes): docker compose down -v
 
 name: beatzclik
 
@@ -17,14 +18,15 @@ services:
   # ---------------------------------------------------------------------------
   db:
     image: postgres:16
+    ports:
+      - "127.0.0.1:15432:5432"
     environment:
       POSTGRES_USER: beatz
       POSTGRES_PASSWORD: beatz
       POSTGRES_DB: beatzmedia
-    # Port not exposed to host: the app connects via 'db:5432' on the
-    # internal Docker network. Expose to host (e.g. 15432:5432) only if
-    # direct psql access from the host is needed (avoids conflicts with
-    # any local Postgres on port 5432).
+    # The app connects via 'db:5432' on the internal Docker network; 15432
+    # exposes PostgreSQL to local desktop clients without conflicting with
+    # a host Postgres on port 5432.
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -146,6 +148,9 @@ services:
       QUARKUS_FLYWAY_MIGRATE_AT_START: "true"
       # --- object store (MinIO) ---
       BEATZ_S3_ENDPOINT: http://objectstore:9000
+      # Presigned audio URLs are fetched by the browser on the host, not by the app container.
+      # Sign with the host-published endpoint so browsers can resolve the URL hostname.
+      BEATZ_S3_PUBLIC_ENDPOINT: http://localhost:9000
       BEATZ_S3_ACCESS_KEY: minioadmin
       BEATZ_S3_SECRET_KEY: minioadmin
       BEATZ_S3_BUCKET_ORIGINALS: beatz-media-originals

@@ -10,16 +10,11 @@ import java.util.List;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
-import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.shakvilla.beatzmedia.media.application.port.out.AudioTranscoderPort;
 import org.shakvilla.beatzmedia.media.application.port.out.ObjectStorePort;
 import org.shakvilla.beatzmedia.media.domain.MediaAssetId;
 import org.shakvilla.beatzmedia.media.domain.ObjectKey;
 
-import software.amazon.awssdk.core.ResponseInputStream;
-import software.amazon.awssdk.services.s3.S3Client;
-import software.amazon.awssdk.services.s3.model.GetObjectRequest;
-import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 
 /**
  * ffmpeg/ffprobe-based implementation of {@link AudioTranscoderPort}. Invokes ffprobe and ffmpeg
@@ -31,19 +26,19 @@ import software.amazon.awssdk.services.s3.model.GetObjectResponse;
 @ApplicationScoped
 public class FfmpegAudioTranscoderAdapter implements AudioTranscoderPort {
 
-  private final S3Client s3Client;
   private final ObjectStorePort objectStore;
-  private final String bucketDelivery;
 
   @Inject
-  public FfmpegAudioTranscoderAdapter(
-      S3Client s3Client,
-      ObjectStorePort objectStore,
-      @ConfigProperty(name = "beatz.s3.bucket-delivery", defaultValue = "beatz-media-delivery")
-          String bucketDelivery) {
-    this.s3Client = s3Client;
+  public FfmpegAudioTranscoderAdapter(ObjectStorePort objectStore) {
     this.objectStore = objectStore;
-    this.bucketDelivery = bucketDelivery;
+  }
+
+  /** Compatibility constructor for existing local S3 integration fixtures. */
+  public FfmpegAudioTranscoderAdapter(
+      software.amazon.awssdk.services.s3.S3Client ignoredClient,
+      ObjectStorePort objectStore,
+      String ignoredDeliveryBucket) {
+    this(objectStore);
   }
 
   @Override
@@ -82,9 +77,8 @@ public class FfmpegAudioTranscoderAdapter implements AudioTranscoderPort {
 
       String relKey = "delivery/" + id.value() + "/lossless.flac";
       try (InputStream in = Files.newInputStream(tmpOutput)) {
-        objectStore.putDelivery(id, relKey, in, "audio/flac");
+        return objectStore.putDelivery(id, relKey, in, "audio/flac");
       }
-      return new ObjectKey(deliveryBucketOf(original), relKey);
     } catch (IOException | InterruptedException e) {
       Thread.currentThread().interrupt();
       throw new IllegalStateException("ffmpeg lossless transcode failed for " + id.value(), e);
@@ -110,9 +104,8 @@ public class FfmpegAudioTranscoderAdapter implements AudioTranscoderPort {
 
       String relKey = "delivery/" + id.value() + "/" + filename;
       try (InputStream in = Files.newInputStream(tmpOutput)) {
-        objectStore.putDelivery(id, relKey, in, "audio/mp4");
+        return objectStore.putDelivery(id, relKey, in, "audio/mp4");
       }
-      return new ObjectKey(deliveryBucketOf(original), relKey);
     } catch (IOException | InterruptedException e) {
       Thread.currentThread().interrupt();
       throw new IllegalStateException("ffmpeg transcode failed for " + id.value(), e);
@@ -126,9 +119,9 @@ public class FfmpegAudioTranscoderAdapter implements AudioTranscoderPort {
 
   private Path downloadToTemp(ObjectKey key, String prefix, String suffix) throws IOException {
     Path tmp = Files.createTempFile(prefix + key.key().replace("/", "_"), suffix);
-    GetObjectRequest req = GetObjectRequest.builder().bucket(key.bucket()).key(key.key()).build();
-    try (ResponseInputStream<GetObjectResponse> resp = s3Client.getObject(req)) {
-      Files.copy(resp, tmp, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
+    ObjectStorePort.StoredObject object = objectStore.open(key);
+    try (InputStream in = object.body()) {
+      Files.copy(in, tmp, java.nio.file.StandardCopyOption.REPLACE_EXISTING);
     }
     return tmp;
   }
@@ -203,11 +196,6 @@ public class FfmpegAudioTranscoderAdapter implements AudioTranscoderPort {
     if (exit != 0) {
       throw new IllegalStateException("ffmpeg exited with " + exit + ": " + output);
     }
-  }
-
-  private String deliveryBucketOf(ObjectKey original) {
-    // S3: use the injected delivery bucket name — never derive from originals bucket string. S3.
-    return bucketDelivery;
   }
 
   private void deleteSilently(Path path) {

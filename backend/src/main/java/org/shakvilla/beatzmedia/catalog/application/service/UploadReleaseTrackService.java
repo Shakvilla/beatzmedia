@@ -131,7 +131,8 @@ public class UploadReleaseTrackService implements UploadReleaseTrack {
         null, // credits
         null, // quality
         null, // year
-        "uploading");
+        "uploading")
+        .withReleaseCover(release.getCoverImage());
 
     repo.saveTrack(stubTrack);
 
@@ -168,7 +169,9 @@ public class UploadReleaseTrackService implements UploadReleaseTrack {
         null,
         MoneyView.ofMinor(DEFAULT_TRACK_PRICE_MINOR),
         false,
-        position);
+        position,
+        stubTrack.getImage(),
+        stubTrack.hasCustomArtwork());
   }
 
   private String filenameWithoutExtension(String filename) {

@@ -23,6 +23,8 @@ public final class DeliveryAttempt {
   private final NotificationId notificationId;
   private final Channel channel;
   private final String providerIdempotencyKey;
+  private final String providerCode;
+  private final String providerMessageId;
   private final DeliveryStatus status;
   private final int retryCount;
   private final String lastError;
@@ -35,6 +37,8 @@ public final class DeliveryAttempt {
       NotificationId notificationId,
       Channel channel,
       String providerIdempotencyKey,
+      String providerCode,
+      String providerMessageId,
       DeliveryStatus status,
       int retryCount,
       String lastError,
@@ -45,12 +49,31 @@ public final class DeliveryAttempt {
     this.notificationId = notificationId;
     this.channel = channel;
     this.providerIdempotencyKey = providerIdempotencyKey;
+    this.providerCode = providerCode;
+    this.providerMessageId = providerMessageId;
     this.status = status;
     this.retryCount = retryCount;
     this.lastError = lastError;
     this.nextAttemptAt = nextAttemptAt;
     this.createdAt = createdAt;
     this.updatedAt = updatedAt;
+  }
+
+  public DeliveryAttempt(
+      DeliveryAttemptId id, NotificationId notificationId, Channel channel,
+      String providerIdempotencyKey, String providerCode, DeliveryStatus status, int retryCount,
+      String lastError, Instant nextAttemptAt, Instant createdAt, Instant updatedAt) {
+    this(id, notificationId, channel, providerIdempotencyKey, providerCode, null, status,
+        retryCount, lastError, nextAttemptAt, createdAt, updatedAt);
+  }
+
+  /** Backward-compatible constructor for adapters/fakes that predate provider pinning. */
+  public DeliveryAttempt(
+      DeliveryAttemptId id, NotificationId notificationId, Channel channel,
+      String providerIdempotencyKey, DeliveryStatus status, int retryCount, String lastError,
+      Instant nextAttemptAt, Instant createdAt, Instant updatedAt) {
+    this(id, notificationId, channel, providerIdempotencyKey, "smtp", status, retryCount,
+        lastError, nextAttemptAt, createdAt, updatedAt);
   }
 
   /** Factory for a brand-new, unsent attempt (status=pending, retryCount=0). */
@@ -60,15 +83,26 @@ public final class DeliveryAttempt {
       Channel channel,
       String providerIdempotencyKey,
       Instant now) {
+    return createPending(id, notificationId, channel, providerIdempotencyKey, "smtp", now);
+  }
+
+  public static DeliveryAttempt createPending(
+      DeliveryAttemptId id, NotificationId notificationId, Channel channel,
+      String providerIdempotencyKey, String providerCode, Instant now) {
     return new DeliveryAttempt(
-        id, notificationId, channel, providerIdempotencyKey, DeliveryStatus.pending, 0, null,
-        now, now, now);
+        id, notificationId, channel, providerIdempotencyKey, providerCode,
+        DeliveryStatus.pending, 0, null, now, now, now);
   }
 
   /** Transition: provider accepted the send. Terminal success — never revisited by the sweep. */
   public DeliveryAttempt markSent(Instant now) {
+    return markSent(null, now);
+  }
+
+  public DeliveryAttempt markSent(String providerMessageId, Instant now) {
     return new DeliveryAttempt(
-        id, notificationId, channel, providerIdempotencyKey, DeliveryStatus.sent, retryCount,
+        id, notificationId, channel, providerIdempotencyKey, providerCode, providerMessageId,
+        DeliveryStatus.sent, retryCount,
         null, null, createdAt, now);
   }
 
@@ -87,18 +121,18 @@ public final class DeliveryAttempt {
     int newRetryCount = retryCount + 1;
     if (newRetryCount >= maxRetries) {
       return new DeliveryAttempt(
-          id, notificationId, channel, providerIdempotencyKey, DeliveryStatus.dead, newRetryCount,
+          id, notificationId, channel, providerIdempotencyKey, providerCode, DeliveryStatus.dead, newRetryCount,
           error, null, createdAt, now);
     }
     return new DeliveryAttempt(
-        id, notificationId, channel, providerIdempotencyKey, DeliveryStatus.failed, newRetryCount,
+        id, notificationId, channel, providerIdempotencyKey, providerCode, DeliveryStatus.failed, newRetryCount,
         error, now.plus(backoff), createdAt, now);
   }
 
   /** Transition: a permanent (non-retryable) send failure — terminal {@code dead} immediately. */
   public DeliveryAttempt markPermanentFailure(String error, Instant now) {
     return new DeliveryAttempt(
-        id, notificationId, channel, providerIdempotencyKey, DeliveryStatus.dead, retryCount,
+        id, notificationId, channel, providerIdempotencyKey, providerCode, DeliveryStatus.dead, retryCount,
         error, null, createdAt, now);
   }
 
@@ -122,6 +156,10 @@ public final class DeliveryAttempt {
   public String providerIdempotencyKey() {
     return providerIdempotencyKey;
   }
+
+  public String providerCode() { return providerCode; }
+
+  public Optional<String> providerMessageId() { return Optional.ofNullable(providerMessageId); }
 
   public DeliveryStatus status() {
     return status;

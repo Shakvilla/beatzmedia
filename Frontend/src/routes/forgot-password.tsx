@@ -53,8 +53,12 @@ function ForgotPassword() {
             </div>
             <h2 className="text-4xl font-bold text-white tracking-tight">Check your email</h2>
             <p className="text-gray-400 font-medium">
-              If an account exists for <span className="text-white">{email.trim()}</span>, we've sent
-              a link to reset your password. It works once and expires in 30 minutes.
+              If an account exists for <span className="text-white">{email.trim()}</span>, we'll send
+              a link to reset your password. It works once and expires in 30 minutes. This page confirms
+              the request, not delivery.
+            </p>
+            <p className="text-sm text-gray-500">
+              If SMTP / Mailpit is active in local development, view the captured email in <a className="text-beatz-green hover:underline" href="http://localhost:8025">Mailpit</a>.
             </p>
             <Link
               to="/login"

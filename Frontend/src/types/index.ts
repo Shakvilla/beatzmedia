@@ -76,6 +76,8 @@ export interface Album {
 
 export interface Track {
   id: ID
+  /** Selects the backend stream endpoint for non-music audio content. */
+  playbackKind?: 'track' | 'podcast_episode'
   title: string
   artistId: ID
   artistName: string

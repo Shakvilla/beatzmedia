@@ -483,9 +483,8 @@ export function toAudience(wire: AudienceWire): Audience {
 // ── Studio profile ────────────────────────────────────────────────
 // StudioProfileView serves null for any unset optional text field (and can
 // omit arrays) on a fresh profile — the read mapper coerces every field to
-// the non-null StudioProfile shape the UI expects. The save body is the
-// whole (writable) shape with blob: object URLs stripped — those are
-// local-only and meaningless server-side (no media-upload endpoint yet).
+// the non-null StudioProfile shape the UI expects. Avatar and banner are uploaded before save and
+// contain stable media URLs; blob: values are still stripped defensively for local-only press art.
 export interface StudioProfileWire {
   displayName: string | null
   username: string | null
@@ -629,6 +628,8 @@ export interface UploadedTrackWire {
   price: { amount: number; currency: string }
   explicit: boolean
   position: number
+  image?: string | null
+  customArtwork?: boolean
 }
 
 export function toWizardTrack(w: UploadedTrackWire): UploadedTrack {
@@ -642,6 +643,8 @@ export function toWizardTrack(w: UploadedTrackWire): UploadedTrack {
     src: w.src ?? '',
     price: w.price?.amount ?? 0,
     explicit: w.explicit ?? false,
+    image: w.image ?? '/images/placeholder.svg',
+    customArtwork: w.customArtwork ?? false,
   }
 }
 

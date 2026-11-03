@@ -36,7 +36,7 @@ public class DomainExceptionMapper implements ExceptionMapper<DomainException> {
   private int mapStatus(ErrorCode code) {
     return switch (code) {
       case VALIDATION, UNSUPPORTED_FORMAT, FILE_REJECTED, WEAK_PASSWORD, INVALID_ROLE,
-              MISSING_QUERY, TRACK_COUNT_INVALID, SPLIT_OVER_100, CHARGE_AMOUNT_EXCEEDED,
+              MISSING_QUERY, TRACK_COUNT_INVALID, TRACK_ARTWORK_REQUIRED, SPLIT_OVER_100, CHARGE_AMOUNT_EXCEEDED,
               BELOW_MIN_PAYOUT, INVALID_GENRE, INVALID_PRICE, SCHEDULE_DATE_REQUIRED,
               MEDIA_INVALID, INVALID_RANGE, TRACK_NOT_IN_RELEASE, DUPLICATE_TRACK_REF,
               DOWNLOAD_CHOICE_REQUIRED ->
@@ -53,6 +53,8 @@ public class DomainExceptionMapper implements ExceptionMapper<DomainException> {
               DISPUTE_NOT_FOUND,
               SHOW_NOT_FOUND,
               EPISODE_NOT_FOUND,
+              SESSION_NOT_FOUND,
+              CONTENT_NOT_FOUND,
               SPLIT_INVITE_NOT_FOUND ->
           Response.Status.NOT_FOUND.getStatusCode();
       case UNAUTHENTICATED, INVALID_CREDENTIALS, SOCIAL_TOKEN_INVALID ->
@@ -86,7 +88,8 @@ public class DomainExceptionMapper implements ExceptionMapper<DomainException> {
               ALREADY_SUSPENDED,
               NOT_SUSPENDED,
               DOWNLOAD_NOT_ALLOWED,
-              DOWNLOAD_NOT_READY ->
+              DOWNLOAD_NOT_READY,
+              CHECKPOINT_SEQUENCE_CONFLICT ->
           Response.Status.CONFLICT.getStatusCode();
       case MISSING_IDEMPOTENCY_KEY -> Response.Status.BAD_REQUEST.getStatusCode();
       case PROVIDER_ERROR -> BAD_GATEWAY;
