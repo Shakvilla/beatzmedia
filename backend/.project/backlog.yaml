@@ -711,3 +711,15 @@ work_units:
     depends_on: [WU-ENG-1, WU-LIB-1, WU-CAT-2, WU-POD-1, WU-PLT-1]
     llfrs: [LLFR-DISCOVERY-01.1, LLFR-DISCOVERY-01.2]
     status: done   # Following feed plus durable, paged, retryable publication notification fanout completed 2026-11-03.
+
+  - id: WU-DIS-2
+    title: Explainable mixed-media personalized discovery rail
+    phase: 6
+    module: discovery
+    add: discovery.md
+    owner: backend-engineer
+    depends_on: [WU-DIS-1, WU-ENG-1, WU-LIB-1, WU-CAT-2, WU-POD-1]
+    llfrs: [LLFR-DISCOVERY-02.1, LLFR-DISCOVERY-02.2]
+    status: done   # Four-type recommendations (single/album/EP/podcast) and Home rail completed 2026-11-05.
+    # Acceptance boundary: request-time and bounded; no per-account recommendation rows; history
+    # opt-out removes behavioral signals; Trending and Following ordering remain unchanged.

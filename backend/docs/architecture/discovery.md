@@ -34,3 +34,19 @@ content ID of the last item. The API accepts no account identifier and returns n
 Reverse follower pagination is exposed only as an in-process library port for future resumable
 notification fanout.
 
+## Explainable personalized recommendations
+
+`GET /v1/me/recommendations` composes bounded reads through the `library`, `engagement`, `catalog`,
+and `podcasts` input ports. Discovery owns the ranking policy but does not copy private activity into
+a profile table or persist per-account recommendation rows.
+
+The deterministic ranker prioritizes direct follows, creator affinity, genre/category affinity,
+meaningful recent listening, freshness, and popularity. Owned singles, fully owned albums/EPs, and
+recently completed tracks are excluded. Candidates are deduplicated, and singles, albums, EPs, and
+podcast shows each receive space when available. Each item returns one plain-language reason; raw
+scores and source signal inventories remain internal.
+
+History opt-out or history-read failure removes history-derived signals. Catalog and podcast
+candidate failures degrade independently. This request-time path cannot affect public Home,
+Following, publication, playback, or commerce.
+

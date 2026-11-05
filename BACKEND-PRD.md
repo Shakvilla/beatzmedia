@@ -593,6 +593,38 @@ discovery and creator analytics while preserving financial and privacy boundarie
   content aggregates for starts, qualified plays, completions, skips, repeats, and listened duration.
   Aggregates contain no account identifier and cannot be used as royalty or ownership evidence.
 
+### 6.3B Discovery (`discovery`)
+
+**Responsibilities:** chronological followed-content discovery and explainable, privacy-aware
+personal recommendations. Discovery consumes narrow input ports from authoritative modules and does
+not read their tables. It may store global publication projections, but not per-account feed or
+recommendation rows. **Input ports:** `GetFollowingFeed`, `GetPersonalizedRecommendations`.
+**Output ports:** `FollowingRelationships`, `FollowingFeedRepository`, `PersonalizationSignals`,
+`RecommendationContent`.
+
+**HLFR-DISCOVERY-01 — Followed-content feed.** Authenticated fans can read a chronological feed of
+published releases and podcast episodes from artists and shows they follow without exposing follow
+relationships or materializing a private feed per fan.
+
+- **LLFR-DISCOVERY-01.1 — Chronological Following feed.** `GET /v1/me/following` returns a cursor-page
+  of global publication snapshots filtered by the JWT subject's current artist and show follows.
+- **LLFR-DISCOVERY-01.2 — Durable publication projection.** Release and episode publication events
+  idempotently update a global discovery projection; retry does not duplicate items.
+
+**HLFR-DISCOVERY-02 — Explainable personalized discovery.** Authenticated fans receive a bounded mix
+of singles, albums, EPs, and podcast shows based on their explicit library and optional listening
+history, without changing the meaning of public Trending or chronological Following.
+
+- **LLFR-DISCOVERY-02.1 — Mixed-media recommendation read.**
+  `GET /v1/me/recommendations?limit=` returns up to 24 deduplicated single, album, EP, and podcast
+  show cards; excludes owned singles, fully owned releases, and recently completed tracks; and
+  reserves space for every available type. Each card includes a user-facing reason but no score or
+  raw private signal.
+- **LLFR-DISCOVERY-02.2 — Privacy and degradation.** History opt-out prevents history-derived ranking
+  signals. Missing history or one unavailable candidate source degrades to explicit library signals
+  and bounded popularity/freshness fallback; recommendation failure cannot affect playback,
+  publication, purchases, `/home`, or `/following`.
+
 ### 6.4 Library & Collection (`library`)
 
 **Responsibilities:** per-user likes, follows (artists, playlists, shows), saved albums, user-created

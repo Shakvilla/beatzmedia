@@ -166,6 +166,23 @@ Limits default to 20 and are clamped to 1–100.
 
 ---
 
+## 4C. Personalized discovery
+
+`GET /me/recommendations?limit=` requires authentication and returns request-time, explainable
+recommendations for the JWT subject:
+
+`{ items: [{ kind:"single"|"album"|"ep"|"podcast", contentId, creatorId, title, subtitle, image,
+route, reason }] }`.
+
+Limits default to 12 and are clamped to 1–24. Owned singles, fully owned albums/EPs, and recently
+completed tracks are excluded. Available content types each receive a reserved place before the
+remaining positions are filled by score. Podcast cards represent shows, not individual episodes.
+Listening-history signals are used only while durable history is enabled; explicit library
+relationships and bounded popularity/freshness fallback remain available after opt-out. Scores and
+raw signal data are never returned.
+
+---
+
 ## 5. Library & collection (per-user)
 
 UI: Library, like/follow/save buttons, user playlists, owned tracks. Backs the `collection` store.

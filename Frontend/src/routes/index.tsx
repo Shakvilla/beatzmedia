@@ -12,6 +12,7 @@ import { formatCount } from '../lib/format'
 import { useAuth } from '../features/auth/auth-context'
 import { ListeningHistoryRail } from '../features/engagement/listening-history-rail'
 import { FollowingFeedPreview } from '../features/discovery/following-feed-preview'
+import { ForYouRail } from '../features/discovery/for-you-rail'
 
 export const Route = createFileRoute('/')({
   loader: async ({ context: { queryClient } }) => {
@@ -80,31 +81,12 @@ function HomeComponent() {
 
       <ListeningHistoryRail mode="recent" />
 
+      <ForYouRail />
+
       <FollowingFeedPreview />
 
       {/* Featured albums carousel (premium placement) */}
       <FeaturedCarousel albums={featuredAlbums} />
-
-      {/* Made for you */}
-      {curatedPlaylists.length > 0 && (
-        <MediaRail
-          title="Made for you"
-          subtitle="Mixes and playlists picked for your taste"
-          action={<span className="text-xs font-mono uppercase tracking-widest text-gray-500 dark:text-gray-300">Updated daily</span>}
-        >
-          {curatedPlaylists.map((playlist) => (
-            <div key={playlist.id} className={RAIL_ITEM}>
-              <Card to={`/playlist/${playlist.id}`}>
-                <CardImage src={playlist.image} alt={playlist.title} />
-                <CardContent className="mt-2">
-                  <CardTitle>{playlist.title}</CardTitle>
-                  <CardSubtitle>{playlist.trackIds.length} songs • by {playlist.creator}</CardSubtitle>
-                </CardContent>
-              </Card>
-            </div>
-          ))}
-        </MediaRail>
-      )}
 
       {/* Trending */}
       <MediaRail title="Trending in Ghana 🇬🇭" subtitle="What the country has on repeat right now">

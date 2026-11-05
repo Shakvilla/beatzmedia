@@ -13,5 +13,6 @@ public interface GetReleaseDiscoveryInfo {
       String title,
       String artistName,
       String coverImage,
+      String releaseType,
       String publishedAt) {}
 }

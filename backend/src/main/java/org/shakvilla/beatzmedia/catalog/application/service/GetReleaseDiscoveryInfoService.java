@@ -35,6 +35,7 @@ public class GetReleaseDiscoveryInfoService implements GetReleaseDiscoveryInfo {
         release.getTitle(),
         artist.getName(),
         release.getCoverImage(),
+        release.getType().name(),
         release.getWentLiveAt() == null ? null : release.getWentLiveAt().toString());
   }
 }
