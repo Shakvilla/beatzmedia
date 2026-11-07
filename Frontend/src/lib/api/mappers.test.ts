@@ -546,7 +546,7 @@ import { toStudioShow, toStudioEpisode } from './mappers'
 describe('toStudioShow', () => {
   it('maps id/title/category 1:1', () => {
     expect(toStudioShow({ id: 'sh1', title: 'Konongo Diaries', category: 'Storytelling' }))
-      .toEqual({ id: 'sh1', title: 'Konongo Diaries', category: 'Storytelling' })
+      .toEqual({ id: 'sh1', title: 'Konongo Diaries', category: 'Storytelling', originCountry: null })
   })
 })
 

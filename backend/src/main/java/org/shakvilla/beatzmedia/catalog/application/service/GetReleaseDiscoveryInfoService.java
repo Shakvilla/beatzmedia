@@ -9,6 +9,7 @@ import org.shakvilla.beatzmedia.catalog.application.port.out.CatalogRepository;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseNotFoundException;
+import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
 
 @ApplicationScoped
 @Transactional(Transactional.TxType.SUPPORTS)
@@ -26,6 +27,9 @@ public class GetReleaseDiscoveryInfoService implements GetReleaseDiscoveryInfo {
     var release =
         catalog.findRelease(releaseId)
             .orElseThrow(() -> new ReleaseNotFoundException(releaseId.value()));
+    if (release.getStatus() != ReleaseStatus.live) {
+      throw new ReleaseNotFoundException(releaseId.value());
+    }
     var artist =
         catalog.findArtist(new ArtistId(release.getArtistId()))
             .orElseThrow(() -> new ReleaseNotFoundException(releaseId.value()));
@@ -36,6 +40,7 @@ public class GetReleaseDiscoveryInfoService implements GetReleaseDiscoveryInfo {
         artist.getName(),
         release.getCoverImage(),
         release.getType().name(),
-        release.getWentLiveAt() == null ? null : release.getWentLiveAt().toString());
+        release.getWentLiveAt() == null ? null : release.getWentLiveAt().toString(),
+        release.getOriginCountry());
   }
 }

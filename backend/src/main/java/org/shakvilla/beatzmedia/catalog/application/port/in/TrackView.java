@@ -1,5 +1,6 @@
 package org.shakvilla.beatzmedia.catalog.application.port.in;
 
+import java.time.Instant;
 import java.util.List;
 
 /**
@@ -26,6 +27,7 @@ public record TrackView(
     List<TrackCreditView> credits,
     String quality,
     Integer year,
+    Instant releasedAt,
     /**
      * Whether this track's release permits buyer downloads. Non-nullable on the wire: a release
      * with no decision yet (draft {@code null}) reads as {@code false} here — see {@link

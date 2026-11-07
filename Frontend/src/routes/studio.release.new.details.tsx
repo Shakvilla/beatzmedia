@@ -130,6 +130,22 @@ function ReleaseDetailsStep() {
           </Field>
         </div>
 
+        <Field label="Country of origin (optional)">
+          <input
+            className={INPUT}
+            value={draft.originCountry}
+            onChange={(e) => setField('originCountry', e.target.value.toUpperCase())}
+            placeholder="GH"
+            maxLength={2}
+            autoCapitalize="characters"
+            aria-label="Country of origin"
+            aria-describedby="release-origin-help"
+          />
+          <span id="release-origin-help" className="text-xs text-gray-500 dark:text-gray-400">
+            Two-letter country code. Helps qualify content for future country charts; leave empty if unsure.
+          </span>
+        </Field>
+
         <Field label="Description">
           <textarea
             className={cn(INPUT, 'h-32 py-3 resize-none')}

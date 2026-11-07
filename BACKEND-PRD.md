@@ -625,6 +625,21 @@ history, without changing the meaning of public Trending or chronological Follow
   and bounded popularity/freshness fallback; recommendation failure cannot affect playback,
   publication, purchases, `/home`, or `/following`.
 
+**HLFR-DISCOVERY-03 — Recommendation control and attribution.** Authenticated fans can remove
+unwanted recommendations and BeatzClik can measure privacy-safe recommendation outcomes without
+persisting complete ranked feeds or exposing raw account activity to creators.
+
+- **LLFR-DISCOVERY-03.1 — Explicit recommendation suppression.** A fan can suppress one recommended
+  content item or its artist/podcast source and Undo the preference. Filtering occurs before ranking
+  and content-type reservation. Source suppression affects recommendations only.
+- **LLFR-DISCOVERY-03.2 — Idempotent attribution.** Recommendation cards carry an opaque,
+  account-bound identity, ranking version, and position. Impression/open events are idempotent, and
+  matching engagement checkpoints may add start, qualified-play, and completion outcomes without
+  making playback depend on Discovery availability.
+- **LLFR-DISCOVERY-03.3 — Retention and privacy.** Raw attribution/event facts expire after 90 days.
+  Explicit suppressions remain until Undo or account deletion and are independent of listening
+  history opt-out. Scores, raw ranking signals, IP addresses, and device fingerprints are not stored.
+
 ### 6.4 Library & Collection (`library`)
 
 **Responsibilities:** per-user likes, follows (artists, playlists, shows), saved albums, user-created

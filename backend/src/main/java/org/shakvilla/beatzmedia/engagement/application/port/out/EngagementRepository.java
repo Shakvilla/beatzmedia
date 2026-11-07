@@ -4,6 +4,7 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
+import org.shakvilla.beatzmedia.engagement.application.port.in.GetDiscoveryEngagementMetrics;
 import org.shakvilla.beatzmedia.engagement.domain.ContentKind;
 import org.shakvilla.beatzmedia.engagement.domain.EngagementEventType;
 import org.shakvilla.beatzmedia.engagement.domain.ListeningCheckpoint;
@@ -32,6 +33,15 @@ public interface EngagementRepository {
   void deletePersonalHistory(String accountId, Instant clearedAt);
 
   int projectPending(int batchSize, Instant projectedAt);
+
+  List<GetDiscoveryEngagementMetrics.ContentMetrics> discoveryMetrics(
+      List<GetDiscoveryEngagementMetrics.ContentRef> content, Instant asOf);
+
+  List<GetDiscoveryEngagementMetrics.ContentRef> discoveryCandidates(
+      Instant asOf, int perWindowLimit);
+
+  GetDiscoveryEngagementMetrics.GroupMetrics discoveryGroupMetrics(
+      List<GetDiscoveryEngagementMetrics.ContentRef> members, Instant asOf);
 
   record PreferenceRow(boolean historyEnabled) {}
 

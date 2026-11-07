@@ -109,6 +109,7 @@ export function studioReleaseQuery(id: string) {
         visibility: (wire.visibility ?? 'public') as 'public' | 'scheduled',
         scheduledAt: wire.scheduledAt,
         coverImage: wire.coverImage,
+        originCountry: wire.originCountry ?? null,
       }
     },
   })
@@ -128,6 +129,7 @@ export interface StudioReleaseDetailWire extends StudioReleaseWire {
   visibility: string | null
   scheduledAt: string | null
   coverImage: string | null
+  originCountry?: string | null
   /**
    * The artist's download choice. `null` means "not chosen yet" and is distinct from `false`
    * ("chosen: no") — collapsing the two with `?? false` would silently satisfy the publish guard
@@ -278,6 +280,7 @@ export interface CreateDraftInput {
   scheduledAt?: string
   /** Omitted (not `false`) leaves the download choice unanswered (`null`) — never send a bare `null`. */
   downloadable?: boolean
+  originCountry?: string
 }
 
 export interface TrackPatch { trackId: string; position: number; priceMinor: number }
@@ -291,6 +294,7 @@ export interface UpdateReleaseInput {
   tracks?: TrackPatch[]
   /** Editable on any status. Omitted (not `false`) leaves a previously-made choice unchanged. */
   downloadable?: boolean
+  originCountry?: string
 }
 
 /** `POST /v1/studio/releases` — create a metadata-only draft; returns the new id. */

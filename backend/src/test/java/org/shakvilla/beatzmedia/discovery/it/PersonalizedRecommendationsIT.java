@@ -47,4 +47,27 @@ class PersonalizedRecommendationsIT {
         .statusCode(200)
         .body("items.size()", lessThanOrEqualTo(24));
   }
+
+  @Test
+  void recommendationInteractionRoutesRequireAuthentication() {
+    given()
+        .contentType(ContentType.JSON)
+        .body("{\"events\":[]}")
+        .when()
+        .post("/v1/me/recommendation-events")
+        .then()
+        .statusCode(401);
+    given()
+        .contentType(ContentType.JSON)
+        .body("{\"recommendationId\":\"missing\",\"action\":\"not-interested\"}")
+        .when()
+        .post("/v1/me/recommendation-feedback")
+        .then()
+        .statusCode(401);
+    given()
+        .when()
+        .delete("/v1/me/recommendation-suppressions/missing")
+        .then()
+        .statusCode(401);
+  }
 }

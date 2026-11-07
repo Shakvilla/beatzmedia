@@ -34,12 +34,12 @@ import org.shakvilla.beatzmedia.catalog.application.port.in.DeleteRelease;
 import org.shakvilla.beatzmedia.catalog.application.port.in.FinalizeRelease;
 import org.shakvilla.beatzmedia.catalog.application.port.in.GetRelease;
 import org.shakvilla.beatzmedia.catalog.application.port.in.ListStudioReleases;
+import org.shakvilla.beatzmedia.catalog.application.port.in.LyricLineView;
+import org.shakvilla.beatzmedia.catalog.application.port.in.LyricsView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.ManageReleaseRevision;
 import org.shakvilla.beatzmedia.catalog.application.port.in.ManageReleaseRevision.EditCommand;
 import org.shakvilla.beatzmedia.catalog.application.port.in.ManageReleaseRevision.TrackEdit;
 import org.shakvilla.beatzmedia.catalog.application.port.in.ManageTrackLyrics;
-import org.shakvilla.beatzmedia.catalog.application.port.in.LyricLineView;
-import org.shakvilla.beatzmedia.catalog.application.port.in.LyricsView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.PageView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.RemoveReleaseTrack;
 import org.shakvilla.beatzmedia.catalog.application.port.in.ResendSplitInvites;
@@ -159,7 +159,8 @@ public class StudioReleaseResource {
         body.scheduledAt() != null ? java.time.Instant.parse(body.scheduledAt()) : null,
         body.genre(),
         body.description(),
-        body.downloadable());
+        body.downloadable(),
+        body.originCountry());
     StudioReleaseDetailView view = createReleaseDraft.create(cmd);
     return Response.status(Response.Status.CREATED).entity(view).build();
   }
@@ -199,7 +200,8 @@ public class StudioReleaseResource {
                             .toList()))
                 .toList()
             : null,
-        body.downloadable());
+        body.downloadable(),
+        body.originCountry());
     return updateRelease.update(new ReleaseId(id), artistId(), cmd);
   }
 
@@ -501,7 +503,8 @@ public class StudioReleaseResource {
       String scheduledAt,
       String genre,
       String description,
-      Boolean downloadable) {}
+      Boolean downloadable,
+      String originCountry) {}
 
   public record UpdateReleaseBody(
       String title,
@@ -510,7 +513,8 @@ public class StudioReleaseResource {
       String visibility,
       String scheduledAt,
       @jakarta.validation.Valid List<TrackRefBody> tracks,
-      Boolean downloadable) {}
+      Boolean downloadable,
+      String originCountry) {}
 
   public record TrackRefBody(
       String trackId, int position, long priceMinor,
@@ -528,5 +532,5 @@ public class StudioReleaseResource {
 
   public record SaveTrackLyricsBody(List<LyricLineBody> lines) {}
 
-  public record LyricLineBody(Integer time, String text) {}
+  public record LyricLineBody(java.math.BigDecimal time, String text) {}
 }

@@ -20,7 +20,7 @@ import {
   useRef,
   type ReactNode,
 } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Track } from '../../types'
 import { apiRecordTrackPlay, trackStreamQuery } from '../../lib/api/queries/playback'
 import { episodeStreamQuery } from '../../lib/api/queries/podcasts'
@@ -286,6 +286,7 @@ export function decideAudioErrorRecovery(
 const PlayerContext = createContext<PlayerContextValue | null>(null)
 
 export function PlayerProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient()
   const [state, dispatch] = useReducer(reducer, initialState)
   const engagementRef = useRef<ListeningEngagementRecorder | null>(null)
   engagementRef.current ??= new ListeningEngagementRecorder()
@@ -501,9 +502,16 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
           if (!currentTrack) return
           engagementRef.current?.start(currentTrack, state.duration ?? currentTrack.duration)
           if (currentTrack.playbackKind !== 'podcast_episode') {
-            void apiRecordTrackPlay(currentTrack.id, isPreviewStream ? 'preview' : 'player').catch(() => {
-              // Playback and analytics have separate availability; a failed count must not stop audio.
-            })
+            void apiRecordTrackPlay(currentTrack.id, isPreviewStream ? 'preview' : 'player')
+              .then(() => Promise.all([
+                queryClient.invalidateQueries({ queryKey: ['track', currentTrack.id] }),
+                queryClient.invalidateQueries({ queryKey: ['home'] }),
+                queryClient.invalidateQueries({ queryKey: ['artist'] }),
+                queryClient.invalidateQueries({ queryKey: ['album'] }),
+              ]))
+              .catch(() => {
+                // Playback and analytics have separate availability; a failed count must not stop audio.
+              })
           }
         }}
         onTimeUpdate={(e) => {

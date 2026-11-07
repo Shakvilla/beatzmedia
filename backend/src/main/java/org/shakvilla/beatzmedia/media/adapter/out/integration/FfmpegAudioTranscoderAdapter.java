@@ -127,11 +127,32 @@ public class FfmpegAudioTranscoderAdapter implements AudioTranscoderPort {
   }
 
   private int runFfprobe(Path inputFile) throws IOException, InterruptedException {
+    // Container duration can include attached cover-art streams, or be estimated incorrectly for
+    // some MP3/VBR files. The first audio stream is the duration listeners actually hear.
+    String audioDuration = runFfprobe(inputFile, "a:0", "stream=duration");
+    Double durationSecs = parseDuration(audioDuration);
+
+    // Some formats do not expose a stream duration. Keep the container value as a fallback for
+    // those files, while preferring the audio stream whenever ffprobe reports it.
+    if (durationSecs == null) {
+      durationSecs = parseDuration(runFfprobe(inputFile, null, "format=duration"));
+    }
+    if (durationSecs == null) {
+      throw new IllegalStateException("ffprobe did not report a valid audio duration");
+    }
+    return (int) Math.round(durationSecs);
+  }
+
+  private String runFfprobe(Path inputFile, String streamSelector, String entries)
+      throws IOException, InterruptedException {
     List<String> cmd = new ArrayList<>();
     cmd.add("ffprobe");
     cmd.add("-v"); cmd.add("quiet");
     cmd.add("-print_format"); cmd.add("compact=print_section=0:nokey=1:escape=csv");
-    cmd.add("-show_entries"); cmd.add("format=duration");
+    if (streamSelector != null) {
+      cmd.add("-select_streams"); cmd.add(streamSelector);
+    }
+    cmd.add("-show_entries"); cmd.add(entries);
     cmd.add(inputFile.toAbsolutePath().toString());
 
     Process proc = new ProcessBuilder(cmd)
@@ -142,9 +163,16 @@ public class FfmpegAudioTranscoderAdapter implements AudioTranscoderPort {
     if (exit != 0) {
       throw new IllegalStateException("ffprobe exited with " + exit + ": " + output);
     }
-    // output is a decimal like "183.421678"
-    double durationSecs = Double.parseDouble(output);
-    return (int) Math.round(durationSecs);
+    return output;
+  }
+
+  private Double parseDuration(String output) {
+    try {
+      double value = Double.parseDouble(output.trim());
+      return Double.isFinite(value) && value > 0 ? value : null;
+    } catch (NumberFormatException ignored) {
+      return null;
+    }
   }
 
   private void runFfmpegM4a(Path inputFile, Path outputFile, Integer durationLimit)

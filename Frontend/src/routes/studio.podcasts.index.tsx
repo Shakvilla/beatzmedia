@@ -4,8 +4,8 @@ import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { Plus, Mic, MoreHorizontal, Pencil, Trash2, ExternalLink } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
-import { studioShowsQuery, studioEpisodesQuery, apiDeleteEpisode } from '../lib/api/queries/podcasts-studio'
-import type { StudioEpisode, EpisodeStatus } from '../lib/studio-data'
+import { studioShowsQuery, studioEpisodesQuery, apiDeleteEpisode, apiSetShowOriginCountry } from '../lib/api/queries/podcasts-studio'
+import type { StudioEpisode, EpisodeStatus, StudioPodcastShow } from '../lib/studio-data'
 import { formatDuration } from '../lib/format'
 import { formatCompact } from '../lib/studio-analytics'
 
@@ -65,13 +65,8 @@ function StudioPodcasts() {
         <h2 className="text-lg font-bold text-beatz-dark-bg dark:text-white">Your shows</h2>
         <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
           {shows.map((sh) => (
-            <div key={sh.id} className={cn(CARD, 'flex items-center gap-4 !p-4')}>
-              <div className="w-14 h-14 rounded-xl shrink-0 flex items-center justify-center" style={{ backgroundImage: coverGradient(sh.title) }}><Mic size={22} className="text-white/80" /></div>
-              <div className="flex flex-col min-w-0">
-                <span className="text-sm font-bold text-beatz-dark-bg dark:text-white truncate">{sh.title}</span>
-                <span className="text-xs text-gray-500 dark:text-gray-400">{sh.category} · {episodes.filter((e) => e.showId === sh.id).length} episodes</span>
-              </div>
-            </div>
+            <ShowCard key={sh.id} show={sh}
+              episodeCount={episodes.filter((e) => e.showId === sh.id).length} />
           ))}
         </div>
       </section>
@@ -93,6 +88,59 @@ function StudioPodcasts() {
           ))}
         </div>
       </section>
+    </div>
+  )
+}
+
+function ShowCard({ show, episodeCount }: { show: StudioPodcastShow; episodeCount: number }) {
+  const { toast } = useToast()
+  const queryClient = useQueryClient()
+  const [editing, setEditing] = useState(false)
+  const [country, setCountry] = useState(show.originCountry ?? '')
+  const [saving, setSaving] = useState(false)
+
+  const saveCountry = async () => {
+    setSaving(true)
+    try {
+      await apiSetShowOriginCountry(show.id, country.trim().toUpperCase())
+      await queryClient.invalidateQueries({ queryKey: studioShowsQuery().queryKey })
+      setEditing(false)
+      toast('Show country updated', 'success')
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Could not update show country', 'error')
+    } finally {
+      setSaving(false)
+    }
+  }
+
+  return (
+    <div className={cn(CARD, 'flex flex-col gap-3 !p-4')}>
+      <div className="flex items-center gap-4">
+        <div className="w-14 h-14 rounded-xl shrink-0 flex items-center justify-center" style={{ backgroundImage: coverGradient(show.title) }}><Mic size={22} className="text-white/80" /></div>
+        <div className="flex flex-col min-w-0 flex-1">
+          <span className="text-sm font-bold text-beatz-dark-bg dark:text-white truncate">{show.title}</span>
+          <span className="text-xs text-gray-500 dark:text-gray-400">{show.category} · {episodeCount} episodes</span>
+          <span className="text-xs text-gray-500 dark:text-gray-400">Country: {show.originCountry ?? 'Unassigned'}</span>
+        </div>
+        <button type="button" onClick={() => { setCountry(show.originCountry ?? ''); setEditing(!editing) }}
+          className="text-xs font-bold text-beatz-green" aria-label={`Edit ${show.title} country`}>
+          Edit
+        </button>
+      </div>
+      {editing && (
+        <div className="flex items-end gap-2">
+          <label className="flex-1 flex flex-col gap-1 text-xs text-gray-500 dark:text-gray-400">
+            Country of origin (two-letter code)
+            <input value={country} onChange={(event) => setCountry(event.target.value.toUpperCase())}
+              maxLength={2} autoCapitalize="characters" placeholder="GH"
+              className="h-9 rounded-lg border border-gray-200 dark:border-white/10 bg-white dark:bg-white/5 px-3 text-sm text-beatz-dark-bg dark:text-white" />
+          </label>
+          <button type="button" onClick={saveCountry} disabled={saving}
+            className="h-9 px-3 rounded-lg bg-beatz-green text-black text-xs font-bold disabled:opacity-50">
+            Save
+          </button>
+        </div>
+      )}
     </div>
   )
 }

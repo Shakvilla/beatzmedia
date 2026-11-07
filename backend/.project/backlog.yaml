@@ -723,3 +723,15 @@ work_units:
     status: done   # Four-type recommendations (single/album/EP/podcast) and Home rail completed 2026-11-05.
     # Acceptance boundary: request-time and bounded; no per-account recommendation rows; history
     # opt-out removes behavioral signals; Trending and Following ordering remain unchanged.
+
+  - id: WU-DIS-3
+    title: Recommendation feedback, suppression, and listening attribution
+    phase: 6
+    module: discovery
+    add: discovery.md
+    owner: backend-engineer
+    depends_on: [WU-DIS-2, WU-ENG-1]
+    llfrs: [LLFR-DISCOVERY-03.1, LLFR-DISCOVERY-03.2, LLFR-DISCOVERY-03.3]
+    status: done   # Feedback, suppression, attribution, web controls, and PostgreSQL verification completed 2026-11-05.
+    # Acceptance boundary: source suppression affects recommendations only; attribution is
+    # best-effort and cannot block playback; raw attribution facts expire after 90 days.

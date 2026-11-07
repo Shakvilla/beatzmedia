@@ -86,6 +86,7 @@ export interface TrackWire {
   credits: TrackCreditWire[] | null
   quality: string | null
   year: number | null
+  releasedAt?: string | null
   /**
    * Whether buyers may download this track's audio. Always a plain boolean on this public wire
    * shape — the backend coerces an unrecorded choice to `false` rather than ever serving `null`
@@ -111,6 +112,7 @@ export function toTrack(wire: TrackWire): Track {
     credits: (wire.credits as TrackCredit[] | null) ?? undefined,
     quality: wire.quality ?? undefined,
     year: wire.year ?? undefined,
+    releasedAt: wire.releasedAt ?? undefined,
     downloadable: wire.downloadable ?? false,
   }
 }
@@ -597,9 +599,9 @@ export function toStudioRelease(w: StudioReleaseWire): StudioRelease {
 }
 
 // ── Studio podcasts ───────────────────────────────────────────────
-export interface StudioPodcastShowWire { id: string; title: string; category: string }
+export interface StudioPodcastShowWire { id: string; title: string; category: string; originCountry?: string | null }
 export function toStudioShow(w: StudioPodcastShowWire): StudioPodcastShow {
-  return { id: w.id, title: w.title, category: w.category }
+  return { id: w.id, title: w.title, category: w.category, originCountry: w.originCountry ?? null }
 }
 
 export interface EpisodeWire {

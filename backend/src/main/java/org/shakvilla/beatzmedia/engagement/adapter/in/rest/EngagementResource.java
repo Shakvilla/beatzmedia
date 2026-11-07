@@ -62,7 +62,8 @@ public class EngagementResource {
             EngagementEventType.fromWire(request == null ? null : request.eventType()),
             request == null ? -1 : request.positionSeconds(),
             request == null ? -1 : request.durationSeconds(),
-            request == null ? -1 : request.listenedDeltaSeconds()));
+            request == null ? -1 : request.listenedDeltaSeconds(),
+            request == null ? null : request.recommendationId()));
     return Response.noContent().build();
   }
 

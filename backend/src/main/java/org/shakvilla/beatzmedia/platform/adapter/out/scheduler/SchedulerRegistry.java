@@ -87,6 +87,7 @@ public class SchedulerRegistry {
   private static final String JOB_SEARCH_REINDEX   = "search.reindex";
   private static final String JOB_PUBLICATION_OUTBOX = "platform.publication-outbox";
   private static final String JOB_ENGAGEMENT_AGGREGATE = "engagement.aggregate";
+  private static final String JOB_RECOMMENDATION_CLEANUP = "discovery.recommendation-cleanup";
 
   @Inject
   Instance<ScheduledJob> jobBeans;
@@ -189,6 +190,13 @@ public class SchedulerRegistry {
       concurrentExecution = ConcurrentExecution.SKIP)
   void projectEngagementAggregates() {
     runWithLock(JOB_ENGAGEMENT_AGGREGATE);
+  }
+
+  /** Expired recommendation attribution facts — hourly, bounded and independently retryable. */
+  @Scheduled(every = "1h", identity = "recommendation-cleanup",
+      concurrentExecution = ConcurrentExecution.SKIP)
+  void cleanRecommendationAttribution() {
+    runWithLock(JOB_RECOMMENDATION_CLEANUP);
   }
 
   // -------------------------------------------------------------------------

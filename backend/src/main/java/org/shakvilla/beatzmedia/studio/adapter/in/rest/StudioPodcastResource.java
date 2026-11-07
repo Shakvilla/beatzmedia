@@ -40,6 +40,7 @@ import org.shakvilla.beatzmedia.studio.application.port.in.ListStudioEpisodes;
 import org.shakvilla.beatzmedia.studio.application.port.in.ListStudioPodcastShows;
 import org.shakvilla.beatzmedia.studio.application.port.in.PodcastShowView;
 import org.shakvilla.beatzmedia.studio.application.port.in.SetShowCover;
+import org.shakvilla.beatzmedia.studio.application.port.in.SetShowOriginCountry;
 import org.shakvilla.beatzmedia.studio.application.port.in.UpdateEpisode;
 import org.shakvilla.beatzmedia.studio.application.port.in.UpdateEpisode.UpdateEpisodeCommand;
 import org.shakvilla.beatzmedia.studio.domain.ArtistId;
@@ -76,6 +77,7 @@ public class StudioPodcastResource {
   private final UpdateEpisode updateEpisode;
   private final DeleteEpisode deleteEpisode;
   private final SetShowCover setShowCover;
+  private final SetShowOriginCountry setShowOriginCountry;
   private final JsonWebToken jwt;
 
   @Inject
@@ -87,6 +89,7 @@ public class StudioPodcastResource {
       UpdateEpisode updateEpisode,
       DeleteEpisode deleteEpisode,
       SetShowCover setShowCover,
+      SetShowOriginCountry setShowOriginCountry,
       JsonWebToken jwt) {
     this.listStudioPodcastShows = listStudioPodcastShows;
     this.createPodcastShow = createPodcastShow;
@@ -95,6 +98,7 @@ public class StudioPodcastResource {
     this.updateEpisode = updateEpisode;
     this.deleteEpisode = deleteEpisode;
     this.setShowCover = setShowCover;
+    this.setShowOriginCountry = setShowOriginCountry;
     this.jwt = jwt;
   }
 
@@ -118,7 +122,8 @@ public class StudioPodcastResource {
             body != null ? body.title() : null,
             body != null ? body.category() : null,
             body != null ? body.image() : null,
-            body != null ? body.description() : null));
+            body != null ? body.description() : null,
+            body != null ? body.originCountry() : null));
     return Response.status(Response.Status.CREATED).entity(view).build();
   }
 
@@ -138,6 +143,16 @@ public class StudioPodcastResource {
     }
     String url = setShowCover.setCover(artistId(), new ShowId(id), toImageUpload(form.image));
     return Response.ok(java.util.Map.of("image", url)).build();
+  }
+
+  /** Assign or clear a creator-supplied origin country on an existing show. */
+  @PATCH
+  @Path("/shows/{id}/origin-country")
+  @Consumes(MediaType.APPLICATION_JSON)
+  public PodcastShowView setShowOriginCountry(
+      @PathParam("id") String id, SetShowOriginCountryBody body) {
+    return setShowOriginCountry.set(
+        artistId(), new ShowId(id), body == null ? null : body.originCountry());
   }
 
   // ---- Episodes ----
@@ -277,7 +292,10 @@ public class StudioPodcastResource {
 
   /** {@code CreateShowDto {title,category}} — Studio ADD §5.1. */
   /** {@code image} is the show cover — optional here, required before an episode can publish. */
-  public record CreateShowBody(String title, String category, String image, String description) {}
+  public record CreateShowBody(
+      String title, String category, String image, String description, String originCountry) {}
+
+  public record SetShowOriginCountryBody(String originCountry) {}
 
   /**
    * {@code CreateEpisodeDto} — Studio ADD §6. {@code showId} XOR {@code newShow}; {@code cover} is

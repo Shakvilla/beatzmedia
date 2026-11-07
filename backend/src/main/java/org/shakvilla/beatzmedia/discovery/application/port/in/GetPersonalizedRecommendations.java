@@ -16,5 +16,8 @@ public interface GetPersonalizedRecommendations {
       String subtitle,
       String image,
       String route,
-      String reason) {}
+      String reason,
+      String recommendationId,
+      String rankingVersion,
+      int position) {}
 }

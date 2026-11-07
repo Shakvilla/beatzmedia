@@ -7,6 +7,7 @@ import {
   type ListeningEventType,
 } from '../../lib/api/queries/engagement'
 import type { Track } from '../../types'
+import { takeRecommendationForTrack } from '../discovery/recommendation-attribution'
 
 const PROGRESS_INTERVAL_SECONDS = 15
 const QUALIFIED_PLAY_SECONDS = 30
@@ -20,6 +21,7 @@ interface ActiveListen {
   totalListenedSeconds: number
   qualified: boolean
   completed: boolean
+  recommendationId: string | null
 }
 
 /**
@@ -54,6 +56,7 @@ export class ListeningEngagementRecorder {
       totalListenedSeconds: 0,
       qualified: false,
       completed: false,
+      recommendationId: takeRecommendationForTrack(track),
     }
     this.send('start', 0)
   }
@@ -120,6 +123,9 @@ export class ListeningEngagementRecorder {
       positionSeconds: this.safeSeconds(snapshot.positionSeconds),
       durationSeconds: this.safeSeconds(snapshot.durationSeconds),
       listenedDeltaSeconds: this.safeSeconds(listenedDeltaSeconds),
+      ...(snapshot.recommendationId
+        ? { recommendationId: snapshot.recommendationId }
+        : {}),
     }
     void this.ensureSession()
       .then((sessionId) => {

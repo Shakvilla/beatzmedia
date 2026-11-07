@@ -1,5 +1,7 @@
 package org.shakvilla.beatzmedia.catalog.adapter.out.persistence;
 
+import java.math.BigDecimal;
+
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;
 import jakarta.persistence.Id;
@@ -23,8 +25,8 @@ public class LyricLineEntity {
   @Column(name = "position", nullable = false)
   public int position;
 
-  @Column(name = "t_sec")
-  public Integer tSec;
+  @Column(name = "t_sec", precision = 12, scale = 3)
+  public BigDecimal tSec;
 
   @Column(name = "text", nullable = false)
   public String text;

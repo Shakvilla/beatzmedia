@@ -28,6 +28,7 @@ public final class Release {
   private List<ReleaseTrack> tracks;
   private String genre;
   private String description;
+  private String originCountry;
   /**
    * Cover art URL (V975), set separately from the constructors because it arrives by upload after
    * the draft exists. Null until the artist provides one; {@link #hasCover()} is the submit gate.
@@ -319,6 +320,15 @@ public final class Release {
    */
   public Boolean getDownloadable() {
     return downloadable;
+  }
+
+  /** Explicit creator-supplied country; null means no market claim has been made. */
+  public void setOriginCountry(String originCountry) {
+    this.originCountry = originCountry;
+  }
+
+  public String getOriginCountry() {
+    return originCountry;
   }
 
   public void updateMetadata(

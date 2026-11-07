@@ -1,13 +1,14 @@
 package org.shakvilla.beatzmedia.catalog.adapter.out.persistence;
 
-import com.fasterxml.jackson.core.JsonProcessingException;
-import com.fasterxml.jackson.databind.ObjectMapper;
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseRevision;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseRevisionStatus;
 import org.shakvilla.beatzmedia.catalog.domain.Visibility;
+
+import com.fasterxml.jackson.core.JsonProcessingException;
+import com.fasterxml.jackson.databind.ObjectMapper;
 
 @ApplicationScoped
 public class ReleaseRevisionMapper {

@@ -95,6 +95,7 @@ export interface ReleaseDraft {
    * with an answer the artist never gave.
    */
   downloadable: boolean | null
+  originCountry: string
 }
 
 const initialDraft: ReleaseDraft = {
@@ -115,6 +116,7 @@ const initialDraft: ReleaseDraft = {
   agreementAccepted: false,
   presaveGenerated: false,
   downloadable: null,
+  originCountry: '',
 }
 
 type DraftAction =
@@ -209,6 +211,7 @@ function toCreateInput(d: ReleaseDraft): CreateDraftInput {
     // `null` (not chosen yet) is omitted rather than sent — the wire field is a plain optional
     // boolean, and omitting it is exactly what leaves the choice unanswered server-side.
     downloadable: d.downloadable ?? undefined,
+    originCountry: d.originCountry.trim().toUpperCase() || undefined,
   }
 }
 
@@ -225,6 +228,7 @@ function toMetaPatch(d: ReleaseDraft): UpdateReleaseInput {
     // sent before the artist has chosen would clear/overwrite nothing but still risk one day being
     // read as an explicit "no".
     downloadable: d.downloadable ?? undefined,
+    originCountry: d.originCountry.trim().toUpperCase(),
   }
 }
 
@@ -386,6 +390,7 @@ export function ReleaseDraftProvider({ children, initial }: { children: ReactNod
             releaseDate: d.scheduledAt ? d.scheduledAt.slice(0, 10) : '',
             price: d.price?.amount ?? initialDraft.price,
             downloadable: d.downloadable ?? null,
+            originCountry: d.originCountry ?? '',
             tracks: (d.tracks ?? [])
               .slice()
               .sort((a, b) => a.position - b.position)

@@ -8,5 +8,10 @@ public interface GetEpisodeEngagementInfo {
   EpisodeEngagementInfo get(EpisodeId episodeId);
 
   record EpisodeEngagementInfo(
-      String id, String title, String showTitle, String image, int durationSeconds) {}
+      String id,
+      String showId,
+      String title,
+      String showTitle,
+      String image,
+      int durationSeconds) {}
 }

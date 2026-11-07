@@ -8,12 +8,12 @@ import org.shakvilla.beatzmedia.catalog.application.port.in.SetReleaseTrackCover
 import org.shakvilla.beatzmedia.catalog.application.port.out.CatalogRepository;
 import org.shakvilla.beatzmedia.catalog.application.port.out.TrackSearchProjection;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
+import org.shakvilla.beatzmedia.catalog.domain.IllegalTransitionException;
 import org.shakvilla.beatzmedia.catalog.domain.Release;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseNotFoundException;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseTrack;
-import org.shakvilla.beatzmedia.catalog.domain.IllegalTransitionException;
 import org.shakvilla.beatzmedia.catalog.domain.Track;
 import org.shakvilla.beatzmedia.catalog.domain.TrackId;
 import org.shakvilla.beatzmedia.media.application.port.in.UploadCommand;

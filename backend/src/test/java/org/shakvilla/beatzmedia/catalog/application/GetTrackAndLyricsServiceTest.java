@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 
@@ -80,14 +81,14 @@ class GetTrackAndLyricsServiceTest {
   void getLyrics_returns_timed_lines() {
     repo.addTrack(sampleTrack(OwnershipStatus.free, null));
     repo.addLyrics(new Lyrics(TRACK_ID, List.of(
-        new LyricLine(0, "♪"),
-        new LyricLine(6, "No place feels the same since you left"))));
+        new LyricLine(BigDecimal.ZERO, "♪"),
+        new LyricLine(BigDecimal.valueOf(6), "No place feels the same since you left"))));
 
     LyricsView view = lyricsService.get(TRACK_ID);
     assertEquals(2, view.lines().size());
-    assertEquals(0, view.lines().get(0).time());
+    assertEquals(BigDecimal.ZERO, view.lines().get(0).time());
     assertEquals("♪", view.lines().get(0).text());
-    assertEquals(6, view.lines().get(1).time());
+    assertEquals(BigDecimal.valueOf(6), view.lines().get(1).time());
   }
 
   @Test

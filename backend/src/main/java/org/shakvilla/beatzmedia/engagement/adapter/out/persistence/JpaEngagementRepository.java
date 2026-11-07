@@ -4,8 +4,12 @@ import java.time.Instant;
 import java.time.OffsetDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -13,6 +17,7 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.Query;
 import jakarta.transaction.Transactional;
 
+import org.shakvilla.beatzmedia.engagement.application.port.in.GetDiscoveryEngagementMetrics;
 import org.shakvilla.beatzmedia.engagement.application.port.out.EngagementRepository;
 import org.shakvilla.beatzmedia.engagement.domain.ContentKind;
 import org.shakvilla.beatzmedia.engagement.domain.EngagementEventType;
@@ -283,6 +288,132 @@ public class JpaEngagementRepository implements EngagementRepository {
         .setParameter("batchSize", batchSize)
         .setParameter("projectedAt", projectedAt)
         .executeUpdate();
+  }
+
+  @Override
+  public List<GetDiscoveryEngagementMetrics.ContentMetrics> discoveryMetrics(
+      List<GetDiscoveryEngagementMetrics.ContentRef> content, Instant asOf) {
+    Set<String> keys = content.stream()
+        .map(ref -> ref.kind() + ":" + ref.id())
+        .collect(Collectors.toSet());
+    List<String> ids = content.stream().map(GetDiscoveryEngagementMetrics.ContentRef::id)
+        .distinct().toList();
+    @SuppressWarnings("unchecked")
+    List<Object[]> rows = em.createNativeQuery("""
+        with per_listener_day as (
+          select content_kind, content_id, account_id,
+                 (received_at at time zone 'UTC')::date as day,
+                 count(*) filter (where event_type = 'qualified-play') as plays28,
+                 count(*) filter (where event_type = 'qualified-play'
+                   and received_at >= :recentStart) as plays24,
+                 count(*) filter (where event_type = 'qualified-play'
+                   and received_at >= :baselineStart and received_at < :recentStart) as playsBaseline,
+                 count(*) filter (where event_type = 'completion') as completions
+          from listening_checkpoint
+          where effective and received_at >= :windowStart and received_at < :asOf
+            and content_id in (:ids)
+            and event_type in ('qualified-play', 'completion')
+          group by content_kind, content_id, account_id,
+                   (received_at at time zone 'UTC')::date
+        )
+        select content_kind, content_id,
+               sum(least(plays28, 5)),
+               sum(least(plays24, 5)),
+               sum(least(playsBaseline, 5)),
+               count(distinct account_id) filter (where plays28 > 0),
+               count(distinct account_id) filter (where plays24 > 0),
+               sum(least(completions, 5))
+        from per_listener_day
+        group by content_kind, content_id
+        """)
+        .setParameter("windowStart", asOf.minus(java.time.Duration.ofDays(28)))
+        .setParameter("baselineStart", asOf.minus(java.time.Duration.ofDays(8)))
+        .setParameter("recentStart", asOf.minus(java.time.Duration.ofDays(1)))
+        .setParameter("asOf", asOf)
+        .setParameter("ids", ids)
+        .getResultList();
+    return rows.stream()
+        .filter(row -> keys.contains(row[0] + ":" + row[1]))
+        .map(row -> new GetDiscoveryEngagementMetrics.ContentMetrics(
+            (String) row[0], (String) row[1], number(row[2]), number(row[3]),
+            number(row[4]), number(row[5]), number(row[6]), number(row[7])))
+        .toList();
+  }
+
+  @Override
+  public List<GetDiscoveryEngagementMetrics.ContentRef> discoveryCandidates(
+      Instant asOf, int perWindowLimit) {
+    var today = asOf.atZone(ZoneOffset.UTC).toLocalDate();
+    var selected = new LinkedHashSet<GetDiscoveryEngagementMetrics.ContentRef>();
+    selected.addAll(candidateWindow(today.minusDays(27), today, perWindowLimit));
+    selected.addAll(candidateWindow(today.minusDays(1), today, perWindowLimit));
+    return List.copyOf(selected);
+  }
+
+  private List<GetDiscoveryEngagementMetrics.ContentRef> candidateWindow(
+      java.time.LocalDate from, java.time.LocalDate through, int limit) {
+    @SuppressWarnings("unchecked")
+    List<Object[]> rows = em.createNativeQuery("""
+        select content_kind, content_id
+        from engagement_daily_rollup
+        where day >= :from and day <= :through and qualified_plays > 0
+        group by content_kind, content_id
+        order by sum(qualified_plays) desc, content_kind, content_id
+        limit :limit
+        """)
+        .setParameter("from", from)
+        .setParameter("through", through)
+        .setParameter("limit", limit)
+        .getResultList();
+    return rows.stream()
+        .map(row -> new GetDiscoveryEngagementMetrics.ContentRef(
+            (String) row[0], (String) row[1]))
+        .toList();
+  }
+
+  @Override
+  public GetDiscoveryEngagementMetrics.GroupMetrics discoveryGroupMetrics(
+      List<GetDiscoveryEngagementMetrics.ContentRef> members, Instant asOf) {
+    String values = IntStream.range(0, members.size())
+        .mapToObj(index -> "(:kind" + index + ", :id" + index + ")")
+        .collect(Collectors.joining(", "));
+    Query query = em.createNativeQuery("""
+        with requested(kind, id) as (values %s),
+        per_listener_day as (
+          select c.account_id, (c.received_at at time zone 'UTC')::date as day,
+                 count(*) filter (where c.event_type = 'qualified-play') as plays28,
+                 count(*) filter (where c.event_type = 'qualified-play'
+                   and c.received_at >= :recentStart) as plays24,
+                 count(*) filter (where c.event_type = 'qualified-play'
+                   and c.received_at >= :baselineStart
+                   and c.received_at < :recentStart) as playsBaseline,
+                 count(*) filter (where c.event_type = 'completion') as completions
+          from listening_checkpoint c
+          join requested r on r.kind = c.content_kind and r.id = c.content_id
+          where c.effective and c.received_at >= :windowStart and c.received_at < :asOf
+            and c.event_type in ('qualified-play', 'completion')
+          group by c.account_id, (c.received_at at time zone 'UTC')::date
+        )
+        select coalesce(sum(least(plays28, 5)), 0),
+               coalesce(sum(least(plays24, 5)), 0),
+               coalesce(sum(least(playsBaseline, 5)), 0),
+               count(distinct account_id) filter (where plays28 > 0),
+               count(distinct account_id) filter (where plays24 > 0),
+               coalesce(sum(least(completions, 5)), 0)
+        from per_listener_day
+        """.formatted(values))
+        .setParameter("windowStart", asOf.minus(java.time.Duration.ofDays(28)))
+        .setParameter("baselineStart", asOf.minus(java.time.Duration.ofDays(8)))
+        .setParameter("recentStart", asOf.minus(java.time.Duration.ofDays(1)))
+        .setParameter("asOf", asOf);
+    for (int index = 0; index < members.size(); index++) {
+      query.setParameter("kind" + index, members.get(index).kind());
+      query.setParameter("id" + index, members.get(index).id());
+    }
+    Object[] row = (Object[]) query.getSingleResult();
+    return new GetDiscoveryEngagementMetrics.GroupMetrics(
+        number(row[0]), number(row[1]), number(row[2]), number(row[3]),
+        number(row[4]), number(row[5]));
   }
 
   private static ListeningCheckpoint toCheckpoint(Object[] row) {

@@ -31,9 +31,8 @@ import org.shakvilla.beatzmedia.catalog.domain.OwnershipStatus;
 import org.shakvilla.beatzmedia.catalog.domain.Playlist;
 import org.shakvilla.beatzmedia.catalog.domain.PlaylistId;
 import org.shakvilla.beatzmedia.catalog.domain.Release;
-import org.shakvilla.beatzmedia.catalog.domain.ReleaseRevision;
-import org.shakvilla.beatzmedia.catalog.domain.ReleaseRevisionStatus;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
+import org.shakvilla.beatzmedia.catalog.domain.ReleaseRevision;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseTrack;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseType;
@@ -208,6 +207,13 @@ public class JpaCatalogRepository implements CatalogRepository {
       return Optional.empty();
     }
     return Optional.of(mapTracksWithBatchedCredits(List.of(e)).get(0));
+  }
+
+  @Override
+  public void incrementPlayCount(TrackId id) {
+    em.createQuery("UPDATE TrackEntity t SET t.plays = t.plays + 1 WHERE t.id = :id")
+        .setParameter("id", id.value())
+        .executeUpdate();
   }
 
   @Override
@@ -624,6 +630,7 @@ public class JpaCatalogRepository implements CatalogRepository {
     e.updatedAt = release.getUpdatedAt();
     e.genre = release.getGenre();
     e.description = release.getDescription();
+    e.originCountry = release.getOriginCountry();
     e.coverImage = release.getCoverImage();
     e.downloadable = release.getDownloadable();
     em.merge(e);
@@ -1123,6 +1130,7 @@ public class JpaCatalogRepository implements CatalogRepository {
     // Same reasoning applies to the download choice (V980): widening the reconstitute overloads
     // for one more nullable field would ripple through every call site for no gain.
     release.setDownloadable(e.downloadable);
+    release.setOriginCountry(e.originCountry);
     return release;
   }
 
@@ -1148,13 +1156,31 @@ public class JpaCatalogRepository implements CatalogRepository {
     Map<String, List<TrackCreditEntity>> creditsByTrack =
         allCredits.stream().collect(Collectors.groupingBy(c -> c.trackId));
     Map<String, Boolean> downloadableByTrack = downloadableByTrackId(trackIds);
+    Map<String, Instant> releasedAtByTrack = releasedAtByTrackId(trackIds);
 
     return entities.stream()
         .map(e -> trackToDomain(
             e,
             creditsByTrack.getOrDefault(e.id, Collections.emptyList()),
-            Boolean.TRUE.equals(downloadableByTrack.get(e.id))))
+            Boolean.TRUE.equals(downloadableByTrack.get(e.id)))
+            .withReleasedAt(releasedAtByTrack.get(e.id)))
         .toList();
+  }
+
+  /** Batched lookup of the owning live release's actual go-live timestamp for each track. */
+  private Map<String, Instant> releasedAtByTrackId(List<String> trackIds) {
+    if (trackIds.isEmpty()) return Map.of();
+    List<Object[]> rows = em.createQuery(
+            "SELECT rt.trackId, r.wentLiveAt FROM ReleaseTrackEntity rt, ReleaseEntity r "
+                + "WHERE rt.pk.releaseId = r.id AND r.status = 'live' AND rt.trackId IN :ids",
+            Object[].class)
+        .setParameter("ids", trackIds)
+        .getResultList();
+    Map<String, Instant> map = new HashMap<>();
+    for (Object[] row : rows) {
+      if (row[1] != null) map.put((String) row[0], (Instant) row[1]);
+    }
+    return map;
   }
 
   /**

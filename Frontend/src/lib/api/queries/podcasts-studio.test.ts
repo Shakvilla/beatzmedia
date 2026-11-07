@@ -1,6 +1,6 @@
 import { vi, describe, it, expect, beforeEach } from 'vitest'
 import * as client from '../client'
-import { studioShowsQuery, studioEpisodesQuery, apiCreateEpisode, apiDeleteEpisode } from './podcasts-studio'
+import { studioShowsQuery, studioEpisodesQuery, apiCreateEpisode, apiCreateShow, apiDeleteEpisode, apiSetShowOriginCountry } from './podcasts-studio'
 
 vi.mock('../client', () => ({ apiFetch: vi.fn() }))
 const apiFetch = vi.mocked(client.apiFetch)
@@ -15,7 +15,21 @@ describe('studioShowsQuery', () => {
     apiFetch.mockResolvedValue([{ id: 'sh1', title: 'S', category: 'C' }])
     const res = await studioShowsQuery().queryFn!({} as never)
     expect(apiFetch).toHaveBeenCalledWith('/studio/podcasts/shows')
-    expect(res).toEqual([{ id: 'sh1', title: 'S', category: 'C' }])
+    expect(res).toEqual([{ id: 'sh1', title: 'S', category: 'C', originCountry: null }])
+  })
+})
+
+describe('show country assignment', () => {
+  it('sends an explicit country on create and allows an existing show to be corrected', async () => {
+    apiFetch.mockResolvedValue({ id: 'sh1', title: 'S', category: 'C', originCountry: 'GH' })
+    await apiCreateShow({ title: 'S', category: 'C', originCountry: 'GH' })
+    expect(apiFetch).toHaveBeenCalledWith('/studio/podcasts/shows', expect.objectContaining({
+      method: 'POST', body: expect.objectContaining({ originCountry: 'GH' }),
+    }))
+    await apiSetShowOriginCountry('sh1', 'NG')
+    expect(apiFetch).toHaveBeenCalledWith('/studio/podcasts/shows/sh1/origin-country', {
+      method: 'PATCH', body: { originCountry: 'NG' },
+    })
   })
 })
 

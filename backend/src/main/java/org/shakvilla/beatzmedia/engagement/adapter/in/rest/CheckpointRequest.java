@@ -6,4 +6,5 @@ public record CheckpointRequest(
     String eventType,
     int positionSeconds,
     int durationSeconds,
-    int listenedDeltaSeconds) {}
+    int listenedDeltaSeconds,
+    String recommendationId) {}

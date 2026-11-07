@@ -85,7 +85,8 @@ public final class ReleaseViewMapper {
         r.getScheduledAt() != null ? r.getScheduledAt().toString() : null,
         r.getCoverImage(),
         trackViews,
-        r.getDownloadable());
+        r.getDownloadable(),
+        r.getOriginCountry());
   }
 
   private static String dateOf(Release r) {

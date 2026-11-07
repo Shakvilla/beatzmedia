@@ -16,6 +16,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
 import org.shakvilla.beatzmedia.engagement.application.port.in.EngagementHistory.CheckpointInput;
+import org.shakvilla.beatzmedia.engagement.application.port.in.GetDiscoveryEngagementMetrics;
 import org.shakvilla.beatzmedia.engagement.application.port.out.EngagementContentReader;
 import org.shakvilla.beatzmedia.engagement.application.port.out.EngagementRepository;
 import org.shakvilla.beatzmedia.engagement.application.service.EngagementHistoryService;
@@ -38,7 +39,11 @@ class EngagementHistoryServiceTest {
     repository = new FakeRepository();
     content = new FakeContentReader();
     service = new EngagementHistoryService(
-        repository, content, FakeIds.sequential("eng"), FakeClock.fixed());
+        repository,
+        content,
+        FakeIds.sequential("eng"),
+        FakeClock.fixed(),
+        (accountId, recommendationId, eventId, eventType, contentKind, contentId, parentId, occurredAt) -> {});
   }
 
   @Test
@@ -103,13 +108,14 @@ class EngagementHistoryServiceTest {
         EngagementEventType.PROGRESS,
         position,
         180,
-        15);
+        15,
+        null);
   }
 
   private static final class FakeContentReader implements EngagementContentReader {
     @Override
     public ContentSnapshot get(ContentKind kind, String contentId, String accountId) {
-      return new ContentSnapshot(kind, contentId, "Track", "Artist", "/cover", 180);
+      return new ContentSnapshot(kind, contentId, "Track", "Artist", "/cover", 180, "album-1");
     }
 
     @Override
@@ -189,6 +195,25 @@ class EngagementHistoryServiceTest {
     @Override
     public int projectPending(int batchSize, Instant projectedAt) {
       return 0;
+    }
+
+    @Override
+    public List<GetDiscoveryEngagementMetrics.ContentMetrics> discoveryMetrics(
+        List<GetDiscoveryEngagementMetrics.ContentRef> content,
+        Instant asOf) {
+      return List.of();
+    }
+
+    @Override
+    public List<GetDiscoveryEngagementMetrics.ContentRef> discoveryCandidates(
+        Instant asOf, int perWindowLimit) {
+      return List.of();
+    }
+
+    @Override
+    public GetDiscoveryEngagementMetrics.GroupMetrics discoveryGroupMetrics(
+        List<GetDiscoveryEngagementMetrics.ContentRef> members, Instant asOf) {
+      return new GetDiscoveryEngagementMetrics.GroupMetrics(0, 0, 0, 0, 0, 0);
     }
   }
 }

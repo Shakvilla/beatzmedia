@@ -9,19 +9,19 @@ import org.shakvilla.beatzmedia.catalog.domain.AlbumId;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistProfile;
 import org.shakvilla.beatzmedia.catalog.domain.InviteOutcome;
-import org.shakvilla.beatzmedia.catalog.domain.Lyrics;
 import org.shakvilla.beatzmedia.catalog.domain.LyricLine;
+import org.shakvilla.beatzmedia.catalog.domain.Lyrics;
 import org.shakvilla.beatzmedia.catalog.domain.Playlist;
 import org.shakvilla.beatzmedia.catalog.domain.PlaylistId;
 import org.shakvilla.beatzmedia.catalog.domain.Release;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
-import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseRevision;
+import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
 import org.shakvilla.beatzmedia.catalog.domain.SplitEntry;
 import org.shakvilla.beatzmedia.catalog.domain.SplitInvite;
 import org.shakvilla.beatzmedia.catalog.domain.Track;
-import org.shakvilla.beatzmedia.catalog.domain.TrendingAlbum;
 import org.shakvilla.beatzmedia.catalog.domain.TrackId;
+import org.shakvilla.beatzmedia.catalog.domain.TrendingAlbum;
 import org.shakvilla.beatzmedia.platform.domain.Page;
 import org.shakvilla.beatzmedia.platform.domain.PageRequest;
 
@@ -72,6 +72,9 @@ public interface CatalogRepository {
   List<Track> tracksByAlbum(AlbumId id);
 
   Optional<Track> findTrack(TrackId id);
+
+  /** Atomically increments the public lifetime play count for a track, if it still exists. */
+  void incrementPlayCount(TrackId id);
 
   Optional<Lyrics> findLyrics(TrackId id);
 

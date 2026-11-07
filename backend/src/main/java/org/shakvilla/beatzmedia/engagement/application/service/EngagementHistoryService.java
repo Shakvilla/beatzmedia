@@ -12,6 +12,7 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 
+import org.shakvilla.beatzmedia.discovery.application.port.in.RecordRecommendationOutcome;
 import org.shakvilla.beatzmedia.engagement.application.port.in.EngagementHistory;
 import org.shakvilla.beatzmedia.engagement.application.port.out.EngagementContentReader;
 import org.shakvilla.beatzmedia.engagement.application.port.out.EngagementContentReader.ContentRef;
@@ -30,21 +31,27 @@ import org.shakvilla.beatzmedia.platform.domain.ValidationException;
 @ApplicationScoped
 public class EngagementHistoryService implements EngagementHistory {
 
+  private static final org.jboss.logging.Logger LOG =
+      org.jboss.logging.Logger.getLogger(EngagementHistoryService.class);
+
   private final EngagementRepository repository;
   private final EngagementContentReader contentReader;
   private final IdGenerator ids;
   private final Clock clock;
+  private final RecordRecommendationOutcome recommendationOutcomes;
 
   @Inject
   public EngagementHistoryService(
       EngagementRepository repository,
       EngagementContentReader contentReader,
       IdGenerator ids,
-      Clock clock) {
+      Clock clock,
+      RecordRecommendationOutcome recommendationOutcomes) {
     this.repository = repository;
     this.contentReader = contentReader;
     this.ids = ids;
     this.clock = clock;
+    this.recommendationOutcomes = recommendationOutcomes;
   }
 
   @Override
@@ -99,7 +106,10 @@ public class EngagementHistoryService implements EngagementHistory {
         now);
 
     repository.insertCheckpoint(candidate);
-    if (candidate.effective()) repository.advanceSessionAndProgress(candidate);
+    if (candidate.effective()) {
+      repository.advanceSessionAndProgress(candidate);
+      recordRecommendationOutcome(candidate, input.recommendationId(), content.parentId());
+    }
   }
 
   @Override
@@ -185,6 +195,23 @@ public class EngagementHistoryService implements EngagementHistory {
         && existing.positionSeconds() == input.positionSeconds()
         && Math.abs(existing.durationSeconds() - input.durationSeconds()) <= 2
         && existing.listenedDeltaSeconds() == input.listenedDeltaSeconds();
+  }
+
+  private void recordRecommendationOutcome(
+      ListeningCheckpoint checkpoint, String recommendationId, String parentId) {
+    try {
+      recommendationOutcomes.record(
+          checkpoint.accountId(),
+          recommendationId,
+          checkpoint.id(),
+          checkpoint.eventType().wireValue(),
+          checkpoint.contentKind().wireValue(),
+          checkpoint.contentId(),
+          parentId,
+          checkpoint.receivedAt());
+    } catch (RuntimeException failure) {
+      LOG.warn("Recommendation attribution failed without affecting listening", failure);
+    }
   }
 
   private static String encode(ProgressRow row) {

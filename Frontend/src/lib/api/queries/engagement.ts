@@ -23,6 +23,7 @@ export interface ListeningCheckpointInput {
   positionSeconds: number
   durationSeconds: number
   listenedDeltaSeconds: number
+  recommendationId?: string
 }
 
 export interface ListeningHistoryItem {

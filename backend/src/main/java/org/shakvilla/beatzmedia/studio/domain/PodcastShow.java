@@ -19,6 +19,7 @@ public final class PodcastShow {
   private final String category;
   private final String image;
   private final String description;
+  private final String originCountry;
   private final Instant createdAt;
 
   private PodcastShow(
@@ -28,6 +29,7 @@ public final class PodcastShow {
       String category,
       String image,
       String description,
+      String originCountry,
       Instant createdAt) {
     this.id = id;
     this.artistId = artistId;
@@ -35,6 +37,7 @@ public final class PodcastShow {
     this.category = category;
     this.image = image;
     this.description = description;
+    this.originCountry = originCountry;
     this.createdAt = createdAt;
   }
 
@@ -47,6 +50,12 @@ public final class PodcastShow {
       String image,
       String description,
       Instant now) {
+    return create(id, artistId, title, category, image, description, null, now);
+  }
+
+  public static PodcastShow create(
+      ShowId id, ArtistId artistId, String title, String category, String image,
+      String description, String originCountry, Instant now) {
     if (title == null || title.isBlank()) {
       throw new IllegalArgumentException("title must not be blank");
     }
@@ -55,6 +64,7 @@ public final class PodcastShow {
     }
     return new PodcastShow(
         id, artistId, title.trim(), category.trim(), blankToNull(image), blankToNull(description),
+        originCountry,
         now);
   }
 
@@ -67,14 +77,26 @@ public final class PodcastShow {
       String image,
       String description,
       Instant createdAt) {
-    return new PodcastShow(id, artistId, title, category, image, description, createdAt);
+    return reconstitute(id, artistId, title, category, image, description, null, createdAt);
+  }
+
+  public static PodcastShow reconstitute(
+      ShowId id, ArtistId artistId, String title, String category, String image,
+      String description, String originCountry, Instant createdAt) {
+    return new PodcastShow(id, artistId, title, category, image, description, originCountry,
+        createdAt);
   }
 
   /** Returns a copy with new cover art / description; other fields are untouched. */
   public PodcastShow withArtwork(String newImage, String newDescription) {
     return new PodcastShow(
         id, artistId, title, category, blankToNull(newImage), blankToNull(newDescription),
+        originCountry,
         createdAt);
+  }
+
+  public PodcastShow withOriginCountry(String country) {
+    return new PodcastShow(id, artistId, title, category, image, description, country, createdAt);
   }
 
   /** Whether this show can be projected to fans — {@code podcast.image} is NOT NULL. */
@@ -108,6 +130,10 @@ public final class PodcastShow {
 
   public String description() {
     return description;
+  }
+
+  public String originCountry() {
+    return originCountry;
   }
 
   public Instant createdAt() {

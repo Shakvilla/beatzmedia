@@ -40,6 +40,7 @@ function NewEpisode() {
   // category an admin added was unselectable here, and one they removed was still offered.
   const { data: categoryTerms = [] } = useQuery(taxonomyQuery('podcast_category'))
   const [newShowCat, setNewShowCat] = useState<string>('')
+  const [newShowCountry, setNewShowCountry] = useState('')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [cover, setCover] = useState<string | null>(null)
@@ -90,7 +91,8 @@ function NewEpisode() {
       // whose show has no cover never reaches fans — podcast.image is NOT NULL.
       let targetShowId = showId === NEW_SHOW ? null : showId
       if (showId === NEW_SHOW) {
-        const created = await apiCreateShow({ title: newShowTitle.trim(), category: newShowCat })
+        const created = await apiCreateShow({ title: newShowTitle.trim(), category: newShowCat,
+          originCountry: newShowCountry.trim().toUpperCase() || null })
         targetShowId = created.id
       }
 
@@ -181,6 +183,16 @@ function NewEpisode() {
                     <option value="" disabled>Select a category</option>
                     {categoryTerms.map((c) => <option key={c.id} value={c.label}>{c.label}</option>)}
                   </select>
+                </Field>
+                <Field label="Show country of origin (optional)">
+                  <input className={INPUT} value={newShowCountry}
+                    onChange={(e) => setNewShowCountry(e.target.value.toUpperCase())}
+                    placeholder="GH" maxLength={2} autoCapitalize="characters"
+                    aria-label="Show country of origin"
+                    aria-describedby="show-origin-help" />
+                  <span id="show-origin-help" className="text-xs text-gray-500 dark:text-gray-400">
+                    Two-letter country code for future country charts. Leave empty if unsure.
+                  </span>
                 </Field>
               </div>
             )}

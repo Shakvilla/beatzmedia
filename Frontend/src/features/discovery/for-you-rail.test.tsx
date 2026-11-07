@@ -1,4 +1,4 @@
-import { fireEvent, render, screen } from '@testing-library/react'
+import { fireEvent, render, screen, waitFor } from '@testing-library/react'
 import type { ReactNode } from 'react'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { ForYouRail } from './for-you-rail'
@@ -8,7 +8,12 @@ const state = vi.hoisted(() => ({
   query: {} as Record<string, unknown>,
   options: null as { enabled?: boolean } | null,
   refetch: vi.fn(),
+  invalidate: vi.fn(),
+  toast: vi.fn(),
 }))
+const apiFetch = vi.hoisted(() => vi.fn())
+
+vi.mock('../../lib/api/client', () => ({ apiFetch }))
 
 vi.mock('../auth/auth-context', () => ({
   useAuth: () => ({ isAuthenticated: state.authenticated }),
@@ -16,10 +21,15 @@ vi.mock('../auth/auth-context', () => ({
 
 vi.mock('@tanstack/react-query', () => ({
   queryOptions: (options: unknown) => options,
+  useQueryClient: () => ({ invalidateQueries: state.invalidate }),
   useQuery: (options: { enabled?: boolean }) => {
     state.options = options
     return state.query
   },
+}))
+
+vi.mock('../../components/ui/toast-provider', () => ({
+  useToast: () => ({ toast: state.toast }),
 }))
 
 vi.mock('@tanstack/react-router', () => ({
@@ -36,6 +46,10 @@ describe('ForYouRail', () => {
   beforeEach(() => {
     state.authenticated = true
     state.refetch.mockReset()
+    state.invalidate.mockReset()
+    state.invalidate.mockResolvedValue(undefined)
+    state.toast.mockReset()
+    apiFetch.mockReset()
     state.query = { isPending: false, isError: false, data: { items: [] }, refetch: state.refetch }
   })
 
@@ -83,5 +97,40 @@ describe('ForYouRail', () => {
 
     expect(state.refetch).toHaveBeenCalledOnce()
     expect(screen.getByText(/rest of Home is still available/)).toBeTruthy()
+  })
+
+  it('optimistically hides feedback and offers a durable Undo action', async () => {
+    apiFetch.mockResolvedValue({ suppressionId: 'suppression-1' })
+    state.query = {
+      isPending: false,
+      isError: false,
+      refetch: state.refetch,
+      data: {
+        items: [{
+          kind: 'album',
+          contentId: 'album-1',
+          creatorId: 'artist-1',
+          title: 'Gold',
+          subtitle: 'Ama',
+          image: null,
+          route: '/album/album-1',
+          reason: 'More from Ama',
+          recommendationId: 'recommendation-1',
+          rankingVersion: 'rules-v1',
+          position: 1,
+        }],
+      },
+    }
+
+    const { container } = render(<ForYouRail />)
+    fireEvent.click(screen.getByRole('button', { name: 'Recommendation options for Gold' }))
+    fireEvent.click(screen.getByRole('menuitem', { name: 'Not interested' }))
+
+    await waitFor(() => expect(container.textContent).not.toContain('Gold'))
+    expect(apiFetch).toHaveBeenCalledWith('/me/recommendation-feedback', {
+      method: 'POST',
+      body: { recommendationId: 'recommendation-1', action: 'not-interested' },
+    })
+    expect(state.toast.mock.calls[0]?.[2]).toMatchObject({ label: 'Undo' })
   })
 })

@@ -30,7 +30,14 @@ public interface UpdateRelease {
       String visibility,
       Instant scheduledAt,
       List<TrackRef> tracks,
-      Boolean downloadable) {
+      Boolean downloadable,
+      String originCountry) {
+
+    public UpdateReleaseCommand(
+        String title, String genre, String description, String visibility, Instant scheduledAt,
+        List<TrackRef> tracks, Boolean downloadable) {
+      this(title, genre, description, visibility, scheduledAt, tracks, downloadable, null);
+    }
 
     /** Legacy 6-arg form — no download-choice change ({@code downloadable == null} → untouched). */
     public UpdateReleaseCommand(
@@ -40,7 +47,7 @@ public interface UpdateRelease {
         String visibility,
         Instant scheduledAt,
         List<TrackRef> tracks) {
-      this(title, genre, description, visibility, scheduledAt, tracks, null);
+      this(title, genre, description, visibility, scheduledAt, tracks, null, null);
     }
   }
 

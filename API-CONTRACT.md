@@ -70,8 +70,8 @@ UI: home, search, artist, album, track, playlist pages. Shapes: `Artist`, `Album
 | GET | `/artists/:id/albums` | discography | `Album[]` |
 | GET | `/artists/:id/shows` | upcoming shows | `Show[]` |
 | GET | `/albums/:id` | + `?tracks=true` to embed | `Album` (+ `tracks: Track[]`) |
-| GET | `/tracks/:id` | track detail (credits, lyrics ref) | `Track` |
-| GET | `/tracks/:id/lyrics` | optional timed or plain lyrics; `time` is null for plain lines | `{ lines: { time: number|null, text }[] }` |
+| GET | `/tracks/:id` | track detail (credits, lyrics ref, exact owning-release go-live timestamp in `releasedAt`) | `Track` |
+| GET | `/tracks/:id/lyrics` | optional timed or plain lyrics; `time` is null for plain lines and otherwise seconds with millisecond precision | `{ lines: { time: number|null, text }[] }` |
 | GET | `/playlists/:id` | + tracks | `Playlist` (+ `tracks: Track[]`) |
 | POST | `/catalog/resolve` | batch-resolve id-lists → full objects in one call (for list screens that hold only ids, e.g. the library); every request field optional | `{ tracks: Track[], artists: Artist[], albums: Album[], playlists: Playlist[] }` |
 
@@ -172,7 +172,7 @@ Limits default to 20 and are clamped to 1–100.
 recommendations for the JWT subject:
 
 `{ items: [{ kind:"single"|"album"|"ep"|"podcast", contentId, creatorId, title, subtitle, image,
-route, reason }] }`.
+route, reason, recommendationId?, rankingVersion, position }] }`.
 
 Limits default to 12 and are clamped to 1–24. Owned singles, fully owned albums/EPs, and recently
 completed tracks are excluded. Available content types each receive a reserved place before the
@@ -180,6 +180,19 @@ remaining positions are filled by score. Podcast cards represent shows, not indi
 Listening-history signals are used only while durable history is enabled; explicit library
 relationships and bounded popularity/freshness fallback remain available after opt-out. Scores and
 raw signal data are never returned.
+
+Recommendation interaction routes also require authentication:
+
+| Method | Path | Body / Notes |
+|---|---|---|
+| POST | `/me/recommendation-events` | `{ events: [{ eventId, recommendationId, eventType:"impression"|"open" }] }`; 1–50 items, idempotent on `eventId` → `204` |
+| POST | `/me/recommendation-feedback` | `{ recommendationId, action:"not-interested"|"dont-recommend-source" }` → `{ suppressionId }` |
+| DELETE | `/me/recommendation-suppressions/:suppressionId` | Undo an account-owned suppression → `204`; missing or cross-account → `404` |
+
+Feedback is recommendation-only: it does not unfollow, remove owned content, prevent playback, or
+hide direct links. Attribution records expire after 90 days; explicit suppressions remain until Undo
+or account deletion. Listening checkpoints may include optional `recommendationId`; invalid or
+expired attribution never rejects playback or history ingestion.
 
 ---
 
@@ -329,7 +342,7 @@ UI: studio overview, releases, 4-step release wizard, analytics, audience, payou
 `StudioRelease { id, title, type: single|ep|album|mixtape, status: live|scheduled|in_review|draft|takedown, date, trackCount, streams, revenue, price }`
 — the **list** shape (`GET /studio/releases`), unchanged.
 
-`StudioReleaseDetail` = `StudioRelease` **+** `{ genre, description, visibility: public|scheduled, scheduledAt, tracks: TrackDraft[], downloadable: boolean|null }`
+`StudioReleaseDetail` = `StudioRelease` **+** `{ genre, description, visibility: public|scheduled, scheduledAt, tracks: TrackDraft[], downloadable: boolean|null, originCountry: string|null }`
 — additive superset returned by `GET /:id` and every draft-flow mutation (create/PATCH/submit).
 `downloadable` is the artist's choice of whether buyers may download this release's audio (see
 §4's `GET /tracks/:id/download`); `null` means **not chosen yet** — unlike the public `Track`/`Album`
@@ -338,6 +351,10 @@ needs to tell "not decided" apart from "decided: no". A release cannot leave `dr
 transitions) while `downloadable` is still `null` — attempting it returns `422
 DOWNLOAD_CHOICE_REQUIRED` (field `downloadable`), distinct from a generic `VALIDATION` error so a
 client can point the artist straight at the download toggle.
+
+`originCountry` is an optional creator-declared ISO 3166-1 alpha-2 code (for example `GH`).
+Unknown legacy content stays `null`; no country is inferred from IP or profile location. A country
+chart includes only content with an exact stored match. Invalid codes return 422 (`originCountry`).
 
 `TrackDraft { trackId, title, duration, status: uploading|ready|error, position, image, customArtwork, price, splits: SplitEntry[] }` (WU-CAT-6). `image` is the fan-facing artwork URL; `customArtwork` indicates that the artist uploaded track-specific art. Multi-track releases initially use the release cover as a visual fallback until individual art is uploaded. `SplitEntry { id, name, email, role, percent, confirmation: self|confirmed|pending|declined|auto }` — **collaborators only**: the originating creator's share is implicit and never stored as a row, so `Σ percent ≤ 100` (not `== 100`), per INV-12. `PATCH .../:id` accepts `splits` nested under each `tracks[]` entry on input (`{name, email, role, percent}` — no `id`/`confirmation`, wholesale-replace per track); every persisted collaborator lands with `confirmation:"pending"` until the invite/accept flow (WU-CAT-9, see below) moves it to `confirmed`/`declined` — `declined` is terminal and non-blocking for go-live, same as `confirmed`.
 
@@ -350,14 +367,14 @@ client can point the artist straight at the download toggle.
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/studio/releases` | list (status filter) → `StudioRelease[]` |
-| POST | `/studio/releases` | create a **metadata-only draft**: `{ title?, type, visibility?, scheduledAt?, genre?, description?, downloadable? }` → **201** `StudioReleaseDetail` with `status:"draft"`, empty `tracks`. `type` required; `title` defaults to `"Untitled release"`; `downloadable` omitted leaves the choice unanswered (`null`). No Idempotency-Key (drafts are cheap/deletable). |
+| POST | `/studio/releases` | create a **metadata-only draft**: `{ title?, type, visibility?, scheduledAt?, genre?, description?, downloadable?, originCountry? }` → **201** `StudioReleaseDetail` with `status:"draft"`, empty `tracks`. `type` required; `title` defaults to `"Untitled release"`; `downloadable` omitted leaves the choice unanswered (`null`). No Idempotency-Key (drafts are cheap/deletable). |
 | GET | `/studio/releases/:id` | → `StudioReleaseDetail` |
-| PATCH | `/studio/releases/:id` | `{ title?, genre?, description?, visibility?, scheduledAt?, tracks?: [{trackId, position, priceMinor, splits?: [{name, email, role, percent}]}], downloadable? }` → `StudioReleaseDetail`. `title`/`downloadable` are editable on any status; `genre`/`description`/`visibility`/`scheduledAt`/`tracks` are **draft-only** (409 `ILLEGAL_TRANSITION` otherwise). `tracks`, when present, **replaces** the whole ordered list (every `trackId` must already belong to the release, else 422 `TRACK_NOT_IN_RELEASE`; a repeated `trackId` or `position` → 422 `DUPLICATE_TRACK_REF`; a `priceMinor` outside `[0, 100_000_000]` → 422 `INVALID_PRICE`). Each track's `splits`, when present, **replaces** that track's collaborator list (`percent` outside `[0, 100]` → a plain 422 field-validation error); every persisted collaborator is `confirmation:"pending"`. `downloadable`, when present, sets the choice; **omitted (not `false`) leaves a previously-made choice unchanged** — a partial PATCH must not silently clear it. Once a purchase captures the choice on its ownership grant, changing `downloadable` here only affects sales made after the change (see §4). |
+| PATCH | `/studio/releases/:id` | `{ title?, genre?, description?, visibility?, scheduledAt?, tracks?: [{trackId, position, priceMinor, splits?: [{name, email, role, percent}]}], downloadable?, originCountry? }` → `StudioReleaseDetail`. `title`/`downloadable`/`originCountry` are editable on any status; `genre`/`description`/`visibility`/`scheduledAt`/`tracks` are **draft-only** (409 `ILLEGAL_TRANSITION` otherwise). `tracks`, when present, **replaces** the whole ordered list (every `trackId` must already belong to the release, else 422 `TRACK_NOT_IN_RELEASE`; a repeated `trackId` or `position` → 422 `DUPLICATE_TRACK_REF`; a `priceMinor` outside `[0, 100_000_000]` → 422 `INVALID_PRICE`). Each track's `splits`, when present, **replaces** that track's collaborator list (`percent` outside `[0, 100]` → a plain 422 field-validation error); every persisted collaborator is `confirmation:"pending"`. `downloadable`, when present, sets the choice; **omitted (not `false`) leaves a previously-made choice unchanged** — a partial PATCH must not silently clear it. Once a purchase captures the choice on its ownership grant, changing `downloadable` here only affects sales made after the change (see §4). |
 | DELETE | `/studio/releases/:id` | delete a `draft`/`in_review` release (409 `RELEASE_LIVE` for `live`) |
 | POST | `/studio/releases/:id/tracks` | multipart audio upload (WAV/FLAC, ≤500MB) → **201** `UploadedTrack` (`{ id, title, duration, status, progress, src, price, explicit, position, image, customArtwork }`) — the track is **attached** to the release as a `TrackDraft` (draft-only; 409 `ILLEGAL_TRANSITION` on a non-draft release) |
 | POST | `/studio/releases/:id/tracks/:trackId/cover` | multipart `image` upload → `{ image }`; stores artwork for that release track and marks `customArtwork:true`. Artist must own the release and the track must belong to it. |
 | GET | `/studio/releases/:id/tracks/:trackId/lyrics` | artist-only lyrics read, including draft releases |
-| PUT | `/studio/releases/:id/tracks/:trackId/lyrics` | `{ lines: { time: number|null, text: string }[] }`; artist-owned track lyrics publish immediately, outside release review. Empty `lines` clears lyrics. Use a timestamp on every line for synced lyrics, or null on every line for plain lyrics. |
+| PUT | `/studio/releases/:id/tracks/:trackId/lyrics` | `{ lines: { time: number|null, text: string }[] }`; `time` is seconds with millisecond precision. Artist-owned track lyrics publish immediately, outside release review. Empty `lines` clears lyrics. Use a timestamp on every line for synced lyrics, or null on every line for plain lyrics. |
 | DELETE | `/studio/releases/:id/tracks/:trackId` | remove a draft track → **204**. Draft-only (409); unknown `trackId` → 404 `TRACK_NOT_FOUND` |
 | POST | `/studio/releases/:id/submit` | **finalize**: `draft → in_review`. Requires `Idempotency-Key` header (400 `MISSING_IDEMPOTENCY_KEY` if absent). Validates the track-count matrix per `type` (`single`=1, `ep`=3–6, `album`=7+, `mixtape`≥1 — else 422 `TRACK_COUNT_INVALID`), requires custom artwork for every track in a multi-track release (else 422 `TRACK_ARTWORK_REQUIRED`), and per track `Σ splits.percent ≤ 100` (else 422 `SPLIT_OVER_100`, INV-12), recomputes `price` (bundle discount), transitions the release → **200** `StudioReleaseDetail` with `status:"in_review"`. Not-draft → 409 `ILLEGAL_TRANSITION`. A reused `Idempotency-Key` whose stored release/artist doesn't match the caller → 409 `IDEMPOTENCY_KEY_CONFLICT` (no data leak). On success, catalog issues one **collaborator split invite** per distinct pending `splits[].email` on the release (WU-CAT-9, see below); a replayed `Idempotency-Key` does not re-issue. |
 | POST | `/studio/releases/:id/resend-invites` | artist (owner) — re-issue invites for every collaborator still `confirmation:"pending"` on the release → **204**. 403 if not the owning artist. No `Idempotency-Key`; intentionally repeatable (a double-call re-emails). |
@@ -373,13 +390,14 @@ client can point the artist straight at the download toggle.
 | POST | `/splits/invites/:token/decline` | public — declines every one of the collaborator's `pending` splits on the release (the share reverts to the creator) → **204**. 410 `SPLIT_INVITE_GONE` if already consumed or past the TTL. |
 
 ### Podcasts (creator)
-`StudioPodcastShow { id, title, category }`
+`StudioPodcastShow { id, title, category, originCountry: string|null }`
 `StudioEpisode { id, showId, showTitle, title, duration, status: published|scheduled|draft, premium, price, publishedAt, plays }`
 
 | Method | Path | Notes |
 |---|---|---|
 | GET | `/studio/podcasts/shows` | the creator's shows |
-| POST | `/studio/podcasts/shows` | `{ title, category }` → `StudioPodcastShow` |
+| POST | `/studio/podcasts/shows` | `{ title, category, image?, description?, originCountry? }` → `StudioPodcastShow` |
+| PATCH | `/studio/podcasts/shows/:id/origin-country` | `{ originCountry: string }` → `StudioPodcastShow`; an empty string clears the assignment. Artist ownership is required. |
 | GET | `/studio/podcasts/episodes` | the creator's episodes (+ plays, status) |
 | POST | `/studio/podcasts/episodes` | **new-episode upload** — multipart audio + `{ showId\|newShow, title, description, cover?, visibility: public\|scheduled, date?, premium, price?, earlyAccess? }` → `StudioEpisode` |
 | PATCH/DELETE | `/studio/podcasts/episodes/:id` | edit metadata / delete |

@@ -39,7 +39,8 @@ public class EngagementContentReaderAdapter implements EngagementContentReader {
             track.title(),
             track.artistName(),
             track.image(),
-            track.duration());
+            track.duration(),
+            track.albumId());
       }
       var episode = episodes.get(new EpisodeId(contentId));
       return new ContentSnapshot(
@@ -48,7 +49,8 @@ public class EngagementContentReaderAdapter implements EngagementContentReader {
           episode.title(),
           episode.showTitle(),
           episode.image(),
-          episode.durationSeconds());
+          episode.durationSeconds(),
+          episode.showId());
     } catch (DomainException e) {
       throw new EngagementContentNotFoundException();
     }

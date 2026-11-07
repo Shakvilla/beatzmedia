@@ -50,3 +50,42 @@ History opt-out or history-read failure removes history-derived signals. Catalog
 candidate failures degrade independently. This request-time path cannot affect public Home,
 Following, publication, playback, or commerce.
 
+## Recommendation feedback and attribution
+
+Discovery persists only the minimum durable state needed to control and measure the request-time
+rail. `recommendation_suppression` stores explicit account-owned content or source preferences.
+Matching suppressions are queried against the bounded candidate keys and filtered before ranking and
+four-type reservation. Artist/show suppression is recommendation-only and has no effect on follows,
+owned content, Search, direct links, or playback.
+
+Each ranked card receives a short-lived `recommendation_attribution` identity with content/source
+references, surface, reason code, ranking version, and position. It contains no score or raw signal.
+`recommendation_event` stores idempotent impression, open, and engagement-outcome facts. Attribution
+and event rows expire after 90 days through the bounded `discovery.recommendation-cleanup` job;
+explicit suppressions remain until Undo or account deletion.
+
+Engagement reports optional start, qualified-play, and completion outcomes through the narrow
+`RecordRecommendationOutcome` input port. Discovery verifies that direct tracks, release tracks, and
+podcast episodes match the account-bound recommendation. Validation or persistence failure produces
+unattributed listening and cannot roll back an engagement checkpoint or interrupt playback.
+
+## Organic collection snapshots (WU-DIS-4)
+
+Discovery groups qualified track activity into published singles, albums, and EPs, and qualified
+episode activity into podcast shows. Its bounded Top/Trending assembler reads deduplicated listener
+counts from `engagement`, saves and show follows from `library`, and distinct settled, non-refunded
+purchase counts from `commerce`. Artist follows are not assigned to each release because that would
+multiply one creator-level event across several cards. These are aggregate ranking signals; they
+do not prove that a particular card caused a purchase.
+
+Catalog releases and studio podcast shows store an optional creator-declared ISO country. Existing
+content remains unassigned. Discovery reads that value through the owners' input ports and includes
+only an exact country match in a named country snapshot. The declaration is not independently
+verified, so moderation remains a launch gate for public country charts.
+
+The assembler returns an immutable, versioned snapshot candidate; it does not publish. The
+snapshot repository activates a nonempty version atomically and retains earlier versions for
+cursor stability. Scheduled publication and public reads remain gated on moderation,
+publication-state rechecks, and reach metrics for Emerging. An empty candidate result leaves the
+active version intact.
+

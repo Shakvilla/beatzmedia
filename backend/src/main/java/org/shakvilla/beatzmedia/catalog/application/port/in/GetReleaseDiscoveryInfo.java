@@ -14,5 +14,12 @@ public interface GetReleaseDiscoveryInfo {
       String artistName,
       String coverImage,
       String releaseType,
-      String publishedAt) {}
+      String publishedAt,
+      String originCountry) {
+    public ReleaseDiscoveryInfo(
+        String id, String artistId, String title, String artistName, String coverImage,
+        String releaseType, String publishedAt) {
+      this(id, artistId, title, artistName, coverImage, releaseType, publishedAt, null);
+    }
+  }
 }

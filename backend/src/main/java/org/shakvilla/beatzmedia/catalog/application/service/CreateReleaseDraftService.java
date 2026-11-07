@@ -16,6 +16,7 @@ import org.shakvilla.beatzmedia.catalog.application.port.out.CatalogRepository;
 import org.shakvilla.beatzmedia.catalog.domain.Release;
 import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
 import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
+import org.shakvilla.beatzmedia.platform.domain.OriginCountry;
 
 /**
  * Application service for {@link CreateReleaseDraft}. Creates a metadata-only {@code draft}
@@ -60,6 +61,7 @@ public class CreateReleaseDraftService implements CreateReleaseDraft {
     if (command.downloadable() != null) {
       release.setDownloadable(command.downloadable());
     }
+    release.setOriginCountry(OriginCountry.normalize(command.originCountry()));
 
     repo.saveRelease(release);
 

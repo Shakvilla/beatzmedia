@@ -1,9 +1,12 @@
 package org.shakvilla.beatzmedia.catalog.application.service;
 
+import java.math.BigDecimal;
 import java.util.List;
+
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
+
 import org.shakvilla.beatzmedia.audit.application.port.out.AuditWriter;
 import org.shakvilla.beatzmedia.audit.domain.AuditEntry;
 import org.shakvilla.beatzmedia.audit.domain.AuditType;
@@ -76,7 +79,7 @@ public class ManageTrackLyricsService implements ManageTrackLyrics {
       throw new ValidationException("Lyrics may contain at most 1,000 lines", "lines");
     }
     Boolean timed = null;
-    int previousTime = -1;
+    BigDecimal previousTime = null;
     for (int index = 0; index < lines.size(); index++) {
       LyricLine line = lines.get(index);
       if (line == null || line.text() == null || line.text().isBlank() || line.text().length() > MAX_LINE_LENGTH) {
@@ -88,10 +91,14 @@ public class ManageTrackLyricsService implements ManageTrackLyrics {
       }
       timed = hasTime;
       if (hasTime) {
-        if (line.tSec() < 0 || (durationSec > 0 && line.tSec() > durationSec) || line.tSec() < previousTime) {
+        BigDecimal time = line.tSec();
+        if (time.signum() < 0
+            || time.stripTrailingZeros().scale() > 3
+            || (durationSec > 0 && time.compareTo(BigDecimal.valueOf(durationSec)) > 0)
+            || (previousTime != null && time.compareTo(previousTime) < 0)) {
           throw new ValidationException("Lyric timestamps must be ordered and within the track duration", "lines[" + index + "].time");
         }
-        previousTime = line.tSec();
+        previousTime = time;
       }
     }
   }

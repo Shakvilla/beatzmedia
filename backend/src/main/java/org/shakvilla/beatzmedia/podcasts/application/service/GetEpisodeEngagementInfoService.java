@@ -28,6 +28,7 @@ public class GetEpisodeEngagementInfoService implements GetEpisodeEngagementInfo
         .orElseThrow(() -> new EpisodeNotFoundException(episodeId.value()));
     return new EpisodeEngagementInfo(
         episode.id().value(),
+        show.id().value(),
         episode.title(),
         show.title(),
         episode.image(),

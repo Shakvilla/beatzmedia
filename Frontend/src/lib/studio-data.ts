@@ -103,6 +103,7 @@ export interface StudioReleaseDetail extends StudioRelease {
   visibility: 'public' | 'scheduled'
   scheduledAt: string | null
   coverImage: string | null
+  originCountry: string | null
   tracks: StudioReleaseTrack[]
 }
 
@@ -128,6 +129,7 @@ export interface StudioPodcastShow {
   id: string
   title: string
   category: string
+  originCountry?: string | null
 }
 
 export interface StudioEpisode {

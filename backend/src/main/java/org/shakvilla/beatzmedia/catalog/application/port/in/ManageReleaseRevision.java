@@ -3,6 +3,7 @@ package org.shakvilla.beatzmedia.catalog.application.port.in;
 import java.io.InputStream;
 import java.time.Instant;
 import java.util.List;
+
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseRevision;

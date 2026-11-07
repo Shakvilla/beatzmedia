@@ -21,17 +21,17 @@ import org.shakvilla.beatzmedia.catalog.domain.Lyrics;
 import org.shakvilla.beatzmedia.catalog.domain.Playlist;
 import org.shakvilla.beatzmedia.catalog.domain.PlaylistId;
 import org.shakvilla.beatzmedia.catalog.domain.Release;
+import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseRevision;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseRevisionStatus;
-import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseType;
 import org.shakvilla.beatzmedia.catalog.domain.SplitConfirmation;
 import org.shakvilla.beatzmedia.catalog.domain.SplitEntry;
 import org.shakvilla.beatzmedia.catalog.domain.SplitInvite;
 import org.shakvilla.beatzmedia.catalog.domain.Track;
-import org.shakvilla.beatzmedia.catalog.domain.TrendingAlbum;
 import org.shakvilla.beatzmedia.catalog.domain.TrackId;
+import org.shakvilla.beatzmedia.catalog.domain.TrendingAlbum;
 import org.shakvilla.beatzmedia.platform.domain.Page;
 import org.shakvilla.beatzmedia.platform.domain.PageRequest;
 
@@ -160,6 +160,11 @@ public class FakeCatalogRepository implements CatalogRepository {
   @Override
   public Optional<Track> findTrack(TrackId id) {
     return Optional.ofNullable(tracks.get(id.value()));
+  }
+
+  @Override
+  public void incrementPlayCount(TrackId id) {
+    tracks.computeIfPresent(id.value(), (key, track) -> track.withOneMorePlay());
   }
 
   @Override

@@ -34,4 +34,5 @@ public record StudioReleaseDetailView(
      * track/album views, needs to tell "not chosen" apart from "chosen: no" to drive the
      * required-choice UI, so this is NOT coerced to {@code false}.
      */
-    Boolean downloadable) {}
+    Boolean downloadable,
+    String originCountry) {}

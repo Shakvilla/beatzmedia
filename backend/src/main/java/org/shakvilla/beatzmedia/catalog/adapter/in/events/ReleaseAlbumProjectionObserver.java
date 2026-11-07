@@ -7,8 +7,8 @@ import jakarta.inject.Inject;
 
 import org.shakvilla.beatzmedia.catalog.application.port.in.ProjectReleaseAlbum;
 import org.shakvilla.beatzmedia.catalog.domain.ContentTakenDown;
-import org.shakvilla.beatzmedia.catalog.domain.ReleaseWentLive;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseRevisionApproved;
+import org.shakvilla.beatzmedia.catalog.domain.ReleaseWentLive;
 
 /**
  * Keeps the {@code album} row in step with a release going live and coming down.

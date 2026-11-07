@@ -6,6 +6,7 @@ import jakarta.transaction.Transactional;
 
 import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
 import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
+import org.shakvilla.beatzmedia.platform.domain.OriginCountry;
 import org.shakvilla.beatzmedia.platform.domain.ValidationException;
 import org.shakvilla.beatzmedia.studio.application.port.in.CreatePodcastShow;
 import org.shakvilla.beatzmedia.studio.application.port.in.PodcastShowView;
@@ -41,7 +42,7 @@ public class CreatePodcastShowService implements CreatePodcastShow {
     PodcastShow show =
         PodcastShow.create(
             new ShowId(ids.newId()), artist, cmd.title(), cmd.category(), cmd.image(),
-            cmd.description(), clock.now());
+            cmd.description(), OriginCountry.normalize(cmd.originCountry()), clock.now());
     PodcastShow saved = repository.saveShow(show);
     return ListStudioPodcastShowsService.toView(saved);
   }

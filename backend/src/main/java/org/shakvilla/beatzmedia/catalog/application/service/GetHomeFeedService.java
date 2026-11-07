@@ -1,8 +1,8 @@
 package org.shakvilla.beatzmedia.catalog.application.service;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
-import java.util.Comparator;
 import java.util.stream.Stream;
 
 import jakarta.enterprise.context.ApplicationScoped;

@@ -20,6 +20,13 @@ final class RecommendationRanker {
 
   static List<RecommendationItem> rank(
       List<RecommendationCandidate> candidates, Snapshot signals, int limit, Instant now) {
+    return rankDetailed(candidates, signals, limit, now).stream()
+        .map(RecommendationRanker::view)
+        .toList();
+  }
+
+  static List<RankedRecommendation> rankDetailed(
+      List<RecommendationCandidate> candidates, Snapshot signals, int limit, Instant now) {
     Map<String, Ranked> unique = new HashMap<>();
     for (RecommendationCandidate candidate : candidates) {
       if (excluded(candidate, signals)) continue;
@@ -31,7 +38,9 @@ final class RecommendationRanker {
     }
 
     List<Ranked> ordered = unique.values().stream().sorted(ORDER).toList();
-    if (ordered.size() <= limit) return ordered.stream().map(RecommendationRanker::view).toList();
+    if (ordered.size() <= limit) {
+      return ordered.stream().map(RecommendationRanker::detailed).toList();
+    }
 
     Set<Ranked> selected = new LinkedHashSet<>();
     for (RecommendationKind kind : RecommendationKind.values()) {
@@ -42,7 +51,7 @@ final class RecommendationRanker {
       if (selected.size() == limit) break;
       selected.add(ranked);
     }
-    return selected.stream().sorted(ORDER).map(RecommendationRanker::view).toList();
+    return selected.stream().sorted(ORDER).map(RecommendationRanker::detailed).toList();
   }
 
   private static boolean excluded(RecommendationCandidate candidate, Snapshot signals) {
@@ -62,6 +71,7 @@ final class RecommendationRanker {
       RecommendationCandidate candidate, Snapshot signals, Instant now) {
     int score = 0;
     String reason = "Popular on BeatzClik";
+    String reasonCode = "popular";
     boolean followed =
         candidate.kind() == RecommendationKind.podcast
             ? signals.followedShowIds().contains(candidate.creatorId())
@@ -69,14 +79,17 @@ final class RecommendationRanker {
     if (followed) {
       score += 100;
       reason = "Because you follow " + candidate.creatorName();
+      reasonCode = "followed-source";
     } else if (signals.preferredCreatorIds().contains(candidate.creatorId())) {
       score += 45;
       reason = "More from " + candidate.creatorName();
+      reasonCode = "creator-affinity";
     } else {
       String matchingTag = matchingTag(candidate.tags(), signals.preferredTags());
       if (matchingTag != null) {
         score += 25;
         reason = "Based on your " + matchingTag + " listening";
+        reasonCode = "tag-affinity";
       }
     }
     if (signals.historyEnabled()
@@ -87,7 +100,7 @@ final class RecommendationRanker {
       if (ageDays <= 30) score += 8;
       else if (ageDays <= 90) score += 4;
     }
-    return new Ranked(candidate, score, reason);
+    return new Ranked(candidate, score, reason, reasonCode);
   }
 
   private static String matchingTag(List<String> tags, Set<String> preferredTags) {
@@ -106,7 +119,12 @@ final class RecommendationRanker {
     return ranked.stream().filter(item -> item.candidate().kind() == kind).findFirst();
   }
 
-  private static RecommendationItem view(Ranked ranked) {
+  private static RankedRecommendation detailed(Ranked ranked) {
+    return new RankedRecommendation(
+        ranked.candidate(), ranked.reason(), ranked.reasonCode());
+  }
+
+  private static RecommendationItem view(RankedRecommendation ranked) {
     var item = ranked.candidate();
     return new RecommendationItem(
         item.kind().wireValue(),
@@ -116,7 +134,10 @@ final class RecommendationRanker {
         item.subtitle(),
         item.image(),
         item.route(),
-        ranked.reason());
+        ranked.reason(),
+        null,
+        RecommendationAttributionWriter.RANKING_VERSION,
+        0);
   }
 
   private static final Comparator<Ranked> ORDER =
@@ -125,5 +146,9 @@ final class RecommendationRanker {
           .thenComparing(ranked -> ranked.candidate().kind().wireValue())
           .thenComparing(ranked -> ranked.candidate().contentId());
 
-  private record Ranked(RecommendationCandidate candidate, int score, String reason) {}
+  record RankedRecommendation(
+      RecommendationCandidate candidate, String reason, String reasonCode) {}
+
+  private record Ranked(
+      RecommendationCandidate candidate, int score, String reason, String reasonCode) {}
 }

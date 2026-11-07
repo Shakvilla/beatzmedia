@@ -81,11 +81,11 @@ projections.
 | `ReleaseTrack` | Entity (in Release) | `trackId`, `position`, `priceMinor` | Ordered constituents; price feeds bundle math. |
 | `SplitEntry` | Value object | `id`, `trackId`, `name`, `email`, `role`, `percent`, `confirmation` | Per-track royalty split of the **creator pool**; INV-12. |
 | `ReleaseDraft` | Entity | `id`, `artistId`, JSON draft state, `updatedAt` | Server-persisted wizard draft (hydrates the client). |
-| `Track` | Aggregate root | `id`, `title`, `artistId`, `albumId?`, `durationSec`, `ownership`, `priceMinor?`, `plays`, `quality`, `year`, `releaseId?`, `status` | `ownership`/`price` decorated per-caller at the boundary. |
+| `Track` | Aggregate root | `id`, `title`, `artistId`, `albumId?`, `durationSec`, `ownership`, `priceMinor?`, `plays`, `quality`, `year`, `releaseId?`, `status` | `ownership`/`price` decorated per-caller at the boundary; `releasedAt` is read from its live release. |
 | `TrackCredit` | Value object | `role`, `names[]` | Track detail credits. |
 | `Album` | Aggregate root | `id`, `title`, `artistId`, `artistName`, `year`, `coverImage`, `trackIds[]` | List price derived via INV-5 from constituent tracks. **Projected from a live release** — see below. |
 | `Lyrics` | Entity | `trackId`, `lines: LyricLine[]` | One-to-zero/one with Track. |
-| `LyricLine` | Value object | `tSec?`, `text` | Null time is plain text; otherwise time is in whole seconds. Artist saves publish immediately. |
+| `LyricLine` | Value object | `tSec?`, `text` | Null time is plain text; otherwise time is seconds with millisecond precision. Artist saves publish immediately. |
 | `ArtistProfile` | Aggregate root | `id`, `name`, `image`, `coverImage?`, `verified`, `monthlyListeners`, `followers`, `bio`, `location`, `genres[]`, `shows[]` | Public artist page + sub-collections. |
 | `Show` | Value object | `date`, `city`, `venue` | ISO date; surfaced on artist page. |
 | `Playlist` | Aggregate root | `id`, `title`, `description?`, `creator`, `image`, `isPublic`, `followers`, `trackIds[]` | Editorial/public; private hidden as 404 to non-owner. |
@@ -212,7 +212,7 @@ erDiagram
   LYRIC_LINE {
     string track_id FK
     int position
-    int t_sec "nullable"
+    decimal t_sec "nullable, scale 3"
     string text
   }
   PLAYLIST {
@@ -619,7 +619,7 @@ CREATE TABLE lyrics (
 CREATE TABLE lyric_line (
   track_id         TEXT NOT NULL REFERENCES lyrics(track_id) ON DELETE CASCADE,
   position         INT  NOT NULL,
-  t_sec            INT,
+  t_sec            NUMERIC(12,3),
   text             TEXT NOT NULL,
   PRIMARY KEY (track_id, position)
 );

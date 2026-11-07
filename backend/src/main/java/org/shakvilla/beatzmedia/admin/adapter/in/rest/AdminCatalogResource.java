@@ -30,9 +30,9 @@ import org.shakvilla.beatzmedia.admin.application.port.in.GetCatalogItem;
 import org.shakvilla.beatzmedia.admin.application.port.in.ListCatalogModeration;
 import org.shakvilla.beatzmedia.admin.application.port.in.ReinstateCatalogItem;
 import org.shakvilla.beatzmedia.admin.application.port.in.TakedownCatalogItem;
+import org.shakvilla.beatzmedia.admin.domain.CatalogFilter;
 import org.shakvilla.beatzmedia.catalog.application.port.in.ManageReleaseRevision;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseRevision;
-import org.shakvilla.beatzmedia.admin.domain.CatalogFilter;
 import org.shakvilla.beatzmedia.platform.domain.PageRequest;
 
 /**

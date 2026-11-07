@@ -25,6 +25,7 @@ flowchart LR
   APP --> CONTENT[EngagementContentReader]
   CONTENT --> CAT[Catalog input ports]
   CONTENT --> POD[Podcast input ports]
+  APP --> ATTR[Discovery attribution input port]
   JOB[Aggregate scheduler] --> APP
 ```
 
@@ -63,6 +64,7 @@ resolved only through a narrow reader port implemented by integration adapters.
 
 - `EngagementRepository`
 - `EngagementContentReader`
+- discovery `RecordRecommendationOutcome`
 - platform `Clock`
 - platform `IdGenerator`
 
@@ -98,6 +100,11 @@ All routes require authentication:
 Another account's session is indistinguishable from a missing session (`404`). Exact retries and stale
 sequences return `204`; conflicting sequence reuse returns `409`; invalid positions, durations, or
 event types return `422`.
+
+Checkpoints may include an optional `recommendationId`. After authoritative content resolution,
+Engagement passes effective start, qualified-play, and completion checkpoints plus the resolved
+release/show parent ID to Discovery. The call runs independently and is best-effort: missing,
+expired, mismatched, or unavailable attribution never rejects a checkpoint or affects playback.
 
 ## 7. Privacy and erasure
 

@@ -1,6 +1,7 @@
 package org.shakvilla.beatzmedia.catalog.application.port.in;
 
 import java.util.List;
+
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
 import org.shakvilla.beatzmedia.catalog.domain.LyricLine;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;

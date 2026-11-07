@@ -27,6 +27,12 @@ own raw `play_event` (playback module), the ledger (payments), or the REST surfa
 those — analytics exposes only the `AnalyticsReader` port). Reads are served *exclusively from rollups*,
 never from raw events (PRD §10).
 
+Each successfully recorded `PlayRecorded` also updates the catalog's track-level lifetime play-count
+projection through the catalog `IncrementTrackPlayCount` input port. The catalog remains the owner of
+the `track.plays` value used by public track responses and discovery rankings; analytics owns the
+artist/time-bucket rollups used by insights. The projection is updated in the same analytics observer
+transaction as the staged play fact, and V999 backfills counts already present in `play_event`.
+
 **AUDIT** (`HLFR-AUDIT-01` [DERIVED], `WU-AUD-1`). Owns the append-only `AuditEntry` log and enforces
 **INV-10**: every privileged mutation appends *exactly one* immutable audit row. It provides the
 `AuditWriter` output port and an application-layer `@Audited` interceptor wrapped around audited use

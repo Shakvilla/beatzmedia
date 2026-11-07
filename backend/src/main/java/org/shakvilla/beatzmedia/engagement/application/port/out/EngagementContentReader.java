@@ -18,5 +18,6 @@ public interface EngagementContentReader {
       String title,
       String subtitle,
       String image,
-      int durationSeconds) {}
+      int durationSeconds,
+      String parentId) {}
 }

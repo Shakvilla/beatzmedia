@@ -9,6 +9,7 @@ import org.shakvilla.beatzmedia.studio.application.port.out.StudioRepository;
 import org.shakvilla.beatzmedia.studio.domain.ArtistId;
 import org.shakvilla.beatzmedia.studio.domain.EpisodeId;
 import org.shakvilla.beatzmedia.studio.domain.EpisodeNotFoundException;
+import org.shakvilla.beatzmedia.studio.domain.EpisodeStatus;
 import org.shakvilla.beatzmedia.studio.domain.ShowNotFoundException;
 
 @ApplicationScoped
@@ -28,6 +29,9 @@ public class GetEpisodeDiscoveryInfoService implements GetEpisodeDiscoveryInfo {
     var episode =
         studio.findEpisode(artist, new EpisodeId(episodeId))
             .orElseThrow(() -> new EpisodeNotFoundException(episodeId));
+    if (episode.status() != EpisodeStatus.published) {
+      throw new EpisodeNotFoundException(episodeId);
+    }
     var show =
         studio.findShow(artist, episode.showId())
             .orElseThrow(() -> new ShowNotFoundException(episode.showId().value()));
@@ -37,6 +41,14 @@ public class GetEpisodeDiscoveryInfoService implements GetEpisodeDiscoveryInfo {
         episode.title(),
         show.title(),
         episode.coverUrl() == null ? show.image() : episode.coverUrl(),
-        episode.publishedAt().toString());
+        episode.publishedAt().toString(),
+        show.originCountry());
+  }
+
+  @Override
+  public EpisodeDiscoveryInfo getPublished(String episodeId) {
+    var episode = studio.findEpisodeById(new EpisodeId(episodeId))
+        .orElseThrow(() -> new EpisodeNotFoundException(episodeId));
+    return get(episode.artistId().value(), episodeId);
   }
 }

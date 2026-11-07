@@ -299,7 +299,9 @@ Two acceptable forms — keep both in sync:
 | `V303` | catalog | `create_playlist`, `playlist_track`, `browse_category` |
 | `V995` | catalog | artist release revisions |
 | `V996` | discovery | following feed projection |
-| `V997` | catalog | lyric line ordering and optional sync timestamps |
+| `V998` | catalog | lyric line ordering and optional sync timestamps |
+| `V999` | catalog | backfill track play counts from recorded playback events |
+| `V1000` | catalog | store lyric timestamps with millisecond precision |
 | `V304` | catalog | `create_release`, `release_track`, `split_entry`, `release_draft` |
 | `V401` | playback | `create_play_event` |
 | `V501` | library | `create_collection_tables` (likes/follows/saved/user_playlist) |

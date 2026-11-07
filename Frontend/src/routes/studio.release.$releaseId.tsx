@@ -6,6 +6,7 @@ import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
 import {
   studioReleaseQuery, studioReleaseRevisionQuery, studioReleasesQuery, apiDeleteRelease,
+  apiUpdateRelease,
   apiSaveReleaseRevision, apiSubmitReleaseRevision, apiUploadRevisionCover,
   apiUploadRevisionTrackAudio, apiUploadRevisionTrackCover,
 } from '../lib/api/queries/studio'
@@ -84,6 +85,8 @@ function ReleaseManage() {
   const [draft, setDraft] = useState<StudioReleaseDetail>(release)
   const [dirty, setDirty] = useState(false)
   const [busy, setBusy] = useState(false)
+  const [originCountry, setOriginCountry] = useState(release.originCountry ?? '')
+  const [savingCountry, setSavingCountry] = useState(false)
   const coverInput = useRef<HTMLInputElement>(null)
   const status = STATUS_META[release.status] ?? { label: release.status, cls: 'bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-300' }
   const live = release.status === 'live'
@@ -97,6 +100,21 @@ function ReleaseManage() {
       setDirty(false)
     }
   }, [release, revision])
+
+  useEffect(() => setOriginCountry(release.originCountry ?? ''), [release.originCountry])
+
+  const saveOriginCountry = async () => {
+    setSavingCountry(true)
+    try {
+      await apiUpdateRelease(release.id, { originCountry: originCountry.trim().toUpperCase() })
+      await queryClient.invalidateQueries({ queryKey: studioReleaseQuery(release.id).queryKey })
+      toast('Release country updated', 'success')
+    } catch (error) {
+      toast(error instanceof Error ? error.message : 'Could not update release country', 'error')
+    } finally {
+      setSavingCountry(false)
+    }
+  }
 
   const set = <K extends keyof StudioReleaseDetail>(key: K, value: StudioReleaseDetail[K]) => {
     setDraft((current) => ({ ...current, [key]: value }))
@@ -270,6 +288,17 @@ function ReleaseManage() {
           <div className="grid grid-cols-2 gap-3">
             <div className={cn(CARD, '!p-4 flex flex-col gap-1')}><span className={LABEL}>Streams</span><span className="text-xl font-bold">{live ? release.streams.toLocaleString() : '—'}</span></div>
             <div className={cn(CARD, '!p-4 flex flex-col gap-1')}><span className={LABEL}>Revenue</span><span className="text-xl font-bold text-beatz-green">{live ? `₵${release.revenue.toLocaleString()}` : '—'}</span></div>
+          </div>
+          <div className={cn(CARD, 'flex flex-col gap-2 !p-4')}>
+            <label htmlFor="release-origin-country" className={LABEL}>Country of origin</label>
+            <input id="release-origin-country" className={INPUT} value={originCountry}
+              onChange={(event) => setOriginCountry(event.target.value.toUpperCase())}
+              maxLength={2} autoCapitalize="characters" placeholder="GH" />
+            <p className="text-xs text-gray-500 dark:text-gray-400">For future country charts. Leave empty if unsure.</p>
+            <button type="button" onClick={saveOriginCountry} disabled={savingCountry || originCountry === (release.originCountry ?? '')}
+              className="h-9 rounded-lg bg-beatz-green text-black text-xs font-bold disabled:opacity-40">
+              Save country
+            </button>
           </div>
         </div>
 

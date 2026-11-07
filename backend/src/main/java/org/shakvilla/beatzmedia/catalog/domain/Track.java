@@ -1,5 +1,6 @@
 package org.shakvilla.beatzmedia.catalog.domain;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -31,6 +32,7 @@ public final class Track {
   private final List<TrackCredit> credits;
   private final String quality;
   private final Integer year;
+  private final Instant releasedAt;
   private final String status;
   /**
    * Whether this track's release permits buyer downloads. Sourced from the owning release's
@@ -114,6 +116,31 @@ public final class Track {
       String status,
       boolean downloadable,
       boolean customArtwork) {
+    this(id, title, artistId, artistName, albumId, albumTitle, durationSec, image, ownership,
+        priceMinor, plays, audioUrl, credits, quality, year, status, downloadable, customArtwork,
+        null);
+  }
+
+  public Track(
+      TrackId id,
+      String title,
+      ArtistId artistId,
+      String artistName,
+      AlbumId albumId,
+      String albumTitle,
+      int durationSec,
+      String image,
+      OwnershipStatus ownership,
+      Long priceMinor,
+      Long plays,
+      String audioUrl,
+      List<TrackCredit> credits,
+      String quality,
+      Integer year,
+      String status,
+      boolean downloadable,
+      boolean customArtwork,
+      Instant releasedAt) {
     this.id = id;
     this.title = title;
     this.artistId = artistId;
@@ -130,6 +157,7 @@ public final class Track {
     this.credits = credits;
     this.quality = quality;
     this.year = year;
+    this.releasedAt = releasedAt;
     this.status = status;
     this.downloadable = downloadable;
   }
@@ -153,7 +181,7 @@ public final class Track {
         id, title, artistId, artistName, albumId, albumTitle,
         probedDurationSec > 0 ? probedDurationSec : durationSec,
         image, ownership, priceMinor, plays, audioUrl, credits, quality, year, READY_STATUS,
-        downloadable, customArtwork);
+        downloadable, customArtwork, releasedAt);
   }
 
   /**
@@ -171,7 +199,7 @@ public final class Track {
     return new Track(
         id, title, artistId, artistName, albumId, albumTitle, durationSec,
         newImage, ownership, priceMinor, plays, audioUrl, credits, quality, year, status,
-        downloadable, true);
+        downloadable, true, releasedAt);
   }
 
   /** Applies an approved title change without changing the stable track identity. */
@@ -180,7 +208,7 @@ public final class Track {
     return new Track(
         id, newTitle.trim(), artistId, artistName, albumId, albumTitle, durationSec, image,
         ownership, priceMinor, plays, audioUrl, credits, quality, year, status, downloadable,
-        customArtwork);
+        customArtwork, releasedAt);
   }
 
   /** Applies the track price selected for its owning release. */
@@ -194,7 +222,7 @@ public final class Track {
     return new Track(
         id, title, artistId, artistName, albumId, albumTitle, newDurationSec, image, ownership,
         priceMinor, plays, audioUrl, credits, quality, year, READY_STATUS, downloadable,
-        customArtwork);
+        customArtwork, releasedAt);
   }
 
   /** Marks a non-public track while replacement audio is transcoding. */
@@ -202,7 +230,7 @@ public final class Track {
     if ("uploading".equals(status)) return this;
     return new Track(id, title, artistId, artistName, albumId, albumTitle, durationSec, image,
         ownership, priceMinor, plays, audioUrl, credits, quality, year, "uploading", downloadable,
-        customArtwork);
+        customArtwork, releasedAt);
   }
 
   /** Applies release artwork only while this track has no artist-selected cover. */
@@ -213,7 +241,7 @@ public final class Track {
     return new Track(
         id, title, artistId, artistName, albumId, albumTitle, durationSec,
         releaseImage, ownership, priceMinor, plays, audioUrl, credits, quality, year, status,
-        downloadable, false);
+        downloadable, false, releasedAt);
   }
 
   /**
@@ -238,7 +266,22 @@ public final class Track {
     return new Track(
         id, title, artistId, artistName, albumId, albumTitle, durationSec,
         image, newOwnership, newPrice, plays, audioUrl, credits, quality, year, status,
-        downloadable, customArtwork);
+        downloadable, customArtwork, releasedAt);
+  }
+
+  /** Enriches the track read model with the go-live timestamp from its owning live release. */
+  public Track withReleasedAt(Instant value) {
+    if (java.util.Objects.equals(releasedAt, value)) return this;
+    return new Track(id, title, artistId, artistName, albumId, albumTitle, durationSec, image,
+        ownership, priceMinor, plays, audioUrl, credits, quality, year, status, downloadable,
+        customArtwork, value);
+  }
+
+  /** Applies one successfully recorded play to this immutable read-model value. */
+  public Track withOneMorePlay() {
+    return new Track(id, title, artistId, artistName, albumId, albumTitle, durationSec, image,
+        ownership, priceMinor, plays == null ? 1L : plays + 1L, audioUrl, credits, quality, year,
+        status, downloadable, customArtwork, releasedAt);
   }
 
   public TrackId getId() {
@@ -303,6 +346,10 @@ public final class Track {
 
   public Optional<Integer> getYear() {
     return Optional.ofNullable(year);
+  }
+
+  public Optional<Instant> getReleasedAt() {
+    return Optional.ofNullable(releasedAt);
   }
 
   public String getStatus() {
