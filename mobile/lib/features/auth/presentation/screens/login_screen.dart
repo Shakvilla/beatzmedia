@@ -72,13 +72,15 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   decoration: InputDecoration(
                     labelText: 'Email',
                     hintText: 'you@email.com',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadii.md)),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(AppRadii.md)),
                     filled: true,
                     fillColor: AppColors.surfaceElevated,
                   ),
                   keyboardType: TextInputType.emailAddress,
                   validator: (value) {
-                    if (value == null || value.isEmpty) return 'Enter your email';
+                    if (value == null || value.isEmpty)
+                      return 'Enter your email';
                     if (!value.contains('@')) return 'Enter a valid email';
                     return null;
                   },
@@ -89,7 +91,8 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   controller: _passwordController,
                   decoration: InputDecoration(
                     labelText: 'Password',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadii.md)),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(AppRadii.md)),
                     filled: true,
                     fillColor: AppColors.surfaceElevated,
                     suffixIcon: IconButton(
@@ -106,8 +109,10 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   ),
                   obscureText: _obscurePassword,
                   validator: (value) {
-                    if (value == null || value.isEmpty) return 'Enter your password';
-                    if (value.length < 6) return 'Password must be at least 6 characters';
+                    if (value == null || value.isEmpty)
+                      return 'Enter your password';
+                    if (value.length < 6)
+                      return 'Password must be at least 6 characters';
                     return null;
                   },
                 ),

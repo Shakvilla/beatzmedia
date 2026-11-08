@@ -27,7 +27,6 @@ public class JpaFollowingFeedRepository implements FollowingFeedRepository {
     if (entity == null) {
       entity = new FollowingFeedItemEntity();
       entity.id = item.key();
-      em.persist(entity);
     }
     entity.kind = item.kind();
     entity.contentId = item.contentId();
@@ -39,6 +38,9 @@ public class JpaFollowingFeedRepository implements FollowingFeedRepository {
     entity.route = item.route();
     entity.publishedAt = item.publishedAt();
     entity.projectedAt = item.projectedAt();
+    if (!em.contains(entity)) {
+      em.persist(entity);
+    }
   }
 
   @Override

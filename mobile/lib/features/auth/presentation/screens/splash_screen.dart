@@ -25,9 +25,12 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
     ref.listen<SessionState>(sessionProvider, (prev, next) async {
       if (next.status == SessionStatus.authenticated) {
         try {
-          final preferences = await ref.read(apiClientProvider).get<Map<String, dynamic>>('/me/preferences');
+          final preferences = await ref
+              .read(apiClientProvider)
+              .get<Map<String, dynamic>>('/me/preferences');
           if (!context.mounted) return;
-          context.go(preferences['onboarded'] == true ? '/home' : '/onboarding');
+          context
+              .go(preferences['onboarded'] == true ? '/home' : '/onboarding');
         } catch (_) {
           if (context.mounted) context.go('/home');
         }
@@ -49,7 +52,8 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
                 color: AppColors.primary,
                 borderRadius: BorderRadius.circular(28),
               ),
-              child: const Icon(Icons.play_arrow_rounded, size: 48, color: Colors.white),
+              child: const Icon(Icons.play_arrow_rounded,
+                  size: 48, color: Colors.white),
             ),
             const SizedBox(height: 16),
             const Text('BeatzClik', style: AppTypography.displayMedium),
@@ -59,7 +63,8 @@ class _SplashScreenState extends ConsumerState<SplashScreen> {
             const SizedBox(
               width: 24,
               height: 24,
-              child: CircularProgressIndicator(strokeWidth: 2, color: AppColors.textMuted),
+              child: CircularProgressIndicator(
+                  strokeWidth: 2, color: AppColors.textMuted),
             ),
           ],
         ),

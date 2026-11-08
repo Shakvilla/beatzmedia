@@ -10,18 +10,33 @@ class CommerceRepository {
     return CartDto.fromJson(json);
   }
 
-  Future<CartDto> addItem({required String id, required String kind, required String refId, int qty = 1, Map<String, dynamic>? metadata}) async {
-    final json = await _api.post<Map<String, dynamic>>('/me/cart/items', data: {'id': id, 'kind': kind, 'refId': refId, 'qty': qty, if (metadata != null) 'metadata': metadata});
+  Future<CartDto> addItem(
+      {required String id,
+      required String kind,
+      required String refId,
+      int qty = 1,
+      Map<String, dynamic>? metadata}) async {
+    final json = await _api.post<Map<String, dynamic>>('/me/cart/items', data: {
+      'id': id,
+      'kind': kind,
+      'refId': refId,
+      'qty': qty,
+      if (metadata != null) 'metadata': metadata
+    });
     return CartDto.fromJson(json);
   }
 
   Future<CartDto> updateQty(String lineId, int qty) async {
-    final json = await _api.dio.patch<Map<String, dynamic>>('/me/cart/items/$lineId', data: {'qty': qty}).then((r) => r.data!);
+    final json = await _api.dio.patch<Map<String, dynamic>>(
+        '/me/cart/items/$lineId',
+        data: {'qty': qty}).then((r) => r.data!);
     return CartDto.fromJson(json);
   }
 
   Future<CartDto> removeItem(String lineId) async {
-    final json = await _api.dio.delete<Map<String, dynamic>>('/me/cart/items/$lineId').then((r) => r.data!);
+    final json = await _api.dio
+        .delete<Map<String, dynamic>>('/me/cart/items/$lineId')
+        .then((r) => r.data!);
     return CartDto.fromJson(json);
   }
 
@@ -30,8 +45,11 @@ class CommerceRepository {
     return (json['enabled'] as List).cast<String>();
   }
 
-  Future<OrderSnapshotDto> checkout(String paymentMethodId, String idempotencyKey) async {
-    final json = await _api.post<Map<String, dynamic>>('/checkout', data: {'paymentMethodId': paymentMethodId}, idempotencyKey: idempotencyKey);
+  Future<OrderSnapshotDto> checkout(
+      String paymentMethodId, String idempotencyKey) async {
+    final json = await _api.post<Map<String, dynamic>>('/checkout',
+        data: {'paymentMethodId': paymentMethodId},
+        idempotencyKey: idempotencyKey);
     return OrderSnapshotDto.fromJson(json);
   }
 
@@ -42,6 +60,8 @@ class CommerceRepository {
 
   Future<List<OrderSnapshotDto>> getOrders() async {
     final list = await _api.get<List<dynamic>>('/me/orders');
-    return list.map((e) => OrderSnapshotDto.fromJson(e as Map<String, dynamic>)).toList();
+    return list
+        .map((e) => OrderSnapshotDto.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 }

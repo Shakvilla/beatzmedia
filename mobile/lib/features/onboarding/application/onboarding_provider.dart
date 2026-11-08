@@ -69,7 +69,10 @@ class OnboardingNotifier extends StateNotifier<OnboardingState> {
       );
       state = state.copyWith(
         status: OnboardingStatus.success,
-        preferredGenres: (result['preferredGenres'] as List?)?.map((e) => e as String).toList() ?? [],
+        preferredGenres: (result['preferredGenres'] as List?)
+                ?.map((e) => e as String)
+                .toList() ??
+            [],
         onboarded: result['onboarded'] as bool? ?? false,
       );
     } on ApiError catch (e) {
@@ -112,8 +115,7 @@ class OnboardingState {
     this.error,
     this.showUnknownGenreHint = false,
   });
-  factory OnboardingState.initial() =>
-      const OnboardingState._(
+  factory OnboardingState.initial() => const OnboardingState._(
         status: OnboardingStatus.initial,
       );
   factory OnboardingState.loaded({
@@ -158,16 +160,17 @@ class OnboardingState {
     bool? canSubmit,
     String? error,
     bool? showUnknownGenreHint,
-  }) => OnboardingState._(
-    status: status ?? this.status,
-    allGenres: allGenres ?? this.allGenres,
-    selectedGenres: selectedGenres ?? this.selectedGenres,
-    preferredGenres: preferredGenres ?? this.preferredGenres,
-    onboarded: onboarded ?? this.onboarded,
-    canSubmit: canSubmit ?? this.canSubmit,
-    error: error,
-    showUnknownGenreHint: showUnknownGenreHint ?? this.showUnknownGenreHint,
-  );
+  }) =>
+      OnboardingState._(
+        status: status ?? this.status,
+        allGenres: allGenres ?? this.allGenres,
+        selectedGenres: selectedGenres ?? this.selectedGenres,
+        preferredGenres: preferredGenres ?? this.preferredGenres,
+        onboarded: onboarded ?? this.onboarded,
+        canSubmit: canSubmit ?? this.canSubmit,
+        error: error,
+        showUnknownGenreHint: showUnknownGenreHint ?? this.showUnknownGenreHint,
+      );
 }
 
 /// Enumeration of onboarding status values.

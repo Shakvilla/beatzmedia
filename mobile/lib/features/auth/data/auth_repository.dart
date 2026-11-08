@@ -8,10 +8,13 @@ import '../../../core/storage/secure_store.dart';
 /// All money-related POSTs use no idempotency key (auth writes are not idempotent by design),
 /// but never log or render the raw token per 01.5.
 class AuthRepository {
-  AuthRepository({ApiClient? apiClient, SecureStore? secureStore, SessionNotifier? sessionNotifier})
-    : _apiClient = apiClient ?? ApiClient(),
-      _secureStore = secureStore ?? SecureStore(),
-      _sessionNotifier = sessionNotifier;
+  AuthRepository(
+      {ApiClient? apiClient,
+      SecureStore? secureStore,
+      SessionNotifier? sessionNotifier})
+      : _apiClient = apiClient ?? ApiClient(),
+        _secureStore = secureStore ?? SecureStore(),
+        _sessionNotifier = sessionNotifier;
 
   final ApiClient _apiClient;
   final SecureStore _secureStore;
@@ -40,7 +43,8 @@ class AuthRepository {
   }
 
   Future<Account> login(String email, String password) async {
-    final resp = await _apiClient.post<Map<String, dynamic>>('/auth/login', data: {
+    final resp =
+        await _apiClient.post<Map<String, dynamic>>('/auth/login', data: {
       'email': email,
       'password': password,
     });
@@ -57,7 +61,8 @@ class AuthRepository {
   }
 
   Future<Account> signup(String name, String email, String password) async {
-    final resp = await _apiClient.post<Map<String, dynamic>>('/auth/signup', data: {
+    final resp =
+        await _apiClient.post<Map<String, dynamic>>('/auth/signup', data: {
       'name': name,
       'email': email,
       'password': password,

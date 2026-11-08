@@ -12,7 +12,8 @@ class ResetPasswordScreen extends ConsumerStatefulWidget {
   final String token;
 
   @override
-  ConsumerState<ResetPasswordScreen> createState() => _ResetPasswordScreenState();
+  ConsumerState<ResetPasswordScreen> createState() =>
+      _ResetPasswordScreenState();
 }
 
 class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
@@ -31,7 +32,6 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
 
   @override
   Widget build(BuildContext context) {
-
     return Scaffold(
       backgroundColor: AppColors.canvas,
       appBar: AppBar(
@@ -75,7 +75,8 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
                   controller: _passwordController,
                   decoration: InputDecoration(
                     labelText: 'New password',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadii.md)),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(AppRadii.md)),
                     filled: true,
                     fillColor: AppColors.surfaceElevated,
                     suffixIcon: IconButton(
@@ -88,8 +89,10 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
                   ),
                   obscureText: true,
                   validator: (value) {
-                    if (value == null || value.isEmpty) return 'Enter a password';
-                    if (value.length < 6) return 'Password must be at least 6 characters';
+                    if (value == null || value.isEmpty)
+                      return 'Enter a password';
+                    if (value.length < 6)
+                      return 'Password must be at least 6 characters';
                     return null;
                   },
                 ),
@@ -98,7 +101,8 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
                   controller: _confirmController,
                   decoration: InputDecoration(
                     labelText: 'Confirm password',
-                    border: OutlineInputBorder(borderRadius: BorderRadius.circular(AppRadii.md)),
+                    border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(AppRadii.md)),
                     filled: true,
                     fillColor: AppColors.surfaceElevated,
                     suffixIcon: IconButton(
@@ -111,8 +115,10 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
                   ),
                   obscureText: true,
                   validator: (value) {
-                    if (value == null || value.isEmpty) return 'Confirm your password';
-                    if (value != _passwordController.text) return 'Passwords do not match';
+                    if (value == null || value.isEmpty)
+                      return 'Confirm your password';
+                    if (value != _passwordController.text)
+                      return 'Passwords do not match';
                     return null;
                   },
                 ),
@@ -129,7 +135,8 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
                             try {
                               await ref
                                   .read(authProvider.notifier)
-                                  .resetPassword(widget.token, _passwordController.text.trim());
+                                  .resetPassword(widget.token,
+                                      _passwordController.text.trim());
                               if (!mounted) return;
                               final auth = ref.read(authProvider);
                               if (auth.status == AuthStatus.resetCompleted) {
@@ -137,7 +144,8 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
                               } else {
                                 setState(() {
                                   _isLoading = false;
-                                  _serverError = auth.error ?? 'Unable to reset password.';
+                                  _serverError =
+                                      auth.error ?? 'Unable to reset password.';
                                 });
                               }
                             } on ApiError catch (e) {
@@ -150,7 +158,8 @@ class _ResetPasswordScreenState extends ConsumerState<ResetPasswordScreen> {
                               if (!mounted) return;
                               setState(() {
                                 _isLoading = false;
-                                _serverError = 'Failed to connect. Please check your network.';
+                                _serverError =
+                                    'Failed to connect. Please check your network.';
                               });
                             }
                           }

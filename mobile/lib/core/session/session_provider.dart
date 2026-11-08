@@ -26,11 +26,14 @@ enum SessionStatus { initial, restoring, authenticated, unauthenticated }
 
 class SessionState {
   const SessionState._({required this.status, this.account, this.error});
-  factory SessionState.initial() => const SessionState._(status: SessionStatus.initial);
-  factory SessionState.restoring() => const SessionState._(status: SessionStatus.restoring);
+  factory SessionState.initial() =>
+      const SessionState._(status: SessionStatus.initial);
+  factory SessionState.restoring() =>
+      const SessionState._(status: SessionStatus.restoring);
   factory SessionState.authenticated(Account account) =>
       SessionState._(status: SessionStatus.authenticated, account: account);
-  factory SessionState.unauthenticated() => const SessionState._(status: SessionStatus.unauthenticated);
+  factory SessionState.unauthenticated() =>
+      const SessionState._(status: SessionStatus.unauthenticated);
 
   final SessionStatus status;
   final Account? account;
@@ -41,7 +44,8 @@ final apiClientProvider = Provider<ApiClient>((ref) => ApiClient());
 final secureStoreProvider = Provider<SecureStore>((ref) => SecureStore());
 
 class SessionNotifier extends StateNotifier<SessionState> {
-  SessionNotifier({required ApiClient apiClient, required SecureStore secureStore})
+  SessionNotifier(
+      {required ApiClient apiClient, required SecureStore secureStore})
       : _apiClient = apiClient,
         _secureStore = secureStore,
         super(SessionState.initial());
@@ -106,12 +110,14 @@ class SessionNotifier extends StateNotifier<SessionState> {
   }
 }
 
-final sessionProvider = StateNotifierProvider<SessionNotifier, SessionState>((ref) {
+final sessionProvider =
+    StateNotifierProvider<SessionNotifier, SessionState>((ref) {
   final apiClient = ref.watch(apiClientProvider);
   final secureStore = ref.watch(secureStoreProvider);
   return SessionNotifier(apiClient: apiClient, secureStore: secureStore);
 });
 
 final isAuthenticatedProvider = Provider<bool>((ref) {
-  return ref.watch(sessionProvider.select((s) => s.status == SessionStatus.authenticated));
+  return ref.watch(
+      sessionProvider.select((s) => s.status == SessionStatus.authenticated));
 });

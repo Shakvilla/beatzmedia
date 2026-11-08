@@ -6,13 +6,22 @@ import '../data/dto/catalog_dto.dart';
 import 'home_provider.dart' show catalogRepositoryProvider;
 
 class SearchState {
-  const SearchState({this.query = '', this.result, this.isSearching = false, this.error});
+  const SearchState(
+      {this.query = '', this.result, this.isSearching = false, this.error});
   final String query;
   final SearchResultDto? result;
   final bool isSearching;
   final Object? error;
-  SearchState copyWith({String? query, SearchResultDto? result, bool? isSearching, Object? error}) =>
-      SearchState(query: query ?? this.query, result: result, isSearching: isSearching ?? this.isSearching, error: error);
+  SearchState copyWith(
+          {String? query,
+          SearchResultDto? result,
+          bool? isSearching,
+          Object? error}) =>
+      SearchState(
+          query: query ?? this.query,
+          result: result,
+          isSearching: isSearching ?? this.isSearching,
+          error: error);
 }
 
 class SearchNotifier extends StateNotifier<SearchState> {
@@ -35,7 +44,8 @@ class SearchNotifier extends StateNotifier<SearchState> {
       state = state.copyWith(query: trimmed, isSearching: true, error: null);
       try {
         final res = await _repo.search(trimmed);
-        if (!_cancelToken!.isCancelled) state = state.copyWith(result: res, isSearching: false);
+        if (!_cancelToken!.isCancelled)
+          state = state.copyWith(result: res, isSearching: false);
       } catch (e) {
         if (e is DioException && CancelToken.isCancel(e)) return;
         state = state.copyWith(isSearching: false, error: e);
@@ -57,6 +67,7 @@ class SearchNotifier extends StateNotifier<SearchState> {
   }
 }
 
-final searchProvider = StateNotifierProvider<SearchNotifier, SearchState>((ref) {
+final searchProvider =
+    StateNotifierProvider<SearchNotifier, SearchState>((ref) {
   return SearchNotifier(ref.watch(catalogRepositoryProvider));
 });

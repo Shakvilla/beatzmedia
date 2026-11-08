@@ -26,29 +26,47 @@ abstract class AppTypography {
 
   static const displayLarge = TextStyle(
     fontFamily: displayFamily,
-    fontSize: 32, fontWeight: FontWeight.w800, color: AppColors.textPrimary, letterSpacing: -0.5,
+    fontSize: 32,
+    fontWeight: FontWeight.w800,
+    color: AppColors.textPrimary,
+    letterSpacing: -0.5,
   );
   static const displayMedium = TextStyle(
     fontFamily: displayFamily,
-    fontSize: 24, fontWeight: FontWeight.w700, color: AppColors.textPrimary,
+    fontSize: 24,
+    fontWeight: FontWeight.w700,
+    color: AppColors.textPrimary,
   );
   static const title = TextStyle(
     fontFamily: displayFamily,
-    fontSize: 18, fontWeight: FontWeight.w600, color: AppColors.textPrimary,
+    fontSize: 18,
+    fontWeight: FontWeight.w600,
+    color: AppColors.textPrimary,
   );
   static const body = TextStyle(
-    fontSize: 15, fontWeight: FontWeight.w400, color: AppColors.textPrimary, height: 1.4,
+    fontSize: 15,
+    fontWeight: FontWeight.w400,
+    color: AppColors.textPrimary,
+    height: 1.4,
   );
   static const bodySmall = TextStyle(
-    fontSize: 13, fontWeight: FontWeight.w400, color: AppColors.textSecondary,
+    fontSize: 13,
+    fontWeight: FontWeight.w400,
+    color: AppColors.textSecondary,
   );
   static const mono = TextStyle(
     fontFamily: monoFamily,
-    fontSize: 11, fontWeight: FontWeight.w500, color: AppColors.textMuted, letterSpacing: 0.4,
+    fontSize: 11,
+    fontWeight: FontWeight.w500,
+    color: AppColors.textMuted,
+    letterSpacing: 0.4,
   );
   static const monoSmall = TextStyle(
     fontFamily: monoFamily,
-    fontSize: 10, fontWeight: FontWeight.w500, color: AppColors.textMuted, letterSpacing: 0.6,
+    fontSize: 10,
+    fontWeight: FontWeight.w500,
+    color: AppColors.textMuted,
+    letterSpacing: 0.6,
   );
 }
 
@@ -96,8 +114,12 @@ ThemeData buildAppTheme() {
         backgroundColor: AppColors.primary,
         foregroundColor: Colors.white,
         minimumSize: const Size.fromHeight(48),
-        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadii.pill)),
-        textStyle: const TextStyle(fontFamily: AppTypography.displayFamily, fontWeight: FontWeight.w700, fontSize: 15),
+        shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(AppRadii.pill)),
+        textStyle: const TextStyle(
+            fontFamily: AppTypography.displayFamily,
+            fontWeight: FontWeight.w700,
+            fontSize: 15),
       ),
     ),
     bottomNavigationBarTheme: const BottomNavigationBarThemeData(

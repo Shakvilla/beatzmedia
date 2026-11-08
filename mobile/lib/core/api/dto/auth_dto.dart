@@ -6,7 +6,8 @@ class LoginDto {
 }
 
 class SignupDto {
-  const SignupDto({required this.name, required this.email, required this.password});
+  const SignupDto(
+      {required this.name, required this.email, required this.password});
   final String name;
   final String email;
   final String password;

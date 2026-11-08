@@ -2,11 +2,13 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../data/catalog_repository.dart';
 import '../data/dto/catalog_dto.dart';
 
-final catalogRepositoryProvider = Provider<CatalogRepository>((ref) => CatalogRepository());
+final catalogRepositoryProvider =
+    Provider<CatalogRepository>((ref) => CatalogRepository());
 
 class HomeNotifier extends AsyncNotifier<HomeFeedDto> {
   @override
-  Future<HomeFeedDto> build() async => ref.read(catalogRepositoryProvider).getHome();
+  Future<HomeFeedDto> build() async =>
+      ref.read(catalogRepositoryProvider).getHome();
 
   Future<void> refresh() async {
     final previous = state.value;
@@ -24,4 +26,5 @@ class HomeNotifier extends AsyncNotifier<HomeFeedDto> {
   }
 }
 
-final homeProvider = AsyncNotifierProvider<HomeNotifier, HomeFeedDto>(HomeNotifier.new);
+final homeProvider =
+    AsyncNotifierProvider<HomeNotifier, HomeFeedDto>(HomeNotifier.new);

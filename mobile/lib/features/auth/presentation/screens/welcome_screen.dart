@@ -17,7 +17,8 @@ class WelcomeScreen extends StatelessWidget {
             crossAxisAlignment: CrossAxisAlignment.stretch,
             children: [
               const Spacer(),
-              const Text('Discover.\nOwn.\nPlay.', style: AppTypography.displayLarge),
+              const Text('Discover.\nOwn.\nPlay.',
+                  style: AppTypography.displayLarge),
               const SizedBox(height: 12),
               const Text(
                 'Ghanaian and African music — streaming discovery with a buy-to-own marketplace.',
@@ -35,9 +36,11 @@ class WelcomeScreen extends StatelessWidget {
                   foregroundColor: AppColors.textPrimary,
                   side: const BorderSide(color: AppColors.border),
                   minimumSize: const Size.fromHeight(48),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(AppRadii.pill)),
+                  shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(AppRadii.pill)),
                 ),
-                child: const Text('Sign in', style: TextStyle(fontWeight: FontWeight.w700)),
+                child: const Text('Sign in',
+                    style: TextStyle(fontWeight: FontWeight.w700)),
               ),
               const SizedBox(height: 12),
               const Text(

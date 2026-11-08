@@ -56,16 +56,26 @@ class ApiClient {
 
   Dio get dio => _dio;
 
-  Future<T> get<T>(String path, {Map<String, dynamic>? query, Options? options, CancelToken? cancelToken}) async {
+  Future<T> get<T>(String path,
+      {Map<String, dynamic>? query,
+      Options? options,
+      CancelToken? cancelToken}) async {
     try {
-      final res = await _dio.get<T>(path, queryParameters: query, options: options, cancelToken: cancelToken);
+      final res = await _dio.get<T>(path,
+          queryParameters: query, options: options, cancelToken: cancelToken);
       return res.data as T;
     } on DioException catch (e) {
-      throw e.error is ApiError || e.error is NetworkError ? e.error! : _toApiError(e);
+      throw e.error is ApiError || e.error is NetworkError
+          ? e.error!
+          : _toApiError(e);
     }
   }
 
-  Future<T> post<T>(String path, {Object? data, String? idempotencyKey, Options? options, CancelToken? cancelToken}) async {
+  Future<T> post<T>(String path,
+      {Object? data,
+      String? idempotencyKey,
+      Options? options,
+      CancelToken? cancelToken}) async {
     final opts = (options ?? Options()).copyWith(
       headers: {
         ...?options?.headers,
@@ -73,19 +83,26 @@ class ApiClient {
       },
     );
     try {
-      final res = await _dio.post<T>(path, data: data, options: opts, cancelToken: cancelToken);
+      final res = await _dio.post<T>(path,
+          data: data, options: opts, cancelToken: cancelToken);
       return res.data as T;
     } on DioException catch (e) {
-      throw e.error is ApiError || e.error is NetworkError ? e.error! : _toApiError(e);
+      throw e.error is ApiError || e.error is NetworkError
+          ? e.error!
+          : _toApiError(e);
     }
   }
 
-  Future<T> put<T>(String path, {Object? data, Options? options, CancelToken? cancelToken}) async {
+  Future<T> put<T>(String path,
+      {Object? data, Options? options, CancelToken? cancelToken}) async {
     try {
-      final res = await _dio.put<T>(path, data: data, options: options, cancelToken: cancelToken);
+      final res = await _dio.put<T>(path,
+          data: data, options: options, cancelToken: cancelToken);
       return res.data as T;
     } on DioException catch (e) {
-      throw e.error is ApiError || e.error is NetworkError ? e.error! : _toApiError(e);
+      throw e.error is ApiError || e.error is NetworkError
+          ? e.error!
+          : _toApiError(e);
     }
   }
 

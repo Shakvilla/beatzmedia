@@ -12,7 +12,8 @@ class CatalogRepository {
   }
 
   Future<SearchResultDto> search(String q) async {
-    final json = await _api.get<Map<String, dynamic>>('/search', query: {'q': q});
+    final json =
+        await _api.get<Map<String, dynamic>>('/search', query: {'q': q});
     return SearchResultDto.fromJson(json);
   }
 
@@ -23,21 +24,28 @@ class CatalogRepository {
 
   Future<List<TrackDto>> getArtistTracks(String id) async {
     final list = await _api.get<List<dynamic>>('/artists/$id/tracks');
-    return list.map((e) => TrackDto.fromJson(e as Map<String, dynamic>)).toList();
+    return list
+        .map((e) => TrackDto.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   Future<List<AlbumDto>> getArtistAlbums(String id) async {
     final list = await _api.get<List<dynamic>>('/artists/$id/albums');
-    return list.map((e) => AlbumDto.fromJson(e as Map<String, dynamic>)).toList();
+    return list
+        .map((e) => AlbumDto.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   Future<List<ShowDto>> getArtistShows(String id) async {
     final list = await _api.get<List<dynamic>>('/artists/$id/shows');
-    return list.map((e) => ShowDto.fromJson(e as Map<String, dynamic>)).toList();
+    return list
+        .map((e) => ShowDto.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
   Future<Map<String, dynamic>> getAlbumRaw(String id) async {
-    return _api.get<Map<String, dynamic>>('/albums/$id', query: {'tracks': 'true'});
+    return _api
+        .get<Map<String, dynamic>>('/albums/$id', query: {'tracks': 'true'});
   }
 
   Future<AlbumDto> getAlbum(String id) async {
@@ -47,13 +55,23 @@ class CatalogRepository {
 
   Future<List<BrowseCategoryDto>> getBrowseCategories() async {
     final list = await _api.get<List<dynamic>>('/browse-categories');
-    return list.map((e) => BrowseCategoryDto.fromJson(e as Map<String, dynamic>)).toList();
+    return list
+        .map((e) => BrowseCategoryDto.fromJson(e as Map<String, dynamic>))
+        .toList();
   }
 
-  Future<ResolveResultDto> resolveCatalog({List<String>? trackIds, List<String>? artistIds, List<String>? albumIds, List<String>? playlistIds}) async {
+  Future<ResolveResultDto> resolveCatalog(
+      {List<String>? trackIds,
+      List<String>? artistIds,
+      List<String>? albumIds,
+      List<String>? playlistIds}) async {
     void check(String name, List<String>? ids) {
       if (ids != null && ids.length > 200) {
-        throw ApiError(status: 422, code: 'VALIDATION', message: '$name exceeds 200', field: name);
+        throw ApiError(
+            status: 422,
+            code: 'VALIDATION',
+            message: '$name exceeds 200',
+            field: name);
       }
     }
 
@@ -67,7 +85,8 @@ class CatalogRepository {
       if (albumIds != null) 'albumIds': albumIds,
       if (playlistIds != null) 'playlistIds': playlistIds,
     };
-    final json = await _api.post<Map<String, dynamic>>('/catalog/resolve', data: body);
+    final json =
+        await _api.post<Map<String, dynamic>>('/catalog/resolve', data: body);
     return ResolveResultDto.fromJson(json);
   }
 }
