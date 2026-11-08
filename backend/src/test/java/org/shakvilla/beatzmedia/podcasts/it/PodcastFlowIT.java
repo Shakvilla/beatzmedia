@@ -111,7 +111,7 @@ class PodcastFlowIT {
         .executeUpdate();
   }
 
-  /** Seed a READY media_asset for the episode, owner_ref = "podcasts:{episodeId}" convention. */
+  /** Seed a READY asset under the same owner ref used by Studio episode uploads. */
   private void seedReadyMediaAsset(String episodeId) {
     String assetId = "asset-" + episodeId;
     em.createNativeQuery(
@@ -121,7 +121,7 @@ class PodcastFlowIT {
                 + " :previewKey, :hash, now())"
                 + " ON CONFLICT (id) DO NOTHING")
         .setParameter("id", assetId)
-        .setParameter("ownerRef", "podcasts:" + episodeId)
+        .setParameter("ownerRef", "studio:" + episodeId)
         .setParameter("originalKey", "beatz-media-originals|originals/audio/" + assetId)
         .setParameter("fullKey", "beatz-media-delivery|delivery/" + assetId + "/full.m4a")
         .setParameter(

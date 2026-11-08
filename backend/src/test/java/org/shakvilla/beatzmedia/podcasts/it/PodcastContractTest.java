@@ -101,7 +101,7 @@ class PodcastContractTest {
                 + " :previewKey, :hash, now())"
                 + " ON CONFLICT (id) DO NOTHING")
         .setParameter("id", assetId)
-        .setParameter("ownerRef", "podcasts:" + episodeId)
+        .setParameter("ownerRef", "studio:" + episodeId)
         .setParameter("originalKey", "beatz-media-originals|originals/audio/" + assetId)
         .setParameter("fullKey", "beatz-media-delivery|delivery/" + assetId + "/full.m4a")
         .setParameter(
