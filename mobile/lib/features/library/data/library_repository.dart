@@ -15,22 +15,24 @@ class LibraryRepository {
       await _api.post<void>('/me/likes/tracks/$trackId');
     } else {
       await _api.post<void>('/me/likes/tracks/$trackId', data: null);
-      await _api.dio.delete('/me/likes/tracks/$trackId');
+      await _api.dio.delete<void>('/me/likes/tracks/$trackId');
     }
   }
 
   Future<void> followArtist(String artistId, bool add) async {
-    if (add)
+    if (add) {
       await _api.post<void>('/me/follows/artists/$artistId');
-    else
-      await _api.dio.delete('/me/follows/artists/$artistId');
+    } else {
+      await _api.dio.delete<void>('/me/follows/artists/$artistId');
+    }
   }
 
   Future<void> saveAlbum(String albumId, bool add) async {
-    if (add)
+    if (add) {
       await _api.post<void>('/me/saved/albums/$albumId');
-    else
-      await _api.dio.delete('/me/saved/albums/$albumId');
+    } else {
+      await _api.dio.delete<void>('/me/saved/albums/$albumId');
+    }
   }
 
   Future<List<UserPlaylistDto>> getPlaylists() async {
@@ -50,14 +52,14 @@ class LibraryRepository {
   }
 
   Future<void> renamePlaylist(String id, String title) async =>
-      _api.dio.patch('/me/playlists/$id', data: {'title': title});
+      _api.dio.patch<void>('/me/playlists/$id', data: {'title': title});
   Future<void> deletePlaylist(String id) async =>
-      _api.dio.delete('/me/playlists/$id');
+      _api.dio.delete<void>('/me/playlists/$id');
   Future<void> addTrackToPlaylist(String playlistId, String trackId) async =>
       _api.post<void>('/me/playlists/$playlistId/tracks/$trackId');
   Future<void> removeTrackFromPlaylist(
           String playlistId, String trackId) async =>
-      _api.dio.delete('/me/playlists/$playlistId/tracks/$trackId');
+      _api.dio.delete<void>('/me/playlists/$playlistId/tracks/$trackId');
 
   Future<Map<String, dynamic>> getDownload(String trackId) async =>
       _api.get<Map<String, dynamic>>('/tracks/$trackId/download');

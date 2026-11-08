@@ -1,4 +1,3 @@
-import '../../../core/api/api_client.dart';
 import '../data/taxonomy_dto.dart';
 import '../data/taxonomy_repository.dart';
 import '../../../core/errors/api_error.dart';
@@ -128,7 +127,7 @@ class OnboardingState {
         selectedGenres: selectedGenres,
       );
   factory OnboardingState.submitting() =>
-      OnboardingState._(status: OnboardingStatus.submitting);
+      const OnboardingState._(status: OnboardingStatus.submitting);
   factory OnboardingState.success({
     required List<String> preferredGenres,
     required bool onboarded,

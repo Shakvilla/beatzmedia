@@ -22,28 +22,31 @@ class _PodcastsScreenState extends State<PodcastsScreen> {
   Future<void> _load() async {
     try {
       final list = await PodcastsRepository().getPodcasts();
-      if (mounted)
+      if (mounted) {
         setState(() {
           _podcasts = list;
           _loading = false;
         });
+      }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _error = e;
           _loading = false;
         });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_loading)
+    if (_loading) {
       return const Scaffold(
           backgroundColor: AppColors.canvas,
           body: Center(
               child: CircularProgressIndicator(color: AppColors.primary)));
-    if (_error != null)
+    }
+    if (_error != null) {
       return Scaffold(
           backgroundColor: AppColors.canvas,
           appBar: AppBar(
@@ -51,6 +54,7 @@ class _PodcastsScreenState extends State<PodcastsScreen> {
           body: Center(
               child: Text('Failed: $_error',
                   style: const TextStyle(color: AppColors.error))));
+    }
     return Scaffold(
       backgroundColor: AppColors.canvas,
       appBar: AppBar(

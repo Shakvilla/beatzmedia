@@ -33,5 +33,4 @@ linter:
     - throw_in_finally
     - unnecessary_statements
     - unrelated_type_equality_checks
-    - use_key_in_widget_constructors
     - valid_regexps

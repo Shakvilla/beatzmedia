@@ -12,7 +12,7 @@ class TaxonomyRepository {
   Future<List<TaxonomyTerm>> getGenres() async {
     final json = await _apiClient
         .get<List<dynamic>>('/taxonomy', query: {'kind': 'genre'});
-    return (json as List)
+    return (json)
         .map((item) => TaxonomyTerm.fromJson(item as Map<String, dynamic>))
         .toList();
   }

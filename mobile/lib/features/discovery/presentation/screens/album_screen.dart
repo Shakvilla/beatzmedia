@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:cached_network_image/cached_network_image.dart';
 import '../../../../design_system/tokens.dart';
-import '../../../../design_system/widgets/catalog_card.dart';
 import '../../data/catalog_repository.dart';
 import '../../data/dto/catalog_dto.dart';
 
@@ -34,35 +33,39 @@ class _AlbumScreenState extends State<AlbumScreen> {
               .map((e) => TrackDto.fromJson(e as Map<String, dynamic>))
               .toList()
           : <TrackDto>[];
-      if (mounted)
+      if (mounted) {
         setState(() {
           _album = album;
           _tracks = tracks;
           _loading = false;
         });
+      }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _error = e;
           _loading = false;
         });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_loading)
+    if (_loading) {
       return const Scaffold(
           backgroundColor: AppColors.canvas,
           body: Center(
               child: CircularProgressIndicator(color: AppColors.primary)));
-    if (_error != null)
+    }
+    if (_error != null) {
       return Scaffold(
           backgroundColor: AppColors.canvas,
           appBar: AppBar(backgroundColor: AppColors.canvas),
           body: Center(
               child: Text('Failed: $_error',
                   style: const TextStyle(color: AppColors.error))));
+    }
     final album = _album!;
     return Scaffold(
       backgroundColor: AppColors.canvas,

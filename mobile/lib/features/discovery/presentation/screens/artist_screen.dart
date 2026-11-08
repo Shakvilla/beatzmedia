@@ -36,7 +36,7 @@ class _ArtistScreenState extends State<ArtistScreen> {
       try {
         shows = await repo.getArtistShows(widget.artistId);
       } catch (_) {}
-      if (mounted)
+      if (mounted) {
         setState(() {
           _artist = artist;
           _tracks = tracks;
@@ -44,29 +44,33 @@ class _ArtistScreenState extends State<ArtistScreen> {
           _shows = shows;
           _loading = false;
         });
+      }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _error = e;
           _loading = false;
         });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_loading)
+    if (_loading) {
       return const Scaffold(
           backgroundColor: AppColors.canvas,
           body: Center(
               child: CircularProgressIndicator(color: AppColors.primary)));
-    if (_error != null)
+    }
+    if (_error != null) {
       return Scaffold(
           backgroundColor: AppColors.canvas,
           appBar: AppBar(backgroundColor: AppColors.canvas),
           body: Center(
               child: Text('Failed: $_error',
                   style: const TextStyle(color: AppColors.error))));
+    }
     final artist = _artist!;
     return Scaffold(
       backgroundColor: AppColors.canvas,

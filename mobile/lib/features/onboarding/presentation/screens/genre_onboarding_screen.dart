@@ -3,7 +3,6 @@ import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:go_router/go_router.dart';
 import '../../../../design_system/tokens.dart';
 import '../../application/onboarding_provider.dart';
-import '../../data/taxonomy_dto.dart';
 
 class GenreOnboardingScreen extends ConsumerStatefulWidget {
   const GenreOnboardingScreen({super.key});
@@ -62,7 +61,7 @@ class _GenreOnboardingScreenState extends ConsumerState<GenreOnboardingScreen> {
               onPressed: canSubmit
                   ? () async {
                       await notifier.submitGenres();
-                      if (mounted &&
+                      if (context.mounted &&
                           ref.read(onboardingProvider).status ==
                               OnboardingStatus.success) context.go('/home');
                     }

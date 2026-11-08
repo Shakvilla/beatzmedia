@@ -12,7 +12,7 @@ class NowPlayingScreen extends ConsumerWidget {
     final state = ref.watch(playerControllerProvider);
     final notifier = ref.read(playerControllerProvider.notifier);
     final track = state.track;
-    if (track == null)
+    if (track == null) {
       return Scaffold(
           backgroundColor: AppColors.canvas,
           appBar: AppBar(
@@ -20,6 +20,7 @@ class NowPlayingScreen extends ConsumerWidget {
               title: const Text('Now Playing')),
           body: const Center(
               child: Text('No track', style: AppTypography.bodySmall)));
+    }
     String format(Duration d) =>
         '${d.inMinutes}:${(d.inSeconds % 60).toString().padLeft(2, '0')}';
     return Scaffold(

@@ -1,5 +1,4 @@
 import '../../../core/errors/api_error.dart';
-import '../../../core/api/dto/auth_dto.dart';
 import '../../../core/session/session_provider.dart';
 import '../data/auth_repository.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
@@ -111,7 +110,7 @@ class AuthState {
   factory AuthState.error(String error) =>
       AuthState._(status: AuthStatus.error, error: error);
   factory AuthState.resetRequested() =>
-      AuthState._(status: AuthStatus.resetRequested, error: null);
+      const AuthState._(status: AuthStatus.resetRequested, error: null);
 
   final AuthStatus status;
   final Account? account;

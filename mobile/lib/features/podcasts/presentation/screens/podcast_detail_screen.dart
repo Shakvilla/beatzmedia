@@ -25,29 +25,32 @@ class _PodcastDetailScreenState extends State<PodcastDetailScreen> {
     try {
       final p = await PodcastsRepository().getPodcast(widget.podcastId);
       final e = await PodcastsRepository().getEpisodes(widget.podcastId);
-      if (mounted)
+      if (mounted) {
         setState(() {
           _podcast = p;
           _episodes = e;
           _loading = false;
         });
+      }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _error = e;
           _loading = false;
         });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_loading)
+    if (_loading) {
       return const Scaffold(
           backgroundColor: AppColors.canvas,
           body: Center(
               child: CircularProgressIndicator(color: AppColors.primary)));
-    if (_error != null)
+    }
+    if (_error != null) {
       return Scaffold(
           backgroundColor: AppColors.canvas,
           appBar: AppBar(
@@ -55,6 +58,7 @@ class _PodcastDetailScreenState extends State<PodcastDetailScreen> {
           body: Center(
               child: Text('Failed: $_error',
                   style: const TextStyle(color: AppColors.error))));
+    }
     final p = _podcast!;
     return Scaffold(
       backgroundColor: AppColors.canvas,

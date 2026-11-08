@@ -41,14 +41,14 @@ class SettingsScreen extends ConsumerWidget {
             subtitle:
                 const Text('Only download on Wi-Fi', style: AppTypography.mono),
             value: true,
-            activeThumbColor: AppColors.primary,
+            activeColor: AppColors.primary,
             onChanged: (_) {}),
         SwitchListTile(
             title: const Text('Theme', style: AppTypography.title),
             subtitle:
                 const Text('Dark • Ghana night', style: AppTypography.mono),
             value: true,
-            activeThumbColor: AppColors.primary,
+            activeColor: AppColors.primary,
             onChanged: (_) {}),
         ListTile(
             leading: const Icon(Icons.description_outlined,

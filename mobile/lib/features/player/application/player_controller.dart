@@ -1,7 +1,6 @@
 import 'dart:async';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import 'package:just_audio/just_audio.dart';
-import '../data/dto/stream_dto.dart';
 import '../data/playback_repository.dart';
 import '../../discovery/data/dto/catalog_dto.dart';
 
@@ -67,7 +66,6 @@ class PlayerController extends StateNotifier<PlayerState> {
 
   final PlaybackRepository _repo;
   late final AudioPlayer _player;
-  String? _currentUrl;
   DateTime? _expiresAt;
   Timer? _expiryTimer;
 
@@ -79,7 +77,6 @@ class PlayerController extends StateNotifier<PlayerState> {
         error: null);
     try {
       final stream = await _repo.getStream(track.id);
-      _currentUrl = stream.audioUrl;
       _expiresAt = DateTime.tryParse(stream.expiresAt);
       state = state.copyWith(previewSeconds: stream.previewSeconds);
       await _player.setUrl(stream.audioUrl);
@@ -105,7 +102,6 @@ class PlayerController extends StateNotifier<PlayerState> {
         final stream = await _repo.getStream(track.id);
         await _player.setUrl(stream.audioUrl, initialPosition: pos);
         if (state.isPlaying) await _player.play();
-        _currentUrl = stream.audioUrl;
         _expiresAt = DateTime.tryParse(stream.expiresAt);
         _scheduleExpiryRefresh();
       } catch (_) {}

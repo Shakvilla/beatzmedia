@@ -16,7 +16,6 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
   final _emailController = TextEditingController();
   final _passwordController = TextEditingController();
   bool _obscurePassword = true;
-  String? _localError;
 
   @override
   void dispose() {
@@ -79,12 +78,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   ),
                   keyboardType: TextInputType.emailAddress,
                   validator: (value) {
-                    if (value == null || value.isEmpty)
+                    if (value == null || value.isEmpty) {
                       return 'Enter your email';
+                    }
                     if (!value.contains('@')) return 'Enter a valid email';
                     return null;
                   },
-                  onSaved: (value) => _localError = null,
                 ),
                 const SizedBox(height: 16),
                 TextFormField(
@@ -109,10 +108,12 @@ class _LoginScreenState extends ConsumerState<LoginScreen> {
                   ),
                   obscureText: _obscurePassword,
                   validator: (value) {
-                    if (value == null || value.isEmpty)
+                    if (value == null || value.isEmpty) {
                       return 'Enter your password';
-                    if (value.length < 6)
+                    }
+                    if (value.length < 6) {
                       return 'Password must be at least 6 characters';
+                    }
                     return null;
                   },
                 ),

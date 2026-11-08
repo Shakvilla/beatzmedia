@@ -23,17 +23,19 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
   Future<void> _load() async {
     try {
       final list = await NotificationsRepository().getNotifications();
-      if (mounted)
+      if (mounted) {
         setState(() {
           _items = list;
           _loading = false;
         });
+      }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _error = e;
           _loading = false;
         });
+      }
     }
   }
 
@@ -44,12 +46,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_loading)
+    if (_loading) {
       return const Scaffold(
           backgroundColor: AppColors.canvas,
           body: Center(
               child: CircularProgressIndicator(color: AppColors.primary)));
-    if (_error != null)
+    }
+    if (_error != null) {
       return Scaffold(
           backgroundColor: AppColors.canvas,
           appBar: AppBar(
@@ -58,6 +61,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           body: Center(
               child: Text('Failed: $_error',
                   style: const TextStyle(color: AppColors.error))));
+    }
     final items = _items!;
     return Scaffold(
       backgroundColor: AppColors.canvas,
@@ -90,12 +94,13 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                     subtitle: Text(n.body, style: AppTypography.bodySmall),
                     trailing: Text(n.time, style: AppTypography.mono),
                     onTap: () async {
-                      if (!n.read)
+                      if (!n.read) {
                         await NotificationsRepository().markOneRead(n.id);
+                      }
                       if (n.to != null &&
                           n.to!.startsWith('/') &&
                           !n.to!.contains('://')) {
-                        if (mounted) context.push(n.to!);
+                        if (context.mounted) context.push(n.to!);
                       }
                     });
               }),

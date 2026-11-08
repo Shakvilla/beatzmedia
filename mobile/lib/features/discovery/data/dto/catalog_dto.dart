@@ -216,15 +216,17 @@ class HomeFeedDto {
         featuredAlbums: (json['featuredAlbums'] as List)
             .map((e) => AlbumDto.fromJson(e as Map<String, dynamic>))
             .toList(),
-        newReleases: ((json['rails']?['newReleases'] ?? []) as List)
+        newReleases: ((json['rails']?['newReleases'] ?? <dynamic>[]) as List)
             .map((e) => AlbumDto.fromJson(e as Map<String, dynamic>))
             .toList(),
-        popularArtists: ((json['rails']?['popularArtists'] ?? []) as List)
-            .map((e) => ArtistDto.fromJson(e as Map<String, dynamic>))
-            .toList(),
-        curatedPlaylists: ((json['rails']?['curatedPlaylists'] ?? []) as List)
-            .map((e) => PlaylistDto.fromJson(e as Map<String, dynamic>))
-            .toList(),
+        popularArtists:
+            ((json['rails']?['popularArtists'] ?? <dynamic>[]) as List)
+                .map((e) => ArtistDto.fromJson(e as Map<String, dynamic>))
+                .toList(),
+        curatedPlaylists:
+            ((json['rails']?['curatedPlaylists'] ?? <dynamic>[]) as List)
+                .map((e) => PlaylistDto.fromJson(e as Map<String, dynamic>))
+                .toList(),
       );
 }
 

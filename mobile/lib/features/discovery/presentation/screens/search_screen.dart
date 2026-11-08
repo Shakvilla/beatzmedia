@@ -26,11 +26,12 @@ class _SearchScreenState extends ConsumerState<SearchScreen> {
   Future<void> _loadCategories() async {
     try {
       final cats = await CatalogRepository().getBrowseCategories();
-      if (mounted)
+      if (mounted) {
         setState(() {
           _categories = cats;
           _loadingCategories = false;
         });
+      }
     } catch (_) {
       if (mounted) setState(() => _loadingCategories = false);
     }

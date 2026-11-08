@@ -2,7 +2,6 @@ import 'package:flutter/material.dart';
 import 'package:flutter_riverpod/flutter_riverpod.dart';
 import '../../../../design_system/tokens.dart';
 import '../../application/library_provider.dart';
-import '../../../discovery/presentation/screens/home_screen.dart';
 
 class LibraryScreen extends ConsumerWidget {
   const LibraryScreen({super.key});
@@ -10,12 +9,13 @@ class LibraryScreen extends ConsumerWidget {
   Widget build(BuildContext context, WidgetRef ref) {
     final state = ref.watch(libraryProvider);
     final col = state.collection;
-    if (state.isLoading && col == null)
+    if (state.isLoading && col == null) {
       return const Scaffold(
           backgroundColor: AppColors.canvas,
           body: Center(
               child: CircularProgressIndicator(color: AppColors.primary)));
-    if (state.error != null && col == null)
+    }
+    if (state.error != null && col == null) {
       return Scaffold(
           backgroundColor: AppColors.canvas,
           appBar: AppBar(
@@ -23,6 +23,7 @@ class LibraryScreen extends ConsumerWidget {
           body: Center(
               child: Text('Failed: ${state.error}',
                   style: const TextStyle(color: AppColors.error))));
+    }
     return Scaffold(
       backgroundColor: AppColors.canvas,
       appBar: AppBar(

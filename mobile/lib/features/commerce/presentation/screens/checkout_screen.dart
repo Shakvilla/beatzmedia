@@ -27,12 +27,13 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen>
   Future<void> _loadProviders() async {
     try {
       final list = await CommerceRepository().getProviders();
-      if (mounted)
+      if (mounted) {
         setState(() {
           _providers = list;
           _selected = list.isNotEmpty ? list.first : null;
           _loadingProviders = false;
         });
+      }
     } catch (_) {
       if (mounted) setState(() => _loadingProviders = false);
     }
@@ -56,8 +57,9 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen>
   Widget build(BuildContext context) {
     final checkout = ref.watch(checkoutProvider);
     ref.listen(checkoutProvider, (prev, next) {
-      if (next.status == CheckoutStatus.succeeded && next.order != null)
+      if (next.status == CheckoutStatus.succeeded && next.order != null) {
         context.go('/receipt/${next.order!.orderId}');
+      }
     });
 
     return Scaffold(
@@ -156,14 +158,14 @@ class _CheckoutScreenState extends ConsumerState<CheckoutScreen>
             decoration: BoxDecoration(
                 color: AppColors.surfaceElevated,
                 borderRadius: BorderRadius.circular(AppRadii.sm)),
-            child: Row(children: [
-              const SizedBox(
+            child: const Row(children: [
+              SizedBox(
                   width: 16,
                   height: 16,
                   child: CircularProgressIndicator(
                       strokeWidth: 2, color: AppColors.primary)),
-              const SizedBox(width: 10),
-              const Text('Waiting for settlement…', style: AppTypography.mono)
+              SizedBox(width: 10),
+              Text('Waiting for settlement…', style: AppTypography.mono)
             ]));
       case CheckoutStatus.failed:
         return Container(

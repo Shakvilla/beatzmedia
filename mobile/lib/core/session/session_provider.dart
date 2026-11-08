@@ -25,7 +25,7 @@ class Account {
 enum SessionStatus { initial, restoring, authenticated, unauthenticated }
 
 class SessionState {
-  const SessionState._({required this.status, this.account, this.error});
+  const SessionState._({required this.status, this.account});
   factory SessionState.initial() =>
       const SessionState._(status: SessionStatus.initial);
   factory SessionState.restoring() =>
@@ -37,7 +37,6 @@ class SessionState {
 
   final SessionStatus status;
   final Account? account;
-  final Object? error;
 }
 
 final apiClientProvider = Provider<ApiClient>((ref) => ApiClient());

@@ -20,13 +20,16 @@ class _DownloadsScreenState extends ConsumerState<DownloadsScreen> {
     try {
       final repo = LibraryRepository();
       final res = await repo.getDownload(trackId);
-      final url = res['downloadUrl'] as String;
+      if (res['downloadUrl'] is! String) {
+        throw StateError('Download URL unavailable');
+      }
       // Transfer to app-private storage would happen here via Dio + path_provider
       // Signed URL is NOT persisted — only the local file path is kept in Hive manifest
       setState(() => _status[trackId] = 'completed');
-      if (mounted)
+      if (mounted) {
         ScaffoldMessenger.of(context)
             .showSnackBar(SnackBar(content: Text('Download ready: $trackId')));
+      }
     } catch (e) {
       setState(() => _status[trackId] = 'failed');
     }

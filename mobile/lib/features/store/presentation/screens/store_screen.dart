@@ -42,7 +42,7 @@ class _StoreScreenState extends State<StoreScreen>
                 Tab(text: 'Pre-orders'),
                 Tab(text: 'Beats')
               ])),
-      body: TabBarView(controller: _tab, children: [
+      body: TabBarView(controller: _tab, children: const [
         _StoreList(type: null),
         _StoreList(type: 'EXCLUSIVE'),
         _StoreList(type: 'PREORDER'),
@@ -74,39 +74,44 @@ class _StoreListState extends State<_StoreList> {
       final list = await StoreRepository().getStore(
           type: widget.type == 'PREORDER' ? null : widget.type,
           sort: 'popular');
-      if (mounted)
+      if (mounted) {
         setState(() {
           _items = widget.type == 'PREORDER'
               ? list.where((e) => e.dropsAt != null).toList()
               : list;
           _loading = false;
         });
+      }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _error = e;
           _loading = false;
         });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_loading)
+    if (_loading) {
       return const Center(
           child: CircularProgressIndicator(color: AppColors.primary));
-    if (_error != null)
+    }
+    if (_error != null) {
       return Center(
           child: Text('Failed: $_error',
               style: const TextStyle(color: AppColors.error)));
+    }
     final items = _items!;
-    if (items.isEmpty)
+    if (items.isEmpty) {
       return Center(
           child: Text(
               widget.type == 'PREORDER'
                   ? 'No pre-orders — presentation only, no reservation action unless store data supports it'
                   : 'No items',
               style: AppTypography.bodySmall));
+    }
     return ListView.separated(
         padding: const EdgeInsets.all(16),
         itemCount: items.length,
@@ -127,7 +132,8 @@ class _StoreListState extends State<_StoreList> {
                   ? Text('${it.stockRemaining} left',
                       style: AppTypography.mono.copyWith(color: AppColors.gold))
                   : null,
-              onTap: () {});
+              onTap: () => Navigator.of(context).push(MaterialPageRoute<void>(
+                  builder: (_) => _StoreDetail(item: it))));
         });
   }
 }

@@ -25,28 +25,31 @@ class _ReceiptScreenState extends ConsumerState<ReceiptScreen> {
   Future<void> _load() async {
     try {
       final o = await CommerceRepository().getOrder(widget.orderId);
-      if (mounted)
+      if (mounted) {
         setState(() {
           _order = o;
           _loading = false;
         });
+      }
     } catch (e) {
-      if (mounted)
+      if (mounted) {
         setState(() {
           _error = e;
           _loading = false;
         });
+      }
     }
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_loading)
+    if (_loading) {
       return const Scaffold(
           backgroundColor: AppColors.canvas,
           body: Center(
               child: CircularProgressIndicator(color: AppColors.primary)));
-    if (_error != null)
+    }
+    if (_error != null) {
       return Scaffold(
           backgroundColor: AppColors.canvas,
           appBar: AppBar(
@@ -54,6 +57,7 @@ class _ReceiptScreenState extends ConsumerState<ReceiptScreen> {
           body: Center(
               child: Text('Failed: $_error',
                   style: const TextStyle(color: AppColors.error))));
+    }
     final order = _order!;
     return Scaffold(
       backgroundColor: AppColors.canvas,

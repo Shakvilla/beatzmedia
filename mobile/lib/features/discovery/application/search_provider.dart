@@ -44,8 +44,9 @@ class SearchNotifier extends StateNotifier<SearchState> {
       state = state.copyWith(query: trimmed, isSearching: true, error: null);
       try {
         final res = await _repo.search(trimmed);
-        if (!_cancelToken!.isCancelled)
+        if (!_cancelToken!.isCancelled) {
           state = state.copyWith(result: res, isSearching: false);
+        }
       } catch (e) {
         if (e is DioException && CancelToken.isCancel(e)) return;
         state = state.copyWith(isSearching: false, error: e);

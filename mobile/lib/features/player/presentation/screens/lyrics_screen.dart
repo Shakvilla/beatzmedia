@@ -27,10 +27,11 @@ class LyricsScreen extends ConsumerWidget {
             child: Text('Failed: $e',
                 style: const TextStyle(color: AppColors.error))),
         data: (lines) {
-          if (lines.isEmpty)
+          if (lines.isEmpty) {
             return const Center(
                 child: Text('No lyrics available',
                     style: AppTypography.bodySmall));
+          }
           return ListView.separated(
               padding: const EdgeInsets.all(24),
               itemCount: lines.length,
