@@ -37,10 +37,10 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
-  # MinIO — local S3-compatible object store (media originals + HLS delivery)
+  # Silo — maintained MinIO-compatible object store (media originals + HLS delivery)
   # ---------------------------------------------------------------------------
   objectstore:
-    image: minio/minio:latest
+    image: pgsty/silo:RELEASE.2026-10-26T00-00-00Z
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: minioadmin
@@ -58,10 +58,10 @@ services:
     restart: unless-stopped
 
   # ---------------------------------------------------------------------------
-  # createbuckets — one-shot mc job to initialise the two MinIO buckets
+  # createbuckets — one-shot mc job to initialise the two object-store buckets
   # ---------------------------------------------------------------------------
   createbuckets:
-    image: minio/mc:latest
+    image: pgsty/mc:RELEASE.2026-09-16T00-00-00Z
     depends_on:
       objectstore:
         condition: service_healthy

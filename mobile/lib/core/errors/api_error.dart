@@ -21,7 +21,8 @@ class ApiError implements Exception {
   bool get isRateLimited => status == 429;
 
   @override
-  String toString() => 'ApiError($status $code: $message${field != null ? ' field=$field' : ''})';
+  String toString() =>
+      'ApiError($status $code: $message${field != null ? ' field=$field' : ''})';
 }
 
 /// Connectivity / transport failure (no HTTP status).

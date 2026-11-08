@@ -11,7 +11,7 @@ describe('catalog query factories', () => {
 
   it('homeQuery fetches /home and maps all three sections', async () => {
     vi.mocked(apiFetch).mockResolvedValue({
-      trending: [{ id: 't1', title: 'A', artistId: 'a1', artistName: 'Art', albumId: null, albumTitle: null, duration: 10, image: 'i', ownership: 'free', price: null, plays: 1, audioUrl: null, credits: null, quality: null, year: null }],
+      trending: [{ type: 'track', track: { id: 't1', title: 'A', artistId: 'a1', artistName: 'Art', albumId: null, albumTitle: null, duration: 10, image: 'i', ownership: 'free', price: null, plays: 1, audioUrl: null, credits: null, quality: null, year: null }, album: null, plays: 1 }],
       top10: [],
       featuredAlbums: [{ id: 'al1', title: 'B', artistId: 'a1', artistName: 'Art', year: 2024, coverImage: 'c', genres: null, trackIds: [], tracks: null }],
       rails: { newReleases: [], popularArtists: [], curatedPlaylists: [] },

@@ -4,6 +4,7 @@ import java.net.URI;
 import java.util.Map;
 
 import org.testcontainers.containers.MinIOContainer;
+import org.testcontainers.utility.DockerImageName;
 
 import io.quarkus.test.common.QuarkusTestResourceLifecycleManager;
 
@@ -39,7 +40,8 @@ public class MinioTestResource implements QuarkusTestResourceLifecycleManager {
 
   @Override
   public Map<String, String> start() {
-    minio = new MinIOContainer("minio/minio:RELEASE.2024-01-16T16-07-38Z")
+    minio = new MinIOContainer(DockerImageName.parse("pgsty/silo:RELEASE.2026-10-26T00-00-00Z")
+        .asCompatibleSubstituteFor("minio/minio"))
         .withUserName("minioadmin")
         .withPassword("minioadmin");
     minio.start();

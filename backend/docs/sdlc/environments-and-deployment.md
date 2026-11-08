@@ -83,7 +83,7 @@ services:
     restart: unless-stopped
 
   objectstore:
-    image: minio/minio:latest
+    image: pgsty/silo:RELEASE.2026-10-26T00-00-00Z
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: minioadmin
@@ -101,7 +101,7 @@ services:
     restart: unless-stopped
 
   createbuckets:
-    image: minio/mc:latest
+    image: pgsty/mc:RELEASE.2026-09-16T00-00-00Z
     depends_on:
       objectstore:
         condition: service_healthy
@@ -247,10 +247,11 @@ Testcontainers (PRD §5.3). When Compose URLs are set, Dev Services stand down. 
 (`*IT`) target the Compose / Testcontainers Postgres + MinIO; unit tests use in-memory fakes for
 output ports.
 
-### 2.3 Running MinIO locally
+### 2.3 Running the S3-compatible store locally
 
-MinIO is the local stand-in for S3. It's already wired as the `objectstore` service in
-`backend/docker-compose.yml`, and a companion **`createbuckets`** one-shot job (`minio/mc`) creates the
+Silo is the local stand-in for S3 and preserves the MinIO-compatible API used by the app. It's
+already wired as the `objectstore` service in `backend/docker-compose.yml`, and a companion
+**`createbuckets`** one-shot job (`pgsty/mc`) creates the
 two required buckets. You almost never configure it by hand — pick one of the two workflows below.
 
 **Fixed facts** (defaults in `application.properties`, overridable via `BEATZ_S3_*` env):
@@ -313,7 +314,7 @@ Both buckets **must exist** or uploads fail. If you run MinIO outside the Compos
 `createbuckets` didn't run), create them with the `mc` client on the Compose network:
 
 ```bash
-docker run --rm --network beatzclik_default minio/mc:latest sh -c "\
+docker run --rm --network beatzclik_default pgsty/mc:RELEASE.2026-09-16T00-00-00Z sh -c "\
   mc alias set local http://objectstore:9000 minioadmin minioadmin && \
   mc mb --ignore-existing local/beatz-media-originals && \
   mc mb --ignore-existing local/beatz-media-delivery && \
