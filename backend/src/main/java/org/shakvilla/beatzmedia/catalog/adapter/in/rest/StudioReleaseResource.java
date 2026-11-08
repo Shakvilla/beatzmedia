@@ -74,7 +74,7 @@ import org.shakvilla.beatzmedia.platform.domain.ValidationException;
  *   <li>GET /v1/studio/releases/:id — get one release (detail view)
  *   <li>PATCH /v1/studio/releases/:id — update draft metadata + track list
  *   <li>DELETE /v1/studio/releases/:id — delete draft/in_review
- *   <li>POST /v1/studio/releases/:id/tracks — multipart WAV/FLAC upload, attaches to the draft
+ *   <li>POST /v1/studio/releases/:id/tracks — multipart WAV/FLAC/MP3/M4A upload, attaches to the draft
  *   <li>DELETE /v1/studio/releases/:id/tracks/:trackId — remove a draft track
  *   <li>POST /v1/studio/releases/:id/submit — finalize draft -> in_review (Idempotency-Key
  *       required)
@@ -214,7 +214,7 @@ public class StudioReleaseResource {
   }
 
   /**
-   * POST /v1/studio/releases/:id/tracks — LLFR-CATALOG-02.4. Accepts multipart WAV/FLAC. Returns
+   * POST /v1/studio/releases/:id/tracks — LLFR-CATALOG-02.4. Accepts multipart WAV/FLAC/MP3/M4A. Returns
    * 201 UploadedTrackView.
    */
   @POST

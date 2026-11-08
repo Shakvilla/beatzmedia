@@ -149,13 +149,13 @@ function NewEpisode() {
         {/* Main */}
         <div className="flex flex-col gap-6">
           {/* Audio */}
-          <input ref={fileRef} type="file" accept="audio/*" className="hidden" onChange={(e) => onAudio(e.target.files?.[0])} />
+          <input ref={fileRef} type="file" accept=".wav,.flac,.mp3,.m4a,audio/wav,audio/flac,audio/mpeg,audio/mp4,audio/m4a,audio/x-m4a" className="hidden" onChange={(e) => onAudio(e.target.files?.[0])} />
           {!audio ? (
             <button type="button" onClick={() => fileRef.current?.click()}
               className="w-full rounded-2xl border-2 border-dashed border-gray-300 dark:border-white/15 flex flex-col items-center justify-center gap-3 py-16 hover:border-beatz-green/60 transition-colors">
               <Upload size={30} className="text-beatz-green" />
               <span className="text-lg font-bold text-beatz-dark-bg dark:text-white">Drop episode audio</span>
-              <span className="text-xs text-gray-400 dark:text-gray-500">WAV or FLAC · up to 500 MB</span>
+              <span className="text-xs text-gray-400 dark:text-gray-500">WAV, FLAC, MP3 or M4A · up to 500 MB</span>
             </button>
           ) : (
             <div className={cn(CARD, 'flex items-center gap-4')}>

@@ -49,7 +49,7 @@ export interface UploadedTrack {
    */
   error?: string
   /**
-   * The uploaded file was already a lossy format (MP3). Client-side only — derived from the
+   * The uploaded file is lossy or may contain lossy audio (MP3/M4A). Client-side only — derived from the
    * picked `File`, never returned by the server, so it must be carried across `REPLACE_TRACK`
    * the same way `price` is. Drives the wizard's quality warning (ADR-35).
    */
@@ -62,12 +62,13 @@ export interface UploadedTrack {
 }
 
 /**
- * Whether a picked file is an already-lossy source, so the delivery rendition would be a second
- * lossy generation. The backend admits WAV, FLAC and MP3 (ADR-35); of those only MP3 is lossy.
+ * Whether a picked file is lossy or could contain lossy audio. M4A can hold AAC or ALAC; warn
+ * conservatively without claiming its codec is known.
  * Matched on MIME type with an extension fallback, since some browsers report an empty `type`.
  */
 export function isLossyAudio(file: File): boolean {
-  return file.type === 'audio/mpeg' || file.type === 'audio/mp3' || /\.mp3$/i.test(file.name)
+  return ['audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/m4a', 'audio/x-m4a'].includes(file.type.toLowerCase())
+    || /\.(mp3|m4a)$/i.test(file.name)
 }
 
 export interface ReleaseDraft {

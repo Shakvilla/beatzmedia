@@ -182,6 +182,16 @@ class CreateEpisodeServiceTest {
   }
 
   @Test
+  void create_m4aAudio_isAccepted() {
+    AudioUpload m4a =
+        new AudioUpload("ep.m4a", "audio/mp4", 1024, new ByteArrayInputStream(new byte[]{1}), "h-m4a");
+
+    service.create(ARTIST, "idem-m4a", publicCommand(), m4a);
+
+    assertEquals(1, mediaUpload.callCount());
+  }
+
+  @Test
   void create_missingAudio_throwsMediaInvalid() {
     assertThrows(MediaInvalidException.class, () -> service.create(ARTIST, "idem-8", publicCommand(), null));
   }

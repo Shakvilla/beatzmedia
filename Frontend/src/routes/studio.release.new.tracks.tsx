@@ -20,10 +20,8 @@ const LABEL = 'text-[11px] font-bold uppercase tracking-[0.15em] text-gray-500 d
 /**
  * Advisory shown when any queued track came from an already-lossy source (ADR-35).
  *
- * Deliberately NOT blocking: MP3 is accepted, and an artist who only has an MP3 should still be
- * able to release. It exists so an artist who *does* have the master knows to use it — fans buy
- * these tracks outright, and re-encoding an MP3 to the AAC delivery rendition is a second lossy
- * generation they would be paying to own.
+ * Advisory only: MP3 is lossy and M4A may contain lossy AAC. Artists with a lossless master can
+ * upload that instead; the original compressed file remains accepted.
  */
 export function LossySourceNotice({ tracks }: { tracks: UploadedTrack[] }) {
   const lossy = tracks.filter((t) => t.lossy)
@@ -37,12 +35,12 @@ export function LossySourceNotice({ tracks }: { tracks: UploadedTrack[] }) {
       <div className="text-xs leading-relaxed text-amber-900 dark:text-amber-200">
         <span className="font-bold">
           {lossy.length === 1
-            ? `“${lossy[0].title}” is an MP3.`
-            : `${lossy.length} tracks are MP3s.`}
+            ? `“${lossy[0].title}” may be a compressed source.`
+            : `${lossy.length} tracks may be compressed sources.`}
         </span>{' '}
-        We'll still publish {lossy.length === 1 ? 'it' : 'them'}, but MP3 is already compressed —
-        re-encoding for streaming loses a little more quality each time. If you have the original
-        WAV or FLAC, upload that instead and your buyers get the better master.
+        We'll still publish {lossy.length === 1 ? 'it' : 'them'}. MP3 and some M4A files use lossy
+        audio, so re-encoding for streaming can reduce quality. If you have the original WAV or FLAC,
+        upload that instead and your buyers get the better master.
       </div>
     </div>
   )
@@ -150,7 +148,7 @@ function SingleUpload({
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-10 lg:gap-16 items-start">
       <div className="flex flex-col gap-6">
-        <input ref={audioInput} type="file" accept="audio/*" className="hidden" onChange={(e) => ingest(e.target.files)} />
+        <input ref={audioInput} type="file" accept=".wav,.flac,.mp3,.m4a,audio/wav,audio/flac,audio/mpeg,audio/mp4,audio/m4a,audio/x-m4a" className="hidden" onChange={(e) => ingest(e.target.files)} />
 
         {!track ? (
           <button
@@ -166,7 +164,7 @@ function SingleUpload({
           >
             <Upload size={30} className="text-beatz-green" />
             <span className="text-lg font-bold text-beatz-dark-bg dark:text-white">Drop your track here</span>
-            <span className="text-xs text-gray-400 dark:text-gray-500">One audio file · WAV, FLAC or MP3 · up to 200 MB</span>
+            <span className="text-xs text-gray-400 dark:text-gray-500">One audio file · WAV, FLAC, MP3 or M4A · up to 200 MB</span>
           </button>
         ) : (
           <div className="flex flex-col gap-4">
@@ -278,7 +276,7 @@ function AlbumUpload({
 
   return (
     <div className="flex flex-col gap-8">
-      <input ref={fileInput} type="file" accept="audio/*" multiple className="hidden" onChange={(e) => ingest(e.target.files)} />
+      <input ref={fileInput} type="file" accept=".wav,.flac,.mp3,.m4a,audio/wav,audio/flac,audio/mpeg,audio/mp4,audio/m4a,audio/x-m4a" multiple className="hidden" onChange={(e) => ingest(e.target.files)} />
 
       {/* Drop hint */}
       <button
@@ -294,7 +292,7 @@ function AlbumUpload({
       >
         <Upload size={20} className="text-beatz-green" />
         <span className="text-base font-bold text-beatz-green">Drop multiple tracks here</span>
-        <span className="text-xs text-gray-400 dark:text-gray-500">or click to browse · WAV / FLAC / MP3 · drag to reorder</span>
+        <span className="text-xs text-gray-400 dark:text-gray-500">or click to browse · WAV / FLAC / MP3 / M4A · drag to reorder</span>
       </button>
 
       <LossySourceNotice tracks={tracks} />

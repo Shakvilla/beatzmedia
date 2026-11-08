@@ -389,6 +389,7 @@ public class MediaApplicationService
         case WAV -> "audio/wav";
         case FLAC -> "audio/flac";
         case MP3 -> "audio/mpeg";
+        case M4A -> "audio/mp4";
       };
     } else {
       return switch (magicByteValidator.detectImageFormat(header)) {
