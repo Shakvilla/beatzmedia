@@ -22,6 +22,7 @@ import { Route as LyricsRouteImport } from './routes/lyrics'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as LibraryRouteImport } from './routes/library'
 import { Route as ForgotPasswordRouteImport } from './routes/forgot-password'
+import { Route as FollowingRouteImport } from './routes/following'
 import { Route as EventsRouteImport } from './routes/events'
 import { Route as CheckoutRouteImport } from './routes/checkout'
 import { Route as CartRouteImport } from './routes/cart'
@@ -54,6 +55,7 @@ import { Route as AdminTrustRouteImport } from './routes/admin.trust'
 import { Route as AdminTaxonomyRouteImport } from './routes/admin.taxonomy'
 import { Route as AdminSupportRouteImport } from './routes/admin.support'
 import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
+import { Route as AdminPodcastsRouteImport } from './routes/admin.podcasts'
 import { Route as AdminModerationRouteImport } from './routes/admin.moderation'
 import { Route as AdminHealthRouteImport } from './routes/admin.health'
 import { Route as AdminFinanceRouteImport } from './routes/admin.finance'
@@ -140,6 +142,11 @@ const LibraryRoute = LibraryRouteImport.update({
 const ForgotPasswordRoute = ForgotPasswordRouteImport.update({
   id: '/forgot-password',
   path: '/forgot-password',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FollowingRoute = FollowingRouteImport.update({
+  id: '/following',
+  path: '/following',
   getParentRoute: () => rootRouteImport,
 } as any)
 const EventsRoute = EventsRouteImport.update({
@@ -302,6 +309,11 @@ const AdminSettingsRoute = AdminSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminPodcastsRoute = AdminPodcastsRouteImport.update({
+  id: '/podcasts',
+  path: '/podcasts',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminModerationRoute = AdminModerationRouteImport.update({
   id: '/moderation',
   path: '/moderation',
@@ -420,6 +432,7 @@ export interface FileRoutesByFullPath {
   '/cart': typeof CartRoute
   '/checkout': typeof CheckoutRouteWithChildren
   '/events': typeof EventsRoute
+  '/following': typeof FollowingRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/library': typeof LibraryRoute
   '/login': typeof LoginRoute
@@ -439,6 +452,7 @@ export interface FileRoutesByFullPath {
   '/admin/finance': typeof AdminFinanceRouteWithChildren
   '/admin/health': typeof AdminHealthRoute
   '/admin/moderation': typeof AdminModerationRoute
+  '/admin/podcasts': typeof AdminPodcastsRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/support': typeof AdminSupportRoute
   '/admin/taxonomy': typeof AdminTaxonomyRoute
@@ -487,6 +501,7 @@ export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/cart': typeof CartRoute
   '/events': typeof EventsRoute
+  '/following': typeof FollowingRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/library': typeof LibraryRoute
   '/login': typeof LoginRoute
@@ -503,6 +518,7 @@ export interface FileRoutesByTo {
   '/admin/editorial': typeof AdminEditorialRoute
   '/admin/health': typeof AdminHealthRoute
   '/admin/moderation': typeof AdminModerationRoute
+  '/admin/podcasts': typeof AdminPodcastsRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/support': typeof AdminSupportRoute
   '/admin/taxonomy': typeof AdminTaxonomyRoute
@@ -552,6 +568,7 @@ export interface FileRoutesById {
   '/cart': typeof CartRoute
   '/checkout': typeof CheckoutRouteWithChildren
   '/events': typeof EventsRoute
+  '/following': typeof FollowingRoute
   '/forgot-password': typeof ForgotPasswordRoute
   '/library': typeof LibraryRoute
   '/login': typeof LoginRoute
@@ -571,6 +588,7 @@ export interface FileRoutesById {
   '/admin/finance': typeof AdminFinanceRouteWithChildren
   '/admin/health': typeof AdminHealthRoute
   '/admin/moderation': typeof AdminModerationRoute
+  '/admin/podcasts': typeof AdminPodcastsRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/support': typeof AdminSupportRoute
   '/admin/taxonomy': typeof AdminTaxonomyRoute
@@ -623,6 +641,7 @@ export interface FileRouteTypes {
     | '/cart'
     | '/checkout'
     | '/events'
+    | '/following'
     | '/forgot-password'
     | '/library'
     | '/login'
@@ -642,6 +661,7 @@ export interface FileRouteTypes {
     | '/admin/finance'
     | '/admin/health'
     | '/admin/moderation'
+    | '/admin/podcasts'
     | '/admin/settings'
     | '/admin/support'
     | '/admin/taxonomy'
@@ -690,6 +710,7 @@ export interface FileRouteTypes {
     | '/'
     | '/cart'
     | '/events'
+    | '/following'
     | '/forgot-password'
     | '/library'
     | '/login'
@@ -706,6 +727,7 @@ export interface FileRouteTypes {
     | '/admin/editorial'
     | '/admin/health'
     | '/admin/moderation'
+    | '/admin/podcasts'
     | '/admin/settings'
     | '/admin/support'
     | '/admin/taxonomy'
@@ -754,6 +776,7 @@ export interface FileRouteTypes {
     | '/cart'
     | '/checkout'
     | '/events'
+    | '/following'
     | '/forgot-password'
     | '/library'
     | '/login'
@@ -773,6 +796,7 @@ export interface FileRouteTypes {
     | '/admin/finance'
     | '/admin/health'
     | '/admin/moderation'
+    | '/admin/podcasts'
     | '/admin/settings'
     | '/admin/support'
     | '/admin/taxonomy'
@@ -824,6 +848,7 @@ export interface RootRouteChildren {
   CartRoute: typeof CartRoute
   CheckoutRoute: typeof CheckoutRouteWithChildren
   EventsRoute: typeof EventsRoute
+  FollowingRoute: typeof FollowingRoute
   ForgotPasswordRoute: typeof ForgotPasswordRoute
   LibraryRoute: typeof LibraryRoute
   LoginRoute: typeof LoginRoute
@@ -936,6 +961,13 @@ declare module '@tanstack/react-router' {
       path: '/forgot-password'
       fullPath: '/forgot-password'
       preLoaderRoute: typeof ForgotPasswordRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/following': {
+      id: '/following'
+      path: '/following'
+      fullPath: '/following'
+      preLoaderRoute: typeof FollowingRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/events': {
@@ -1162,6 +1194,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminSettingsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/podcasts': {
+      id: '/admin/podcasts'
+      path: '/podcasts'
+      fullPath: '/admin/podcasts'
+      preLoaderRoute: typeof AdminPodcastsRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/moderation': {
       id: '/admin/moderation'
       path: '/moderation'
@@ -1342,6 +1381,7 @@ interface AdminRouteChildren {
   AdminFinanceRoute: typeof AdminFinanceRouteWithChildren
   AdminHealthRoute: typeof AdminHealthRoute
   AdminModerationRoute: typeof AdminModerationRoute
+  AdminPodcastsRoute: typeof AdminPodcastsRoute
   AdminSettingsRoute: typeof AdminSettingsRoute
   AdminSupportRoute: typeof AdminSupportRoute
   AdminTaxonomyRoute: typeof AdminTaxonomyRoute
@@ -1360,6 +1400,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminFinanceRoute: AdminFinanceRouteWithChildren,
   AdminHealthRoute: AdminHealthRoute,
   AdminModerationRoute: AdminModerationRoute,
+  AdminPodcastsRoute: AdminPodcastsRoute,
   AdminSettingsRoute: AdminSettingsRoute,
   AdminSupportRoute: AdminSupportRoute,
   AdminTaxonomyRoute: AdminTaxonomyRoute,
@@ -1475,6 +1516,7 @@ const rootRouteChildren: RootRouteChildren = {
   CartRoute: CartRoute,
   CheckoutRoute: CheckoutRouteWithChildren,
   EventsRoute: EventsRoute,
+  FollowingRoute: FollowingRoute,
   ForgotPasswordRoute: ForgotPasswordRoute,
   LibraryRoute: LibraryRoute,
   LoginRoute: LoginRoute,

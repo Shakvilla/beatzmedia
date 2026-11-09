@@ -1,9 +1,9 @@
 package org.shakvilla.beatzmedia.studio.application.service;
 
 import java.time.Instant;
+import java.util.Map;
 
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 
@@ -11,7 +11,9 @@ import org.shakvilla.beatzmedia.audit.application.port.out.AuditWriter;
 import org.shakvilla.beatzmedia.audit.domain.AuditEntry;
 import org.shakvilla.beatzmedia.audit.domain.AuditType;
 import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
+import org.shakvilla.beatzmedia.platform.application.port.out.DurableEventPublisher;
 import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
+import org.shakvilla.beatzmedia.platform.domain.DurableEventMessage;
 import org.shakvilla.beatzmedia.platform.domain.Money;
 import org.shakvilla.beatzmedia.platform.domain.UnauthorizedException;
 import org.shakvilla.beatzmedia.platform.domain.ValidationException;
@@ -22,7 +24,6 @@ import org.shakvilla.beatzmedia.studio.domain.ArtistId;
 import org.shakvilla.beatzmedia.studio.domain.Episode;
 import org.shakvilla.beatzmedia.studio.domain.EpisodeId;
 import org.shakvilla.beatzmedia.studio.domain.EpisodeNotFoundException;
-import org.shakvilla.beatzmedia.studio.domain.EpisodePublished;
 import org.shakvilla.beatzmedia.studio.domain.EpisodeStatus;
 import org.shakvilla.beatzmedia.studio.domain.IllegalEpisodeTransitionException;
 import org.shakvilla.beatzmedia.studio.domain.PodcastShow;
@@ -31,8 +32,8 @@ import org.shakvilla.beatzmedia.studio.domain.ScheduleDateRequiredException;
 /**
  * Application service for {@link UpdateEpisode} — LLFR-STUDIO-02.4. PATCH semantics ({@code null}
  * = no change). {@code visibility} drives the lifecycle transition ({@code public|scheduled|draft}
- * — see {@link Episode}'s state machine); every other field is a plain metadata mutation. Fires
- * {@code EpisodePublished} exactly once when the update transitions {@code draft -> published}.
+ * — see {@link Episode}'s state machine); every other field is a plain metadata mutation. Appends
+ * one durable publication event when the update transitions {@code draft -> published}.
  * Studio ADD §4.1 / §9.
  */
 @ApplicationScoped
@@ -42,7 +43,7 @@ public class UpdateEpisodeService implements UpdateEpisode {
   private final IdGenerator ids;
   private final Clock clock;
   private final AuditWriter auditWriter;
-  private final Event<EpisodePublished> episodePublishedEvent;
+  private final DurableEventPublisher durableEvents;
 
   @Inject
   public UpdateEpisodeService(
@@ -50,12 +51,12 @@ public class UpdateEpisodeService implements UpdateEpisode {
       IdGenerator ids,
       Clock clock,
       AuditWriter auditWriter,
-      Event<EpisodePublished> episodePublishedEvent) {
+      DurableEventPublisher durableEvents) {
     this.repo = repo;
     this.ids = ids;
     this.clock = clock;
     this.auditWriter = auditWriter;
-    this.episodePublishedEvent = episodePublishedEvent;
+    this.durableEvents = durableEvents;
   }
 
   @Override
@@ -95,17 +96,31 @@ public class UpdateEpisodeService implements UpdateEpisode {
         null, now));
 
     if (firePublished) {
-      episodePublishedEvent.fire(
-          new EpisodePublished(saved.id().value(), saved.showId().value(), artist.value(), now));
+      appendEpisodePublished(saved, artist, now);
     }
 
     PodcastShow show = repo.findShow(artist, saved.showId()).orElse(null);
     return EpisodeMapper.toView(saved, show != null ? show.title() : null);
   }
 
+  private void appendEpisodePublished(Episode episode, ArtistId artist, Instant now) {
+    durableEvents.append(new DurableEventMessage(
+        ids.newId(),
+        "studio.episode-published",
+        1,
+        "episode",
+        episode.id().value(),
+        Map.of(
+            "episodeId", episode.id().value(),
+            "showId", episode.showId().value(),
+            "artistId", artist.value(),
+            "occurredAt", now.toString()),
+        now));
+  }
+
   /** Applies the {@code visibility}/{@code date} PATCH fields to the episode's lifecycle. Returns
    * {@code true} if this call transitioned the episode {@code draft -> published} (so the caller
-   * must fire {@code EpisodePublished} exactly once). */
+   * must append one durable publication event). */
   private boolean applyVisibility(Episode episode, UpdateEpisodeCommand cmd, Instant now) {
     if (cmd.visibility() == null) {
       // No explicit visibility change requested — a bare 'date' on an already-scheduled episode is

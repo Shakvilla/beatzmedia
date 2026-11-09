@@ -114,6 +114,21 @@ class UploadOriginalUseCaseTest {
     assertEquals(1, transcodeJobPort.getSubmitted().size());
   }
 
+  @Test
+  void m4a_with_newer_iso_brand_is_accepted_and_enqueues_transcode() {
+    byte[] m4aHeader = new byte[]{0, 0, 0, 24, 'f', 't', 'y', 'p', 'i', 's', 'o', '6',
+        0, 0, 0, 0, 'i', 's', 'o', '6', 'm', 'p', '4', '2'};
+    UploadCommand cmd = new UploadCommand(
+        new OwnerRef("studio", "episode-m4a"), MediaKind.AUDIO, "episode.m4a", "audio/mp4",
+        m4aHeader.length, new ByteArrayInputStream(m4aHeader), "hash-m4a-iso6");
+
+    MediaHandle handle = service.uploadOriginal(cmd);
+
+    assertEquals(MediaStatus.UPLOADING, handle.status());
+    assertEquals(1, repository.size());
+    assertEquals(1, transcodeJobPort.getSubmitted().size());
+  }
+
   // ---- Reject cases ----
 
   @Test

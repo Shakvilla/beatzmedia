@@ -12,6 +12,22 @@ import org.shakvilla.beatzmedia.notifications.domain.TransientDeliveryException;
  */
 public interface Mailer {
 
+  /** Provider chosen for a new send; persisted with an attempt before its first outbound request. */
+  default String selectedProvider() {
+    return "smtp";
+  }
+
+  /** Sends through the provider recorded on the attempt. Legacy implementations may ignore it. */
+  default void send(EmailMessage message, String provider) {
+    send(message);
+  }
+
+  /** Sends through a pinned provider and returns its acceptance/reference ID when available. */
+  default String sendTracked(EmailMessage message, String provider) {
+    send(message, provider);
+    return null;
+  }
+
   /**
    * Sends {@code message}. Throws {@link TransientDeliveryException} for a retryable failure
    * (timeout, 5xx) or {@link PermanentDeliveryException} for a non-retryable one (invalid address,

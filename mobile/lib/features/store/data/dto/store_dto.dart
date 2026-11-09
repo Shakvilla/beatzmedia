@@ -1,0 +1,90 @@
+import '../../../discovery/data/dto/catalog_dto.dart' show MoneyDto;
+
+class LicenseOptionDto {
+  const LicenseOptionDto(
+      {required this.tier,
+      required this.label,
+      required this.price,
+      required this.features,
+      this.terms});
+  final String tier;
+  final String label;
+  final MoneyDto price;
+  final List<String> features;
+  final String? terms;
+  factory LicenseOptionDto.fromJson(Map<String, dynamic> j) => LicenseOptionDto(
+      tier: j['tier'] as String,
+      label: j['label'] as String,
+      price: MoneyDto.fromJson(j['price'] as Map<String, dynamic>),
+      features: (j['features'] as List).cast<String>(),
+      terms: j['terms'] as String?);
+}
+
+class MerchVariantDto {
+  const MerchVariantDto({required this.label, required this.options});
+  final String label;
+  final List<String> options;
+  factory MerchVariantDto.fromJson(Map<String, dynamic> j) => MerchVariantDto(
+      label: j['label'] as String,
+      options: (j['options'] as List).cast<String>());
+}
+
+class StoreItemDto {
+  const StoreItemDto(
+      {required this.id,
+      required this.type,
+      required this.title,
+      required this.artistName,
+      required this.image,
+      required this.price,
+      this.artistId,
+      this.genre,
+      this.badges,
+      this.description,
+      this.popularity,
+      this.createdAt,
+      this.licenseOptions,
+      this.variants,
+      this.quality,
+      this.dropsAt,
+      this.stockRemaining});
+  final String id;
+  final String type;
+  final String title;
+  final String artistName;
+  final String image;
+  final MoneyDto price;
+  final String? artistId;
+  final String? genre;
+  final List<String>? badges;
+  final String? description;
+  final int? popularity;
+  final String? createdAt;
+  final List<LicenseOptionDto>? licenseOptions;
+  final List<MerchVariantDto>? variants;
+  final String? quality;
+  final String? dropsAt;
+  final int? stockRemaining;
+  factory StoreItemDto.fromJson(Map<String, dynamic> j) => StoreItemDto(
+      id: j['id'] as String,
+      type: j['type'] as String,
+      title: j['title'] as String,
+      artistName: j['artistName'] as String,
+      image: j['image'] as String,
+      price: MoneyDto.fromJson(j['price'] as Map<String, dynamic>),
+      artistId: j['artistId'] as String?,
+      genre: j['genre'] as String?,
+      badges: (j['badges'] as List?)?.cast<String>(),
+      description: j['description'] as String?,
+      popularity: (j['popularity'] as num?)?.toInt(),
+      createdAt: j['createdAt'] as String?,
+      licenseOptions: (j['licenseOptions'] as List?)
+          ?.map((e) => LicenseOptionDto.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      variants: (j['variants'] as List?)
+          ?.map((e) => MerchVariantDto.fromJson(e as Map<String, dynamic>))
+          .toList(),
+      quality: j['quality'] as String?,
+      dropsAt: j['dropsAt'] as String?,
+      stockRemaining: (j['stockRemaining'] as num?)?.toInt());
+}

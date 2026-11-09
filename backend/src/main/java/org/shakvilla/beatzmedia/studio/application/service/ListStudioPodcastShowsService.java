@@ -30,6 +30,7 @@ public class ListStudioPodcastShowsService implements ListStudioPodcastShows {
   }
 
   static PodcastShowView toView(PodcastShow show) {
-    return new PodcastShowView(show.id().value(), show.title(), show.category());
+    return new PodcastShowView(show.id().value(), show.title(), show.category(),
+        show.originCountry());
   }
 }

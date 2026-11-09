@@ -26,6 +26,7 @@ final class FanSettingsMapper {
         settings.isNewReleases(), settings.isPlaylistUpdates(), settings.isDropsOffers());
     entity.country = settings.getCountry();
     entity.phone = settings.getPhone();
+    entity.phoneVerified = settings.isPhoneVerified();
     return entity;
   }
 
@@ -43,7 +44,8 @@ final class FanSettingsMapper {
         notifs[1],
         notifs[2],
         entity.country,
-        entity.phone);
+        entity.phone,
+        entity.phoneVerified);
   }
 
   // ---- private helpers ----

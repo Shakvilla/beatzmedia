@@ -1,0 +1,13 @@
+BEATZCLIK — WELCOME
+
+Welcome to BeatzClik{#if name}, {name}{/if}!
+
+You’re all set to discover music, connect with the artists behind it, and build a collection you can own.
+
+Start with new releases and find the sounds you love. When you support an artist, you help independent music grow.
+
+Explore music: {exploreUrl}
+
+We’re glad you’re here. Enjoy the music!
+
+BeatzClik · Music. Community. Ownership.

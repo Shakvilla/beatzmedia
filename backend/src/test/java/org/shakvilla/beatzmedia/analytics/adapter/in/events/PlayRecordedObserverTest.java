@@ -30,7 +30,8 @@ class PlayRecordedObserverTest {
   void setUp() {
     playFacts = new InMemoryPlayFactRepository();
     artistResolver = new FakeArtistResolver();
-    observer = new PlayRecordedObserver(playFacts, artistResolver, FakeIds.sequential("fact"));
+    observer = new PlayRecordedObserver(
+        playFacts, artistResolver, trackId -> {}, FakeIds.sequential("fact"));
   }
 
   @Test

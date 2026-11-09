@@ -91,12 +91,14 @@ describe('useCreatorIdentity', () => {
     expect(result.current.verified).toBe(false)
   })
 
-  it('reports NOT verified while the artist profile is still loading', () => {
+  it('reports NOT verified while the artist profile is still loading', async () => {
     mockAuth(ACCOUNT)
     mockFetch({ '/studio/profile': { displayName: 'Ama S' }, '/artists/': { id: 'acc-77', verified: true } })
     const { result } = renderHook(() => useCreatorIdentity(), { wrapper: wrapperWith() })
 
     expect(result.current.verified).toBe(false)
+    await waitFor(() => expect(result.current.name).toBe('Ama S'))
+    await waitFor(() => expect(result.current.verified).toBe(true))
   })
 
   it('yields a null id and no artist request when signed out', () => {

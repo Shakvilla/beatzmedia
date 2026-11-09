@@ -19,7 +19,8 @@ public record FanSettingsDto(
     boolean dataSaver,
     NotificationsDto notifications,
     String country,
-    String phone) {
+    String phone,
+    boolean phoneVerified) {
 
   /** Notifications sub-object matching the frontend type. */
   public record NotificationsDto(
@@ -41,6 +42,7 @@ public record FanSettingsDto(
             view.notifications().playlistUpdates(),
             view.notifications().dropsOffers()),
         view.country(),
-        view.phone());
+        view.phone(),
+        view.phoneVerified());
   }
 }

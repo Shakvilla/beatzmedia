@@ -7,6 +7,7 @@ import jakarta.transaction.Transactional;
 import org.shakvilla.beatzmedia.identity.application.port.in.FanSettingsView;
 import org.shakvilla.beatzmedia.identity.application.port.in.UpdateFanSettings;
 import org.shakvilla.beatzmedia.identity.application.port.out.AccountRepository;
+import org.shakvilla.beatzmedia.identity.application.port.out.PhoneVerificationChallengeRepository;
 import org.shakvilla.beatzmedia.identity.domain.AccountId;
 import org.shakvilla.beatzmedia.identity.domain.FanSettings;
 
@@ -22,10 +23,18 @@ import org.shakvilla.beatzmedia.identity.domain.FanSettings;
 public class UpdateFanSettingsService implements UpdateFanSettings {
 
   private final AccountRepository accountRepository;
+  private final PhoneVerificationChallengeRepository challenges;
 
   @Inject
-  public UpdateFanSettingsService(AccountRepository accountRepository) {
+  public UpdateFanSettingsService(
+      AccountRepository accountRepository, PhoneVerificationChallengeRepository challenges) {
     this.accountRepository = accountRepository;
+    this.challenges = challenges;
+  }
+
+  /** Compatibility constructor for existing isolated application-service tests. */
+  public UpdateFanSettingsService(AccountRepository accountRepository) {
+    this(accountRepository, null);
   }
 
   @Override
@@ -44,6 +53,11 @@ public class UpdateFanSettingsService implements UpdateFanSettings {
     boolean dataSaver = command.dataSaver().orElse(existing.isDataSaver());
     String country = command.country().orElse(existing.getCountry());
     String phone = command.phone().orElse(existing.getPhone());
+    boolean phoneVerified = existing.isPhoneVerified()
+        && java.util.Objects.equals(phone, existing.getPhone());
+    if (!java.util.Objects.equals(phone, existing.getPhone()) && challenges != null) {
+      challenges.invalidateActive(accountId);
+    }
 
     // Merge notifications: only non-null sub-fields override
     boolean newReleases = existing.isNewReleases();
@@ -65,7 +79,7 @@ public class UpdateFanSettingsService implements UpdateFanSettings {
 
     FanSettings merged = new FanSettings(
         accountId, theme, audioQuality, streamingQuality, downloadQuality, crossfade, dataSaver,
-        newReleases, playlistUpdates, dropsOffers, country, phone);
+        newReleases, playlistUpdates, dropsOffers, country, phone, phoneVerified);
 
     accountRepository.saveSettings(merged);
 
@@ -83,6 +97,7 @@ public class UpdateFanSettingsService implements UpdateFanSettings {
         new FanSettingsView.NotificationPrefs(
             s.isNewReleases(), s.isPlaylistUpdates(), s.isDropsOffers()),
         s.getCountry(),
-        s.getPhone());
+        s.getPhone(),
+        s.isPhoneVerified());
   }
 }

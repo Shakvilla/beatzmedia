@@ -1,0 +1,15 @@
+BEATZCLIK — RELEASE COLLABORATION INVITE
+
+{artistName} invited you to share earnings on "{releaseTitle}".
+
+PROPOSED SHARES
+{#for share in trackShares}
+• {share.trackTitle} — {share.role} — {share.percent}%
+{/for}
+
+Review the proposal and accept or decline using this secure invitation link:
+{acceptUrl}
+
+If you don’t recognise this invitation, ignore this email.
+
+BeatzClik · Release collaboration

@@ -16,15 +16,16 @@ import org.shakvilla.beatzmedia.podcasts.domain.MediaUnavailableException;
  * Implements podcasts' {@link MediaService} output port by calling the media module's
  * {@code MediaService} output port (WU-MED-1) in-process — podcasts never constructs or signs a
  * URL itself (INV-3). Resolves the episode's current media asset via
- * {@code findAssetIdForOwner} using the owner-ref convention {@code ("podcasts", episodeId)},
- * mirroring the {@code ("catalog", trackId)} convention playback uses for tracks (WU-PLY-1). ADD
+ * {@code findAssetIdForOwner} using the owner-ref convention {@code ("studio", episodeId)}
+ * written by {@code CreateEpisodeService}. This must match the upload owner ref, not the
+ * fan-facing catalogue module. ADD
  * §5.2.
  */
 @ApplicationScoped
 public class MediaServiceAdapter implements MediaService {
 
-  /** Owner-ref module string this module's uploads (WU-STU-2) will store media under. */
-  private static final String PODCASTS_OWNER_MODULE = "podcasts";
+  /** Studio owns episode uploads; the fan-facing podcasts catalogue does not upload audio. */
+  private static final String STUDIO_OWNER_MODULE = "studio";
 
   private final org.shakvilla.beatzmedia.media.application.port.out.MediaService mediaService;
 
@@ -36,7 +37,7 @@ public class MediaServiceAdapter implements MediaService {
 
   @Override
   public MediaService.SignedUrl issueSignedUrl(EpisodeId episode, boolean preview, Duration ttl) {
-    OwnerRef ownerRef = new OwnerRef(PODCASTS_OWNER_MODULE, episode.value());
+    OwnerRef ownerRef = new OwnerRef(STUDIO_OWNER_MODULE, episode.value());
     MediaAssetId assetId =
         mediaService
             .findAssetIdForOwner(ownerRef)

@@ -86,6 +86,7 @@ export interface TrackWire {
   credits: TrackCreditWire[] | null
   quality: string | null
   year: number | null
+  releasedAt?: string | null
   /**
    * Whether buyers may download this track's audio. Always a plain boolean on this public wire
    * shape — the backend coerces an unrecorded choice to `false` rather than ever serving `null`
@@ -111,6 +112,7 @@ export function toTrack(wire: TrackWire): Track {
     credits: (wire.credits as TrackCredit[] | null) ?? undefined,
     quality: wire.quality ?? undefined,
     year: wire.year ?? undefined,
+    releasedAt: wire.releasedAt ?? undefined,
     downloadable: wire.downloadable ?? false,
   }
 }
@@ -151,7 +153,7 @@ export function toAlbumTracks(wire: AlbumWire): Track[] {
 
 
 export interface LyricLineWire {
-  time: number
+  time: number | null
   text: string
 }
 
@@ -483,9 +485,8 @@ export function toAudience(wire: AudienceWire): Audience {
 // ── Studio profile ────────────────────────────────────────────────
 // StudioProfileView serves null for any unset optional text field (and can
 // omit arrays) on a fresh profile — the read mapper coerces every field to
-// the non-null StudioProfile shape the UI expects. The save body is the
-// whole (writable) shape with blob: object URLs stripped — those are
-// local-only and meaningless server-side (no media-upload endpoint yet).
+// the non-null StudioProfile shape the UI expects. Avatar and banner are uploaded before save and
+// contain stable media URLs; blob: values are still stripped defensively for local-only press art.
 export interface StudioProfileWire {
   displayName: string | null
   username: string | null
@@ -598,9 +599,9 @@ export function toStudioRelease(w: StudioReleaseWire): StudioRelease {
 }
 
 // ── Studio podcasts ───────────────────────────────────────────────
-export interface StudioPodcastShowWire { id: string; title: string; category: string }
+export interface StudioPodcastShowWire { id: string; title: string; category: string; originCountry?: string | null }
 export function toStudioShow(w: StudioPodcastShowWire): StudioPodcastShow {
-  return { id: w.id, title: w.title, category: w.category }
+  return { id: w.id, title: w.title, category: w.category, originCountry: w.originCountry ?? null }
 }
 
 export interface EpisodeWire {
@@ -629,6 +630,8 @@ export interface UploadedTrackWire {
   price: { amount: number; currency: string }
   explicit: boolean
   position: number
+  image?: string | null
+  customArtwork?: boolean
 }
 
 export function toWizardTrack(w: UploadedTrackWire): UploadedTrack {
@@ -642,6 +645,8 @@ export function toWizardTrack(w: UploadedTrackWire): UploadedTrack {
     src: w.src ?? '',
     price: w.price?.amount ?? 0,
     explicit: w.explicit ?? false,
+    image: w.image ?? '/images/placeholder.svg',
+    customArtwork: w.customArtwork ?? false,
   }
 }
 

@@ -12,6 +12,16 @@ import org.shakvilla.beatzmedia.notifications.domain.TransientDeliveryException;
  */
 public interface SmsSender {
 
+  /** Provider selected for a new outbound SMS; persist it before sending so retries stay pinned. */
+  default String selectedProvider() {
+    return "capture";
+  }
+
+  /** Sends through the provider recorded for the message. */
+  default void send(SmsMessage message, String provider) {
+    send(message);
+  }
+
   /**
    * Sends {@code message}. Throws {@link TransientDeliveryException} for a retryable failure or
    * {@link PermanentDeliveryException} for a non-retryable one. Never throws any other exception

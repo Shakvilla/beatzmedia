@@ -83,6 +83,24 @@ class UpdateReleaseServiceTest {
   }
 
   @Test
+  void originCountryPatch_onLiveRelease_isExplicitAndAudited() {
+    Release release = draftWithTrack();
+    release.submit(24, NOW);
+    release.approveImmediate(NOW);
+    repo.saveRelease(release);
+
+    StudioReleaseDetailView view = service.update(new ReleaseId("r1"), ARTIST,
+        new UpdateReleaseCommand(null, null, null, null, null, null, null, "GH"));
+
+    assertEquals("GH", view.originCountry());
+    assertEquals("GH", repo.findRelease(new ReleaseId("r1")).orElseThrow().getOriginCountry());
+
+    StudioReleaseDetailView cleared = service.update(new ReleaseId("r1"), ARTIST,
+        new UpdateReleaseCommand(null, null, null, null, null, null, null, ""));
+    assertEquals(null, cleared.originCountry());
+  }
+
+  @Test
   void tracksPatch_onNonDraft_throwsIllegalTransition() {
     Release r = draftWithTrack();
     r.submit(24, NOW); // -> in_review

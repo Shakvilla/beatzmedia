@@ -40,3 +40,11 @@ export function trackStreamQuery(trackId: string) {
     refetchOnWindowFocus: false,
   })
 }
+
+/** Record a real audio start for plays and royalty analytics. */
+export function apiRecordTrackPlay(trackId: string, source: 'player' | 'preview' = 'player') {
+  return apiFetch<void>(`/tracks/${encodeURIComponent(trackId)}/play`, {
+    method: 'POST',
+    body: { source },
+  })
+}

@@ -37,6 +37,7 @@ import org.shakvilla.beatzmedia.platform.domain.Money;
  * display labels; timestamps are ISO-8601. DoD §11 contract-test requirement.
  */
 @Tag("unit")
+@Tag("contract")
 class PaymentIntentContractTest {
 
   private static final Set<String> VALID_STATUSES =

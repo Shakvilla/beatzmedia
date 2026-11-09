@@ -30,6 +30,7 @@ import org.shakvilla.beatzmedia.catalog.domain.TrackNotInReleaseException;
 import org.shakvilla.beatzmedia.catalog.domain.Visibility;
 import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
 import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
+import org.shakvilla.beatzmedia.platform.domain.OriginCountry;
 import org.shakvilla.beatzmedia.platform.domain.UnauthorizedException;
 
 /**
@@ -109,6 +110,9 @@ public class UpdateReleaseService implements UpdateRelease {
     // omitted field must not clear a choice the artist already made (see UpdateReleaseCommand).
     if (command.downloadable() != null) {
       release.setDownloadable(command.downloadable());
+    }
+    if (command.originCountry() != null) {
+      release.setOriginCountry(OriginCountry.normalize(command.originCountry()));
     }
 
     repo.saveRelease(release);

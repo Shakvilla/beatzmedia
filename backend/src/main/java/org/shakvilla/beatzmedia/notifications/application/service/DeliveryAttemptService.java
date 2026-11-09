@@ -10,6 +10,7 @@ import jakarta.transaction.Transactional;
 import org.jboss.logging.Logger;
 import org.shakvilla.beatzmedia.notifications.application.port.out.EmailMessage;
 import org.shakvilla.beatzmedia.notifications.application.port.out.Mailer;
+import org.shakvilla.beatzmedia.notifications.application.port.out.NotificationEmailRenderer;
 import org.shakvilla.beatzmedia.notifications.application.port.out.NotificationRepository;
 import org.shakvilla.beatzmedia.notifications.application.port.out.SmsMessage;
 import org.shakvilla.beatzmedia.notifications.application.port.out.SmsSender;
@@ -46,6 +47,7 @@ public class DeliveryAttemptService {
 
   private final NotificationRepository repository;
   private final Mailer mailer;
+  private final NotificationEmailRenderer emailRenderer;
   private final SmsSender smsSender;
   private final Clock clock;
   private final PlatformSettingsProvider settingsProvider;
@@ -55,16 +57,31 @@ public class DeliveryAttemptService {
   public DeliveryAttemptService(
       NotificationRepository repository,
       Mailer mailer,
+      NotificationEmailRenderer emailRenderer,
       SmsSender smsSender,
       Clock clock,
       PlatformSettingsProvider settingsProvider,
       org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator ids) {
     this.repository = repository;
     this.mailer = mailer;
+    this.emailRenderer = emailRenderer;
     this.smsSender = smsSender;
     this.clock = clock;
     this.settingsProvider = settingsProvider;
     this.ids = ids;
+  }
+
+  /** Compatibility constructor for isolated application-service callers without a renderer. */
+  public DeliveryAttemptService(
+      NotificationRepository repository,
+      Mailer mailer,
+      SmsSender smsSender,
+      Clock clock,
+      PlatformSettingsProvider settingsProvider,
+      org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator ids) {
+    this(repository, mailer,
+        (to, subject, body, actionRoute, idempotencyKey) -> new EmailMessage(to, subject, body, idempotencyKey),
+        smsSender, clock, settingsProvider, ids);
   }
 
   /**
@@ -87,6 +104,7 @@ public class DeliveryAttemptService {
             notificationId,
             channel,
             providerKey,
+            channel == Channel.email ? mailer.selectedProvider() : smsSender.selectedProvider(),
             now);
     return repository.saveAttempt(pending);
   }
@@ -98,6 +116,12 @@ public class DeliveryAttemptService {
    */
   @Transactional(Transactional.TxType.REQUIRES_NEW)
   public DeliveryAttempt attemptSend(DeliveryAttempt attempt, String to, String title, String body) {
+    return attemptSend(attempt, to, title, body, null);
+  }
+
+  @Transactional(Transactional.TxType.REQUIRES_NEW)
+  public DeliveryAttempt attemptSend(
+      DeliveryAttempt attempt, String to, String title, String body, String actionRoute) {
     if (!attempt.isPending()) {
       return attempt; // already sent or dead — never re-sent (INV-N5 / send-idempotency)
     }
@@ -105,12 +129,15 @@ public class DeliveryAttemptService {
     PlatformSettings settings = settingsProvider.current();
 
     try {
+      String providerMessageId = null;
       switch (attempt.channel()) {
-        case email ->
-            mailer.send(new EmailMessage(to, title, body, attempt.providerIdempotencyKey()));
-        case sms -> smsSender.send(new SmsMessage(to, body, attempt.providerIdempotencyKey()));
+        case email -> providerMessageId = mailer.sendTracked(
+            emailRenderer.render(to, title, body, actionRoute, attempt.providerIdempotencyKey()),
+            attempt.providerCode());
+        case sms -> smsSender.send(
+            new SmsMessage(to, body, attempt.providerIdempotencyKey()), attempt.providerCode());
       }
-      DeliveryAttempt sent = attempt.markSent(now);
+      DeliveryAttempt sent = attempt.markSent(providerMessageId, now);
       return repository.saveAttempt(sent);
     } catch (PermanentDeliveryException e) {
       LOG.warnf(

@@ -62,7 +62,7 @@ import org.shakvilla.beatzmedia.platform.domain.PageRequest;
 @Path("/v1/admin/support/tickets")
 @Produces(MediaType.APPLICATION_JSON)
 @RolesAllowed({"super-admin", "finance", "moderator", "editor", "support"})
-@Tag(name = "admin-support")
+@Tag(name = "Administrator Management")
 @SecurityRequirement(name = "BearerAuth")
 public class AdminSupportResource {
 

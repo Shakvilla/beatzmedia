@@ -32,6 +32,7 @@ import org.shakvilla.beatzmedia.catalog.domain.Playlist;
 import org.shakvilla.beatzmedia.catalog.domain.PlaylistId;
 import org.shakvilla.beatzmedia.catalog.domain.Release;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
+import org.shakvilla.beatzmedia.catalog.domain.ReleaseRevision;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseTrack;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseType;
@@ -42,6 +43,7 @@ import org.shakvilla.beatzmedia.catalog.domain.SplitInvite;
 import org.shakvilla.beatzmedia.catalog.domain.Track;
 import org.shakvilla.beatzmedia.catalog.domain.TrackCredit;
 import org.shakvilla.beatzmedia.catalog.domain.TrackId;
+import org.shakvilla.beatzmedia.catalog.domain.TrendingAlbum;
 import org.shakvilla.beatzmedia.catalog.domain.Visibility;
 import org.shakvilla.beatzmedia.platform.domain.Page;
 import org.shakvilla.beatzmedia.platform.domain.PageRequest;
@@ -78,10 +80,12 @@ public class JpaCatalogRepository implements CatalogRepository {
           + " WHERE rt.trackId = t.id AND r.id = rt.pk.releaseId AND r.status = 'live')";
 
   private final EntityManager em;
+  private final ReleaseRevisionMapper revisionMapper;
 
   @Inject
-  public JpaCatalogRepository(EntityManager em) {
+  public JpaCatalogRepository(EntityManager em, ReleaseRevisionMapper revisionMapper) {
     this.em = em;
+    this.revisionMapper = revisionMapper;
   }
 
   @Override
@@ -206,19 +210,68 @@ public class JpaCatalogRepository implements CatalogRepository {
   }
 
   @Override
+  public void incrementPlayCount(TrackId id) {
+    em.createQuery("UPDATE TrackEntity t SET t.plays = t.plays + 1 WHERE t.id = :id")
+        .setParameter("id", id.value())
+        .executeUpdate();
+  }
+
+  @Override
   public Optional<Lyrics> findLyrics(TrackId id) {
     LyricsEntity header = em.find(LyricsEntity.class, id.value());
-    if (header == null) {
-      return Optional.empty();
-    }
+    return header == null ? Optional.empty() : loadLyrics(id);
+  }
+
+  @Override
+  public Optional<Lyrics> findPublishedLyrics(TrackId id) {
+    List<LyricsEntity> headers = em.createQuery(
+            "SELECT l FROM LyricsEntity l WHERE l.trackId = :tid AND EXISTS ("
+                + "SELECT t.id FROM TrackEntity t, ReleaseTrackEntity rt, ReleaseEntity r "
+                + "WHERE t.id = l.trackId AND t.status = 'ready' AND rt.trackId = t.id "
+                + "AND r.id = rt.pk.releaseId AND r.status = 'live')",
+            LyricsEntity.class)
+        .setParameter("tid", id.value())
+        .setMaxResults(1)
+        .getResultList();
+    return headers.isEmpty() ? Optional.empty() : loadLyrics(id);
+  }
+
+  private Optional<Lyrics> loadLyrics(TrackId id) {
     List<LyricLineEntity> lines =
         em.createQuery(
-                "SELECT l FROM LyricLineEntity l WHERE l.trackId = :tid ORDER BY l.tSec",
+                "SELECT l FROM LyricLineEntity l WHERE l.trackId = :tid ORDER BY l.position",
                 LyricLineEntity.class)
             .setParameter("tid", id.value())
             .getResultList();
     List<LyricLine> domainLines = lines.stream().map(l -> new LyricLine(l.tSec, l.text)).toList();
     return Optional.of(new Lyrics(id, domainLines));
+  }
+
+  @Override
+  public void saveLyrics(TrackId id, List<LyricLine> lines) {
+    LyricsEntity header = em.find(LyricsEntity.class, id.value(), LockModeType.PESSIMISTIC_WRITE);
+    if (lines.isEmpty()) {
+      if (header != null) em.remove(header);
+      return;
+    }
+    if (header == null) {
+      header = new LyricsEntity();
+      header.trackId = id.value();
+      em.persist(header);
+      em.flush();
+    }
+    em.createQuery("DELETE FROM LyricLineEntity l WHERE l.trackId = :tid")
+        .setParameter("tid", id.value())
+        .executeUpdate();
+    for (int position = 0; position < lines.size(); position++) {
+      LyricLine line = lines.get(position);
+      LyricLineEntity entity = new LyricLineEntity();
+      entity.trackId = id.value();
+      entity.position = position;
+      entity.tSec = line.tSec();
+      entity.text = line.text().trim();
+      em.persist(entity);
+    }
   }
 
   @Override
@@ -284,6 +337,47 @@ public class JpaCatalogRepository implements CatalogRepository {
             .setMaxResults(limit)
             .getResultList();
     return mapTracksWithBatchedCredits(entities);
+  }
+
+  @Override
+  public List<Track> trendingSingles(int limit) {
+    List<TrackEntity> entities = em.createQuery(
+            "SELECT t FROM TrackEntity t WHERE t.status = 'ready' AND " + PUBLISHED
+                + " AND EXISTS (SELECT 1 FROM ReleaseTrackEntity rt, ReleaseEntity r"
+                + " WHERE rt.trackId = t.id AND r.id = rt.pk.releaseId"
+                + " AND r.status = 'live' AND r.type = 'single')"
+                + " ORDER BY t.plays DESC, t.id",
+            TrackEntity.class)
+        .setMaxResults(limit)
+        .getResultList();
+    return mapTracksWithBatchedCredits(entities);
+  }
+
+  @Override
+  public List<TrendingAlbum> trendingAlbums(int limit) {
+    List<Object[]> scores = em.createQuery(
+            "SELECT t.albumId, SUM(t.plays), r.type FROM TrackEntity t,"
+                + " ReleaseTrackEntity rt, ReleaseEntity r"
+                + " WHERE t.albumId IS NOT NULL AND t.status = 'ready'"
+                + " AND rt.trackId = t.id AND r.id = rt.pk.releaseId"
+                + " AND r.status = 'live' AND r.type <> 'single'"
+                + " GROUP BY t.albumId, r.type ORDER BY SUM(t.plays) DESC, t.albumId",
+            Object[].class)
+        .setMaxResults(limit)
+        .getResultList();
+    if (scores.isEmpty()) return List.of();
+
+    List<String> albumIds = scores.stream().map(score -> (String) score[0]).toList();
+    Map<String, Album> albumsById = albumsByIds(albumIds).stream()
+        .collect(Collectors.toMap(album -> album.getId().value(), album -> album));
+    return scores.stream()
+        .map(score -> {
+          Album album = albumsById.get((String) score[0]);
+          return album == null ? null : new TrendingAlbum(
+              album, ReleaseType.valueOf((String) score[2]), ((Number) score[1]).longValue());
+        })
+        .filter(java.util.Objects::nonNull)
+        .toList();
   }
 
   @Override
@@ -536,6 +630,7 @@ public class JpaCatalogRepository implements CatalogRepository {
     e.updatedAt = release.getUpdatedAt();
     e.genre = release.getGenre();
     e.description = release.getDescription();
+    e.originCountry = release.getOriginCountry();
     e.coverImage = release.getCoverImage();
     e.downloadable = release.getDownloadable();
     em.merge(e);
@@ -558,6 +653,54 @@ public class JpaCatalogRepository implements CatalogRepository {
       rte.priceMinor = rt.priceMinor();
       em.persist(rte);
     }
+  }
+
+  @Override
+  public Optional<ReleaseRevision> findPendingRevision(ReleaseId releaseId) {
+    return em.createQuery(
+            "SELECT r FROM ReleaseRevisionEntity r WHERE r.releaseId = :rid "
+                + "AND r.status IN ('draft', 'in_review') ORDER BY r.createdAt DESC",
+            ReleaseRevisionEntity.class)
+        .setParameter("rid", releaseId.value())
+        .setMaxResults(1)
+        .setLockMode(LockModeType.PESSIMISTIC_WRITE)
+        .getResultList().stream().findFirst().map(revisionMapper::toDomain);
+  }
+
+  @Override
+  public Optional<ReleaseRevision> findLatestRevision(ReleaseId releaseId) {
+    return em.createQuery(
+            "SELECT r FROM ReleaseRevisionEntity r WHERE r.releaseId = :rid ORDER BY r.createdAt DESC",
+            ReleaseRevisionEntity.class)
+        .setParameter("rid", releaseId.value())
+        .setMaxResults(1)
+        .getResultList().stream().findFirst().map(revisionMapper::toDomain);
+  }
+
+  @Override
+  public Optional<ReleaseRevision> findRevision(String revisionId) {
+    ReleaseRevisionEntity entity = em.find(
+        ReleaseRevisionEntity.class, revisionId, LockModeType.PESSIMISTIC_WRITE);
+    return Optional.ofNullable(entity).map(revisionMapper::toDomain);
+  }
+
+  @Override
+  public void saveRevision(ReleaseRevision revision) {
+    ReleaseRevisionEntity update = revisionMapper.toEntity(revision);
+    ReleaseRevisionEntity existing = em.find(ReleaseRevisionEntity.class, revision.id());
+    if (existing == null) {
+      em.persist(update);
+      return;
+    }
+    existing.releaseId = update.releaseId;
+    existing.artistId = update.artistId;
+    existing.status = update.status;
+    existing.version = update.version;
+    existing.payload = update.payload;
+    existing.rejectionReason = update.rejectionReason;
+    existing.updatedAt = update.updatedAt;
+    existing.submittedAt = update.submittedAt;
+    existing.reviewedAt = update.reviewedAt;
   }
 
   @Override
@@ -604,6 +747,7 @@ public class JpaCatalogRepository implements CatalogRepository {
     e.albumTitle = track.getAlbumTitle().orElse(null);
     e.durationSec = track.getDurationSec();
     e.image = track.getImage();
+    e.customArtwork = track.hasCustomArtwork();
     // wireValue(), not name(): the column is hyphenated ('for-sale'), which the check constraint
     // enforces and every reader compares against. The read path already translates back; only
     // for_sale differs, which is why this survived — nothing ever assigned it.
@@ -654,6 +798,21 @@ public class JpaCatalogRepository implements CatalogRepository {
     e.createdAt = now;
     e.updatedAt = now;
     em.persist(e);
+  }
+
+  @Override
+  public void updateArtistProfileImages(ArtistId id, String image, String coverImage, Instant updatedAt) {
+    ArtistProfileEntity entity = em.find(ArtistProfileEntity.class, id.value());
+    if (entity == null) {
+      return;
+    }
+    if (image != null) {
+      entity.image = image;
+    }
+    if (coverImage != null) {
+      entity.coverImage = coverImage;
+    }
+    entity.updatedAt = updatedAt;
   }
 
   @Override
@@ -971,6 +1130,7 @@ public class JpaCatalogRepository implements CatalogRepository {
     // Same reasoning applies to the download choice (V980): widening the reconstitute overloads
     // for one more nullable field would ripple through every call site for no gain.
     release.setDownloadable(e.downloadable);
+    release.setOriginCountry(e.originCountry);
     return release;
   }
 
@@ -996,13 +1156,31 @@ public class JpaCatalogRepository implements CatalogRepository {
     Map<String, List<TrackCreditEntity>> creditsByTrack =
         allCredits.stream().collect(Collectors.groupingBy(c -> c.trackId));
     Map<String, Boolean> downloadableByTrack = downloadableByTrackId(trackIds);
+    Map<String, Instant> releasedAtByTrack = releasedAtByTrackId(trackIds);
 
     return entities.stream()
         .map(e -> trackToDomain(
             e,
             creditsByTrack.getOrDefault(e.id, Collections.emptyList()),
-            Boolean.TRUE.equals(downloadableByTrack.get(e.id))))
+            Boolean.TRUE.equals(downloadableByTrack.get(e.id)))
+            .withReleasedAt(releasedAtByTrack.get(e.id)))
         .toList();
+  }
+
+  /** Batched lookup of the owning live release's actual go-live timestamp for each track. */
+  private Map<String, Instant> releasedAtByTrackId(List<String> trackIds) {
+    if (trackIds.isEmpty()) return Map.of();
+    List<Object[]> rows = em.createQuery(
+            "SELECT rt.trackId, r.wentLiveAt FROM ReleaseTrackEntity rt, ReleaseEntity r "
+                + "WHERE rt.pk.releaseId = r.id AND r.status = 'live' AND rt.trackId IN :ids",
+            Object[].class)
+        .setParameter("ids", trackIds)
+        .getResultList();
+    Map<String, Instant> map = new HashMap<>();
+    for (Object[] row : rows) {
+      if (row[1] != null) map.put((String) row[0], (Instant) row[1]);
+    }
+    return map;
   }
 
   /**
@@ -1151,6 +1329,7 @@ public class JpaCatalogRepository implements CatalogRepository {
         e.quality,
         e.year,
         e.status,
-        downloadable);
+        downloadable,
+        e.customArtwork);
   }
 }

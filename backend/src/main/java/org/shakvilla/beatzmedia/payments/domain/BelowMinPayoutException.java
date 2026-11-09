@@ -8,7 +8,7 @@ import org.shakvilla.beatzmedia.platform.domain.ErrorCode;
  * PlatformSettings.payoutMinimumMinor}, ₵10 by default — INV-8, never hard-coded). Maps to 422
  * {@code BELOW_MIN_PAYOUT}. Payments ADD §8.
  */
-public class BelowMinPayoutException extends DomainException {
+public class  BelowMinPayoutException extends DomainException {
 
   public BelowMinPayoutException(long requestedMinor, long minimumMinor) {
     super(

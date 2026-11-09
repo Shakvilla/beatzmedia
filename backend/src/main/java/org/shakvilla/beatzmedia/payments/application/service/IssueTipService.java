@@ -21,6 +21,7 @@ import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway.Cha
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentRepository;
 import org.shakvilla.beatzmedia.payments.domain.AccountId;
 import org.shakvilla.beatzmedia.payments.domain.ChargeAmountExceededException;
+import org.shakvilla.beatzmedia.payments.domain.GatewayVendor;
 import org.shakvilla.beatzmedia.payments.domain.IdempotencyConflictException;
 import org.shakvilla.beatzmedia.payments.domain.IdempotencyKey;
 import org.shakvilla.beatzmedia.payments.domain.OrderRef;
@@ -117,12 +118,18 @@ public class IssueTipService implements IssueTip {
       return toView(intent, creator);
     }
 
+    GatewayVendor gatewayVendor = gateway.selectedVendor();
+    if (gatewayVendor == GatewayVendor.DISABLED) {
+      throw new org.shakvilla.beatzmedia.payments.domain.ProviderDisabledException(method.provider());
+    }
+
     PaymentIntent intent =
         PaymentIntent.create(
-            ids.newId(), fan, tipRef, amount, method, idempotencyKey, fingerprint, clock.now());
+            ids.newId(), fan, tipRef, amount, method, gatewayVendor, idempotencyKey, fingerprint, clock.now());
 
     try {
-      ChargeHandle handle = gateway.initiate(method.provider(), tipRef, amount, method);
+      ChargeHandle handle =
+          gateway.initiate(gatewayVendor, method.provider(), tipRef, amount, method);
       intent.markInitiated(handle.providerRef(), clock.now());
     } catch (ProviderException e) {
       intent.markFailed(e.getMessage(), clock.now());

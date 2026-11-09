@@ -10,6 +10,9 @@ import { homeQuery } from '../lib/api/queries/catalog'
 import { taxonomyQuery } from '../lib/api/queries/taxonomy'
 import { formatCount } from '../lib/format'
 import { useAuth } from '../features/auth/auth-context'
+import { ListeningHistoryRail } from '../features/engagement/listening-history-rail'
+import { FollowingFeedPreview } from '../features/discovery/following-feed-preview'
+import { ForYouRail } from '../features/discovery/for-you-rail'
 
 export const Route = createFileRoute('/')({
   loader: async ({ context: { queryClient } }) => {
@@ -38,6 +41,7 @@ function HomeComponent() {
   // Browse tiles are the genres, with their colours from the taxonomy (V973).
   const { data: browseCategories } = useSuspenseQuery(taxonomyQuery('genre'))
   const trending = home.trending
+  const trendingTrackQueue = trending.flatMap((item) => item.type === 'track' ? [item.track] : [])
   const top10 = home.top10
   const featuredAlbums = home.featuredAlbums
   const newReleases = home.rails.newReleases
@@ -75,39 +79,41 @@ function HomeComponent() {
         </div>
       </section>
 
+      <ListeningHistoryRail mode="recent" />
+
+      <ForYouRail />
+
+      <FollowingFeedPreview />
+
       {/* Featured albums carousel (premium placement) */}
       <FeaturedCarousel albums={featuredAlbums} />
 
-      {/* Made for you */}
-      {curatedPlaylists.length > 0 && (
-        <MediaRail
-          title="Made for you"
-          subtitle="Mixes and playlists picked for your taste"
-          action={<span className="text-xs font-mono uppercase tracking-widest text-gray-500 dark:text-gray-300">Updated daily</span>}
-        >
-          {curatedPlaylists.map((playlist) => (
-            <div key={playlist.id} className={RAIL_ITEM}>
-              <Card to={`/playlist/${playlist.id}`}>
-                <CardImage src={playlist.image} alt={playlist.title} />
-                <CardContent className="mt-2">
-                  <CardTitle>{playlist.title}</CardTitle>
-                  <CardSubtitle>{playlist.trackIds.length} songs • by {playlist.creator}</CardSubtitle>
-                </CardContent>
-              </Card>
-            </div>
-          ))}
-        </MediaRail>
-      )}
-
       {/* Trending */}
       <MediaRail title="Trending in Ghana 🇬🇭" subtitle="What the country has on repeat right now">
-        {trending.map((track, index) => (
-          <div key={track.id} className={RAIL_ITEM}>
-            <Card to={`/track/${track.id}`}>
-              <CardImage src={track.image} alt={track.title} onPlay={() => playQueue(trending, index)} />
+        {trending.map((item) => item.type !== 'track' ? (
+          <div key={`album:${item.album.id}`} className={RAIL_ITEM}>
+            <Card to={`/album/${item.album.id}`}>
+              <CardImage src={item.album.coverImage} alt={`${item.album.title} cover`} />
               <CardContent className="mt-2">
-                <CardTitle>{track.title}</CardTitle>
-                <CardSubtitle>{track.artistName}</CardSubtitle>
+                <CardTitle>{item.album.title}</CardTitle>
+                <CardSubtitle>{item.album.artistName} · {item.type.toUpperCase()} · {item.album.trackIds.length} tracks</CardSubtitle>
+              </CardContent>
+            </Card>
+          </div>
+        ) : (
+          <div key={`track:${item.track.id}`} className={RAIL_ITEM}>
+            <Card to={`/track/${item.track.id}`}>
+              <CardImage
+                src={item.track.image}
+                alt={item.track.title}
+                onPlay={() => playQueue(
+                  trendingTrackQueue,
+                  trendingTrackQueue.findIndex((track) => track.id === item.track.id),
+                )}
+              />
+              <CardContent className="mt-2">
+                <CardTitle>{item.track.title}</CardTitle>
+                <CardSubtitle>{item.track.artistName}</CardSubtitle>
               </CardContent>
             </Card>
           </div>

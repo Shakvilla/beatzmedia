@@ -32,15 +32,16 @@
 
 ```mermaid
 flowchart TD
-    A[Agent opens PR<br/>feature/* -> main] --> CI{ci.yml}
+    A[Agent opens PR<br/>feature/* -> master] --> CI{ci.yml}
     subgraph CI[ci.yml - required checks]
-      B1[build-and-unit-test<br/>Spotless + compile + surefire]
-      B2[integration-test<br/>failsafe + Testcontainers PG/MinIO]
+      B1[build + unit-tests + spotless-lint]
+      B2[integration-tests<br/>Failsafe + Testcontainers PG/MinIO]
       B3[archunit<br/>hexagonal dep rule]
       B4[coverage-gate<br/>JaCoCo >= gate]
       B5[contract-test<br/>OpenAPI vs API-CONTRACT]
       B6[migration-test<br/>Flyway clean apply]
       B7[compose-smoke<br/>stack boots, /q/health/ready]
+      B8[frontend<br/>typecheck + Vitest]
     end
     A --> SEC{security.yml}
     subgraph SEC[security.yml]
@@ -48,10 +49,11 @@ flowchart TD
       S2[dependency-review]
       S3[trivy-image-scan]
     end
-    CI -->|all green| MERGE[Auto-merge to main]
+    CI -->|all green| MERGE[Auto-merge to master]
     SEC -->|no high/critical| MERGE
-    MERGE --> REL{release.yml}
-    REL --> IMG[Build + push image<br/>ghcr.io SemVer + sha]
+    MERGE --> CIGATE[Exact-SHA gate<br/>ci + security workflows]
+    CIGATE --> REL{release.yml}
+    REL --> IMG[Build + push image<br/>ghcr.io SemVer + immutable sha]
     IMG --> NOTES[CHANGELOG + GitHub Release]
     NOTES --> DEP{deploy.yml}
     DEP --> MIG[Flyway migrate / migrate-at-start]
@@ -70,18 +72,19 @@ job `name:`). Do not rename without updating both places.
 
 | Required status check (job `name:`) | Workflow | Enforces (conventions §11 / PRD §8) |
 |---|---|---|
-| `build-and-unit-test` | `ci.yml` | §11.1 unit tests; §11.7 Spotless clean |
-| `integration-test` | `ci.yml` | §11.1 integration tests (Testcontainers PG/MinIO, REST-assured) |
+| `build` | `ci.yml` | Java 25 compile |
+| `unit-tests` | `ci.yml` | §11.1 unit tests with a non-vacuous report-count assertion |
+| `integration-tests` | `ci.yml` | §11.1 Failsafe tests (Testcontainers PG/MinIO) with report-count assertion |
 | `archunit` | `ci.yml` | §11.5 hexagonal dependency rule |
 | `coverage-gate` | `ci.yml` | §11.7 coverage ≥ gate (`testing-strategy.md`) |
 | `contract-test` | `ci.yml` | §11.2 OpenAPI contract conformance |
+| `spotless-lint` | `ci.yml` | §11.7 google-java-format check |
 | `migration-test` | `ci.yml` | §11.3 Flyway forward-only, clean apply on empty DB |
-| `compose-smoke` | `ci.yml` | §11.4 boots healthy under Docker Compose |
-| `codeql-java` | `security.yml` | §11.7 no new high/critical findings |
-| `dependency-review` | `security.yml` | §11.7 no vulnerable/denied deps introduced |
-| `trivy-image-scan` | `security.yml` | §11.7 no high/critical in container image |
+| `compose-smoke` | `ci.yml` | §11.4 boots healthy and the catalog endpoint returns 2xx |
+| `frontend` | `ci.yml` | SPA TypeScript build and Vitest suite |
+| `security-scan` | `security.yml` | Aggregate CodeQL, dependency review, and Trivy result |
 
-> **Branch protection (set once, in repo settings or via API).** On `main`: require all ten
+> **Branch protection (set once, in repo settings or via API).** On `master`: require all eleven
 > checks above, require linear history, require PR before merge, dismiss stale approvals, require
 > conversation resolution, and enable **auto-merge**. Agents push to `feature/*`, open a PR, and
 > the merge happens automatically when every required check is green.
@@ -535,13 +538,32 @@ jobs:
 
 ## 7. `.github/workflows/release.yml`
 
+The checked-in workflow is fail-closed around an exact commit SHA:
+
+1. A successful `ci` workflow on `master` triggers mainline publication through `workflow_run`.
+2. `gate-ci` queries GitHub Actions for both the complete `ci` and `security` workflows with the
+   same `head_sha`, `head_branch=master`, and `event=push`.
+3. Missing or running evidence waits for up to 30 minutes; any completed non-success conclusion
+   fails immediately. A focused Node test injects a failed `security` workflow to prove this path.
+4. A `vX.Y.Z` tag follows the same gate and therefore must point to a commit already verified on
+   `master`; tags have no bypass.
+5. Checkout is pinned to the verified SHA and asserted before build. Every image carries
+   `org.opencontainers.image.revision=<verified-sha>` and an immutable `sha-<verified-sha>` tag.
+6. GitHub release notes record the verified SHA and immutable image reference.
+
+The excerpt below describes the image-build portion; the gate above is mandatory and lives in the
+checked-in workflow and `.github/scripts/release-gate.cjs`.
+
 ```yaml
 name: release
 
 on:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
+    branches: [master]
   push:
-    branches: [main]          # release on every merge to main
-    tags: ["v*.*.*"]          # ...or on an explicit SemVer tag
+    tags: ["v*.*.*"]
 
 concurrency:
   group: release-${{ github.ref }}
@@ -557,6 +579,7 @@ env:
   IMAGE_NAME: ${{ github.repository }}   # owner/repo -> ghcr.io/owner/repo
 
 jobs:
+  # gate_ci verifies complete ci + security workflow success for the exact SHA.
   build-and-publish:
     name: build-and-publish
     runs-on: ubuntu-latest
@@ -589,8 +612,8 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=sha,format=long
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=sha-<verified-sha>
+            type=raw,value=latest,enable=<workflow_run only>
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
@@ -665,10 +688,9 @@ jobs:
 >       # requires the quarkus-container-image-jib extension in pom.xml
 > ```
 
-> **SemVer source.** On merge-to-main the build uses the project version (`1.0.0-SNAPSHOT` → publish
-> as `1.0.0-<sha>` pre-release) plus the `sha` tag; cutting an annotated `vX.Y.Z` tag is what
-> produces the immutable release + GitHub Release. Agents bump the `pom.xml` `<version>` and create
-> the tag as part of the release WU; `docker/metadata-action` does the rest.
+> **SemVer source.** A verified `master` commit publishes `latest` plus its immutable full-SHA tag.
+> Cutting `vX.Y.Z` at that exact verified commit publishes SemVer tags and a GitHub Release. The tag
+> gate rechecks the prior `ci` and `security` evidence; a tag from an unverified commit cannot publish.
 
 ---
 
@@ -694,7 +716,7 @@ on:
       image_tag:
         description: Image tag to deploy (defaults to latest)
         type: string
-        default: latest
+        required: true       # SemVer or sha-<full commit>; `latest` is rejected
 
 concurrency:
   group: deploy-${{ github.event.inputs.environment || 'staging' }}
@@ -757,7 +779,7 @@ jobs:
             set -euo pipefail
             cd /opt/beatzmedia
             # Re-pin to the previous known-good tag recorded on last success.
-            export BEATZ_IMAGE="$(cat .last_good_image 2>/dev/null || echo ghcr.io/${{ github.repository }}:latest)"
+            export BEATZ_IMAGE="$(cat .last_good_image)" # fail if no immutable last-good exists
             docker compose up -d app
             echo "Rolled back to $BEATZ_IMAGE"
 
@@ -862,8 +884,10 @@ updates:
    PR squash-merges the moment the last check goes green and required approvals (if any) are met.
    For fully autonomous flows, configure a CODEOWNERS/approval policy that the agent's reviews or a
    second agent can satisfy, or allow auto-merge without human review on low-risk paths.
-4. **Release.** Merge to `main` triggers `release.yml`: image built from `Dockerfile.jvm`, tagged
-   SemVer + `sha`, pushed to GHCR; on a `vX.Y.Z` tag a GitHub Release + CHANGELOG is generated.
+4. **Release.** Successful `ci` on `master` triggers `release.yml`; it verifies complete `ci` and
+   `security` workflow success for the same SHA before building. Images include the verified commit
+   label and immutable full-SHA tag. A `vX.Y.Z` tag must point to that verified commit before a
+   GitHub Release is generated.
 5. **Deploy.** `deploy.yml` runs on the successful `release` run (staging), then a human or agent
    `workflow_dispatch` promotes to production. Flyway applies pending migrations; the
    `/q/health/ready` gate confirms the rollout; failure auto-rolls back to the last-good image.

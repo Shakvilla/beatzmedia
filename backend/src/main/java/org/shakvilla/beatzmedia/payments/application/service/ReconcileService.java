@@ -87,7 +87,7 @@ public class ReconcileService implements Reconcile {
 
     ProviderStatus status;
     try {
-      status = gateway.queryStatus(intent.getProvider(), providerRef);
+      status = gateway.queryStatus(intent.getGatewayVendor(), intent.getProvider(), providerRef);
     } catch (ProviderException e) {
       // Rail unreachable: leave pending and retry next tick (do not time out on a transient error).
       LOG.warnf("queryStatus failed for intent %s: %s — leaving pending", intent.getId(),
@@ -117,7 +117,9 @@ public class ReconcileService implements Reconcile {
     for (PaymentIntent intent : store.loadForReconciliation(from, to)) {
       ProviderStatus status;
       try {
-        status = gateway.queryStatus(intent.getProvider(), intent.getProviderRef());
+        status =
+            gateway.queryStatus(
+                intent.getGatewayVendor(), intent.getProvider(), intent.getProviderRef());
       } catch (ProviderException e) {
         LOG.warnf("Reconciliation skipped intent %s: queryStatus failed: %s", intent.getId(),
             e.getMessage());

@@ -49,9 +49,11 @@ interfaces; adapters depend inward. The module **calls other modules only throug
 holds as output-port references (`MediaService` → `media`, `AnalyticsReader` → `analytics`, payouts →
 `payments`'s `GetPayouts`). **Persistence is never shared:** `featuredTrackId` and payout/earnings data
 are referenced by id and resolved via ports, never via cross-module foreign keys.
-**Events published:** `EpisodePublished` (after a successful publish-now transaction, and again from the
-scheduler at the scheduled instant). **Events consumed:** none directly; the scheduler triggers the
-publish use case for due `scheduled` episodes.
+**Events published:** durable `studio.episode-published` v1 messages are appended atomically after a
+successful publish-now transition and by the scheduler at the scheduled instant. The platform
+outbox dispatcher converts them to `EpisodePublished` for the existing projections within five
+seconds. **Events consumed:** none directly; the scheduler triggers the publish use case for due
+`scheduled` episodes.
 
 ## 3. Domain model
 
@@ -200,6 +202,7 @@ public interface SaveStudioSettings {
 |------|---------|------|-------------|--------|------|
 | `GetStudioProfile` | `GET /studio/profile` | artist | read | — | STUDIO-01.1 |
 | `SaveStudioProfile` | `PUT /studio/profile` | artist (owner) | natural (upsert) | — | STUDIO-01.1 |
+| `SetStudioProfileImage` | `POST /studio/profile/images/{avatar\|banner}` | artist (JWT subject) | media content hash | `StudioProfileImagesUpdated` | STUDIO-01.1 |
 | `ListStudioPodcastShows` | `GET /studio/podcasts/shows` | artist | read | — | STUDIO-02.1 |
 | `CreatePodcastShow` | `POST /studio/podcasts/shows` | artist | — | — | STUDIO-02.1 |
 | `ListStudioEpisodes` | `GET /studio/podcasts/episodes` | artist | read | — | STUDIO-02.2 |
@@ -264,6 +267,7 @@ Base path `/v1`. All endpoints require `Authorization: Bearer <jwt>` with `roles
 |---------------|------|-------------|--------------|---------|-------------|------|
 | `GET /studio/profile` | artist | — | `StudioProfileDto` | 200 | 401, 403 `ARTIST_REQUIRED` | STUDIO-01.1 |
 | `PUT /studio/profile` | artist (owner) | `SaveStudioProfileDto` | `StudioProfileDto` | 200 | 403 `ARTIST_REQUIRED`, 409 `USERNAME_TAKEN`, 422 `INVALID_GENRE` | STUDIO-01.1 |
+| `POST /studio/profile/images/{avatar\|banner}` | artist (JWT subject) | multipart `image` | `{image}` stable URL | 200 | 403, 422 `VALIDATION` / `MEDIA_INVALID` | STUDIO-01.1 |
 | `GET /studio/podcasts/shows` | artist | — | `StudioPodcastShowDto[]` | 200 | 401, 403 | STUDIO-02.1 |
 | `POST /studio/podcasts/shows` | artist | `CreateShowDto {title,category}` | `StudioPodcastShowDto` | 201 | 403, 422 `VALIDATION` | STUDIO-02.1 |
 | `GET /studio/podcasts/episodes` | artist | — | `StudioEpisodeDto[]` | 200 | 401, 403 | STUDIO-02.2 |
@@ -479,10 +483,12 @@ stateDiagram-v2
   **403 `ARTIST_REQUIRED`**. The application layer **re-checks resource ownership** (`artistId ==
   jwt.sub`) for every profile/settings/show/episode read and mutation; a foreign resource returns
   **404** (hide existence) for reads and **403** for mutations.
-- **EpisodePublished event / scheduled go-live (INV-7).** Publish-now emits `EpisodePublished`
-  `AFTER_SUCCESS`. Scheduled episodes are flipped to `published` by a `quarkus-scheduler` job
+- **EpisodePublished event / scheduled go-live (INV-7).** Publish-now appends a durable
+  `studio.episode-published` message in the aggregate transaction. Scheduled episodes are flipped
+  to `published` by a `quarkus-scheduler` job
   (`PLATFORM-01.2`) reading `findDueScheduled(now)`; the transition is **exactly-once** (guarded by the
-  `status='scheduled'` predicate in the update) and re-emits `EpisodePublished`. Before go-live the
+  `status='scheduled'` predicate in the update) and appends the same message. The five-second
+  outbox dispatcher emits `EpisodePublished` as the sole projection trigger. Before go-live the
   episode is never publicly listed or streamable.
 - **Premium ⇒ price > 0.** Validated in the use case **and** enforced by the DB
   `chk_premium_price` constraint (422 `INVALID_PRICE`).
@@ -615,18 +621,13 @@ implements the `studio_podcast_show` + `studio_episode` slice (`ListStudioPodcas
 scheduler (INV-7). `StudioSettings` and the corresponding port/table/endpoints remain out of scope
 (WU-STU-4).
 
-**No abstract `MediaService`/`EventPublisher` output ports — direct in-process calls, matching
-codebase convention.** §4.2's illustrative table lists abstract `MediaService`/`EventPublisher`
-ports. As already noted for `catalog`/`events`/`podcasts`, no module in this codebase actually
-defines a generic `EventPublisher` interface or wraps the media pipeline behind a module-local
-`MediaService` port when a direct input-port call suffices. `CreateEpisodeService` calls the media
-module's `media.application.port.in.UploadOriginalUseCase#uploadOriginal` directly (in-process input
-port), exactly like `catalog.UploadReleaseTrackService`; `EpisodePublished` is fired via a plain
-CDI `jakarta.enterprise.event.Event<EpisodePublished>` inside the `@Transactional` service method,
-exactly like `events.IssueTicketService` fires `TicketTierSoldOut`. Both `EpisodePublished` firing
-sites (`CreateEpisodeService` on publish-now/`draft→published` via PATCH, and
-`RunEpisodeGoLiveSweepService` on scheduler go-live) fire it exactly once per transition; no
-consumer is registered by this WU (a future WU may `@Observes(during = AFTER_SUCCESS)` it).
+**Media uses a direct input port; publication uses the platform durable-event port.**
+`CreateEpisodeService` calls the media module's
+`media.application.port.in.UploadOriginalUseCase#uploadOriginal` directly, exactly like
+`catalog.UploadReleaseTrackService`. Publication services append `studio.episode-published` v1 via
+`DurableEventPublisher`; they do not fire CDI events inside the aggregate transaction. The platform
+dispatcher is the sole component that emits `EpisodePublished`, and the podcast catalogue observer
+projects it idempotently.
 
 **`studio_podcast_show.id` / `studio_episode.{id,show_id,artist_id}` are `TEXT`, not `UUID`.** Same
 deviation as `studio_profile.artist_id` (V958) — the codebase-wide convention of string primary keys

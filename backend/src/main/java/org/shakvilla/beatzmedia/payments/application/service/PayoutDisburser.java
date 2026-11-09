@@ -16,6 +16,7 @@ import org.shakvilla.beatzmedia.payments.application.port.out.LedgerRepository;
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway;
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway.DisburseHandle;
 import org.shakvilla.beatzmedia.payments.application.port.out.PayoutRepository;
+import org.shakvilla.beatzmedia.payments.domain.GatewayVendor;
 import org.shakvilla.beatzmedia.payments.domain.KycBlockedException;
 import org.shakvilla.beatzmedia.payments.domain.MethodKind;
 import org.shakvilla.beatzmedia.payments.domain.PayoutDestination;
@@ -110,13 +111,18 @@ public class PayoutDisburser {
       return Optional.empty();
     }
 
+    GatewayVendor gatewayVendor = gateway.selectedVendor();
+    if (gatewayVendor == GatewayVendor.DISABLED) {
+      throw new org.shakvilla.beatzmedia.payments.domain.ProviderDisabledException();
+    }
+
     PayoutMethod method = payouts.findMethod(w.getAccountId(), w.getMethodId()).orElse(null);
     // Async rail (Redde): send the cashout and go SENT — the ledger disbursement is posted only when
     // the cashout webhook / recon poll confirms settlement. Sync rail (sandbox, flag off): post the
     // ledger + mark paid now, byte-for-byte with WU-PAY-4.
-    return gateway.confirmsDisbursementAsync()
-        ? sendAsync(batchId, w, method, adminActorId)
-        : disburseSync(batchId, w, method, adminActorId);
+    return gateway.confirmsDisbursementAsync(gatewayVendor)
+        ? sendAsync(batchId, w, method, adminActorId, gatewayVendor)
+        : disburseSync(batchId, w, method, adminActorId, gatewayVendor);
   }
 
   /**
@@ -126,7 +132,11 @@ public class PayoutDisburser {
    * REQUIRES_NEW tx in isolation (no double-debit, INV-6) and returns empty.
    */
   private Optional<PayoutTxn> disburseSync(
-      String batchId, WithdrawalRequest w, PayoutMethod method, String adminActorId) {
+      String batchId,
+      WithdrawalRequest w,
+      PayoutMethod method,
+      String adminActorId,
+      GatewayVendor gatewayVendor) {
     Provider rail = railFor(method);
     try {
       TxnId disburseTxn =
@@ -138,6 +148,7 @@ public class PayoutDisburser {
               w.getId(),
               w.getAccountId(),
               w.getAmount(),
+              gatewayVendor,
               null,
               disburseTxn,
               clock.now());
@@ -163,7 +174,11 @@ public class PayoutDisburser {
    * ambiguous send error is treated as failed to avoid a retry double-send — finance reconciles.
    */
   private Optional<PayoutTxn> sendAsync(
-      String batchId, WithdrawalRequest w, PayoutMethod method, String adminActorId) {
+      String batchId,
+      WithdrawalRequest w,
+      PayoutMethod method,
+      String adminActorId,
+      GatewayVendor gatewayVendor) {
     PayoutDestination destination;
     try {
       if (method == null) {
@@ -176,7 +191,9 @@ public class PayoutDisburser {
 
     DisburseHandle handle;
     try {
-      handle = gateway.disburse(destinationRail(destination), w.getId(), w.getAmount(), destination);
+      handle =
+          gateway.disburse(
+              gatewayVendor, destinationRail(destination), w.getId(), w.getAmount(), destination);
     } catch (ProviderException e) {
       // Rejected outright (or an ambiguous rail error): mark failed — do NOT leave it payable, which
       // would double-send on the next run (we mint a fresh clienttransid each attempt, so the rail
@@ -192,6 +209,7 @@ public class PayoutDisburser {
               w.getId(),
               w.getAccountId(),
               w.getAmount(),
+              gatewayVendor,
               handle.providerRef(),
               clock.now());
       payouts.savePayoutTxn(txn);

@@ -35,6 +35,7 @@ import org.shakvilla.beatzmedia.admin.application.port.in.PagedCatalogView;
  * </pre>
  */
 @Tag("unit")
+@Tag("contract")
 class AdminCatalogContractTest {
 
   private static final Instant NOW = Instant.parse("2026-07-11T10:00:00Z");

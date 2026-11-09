@@ -92,6 +92,12 @@ jobs:
       - name: Unit tests (surefire)
         working-directory: backend
         run: ./mvnw $MAVEN_ARGS test
+      - name: Verify unit test class count
+        working-directory: backend
+        run: |
+          expected=$(find src/test/java -name '*Test.java' ! -name '*ContractTest.java' ! -name 'ArchitectureRulesTest.java' | wc -l | tr -d ' ')
+          actual=$(find target/surefire-reports -name 'TEST-*.xml' | wc -l | tr -d ' ')
+          test "$actual" -eq "$expected"
       - name: Upload surefire reports
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
@@ -126,10 +132,16 @@ jobs:
       # See the action for the full history of how this went wrong twice.
       - name: Install ffmpeg (same build as the runtime image — RealTranscodeIT / INV-3 coverage)
         uses: ./.github/actions/install-runtime-ffmpeg
-      - name: Integration tests (failsafe + Testcontainers)
+      - name: Integration tests only (Failsafe + Testcontainers)
         working-directory: backend
-        # -DskipITs=false activates failsafe via `verify`.
-        run: ./mvnw $MAVEN_ARGS verify -DskipITs=false
+        # The profile skips Surefire and activates Failsafe, so this job cannot duplicate unit tests.
+        run: ./mvnw $MAVEN_ARGS verify -Pintegration-tests
+      - name: Verify integration test class count
+        working-directory: backend
+        run: |
+          expected=$(find src/test/java -name '*IT.java' | wc -l | tr -d ' ')
+          actual=$(find target/failsafe-reports -name 'TEST-*.xml' | wc -l | tr -d ' ')
+          test "$actual" -eq "$expected"
       - name: Upload failsafe reports
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
@@ -155,7 +167,17 @@ jobs:
           cache: maven
       - name: Run ArchUnit suite
         working-directory: backend
-        run: ./mvnw $MAVEN_ARGS test -Dgroups=arch
+        run: ./mvnw $MAVEN_ARGS test -Parchitecture-tests
+      - name: Verify architecture test class count
+        working-directory: backend
+        run: test "$(find target/surefire-reports -name 'TEST-*ArchitectureRulesTest.xml' | wc -l | tr -d ' ')" -eq 1
+      - name: Upload ArchUnit reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: archunit-reports
+          path: backend/target/surefire-reports/
+          retention-days: 7
 
   # ---------------------------------------------------------------------------
   # coverage-gate — JaCoCo check rule fails the build below the gate.
@@ -211,7 +233,20 @@ jobs:
         run: ./mvnw $MAVEN_ARGS quarkus:build -Dquarkus.smallrye-openapi.store-schema-directory=target/openapi
       - name: Contract conformance tests
         working-directory: backend
-        run: ./mvnw $MAVEN_ARGS verify -DskipITs=false -Dgroups=contract
+        run: ./mvnw $MAVEN_ARGS test -Pcontract-tests
+      - name: Verify contract test class count
+        working-directory: backend
+        run: |
+          expected=$(find src/test/java -name '*ContractTest.java' | wc -l | tr -d ' ')
+          actual=$(find target/surefire-reports -name 'TEST-*ContractTest.xml' | wc -l | tr -d ' ')
+          test "$actual" -eq "$expected"
+      - name: Upload contract test reports
+        if: ${{ !cancelled() }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: contract-test-reports
+          path: backend/target/surefire-reports/
+          retention-days: 7
       - name: Upload generated OpenAPI
         if: ${{ !cancelled() }}
         uses: actions/upload-artifact@v4
@@ -300,17 +335,12 @@ jobs:
           # Health endpoints are hard assertions — the app must be live and ready.
           curl -fsS http://localhost:8080/q/health/live | tee /tmp/live.json
           curl -fsS http://localhost:8080/q/health/ready | tee /tmp/ready.json
-          # Catalog endpoint is best-effort at bootstrap: WU-CAT-1 (Phase 1) has
-          # not landed yet, so a 404 is expected and must not fail the job.
-          # TODO: once WU-CAT-1 lands, make /v1/catalog/releases a hard assertion.
-          CATALOG_CODE=$(curl -s -o /tmp/releases.json -w '%{http_code}' \
+          # Catalog is a mandatory representative application assertion. A healthy
+          # process with a broken/missing public API must not pass compose smoke.
+          curl -fsS \
             -H "Accept: application/json" \
-            "http://localhost:8080/v1/catalog/releases?page=1&size=1" || echo "000")
-          if echo "$CATALOG_CODE" | grep -qE '^2'; then
-            echo "CATALOG OK: HTTP $CATALOG_CODE"
-          else
-            echo "CATALOG WARN: HTTP $CATALOG_CODE (endpoint not built yet — WU-CAT-1 pending)"
-          fi
+            "http://localhost:8080/v1/home" \
+            | tee /tmp/home.json
       - name: Dump logs on failure
         if: failure()
         working-directory: backend
@@ -358,3 +388,40 @@ jobs:
       - name: Unit tests
         working-directory: Frontend
         run: npx vitest run --reporter=default
+
+  # ---------------------------------------------------------------------------
+  # mobile — Flutter fan app (MOBILE-PRD §12). Required checks per
+  # docs/plans/2026-09-21-beatzclik-fan-mobile-implementation.md M0:
+  # dart format, flutter analyze, flutter test, unsigned release build.
+  # ---------------------------------------------------------------------------
+  mobile:
+    name: mobile
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+      - name: Set up Flutter
+        uses: subosito/flutter-action@v2
+        with:
+          flutter-version: "3.24.5"
+          channel: stable
+          cache: true
+      - name: Install deps
+        working-directory: mobile
+        run: flutter pub get
+      - name: Dart format
+        working-directory: mobile
+        run: dart format --set-exit-if-changed .
+      - name: Flutter analyze
+        working-directory: mobile
+        run: flutter analyze
+      - name: Flutter test
+        working-directory: mobile
+        run: flutter test
+      - name: Build APK (debug, unsigned)
+        working-directory: mobile
+        run: flutter build apk --debug --no-pub

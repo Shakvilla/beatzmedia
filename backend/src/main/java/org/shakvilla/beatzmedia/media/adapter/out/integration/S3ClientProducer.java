@@ -26,6 +26,11 @@ public class S3ClientProducer {
   private final String publicEndpoint;
   private final String accessKey;
   private final String secretKey;
+  private final String s4Endpoint;
+  private final String s4PublicEndpoint;
+  private final String s4Region;
+  private final String s4AccessKey;
+  private final String s4SecretKey;
 
   public S3ClientProducer(
       @ConfigProperty(name = "beatz.s3.endpoint", defaultValue = "http://localhost:9000")
@@ -43,40 +48,72 @@ public class S3ClientProducer {
       @ConfigProperty(name = "beatz.s3.access-key", defaultValue = "minioadmin")
           String accessKey,
       @ConfigProperty(name = "beatz.s3.secret-key", defaultValue = "minioadmin")
-          String secretKey) {
+          String secretKey,
+      @ConfigProperty(name = "beatz.s4.endpoint") java.util.Optional<String> s4Endpoint,
+      @ConfigProperty(name = "beatz.s4.public-endpoint") java.util.Optional<String> s4PublicEndpoint,
+      @ConfigProperty(name = "beatz.s4.region") java.util.Optional<String> s4Region,
+      @ConfigProperty(name = "beatz.s4.access-key") java.util.Optional<String> s4AccessKey,
+      @ConfigProperty(name = "beatz.s4.secret-key") java.util.Optional<String> s4SecretKey) {
     this.endpoint = endpoint;
     this.publicEndpoint = publicEndpoint.filter(e -> !e.isBlank()).orElse(endpoint);
     this.accessKey = accessKey;
     this.secretKey = secretKey;
+    this.s4Endpoint = configured(s4Endpoint, endpoint);
+    this.s4PublicEndpoint = configured(s4PublicEndpoint, this.s4Endpoint);
+    this.s4Region = configured(s4Region, "us-east-1");
+    this.s4AccessKey = configured(s4AccessKey, accessKey);
+    this.s4SecretKey = configured(s4SecretKey, secretKey);
+  }
+
+  private static String configured(java.util.Optional<String> value, String fallback) {
+    return value.filter(v -> !v.isBlank()).orElse(fallback);
   }
 
   @Produces
   @Singleton
+  @StorageClient("minio")
   public S3Client s3Client() {
+    return client(endpoint, Region.US_EAST_1, accessKey, secretKey);
+  }
+
+  @Produces
+  @Singleton
+  @StorageClient("mega_s4")
+  public S3Client megaS4Client() {
+    return client(s4Endpoint, Region.of(s4Region), s4AccessKey, s4SecretKey);
+  }
+
+  private static S3Client client(String endpoint, Region region, String key, String secret) {
     return S3Client.builder()
         .endpointOverride(URI.create(endpoint))
-        .region(Region.US_EAST_1) // required by SDK; MinIO ignores it
-        .credentialsProvider(
-            StaticCredentialsProvider.create(
-                AwsBasicCredentials.create(accessKey, secretKey)))
-        .serviceConfiguration(
-            S3Configuration.builder().pathStyleAccessEnabled(true).build())
+        .region(region)
+        .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(key, secret)))
+        .serviceConfiguration(S3Configuration.builder().pathStyleAccessEnabled(true).build())
         .build();
   }
 
   @Produces
   @Singleton
+  @StorageClient("minio")
   public S3Presigner s3Presigner() {
     // Presigned URLs are handed to browsers, so they must be signed for the endpoint the browser
     // can actually reach — see the publicEndpoint note above.
+    return presigner(publicEndpoint, Region.US_EAST_1, accessKey, secretKey);
+  }
+
+  @Produces
+  @Singleton
+  @StorageClient("mega_s4")
+  public S3Presigner megaS4Presigner() {
+    return presigner(s4PublicEndpoint, Region.of(s4Region), s4AccessKey, s4SecretKey);
+  }
+
+  private static S3Presigner presigner(String endpoint, Region region, String key, String secret) {
     return S3Presigner.builder()
-        .endpointOverride(URI.create(publicEndpoint))
-        .region(Region.US_EAST_1)
-        .credentialsProvider(
-            StaticCredentialsProvider.create(
-                AwsBasicCredentials.create(accessKey, secretKey)))
-        .serviceConfiguration(
-            S3Configuration.builder().pathStyleAccessEnabled(true).build())
+        .endpointOverride(URI.create(endpoint))
+        .region(region)
+        .credentialsProvider(StaticCredentialsProvider.create(AwsBasicCredentials.create(key, secret)))
+        .serviceConfiguration(S3Configuration.builder().pathStyleAccessEnabled(true).build())
         .build();
   }
 }

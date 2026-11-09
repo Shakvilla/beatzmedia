@@ -20,7 +20,7 @@ final class PodcastEntityMapper {
   static PodcastShow toDomain(PodcastShowEntity e) {
     return PodcastShow.reconstitute(
         new ShowId(e.id), new ArtistId(e.artistId), e.title, e.category, e.image, e.description,
-        e.createdAt);
+        e.originCountry, e.createdAt);
   }
 
   static PodcastShowEntity toEntity(PodcastShow show, PodcastShowEntity target) {
@@ -31,6 +31,7 @@ final class PodcastEntityMapper {
     entity.category = show.category();
     entity.image = show.image();
     entity.description = show.description();
+    entity.originCountry = show.originCountry();
     entity.createdAt = show.createdAt();
     return entity;
   }

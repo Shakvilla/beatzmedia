@@ -225,33 +225,33 @@ INSERT INTO lyrics (track_id)
 VALUES ('last-last'), ('kwaku-the-traveller')
 ON CONFLICT (track_id) DO NOTHING;
 
-INSERT INTO lyric_line (track_id, t_sec, text)
+INSERT INTO lyric_line (track_id, position, t_sec, text)
 VALUES
   -- last-last
-  ('last-last',  0,  '♪'),
-  ('last-last',  6,  'No place feels the same since you left'),
-  ('last-last',  12, 'City lights, but the night feels cold'),
-  ('last-last',  19, 'I been moving, I been running solo'),
-  ('last-last',  26, 'Counting every mile on the road'),
-  ('last-last',  34, 'Last last, everybody go feel it'),
-  ('last-last',  41, 'Last last, na so the story go'),
-  ('last-last',  49, 'Tell them say I dey alright now'),
-  ('last-last',  57, 'Even when the morning slow'),
-  ('last-last',  66, '♪'),
-  ('last-last',  74, 'Hold on, the sun dey come'),
-  ('last-last',  82, 'Hold on, we no go run'),
+  ('last-last', 0,  0,  '♪'),
+  ('last-last', 1,  6,  'No place feels the same since you left'),
+  ('last-last', 2,  12, 'City lights, but the night feels cold'),
+  ('last-last', 3,  19, 'I been moving, I been running solo'),
+  ('last-last', 4,  26, 'Counting every mile on the road'),
+  ('last-last', 5,  34, 'Last last, everybody go feel it'),
+  ('last-last', 6,  41, 'Last last, na so the story go'),
+  ('last-last', 7,  49, 'Tell them say I dey alright now'),
+  ('last-last', 8,  57, 'Even when the morning slow'),
+  ('last-last', 9,  66, '♪'),
+  ('last-last', 10, 74, 'Hold on, the sun dey come'),
+  ('last-last', 11, 82, 'Hold on, we no go run'),
   -- kwaku-the-traveller
-  ('kwaku-the-traveller',  0,  '♪'),
-  ('kwaku-the-traveller',  7,  'Packed my bags before the sunrise'),
-  ('kwaku-the-traveller',  14, 'Konongo boy, but the world is wide'),
-  ('kwaku-the-traveller',  22, 'Every wrong turn taught me something'),
-  ('kwaku-the-traveller',  30, 'Now I carry it all with pride'),
-  ('kwaku-the-traveller',  39, 'Who never make mistake before?'),
-  ('kwaku-the-traveller',  47, 'Raise your hand if your heart is pure'),
-  ('kwaku-the-traveller',  56, 'I traveled far to find my sound'),
-  ('kwaku-the-traveller',  64, 'And I am never coming down')
-ON CONFLICT (track_id, t_sec) DO UPDATE
-  SET text = EXCLUDED.text;
+  ('kwaku-the-traveller', 0,  0,  '♪'),
+  ('kwaku-the-traveller', 1,  7,  'Packed my bags before the sunrise'),
+  ('kwaku-the-traveller', 2,  14, 'Konongo boy, but the world is wide'),
+  ('kwaku-the-traveller', 3,  22, 'Every wrong turn taught me something'),
+  ('kwaku-the-traveller', 4,  30, 'Now I carry it all with pride'),
+  ('kwaku-the-traveller', 5,  39, 'Who never make mistake before?'),
+  ('kwaku-the-traveller', 6,  47, 'Raise your hand if your heart is pure'),
+  ('kwaku-the-traveller', 7,  56, 'I traveled far to find my sound'),
+  ('kwaku-the-traveller', 8,  64, 'And I am never coming down')
+ON CONFLICT (track_id, position) DO UPDATE
+  SET t_sec = EXCLUDED.t_sec, text = EXCLUDED.text;
 
 -- ==========================================================================
 -- Playlists (mock-data.ts `playlists`)

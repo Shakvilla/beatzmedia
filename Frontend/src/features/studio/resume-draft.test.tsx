@@ -34,16 +34,19 @@ const detail = {
   price: { amount: 12.5, currency: 'GHS' },
   genre: 'Highlife',
   description: 'Recorded in Accra',
+  originCountry: 'GH',
   visibility: 'scheduled',
   scheduledAt: '2026-09-15T00:00:00Z',
   tracks: [
     // Deliberately out of order — the wizard must show the artist's ordering, not the API's.
     {
       trackId: 't2', title: 'Second', duration: 200, status: 'uploading', position: 1,
+      image: '/images/placeholder.svg', customArtwork: false,
       price: { amount: 5, currency: 'GHS' }, splits: [],
     },
     {
       trackId: 't1', title: 'First', duration: 180, status: 'ready', position: 0,
+      image: '/media/t1.jpg', customArtwork: true,
       price: { amount: 7.5, currency: 'GHS' },
       splits: [{ id: 's1', name: 'Bob', email: 'bob@x.com', role: 'Producer', percent: 30, confirmation: 'pending' }],
     },
@@ -64,6 +67,7 @@ describe('hydrateFromServer', () => {
     expect(result.current.draft.releaseType).toBe('album')
     expect(result.current.draft.genre).toBe('Highlife')
     expect(result.current.draft.description).toBe('Recorded in Accra')
+    expect(result.current.draft.originCountry).toBe('GH')
     expect(result.current.draft.visibility).toBe('scheduled')
     // The date input is yyyy-mm-dd, not an ISO instant — passing the raw value renders blank.
     expect(result.current.draft.releaseDate).toBe('2026-09-15')

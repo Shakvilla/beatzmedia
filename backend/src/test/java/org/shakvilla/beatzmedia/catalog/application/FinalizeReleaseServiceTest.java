@@ -15,13 +15,17 @@ import org.shakvilla.beatzmedia.catalog.application.service.SplitInviteService;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
 import org.shakvilla.beatzmedia.catalog.domain.IdempotencyConflictException;
 import org.shakvilla.beatzmedia.catalog.domain.IllegalTransitionException;
+import org.shakvilla.beatzmedia.catalog.domain.OwnershipStatus;
 import org.shakvilla.beatzmedia.catalog.domain.Release;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseTrack;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseType;
 import org.shakvilla.beatzmedia.catalog.domain.SplitInviteIssued;
+import org.shakvilla.beatzmedia.catalog.domain.Track;
+import org.shakvilla.beatzmedia.catalog.domain.TrackArtworkRequiredException;
 import org.shakvilla.beatzmedia.catalog.domain.TrackCountInvalidException;
+import org.shakvilla.beatzmedia.catalog.domain.TrackId;
 import org.shakvilla.beatzmedia.catalog.domain.Visibility;
 import org.shakvilla.beatzmedia.catalog.fakes.FakeCatalogRepository;
 import org.shakvilla.beatzmedia.catalog.fakes.RecordingEvent;
@@ -63,10 +67,19 @@ class FinalizeReleaseServiceTest {
   }
 
   private Release draft(ReleaseType type, int trackCount) {
+    return draft(type, trackCount, type != ReleaseType.single);
+  }
+
+  private Release draft(ReleaseType type, int trackCount, boolean artworkAdded) {
     Release r = Release.createDraft(
         "r1", ARTIST.value(), "Draft Title", type, Visibility.PUBLIC, null, null, null, NOW);
     for (int i = 0; i < trackCount; i++) {
-      r.addTrack(new ReleaseTrack("t" + i, i, 250L), NOW);
+      String id = "t" + i;
+      r.addTrack(new ReleaseTrack(id, i, 250L), NOW);
+      repo.addTrack(new Track(
+          new TrackId(id), "Track " + i, ARTIST, "Artist", null, null, 180,
+          artworkAdded ? "/art/track-" + i : "/images/placeholder.svg",
+          OwnershipStatus.free, null, 0L, null, null, null, null, "ready", false, artworkAdded));
     }
     repo.addRelease(r);
     return r;
@@ -120,6 +133,14 @@ class FinalizeReleaseServiceTest {
     draft(ReleaseType.album, 7);
     StudioReleaseDetailView ok = service.finalize(new ReleaseId("r1"), ARTIST, "key-album-7");
     assertEquals(ReleaseStatus.in_review, ok.status());
+  }
+
+  @Test
+  void multiTrackRelease_requiresCustomArtworkForEveryTrack() {
+    draft(ReleaseType.album, 7, false);
+
+    assertThrows(TrackArtworkRequiredException.class,
+        () -> service.finalize(new ReleaseId("r1"), ARTIST, "key-album-no-art"));
   }
 
   @Test

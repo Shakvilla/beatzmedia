@@ -1,5 +1,6 @@
 package org.shakvilla.beatzmedia.payments.application.port.out;
 
+import org.shakvilla.beatzmedia.payments.domain.GatewayVendor;
 import org.shakvilla.beatzmedia.payments.domain.OrderRef;
 import org.shakvilla.beatzmedia.payments.domain.PaymentEventType;
 import org.shakvilla.beatzmedia.payments.domain.PaymentMethodRef;
@@ -27,6 +28,65 @@ import org.shakvilla.beatzmedia.platform.domain.Money;
  * Disbursement ({@code disburse}) lands in a later payout WU and is added to this port then.
  */
 public interface PaymentGateway {
+
+  /** Gateway selection snapshot used when creating and pinning a new operation. */
+  default GatewayVendor selectedVendor() {
+    return GatewayVendor.SANDBOX;
+  }
+
+  default ChargeHandle initiate(
+      GatewayVendor vendor, Provider provider, OrderRef ref, Money amount, PaymentMethodRef method) {
+    requireEnabled(vendor, provider);
+    return initiate(provider, ref, amount, method);
+  }
+
+  default boolean verifySignature(
+      GatewayVendor vendor, Provider provider, String signature, byte[] rawBody) {
+    return vendor != GatewayVendor.DISABLED && verifySignature(provider, signature, rawBody);
+  }
+
+  /** Verify a raw callback against configured gateways before parsing its untrusted body. */
+  default GatewayVendor verifySignatureFromAnyGateway(
+      Provider provider, String signature, byte[] rawBody) {
+    GatewayVendor candidate = selectedVendor();
+    return verifySignature(candidate, provider, signature, rawBody) ? candidate : null;
+  }
+
+  default ProviderStatus queryStatus(GatewayVendor vendor, Provider provider, String providerRef) {
+    requireEnabled(vendor, provider);
+    return queryStatus(provider, providerRef);
+  }
+
+  default boolean supportsDirectCharge(GatewayVendor vendor, Provider provider) {
+    requireEnabled(vendor, provider);
+    return supportsDirectCharge(provider);
+  }
+
+  default CheckoutHandle initiateCheckout(GatewayVendor vendor, OrderRef ref, Money amount) {
+    requireEnabled(vendor, Provider.card);
+    return initiateCheckout(ref, amount);
+  }
+
+  default DisburseHandle disburse(
+      GatewayVendor vendor,
+      Provider provider,
+      WithdrawalId withdrawalId,
+      Money amount,
+      PayoutDestination destination) {
+    requireEnabled(vendor, provider);
+    return disburse(provider, withdrawalId, amount, destination);
+  }
+
+  default boolean confirmsDisbursementAsync(GatewayVendor vendor) {
+    requireEnabled(vendor, Provider.bank);
+    return confirmsDisbursementAsync();
+  }
+
+  private static void requireEnabled(GatewayVendor vendor, Provider provider) {
+    if (vendor == null || vendor == GatewayVendor.DISABLED) {
+      throw new org.shakvilla.beatzmedia.payments.domain.ProviderDisabledException(provider);
+    }
+  }
 
   /**
    * Initiate a charge on the given rail. The charge is asynchronous — this returns immediately with

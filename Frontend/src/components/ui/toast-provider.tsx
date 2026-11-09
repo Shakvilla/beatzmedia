@@ -9,10 +9,16 @@ interface Toast {
   id: string
   message: string
   type: ToastType
+  action?: ToastAction
+}
+
+interface ToastAction {
+  label: string
+  onClick: () => void | Promise<void>
 }
 
 interface ToastContextType {
-  toast: (message: string, type?: ToastType) => void
+  toast: (message: string, type?: ToastType, action?: ToastAction) => void
 }
 
 const ToastContext = createContext<ToastContextType | undefined>(undefined)
@@ -20,9 +26,13 @@ const ToastContext = createContext<ToastContextType | undefined>(undefined)
 export function ToastProvider({ children }: { children: React.ReactNode }) {
   const [toasts, setToasts] = useState<Toast[]>([])
 
-  const toast = useCallback((message: string, type: ToastType = 'info') => {
+  const toast = useCallback((
+    message: string,
+    type: ToastType = 'info',
+    action?: ToastAction,
+  ) => {
     const id = Math.random().toString(36).substring(2, 9)
-    setToasts((prev) => [...prev, { id, message, type }])
+    setToasts((prev) => [...prev, { id, message, type, action }])
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id))
     }, 3000)
@@ -57,6 +67,18 @@ function ToastItem({ toast, onClose }: { toast: Toast, onClose: () => void }) {
     )}>
       <Icon size={20} className={cn(toast.type === 'success' ? "text-black" : "text-white")} />
       <span className="flex-1 font-bold text-sm">{toast.message}</span>
+      {toast.action && (
+        <button
+          type="button"
+          onClick={() => {
+            onClose()
+            void toast.action?.onClick()
+          }}
+          className="rounded-full border border-current/30 px-3 py-1 text-xs font-black uppercase tracking-wider hover:bg-black/10 dark:hover:bg-white/10"
+        >
+          {toast.action.label}
+        </button>
+      )}
       <button onClick={onClose} className="opacity-60 hover:opacity-100 transition-opacity">
         <X size={16} />
       </button>
@@ -64,6 +86,9 @@ function ToastItem({ toast, onClose }: { toast: Toast, onClose: () => void }) {
   )
 }
 
+// The provider and its hook intentionally share this module; all existing consumers import this
+// stable public surface, so splitting it solely for Fast Refresh would create a repository-wide edit.
+// eslint-disable-next-line react-refresh/only-export-components
 export function useToast() {
   const context = useContext(ToastContext)
   if (!context) throw new Error('useToast must be used within a ToastProvider')

@@ -18,6 +18,8 @@ final class DeliveryAttemptEntityMapper {
     e.notificationId = attempt.notificationId().value();
     e.channel = attempt.channel().name();
     e.providerIdempotencyKey = attempt.providerIdempotencyKey();
+    e.providerCode = attempt.providerCode();
+    e.providerMessageId = attempt.providerMessageId().orElse(null);
     e.status = attempt.status().name();
     e.retryCount = attempt.retryCount();
     e.lastError = attempt.lastError().orElse(null);
@@ -33,6 +35,8 @@ final class DeliveryAttemptEntityMapper {
         new NotificationId(e.notificationId),
         Channel.valueOf(e.channel),
         e.providerIdempotencyKey,
+        e.providerCode,
+        e.providerMessageId,
         DeliveryStatus.valueOf(e.status),
         e.retryCount,
         e.lastError,

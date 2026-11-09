@@ -31,18 +31,19 @@ flowchart LR
   subgraph identity[identity module]
     IN[Inbound REST adapters<br/>AuthResource · MeResource · AdminTeamResource]
     APP[Application use cases<br/>RegisterFan · Login · SocialLogin · Logout<br/>GetCurrentAccount · UpgradeToArtist · UpdateFanSettings<br/>RequestPasswordReset · Invite/Change/Remove/ListAdmin]
-    DOM[Domain<br/>Account · Credential · SocialIdentity<br/>FanSettings · AdminMember · AccountStatus]
-    OUT[Outbound adapters<br/>JpaAccountRepository · Argon2CredentialHasher<br/>JwtTokenIssuer · StubSocialVerifier · LoggingMailer]
+    DOM[Domain<br/>Account · Credential · SocialIdentity<br/>FanSettings · PhoneVerificationChallenge · AdminMember]
+    OUT[Outbound adapters<br/>JpaAccountRepository · JpaPhoneVerificationChallengeRepository<br/>Argon2CredentialHasher · JwtTokenIssuer]
   end
   IN --> APP --> DOM
   APP --> OUT
-  OUT --> DB[(Postgres<br/>account, credential, social_identity,<br/>fan_settings, admin_member, password_reset_token)]
+  OUT --> DB[(Postgres<br/>account, credential, social_identity,<br/>fan_settings, phone_verification_challenge, admin_member)]
   OUT --> SMTP[[Mailpit / SMTP]]
   OUT --> SOCIAL[[Google / Facebook / Twitter token introspection]]
   APP -. reads .-> FLAGS[platform: FeatureFlags / PlatformSettings]
   APP -. appends INV-10 .-> AUDIT[audit: AuditWriter]
   APP -. publishes events .-> BUS{{CDI event bus}}
   BUS -. AccountRegistered / ArtistUpgraded / UserSuspended .-> OTHER[catalog · studio · notifications · analytics]
+  APP -. phone verification SMS .-> SMS[notifications: PhoneVerificationSmsSender]
 ```
 
 **Dependency rule:** `adapters → application → domain`; the domain imports nothing framework-bound.
@@ -59,7 +60,8 @@ modules resolve accounts by `AccountId` through this module's input ports.
 | `Account` | Aggregate root | `id: AccountId`, `name`, `email`, `avatar?`, `isArtist`, `isAdmin`, `status: AccountStatus` | Root of the aggregate; role flags + lifecycle. Mutated only via intention-revealing methods (`upgradeToArtist()`, `suspend()`, `reactivate()`). |
 | `Credential` | Entity (in aggregate) | `accountId`, `passwordHash`, `algo="argon2id"` | Absent for social-only accounts. Never serialized. |
 | `SocialIdentity` | Entity (in aggregate) | `id`, `accountId`, `provider`, `providerUid` | One per linked provider; `UNIQUE(provider, providerUid)`. |
-| `FanSettings` | Entity (1—1 with Account) | `accountId`, `theme`, `audioQuality`, `notifications`, `country`, `phone` | Created lazily with defaults on first read/patch. |
+| `FanSettings` | Entity (1—1 with Account) | `accountId`, `theme`, `audioQuality`, `notifications`, `country`, `phone`, `phoneVerified` | Created lazily with defaults on first read/patch. Changing the phone clears verification. |
+| `PhoneVerificationChallenge` | Entity | `id`, `accountId`, `phone`, keyed `codeHash`, pinned `providerCode`, `status`, `attempts`, timestamps | Short-lived OTP challenge; raw code is never persisted. |
 | `AdminMember` | Entity | `id`, `accountId`, `role: AdminRole`, `lastActiveAt` | Orthogonal to fan/artist; presence implies `account.isAdmin=true`. |
 | `PasswordResetToken` | Value object | `token`, `accountId`, `expiresAt`, `used` | Single-use, time-boxed; opaque random token. |
 | `AccountId` | Value object | `value: String` | Typed id wrapper (kernel convention). |
@@ -89,6 +91,7 @@ erDiagram
   ACCOUNT ||--o| CREDENTIAL : "has (password accounts)"
   ACCOUNT ||--o{ SOCIAL_IDENTITY : "links"
   ACCOUNT ||--|| FAN_SETTINGS : "has"
+  ACCOUNT ||--o{ PHONE_VERIFICATION_CHALLENGE : "verifies phone with"
   ACCOUNT ||--o| ADMIN_MEMBER : "may be"
   ACCOUNT ||--o{ PASSWORD_RESET_TOKEN : "issues"
   ACCOUNT {
@@ -120,6 +123,17 @@ erDiagram
     jsonb notif_json
     string country
     string phone
+    bool phone_verified
+  }
+  PHONE_VERIFICATION_CHALLENGE {
+    string id PK
+    string account_id FK
+    string phone
+    string code_hash
+    string provider_code
+    string status
+    smallint attempts
+    timestamptz expires_at
   }
   ADMIN_MEMBER {
     string id PK
@@ -187,6 +201,21 @@ public interface RequestPasswordReset {
     /** Trigger: POST /v1/me/password/reset. Authz: public. Always 204 (no enumeration). Mails token if email exists. LLFR-IDENTITY-01.5 */
     void request(RequestPasswordResetCommand command);
     record RequestPasswordResetCommand(String email) {}
+}
+
+public interface GetFanSettings {
+    /** Trigger: GET /v1/me/settings. Authz: owning account. Includes phoneVerified. */
+    FanSettingsView get(AccountId account);
+}
+
+public interface StartPhoneVerification {
+    /** Trigger: POST /v1/me/phone-verification. Generates a local OTP and sends using the selected SMS provider. */
+    StartPhoneVerificationView start(AccountId account, String phone);
+}
+
+public interface ConfirmPhoneVerification {
+    /** Trigger: POST /v1/me/phone-verification/confirm. Consumes a valid, unexpired one-time code. */
+    FanSettingsView confirm(AccountId account, String code);
 }
 
 public interface ListAdminTeam {
@@ -589,3 +618,30 @@ Global DoD (PRD §8 / conventions §11) **plus**:
    cleanly on an empty DB.
 8. Password reset tokens are single-use, time-boxed, and stored as a SHA-256 hash only — never the
    plaintext (WU-IDN-2 / LLFR-IDENTITY-01.5).
+
+## 13. As-built (WU-EXT-6, partial)
+
+`SmtpPasswordResetMailer` now delegates through the notifications email transport, so password
+reset sends follow the audited email provider selection and may use SMTP or Resend. Each reset
+token gets a stable idempotency key derived from its SHA-256 digest; the plaintext token remains
+only in the message link and is not logged. A provider failure is logged without recipient or
+exception details and the endpoint keeps its non-enumerating response for known and unknown email
+addresses. Delivery remains synchronous; a failed send is not currently queued for retry.
+
+## 14. As-built phone verification (FROG SMS)
+
+`PhoneVerificationResource` exposes authenticated `GET /v1/me/settings`,
+`POST /v1/me/phone-verification`, and `POST /v1/me/phone-verification/confirm`. Identity creates a
+six-digit OTP with a five-minute lifetime, a 60-second resend delay, three requests/account/hour,
+five requests/phone/hour, and five guesses/challenge. Only an HMAC-SHA256 keyed digest is stored;
+the secret is `BEATZ_PHONE_VERIFICATION_HMAC_KEY` and is required by the production configuration
+guard. The raw code is sent through the notifications SMS port and is never included in an API
+response or log.
+
+SMS selection is resolved when the challenge is created and persisted on that challenge. The sender
+then uses that provider, independent of Resend/SMTP selection. A number is eligible for notification
+SMS only after challenge confirmation. Changing the phone through `PATCH /me/settings` clears its
+verified flag and invalidates active challenges. Migration V992 adds `fan_settings.phone_verified`
+and the challenge table. The Settings page reads persisted phone state and provides send/confirm
+controls; live delivery requires valid FROG credentials and an approved sender ID, or the local
+capture transport during development.

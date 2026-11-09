@@ -30,6 +30,9 @@ import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
 @ApplicationScoped
 public class RequestPasswordResetService implements RequestPasswordReset {
 
+  private static final org.jboss.logging.Logger LOG =
+      org.jboss.logging.Logger.getLogger(RequestPasswordResetService.class);
+
   private final AccountRepository accountRepository;
   private final Mailer mailer;
   private final IdGenerator idGenerator;
@@ -70,7 +73,13 @@ public class RequestPasswordResetService implements RequestPasswordReset {
     PasswordResetToken token = PasswordResetToken.issue(tokenHash, account.getId(), expiresAt);
     accountRepository.saveResetToken(token);
 
-    mailer.sendPasswordReset(account.getEmail(), plaintextToken);
+    try {
+      mailer.sendPasswordReset(account.getEmail(), plaintextToken);
+    } catch (RuntimeException e) {
+      // Keep known and unknown addresses observationally identical if a provider is unavailable.
+      // Do not log the exception message: transport implementations may include recipient details.
+      LOG.warn("password reset delivery failed; request response remains non-enumerating");
+    }
   }
 
 }

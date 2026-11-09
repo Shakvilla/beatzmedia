@@ -22,6 +22,8 @@ export function studioEpisodesQuery() {
     queryKey: ['studio', 'podcast-episodes'],
     queryFn: async () =>
       (await apiFetch<EpisodeWire[]>('/studio/podcasts/episodes')).map(toStudioEpisode),
+    staleTime: 0,
+    refetchInterval: 15_000,
   })
 }
 
@@ -75,10 +77,19 @@ export function apiCreateShow(input: {
   title: string
   category: string
   description?: string | null
+  originCountry?: string | null
 }): Promise<StudioPodcastShow> {
   return apiFetch<StudioPodcastShowWire>('/studio/podcasts/shows', {
     method: 'POST',
-    body: { title: input.title, category: input.category, description: input.description ?? null },
+    body: { title: input.title, category: input.category, description: input.description ?? null,
+      originCountry: input.originCountry ?? null },
+  }).then(toStudioShow)
+}
+
+/** Assign or clear the country used for a show's country charts. */
+export function apiSetShowOriginCountry(showId: string, originCountry: string): Promise<StudioPodcastShow> {
+  return apiFetch<StudioPodcastShowWire>(`/studio/podcasts/shows/${showId}/origin-country`, {
+    method: 'PATCH', body: { originCountry },
   }).then(toStudioShow)
 }
 

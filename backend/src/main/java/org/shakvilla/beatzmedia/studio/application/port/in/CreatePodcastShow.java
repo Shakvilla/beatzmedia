@@ -14,5 +14,10 @@ public interface CreatePodcastShow {
    * fan-facing {@code podcast.image} column is NOT NULL (V974).
    */
   record CreatePodcastShowCommand(
-      String title, String category, String image, String description) {}
+      String title, String category, String image, String description, String originCountry) {
+    public CreatePodcastShowCommand(String title, String category, String image,
+        String description) {
+      this(title, category, image, description, null);
+    }
+  }
 }

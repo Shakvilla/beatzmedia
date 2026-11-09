@@ -32,6 +32,7 @@ import org.shakvilla.beatzmedia.notifications.domain.TransientDeliveryException;
  * <p><strong>No PII in logs.</strong> The recipient phone number is never logged.
  */
 @ApplicationScoped
+@SmsProvider("capture")
 public class HttpSmsSender implements SmsSender {
 
   private static final Logger LOG = Logger.getLogger(HttpSmsSender.class);

@@ -14,6 +14,7 @@ import org.shakvilla.beatzmedia.audit.fakes.FakeAuditWriter;
 import org.shakvilla.beatzmedia.platform.domain.Currency;
 import org.shakvilla.beatzmedia.platform.fakes.FakeClock;
 import org.shakvilla.beatzmedia.platform.fakes.FakeIds;
+import org.shakvilla.beatzmedia.platform.fakes.RecordingDurableEventPublisher;
 import org.shakvilla.beatzmedia.studio.application.port.in.EpisodeView;
 import org.shakvilla.beatzmedia.studio.application.port.in.UpdateEpisode.UpdateEpisodeCommand;
 import org.shakvilla.beatzmedia.studio.application.service.UpdateEpisodeService;
@@ -21,14 +22,12 @@ import org.shakvilla.beatzmedia.studio.domain.ArtistId;
 import org.shakvilla.beatzmedia.studio.domain.Episode;
 import org.shakvilla.beatzmedia.studio.domain.EpisodeId;
 import org.shakvilla.beatzmedia.studio.domain.EpisodeNotFoundException;
-import org.shakvilla.beatzmedia.studio.domain.EpisodePublished;
 import org.shakvilla.beatzmedia.studio.domain.IllegalEpisodeTransitionException;
 import org.shakvilla.beatzmedia.studio.domain.InvalidPriceException;
 import org.shakvilla.beatzmedia.studio.domain.PodcastShow;
 import org.shakvilla.beatzmedia.studio.domain.ScheduleDateRequiredException;
 import org.shakvilla.beatzmedia.studio.domain.ShowId;
 import org.shakvilla.beatzmedia.studio.fakes.FakeStudioRepository;
-import org.shakvilla.beatzmedia.studio.fakes.RecordingEvent;
 
 /** Unit tests for {@link UpdateEpisodeService} — LLFR-STUDIO-02.4. */
 @Tag("unit")
@@ -42,7 +41,7 @@ class UpdateEpisodeServiceTest {
   private FakeStudioRepository repo;
   private FakeClock clock;
   private FakeAuditWriter auditWriter;
-  private RecordingEvent<EpisodePublished> publishedEvent;
+  private RecordingDurableEventPublisher durableEvents;
   private UpdateEpisodeService service;
 
   @BeforeEach
@@ -52,8 +51,9 @@ class UpdateEpisodeServiceTest {
         NOW));
     clock = FakeClock.at(NOW);
     auditWriter = new FakeAuditWriter();
-    publishedEvent = new RecordingEvent<>();
-    service = new UpdateEpisodeService(repo, FakeIds.sequential("aud"), clock, auditWriter, publishedEvent);
+    durableEvents = new RecordingDurableEventPublisher();
+    service = new UpdateEpisodeService(
+        repo, FakeIds.sequential("aud"), clock, auditWriter, durableEvents);
   }
 
   private Episode draftEpisode(String id) {
@@ -94,13 +94,13 @@ class UpdateEpisodeServiceTest {
   }
 
   @Test
-  void update_visibilityPublicFromDraft_publishesAndFiresEventOnce() {
+  void update_visibilityPublicFromDraft_publishesAndAppendsDurableEventOnce() {
     draftEpisode("ep-1");
     EpisodeView view = service.update(
         ARTIST, new EpisodeId("ep-1"),
         new UpdateEpisodeCommand(null, null, null, null, "public", null, null));
     assertEquals("published", view.status());
-    assertEquals(1, publishedEvent.fired().size());
+    assertEquals(1, durableEvents.messages().size());
   }
 
   @Test
@@ -110,7 +110,7 @@ class UpdateEpisodeServiceTest {
         ARTIST, new EpisodeId("ep-1"),
         new UpdateEpisodeCommand(null, null, null, null, "scheduled", FUTURE, null));
     assertEquals("scheduled", view.status());
-    assertEquals(0, publishedEvent.fired().size());
+    assertEquals(0, durableEvents.messages().size());
   }
 
   @Test

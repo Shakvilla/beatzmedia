@@ -40,6 +40,31 @@ flowchart TB
 Push logic **down**. If a behaviour can be proven with a fast domain unit test, do not promote it to an
 integration test. Reserve `@QuarkusTest` for things only real wiring can prove.
 
+### 1.1 Executable phase contract
+
+Maven discovers each backend phase explicitly. A test must belong to exactly one of these filename
+classes; the JUnit tags remain useful metadata but are not the discovery mechanism.
+
+| Phase | Discovery | Command | Infrastructure |
+|---|---|---|---|
+| Unit | `*Test`, excluding `*ContractTest` and `ArchitectureRulesTest` | `./mvnw test` | None; Docker must not be contacted |
+| Integration | `*IT` through Failsafe | `./mvnw verify -Pintegration-tests` | Quarkus, PostgreSQL, MinIO and ffmpeg where required |
+| Contract | `*ContractTest` through Surefire | `./mvnw test -Pcontract-tests` | Quarkus/Testcontainers only for HTTP-level contract classes |
+| Architecture | `ArchitectureRulesTest` through Surefire | `./mvnw test -Parchitecture-tests` | Classpath scan only |
+
+Surefire and Failsafe both use `failIfNoTests=true`. An empty phase is therefore a build failure, not
+a green result. The integration profile skips Surefire so the integration job cannot silently rerun
+the unit suite; contract and architecture tests are excluded from both the default unit phase and the
+`*IT` phase, so they execute once in their dedicated jobs.
+
+The CI class-count checks derive their expected value from the source tree and compare it with the
+JUnit XML reports. At the 2026-11-01 Stage 0 split the source baselines are 203 unit classes, 100
+integration classes, 21 contract classes, and one architecture class. The verified Surefire results
+are 1,392 unit tests, 113 contract tests, and 7 architecture rules — exactly the previous 1,512-test
+Surefire baseline without duplication. The complete 100-class integration count is recorded by CI
+and must be captured in the Stage 0 certification report; a local verification run reached 72 passing
+tests across eight classes before it was stopped for runtime, so it is not completion evidence.
+
 ---
 
 ## 2. Layer 1 — Unit tests (domain + use cases, no Quarkus)

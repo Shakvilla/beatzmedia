@@ -43,7 +43,7 @@ import org.shakvilla.beatzmedia.admin.application.port.in.SaveSettings;
 @Path("/v1/admin/settings")
 @Produces(MediaType.APPLICATION_JSON)
 @RolesAllowed("super-admin")
-@Tag(name = "admin-settings")
+@Tag(name = "Administrator Management")
 @SecurityRequirement(name = "BearerAuth")
 public class AdminSettingsResource {
 

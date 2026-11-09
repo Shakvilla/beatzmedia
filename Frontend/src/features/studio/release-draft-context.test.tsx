@@ -37,6 +37,7 @@ describe('release-draft-context', () => {
     vi.mocked(studio.apiCreateDraft).mockResolvedValue('rel-1')
     vi.mocked(studio.apiUploadTrack).mockResolvedValue({
       id: 'trk-9', title: 'Soja', duration: 180, status: 'ready', progress: 100, src: '/a', price: 0, explicit: false,
+      image: '/images/placeholder.svg', customArtwork: false,
     })
     const { result } = renderHook(() => useReleaseDraft(), { wrapper })
 
@@ -52,6 +53,7 @@ describe('release-draft-context', () => {
     vi.mocked(studio.apiCreateDraft).mockResolvedValue('rel-1')
     vi.mocked(studio.apiUploadTrack).mockResolvedValue({
       id: 'trk-9', title: 'Soja', duration: 180, status: 'ready', progress: 100, src: '/a', price: 0, explicit: false,
+      image: '/images/placeholder.svg', customArtwork: false,
     })
     vi.mocked(studio.apiUpdateRelease).mockResolvedValue()
     vi.mocked(studio.apiSubmitRelease).mockResolvedValue()
@@ -73,6 +75,7 @@ describe('release-draft-context', () => {
     )
     vi.mocked(studio.apiUploadTrack).mockResolvedValue({
       id: 'trk-9', title: 'Soja', duration: 180, status: 'ready', progress: 100, src: '/a', price: 0, explicit: false,
+      image: '/images/placeholder.svg', customArtwork: false,
     })
     const { result } = renderHook(() => useReleaseDraft(), { wrapper })
 

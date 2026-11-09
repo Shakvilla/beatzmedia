@@ -553,6 +553,93 @@ buy-to-own model (INV-3).
   to prevent inflation (§9). Emits `PlayRecorded`. Auth: optional. *AC:* **Given** rapid repeated
   calls **Then** only de-duped/valid plays increment the counter (anti-bot, §6.13/§9).
 
+### 6.3A Listening Engagement (`engagement`)
+
+**Responsibilities:** persist account-scoped listening sessions and monotonic checkpoints for music
+and podcasts; derive personal history, podcast resume state, and privacy-safe aggregates. Engagement
+is behavioral product data only: it cannot grant ownership, create revenue, or write playback's
+financial `play_event`. **Owned tables:** `listening_session`, `listening_checkpoint`,
+`listening_progress`, `listening_preference`, `engagement_daily_rollup`. **Input ports:**
+`StartListeningSession`, `IngestListeningCheckpoint`, `GetRecentlyPlayed`, `GetContinueListening`,
+`ClearListeningHistory`, `UpdateListeningPreference`. **Output ports:** `EngagementRepository`,
+`CatalogReader`, `PodcastReader`, `Clock`, `IdGenerator`.
+
+**HLFR-ENGAGEMENT-01 — Account listening history and resume.** The system must provide authenticated
+fans with reliable cross-device listening history and podcast resume state without changing counted
+plays, ownership, royalties, or exposing raw fan activity to creators. Anonymous listening remains
+available through playback, but anonymous history and resume state stay device-local and are not
+persisted by this service. *Actors:* Fan. *Surfaces:* global web player, Recently Played, podcast
+Continue Listening, privacy settings. *Rationale:* establishes the behavioral foundation for later
+discovery and creator analytics while preserving financial and privacy boundaries.
+
+- **LLFR-ENGAGEMENT-01.1 — Start a session.** `POST /v1/me/listening-sessions` returns a server-issued
+  session ID. Auth: fan. A session belongs to exactly one account and cannot be read or updated by a
+  different account.
+- **LLFR-ENGAGEMENT-01.2 — Ingest monotonic checkpoints.** An authenticated client records `start`,
+  `qualified-play`, `progress`, `completion`, `skip`, or `repeat` checkpoints with content kind,
+  content ID, position, duration, and a session-local sequence. Repeating the same sequence is
+  idempotent; a lower sequence cannot overwrite newer progress or inflate aggregates. Invalid content,
+  impossible positions, and cross-account sessions are rejected. Checkpoint ingestion never calls
+  `RecordPlay` and never writes `play_event`.
+- **LLFR-ENGAGEMENT-01.3 — Personal listening reads.** Authenticated fans can page Recently Played and
+  read podcast Continue Listening. Recently Played is ordered by the latest accepted meaningful
+  activity and de-duplicates repeated content. Podcast resume returns the latest meaningful position,
+  excluding completed or near-start episodes.
+- **LLFR-ENGAGEMENT-01.4 — Privacy controls.** Fans can clear their engagement history and disable
+  future server-side history. Disabling history prevents new durable checkpoints and removes derived
+  personal resume/history state; playback and financial play counting continue under their separate
+  policies. Creators and admins receive aggregates only, never raw per-account listening history.
+- **LLFR-ENGAGEMENT-01.5 — Privacy-safe aggregates.** Accepted checkpoints update idempotent daily
+  content aggregates for starts, qualified plays, completions, skips, repeats, and listened duration.
+  Aggregates contain no account identifier and cannot be used as royalty or ownership evidence.
+
+### 6.3B Discovery (`discovery`)
+
+**Responsibilities:** chronological followed-content discovery and explainable, privacy-aware
+personal recommendations. Discovery consumes narrow input ports from authoritative modules and does
+not read their tables. It may store global publication projections, but not per-account feed or
+recommendation rows. **Input ports:** `GetFollowingFeed`, `GetPersonalizedRecommendations`.
+**Output ports:** `FollowingRelationships`, `FollowingFeedRepository`, `PersonalizationSignals`,
+`RecommendationContent`.
+
+**HLFR-DISCOVERY-01 — Followed-content feed.** Authenticated fans can read a chronological feed of
+published releases and podcast episodes from artists and shows they follow without exposing follow
+relationships or materializing a private feed per fan.
+
+- **LLFR-DISCOVERY-01.1 — Chronological Following feed.** `GET /v1/me/following` returns a cursor-page
+  of global publication snapshots filtered by the JWT subject's current artist and show follows.
+- **LLFR-DISCOVERY-01.2 — Durable publication projection.** Release and episode publication events
+  idempotently update a global discovery projection; retry does not duplicate items.
+
+**HLFR-DISCOVERY-02 — Explainable personalized discovery.** Authenticated fans receive a bounded mix
+of singles, albums, EPs, and podcast shows based on their explicit library and optional listening
+history, without changing the meaning of public Trending or chronological Following.
+
+- **LLFR-DISCOVERY-02.1 — Mixed-media recommendation read.**
+  `GET /v1/me/recommendations?limit=` returns up to 24 deduplicated single, album, EP, and podcast
+  show cards; excludes owned singles, fully owned releases, and recently completed tracks; and
+  reserves space for every available type. Each card includes a user-facing reason but no score or
+  raw private signal.
+- **LLFR-DISCOVERY-02.2 — Privacy and degradation.** History opt-out prevents history-derived ranking
+  signals. Missing history or one unavailable candidate source degrades to explicit library signals
+  and bounded popularity/freshness fallback; recommendation failure cannot affect playback,
+  publication, purchases, `/home`, or `/following`.
+
+**HLFR-DISCOVERY-03 — Recommendation control and attribution.** Authenticated fans can remove
+unwanted recommendations and BeatzClik can measure privacy-safe recommendation outcomes without
+persisting complete ranked feeds or exposing raw account activity to creators.
+
+- **LLFR-DISCOVERY-03.1 — Explicit recommendation suppression.** A fan can suppress one recommended
+  content item or its artist/podcast source and Undo the preference. Filtering occurs before ranking
+  and content-type reservation. Source suppression affects recommendations only.
+- **LLFR-DISCOVERY-03.2 — Idempotent attribution.** Recommendation cards carry an opaque,
+  account-bound identity, ranking version, and position. Impression/open events are idempotent, and
+  matching engagement checkpoints may add start, qualified-play, and completion outcomes without
+  making playback depend on Discovery availability.
+- **LLFR-DISCOVERY-03.3 — Retention and privacy.** Raw attribution/event facts expire after 90 days.
+  Explicit suppressions remain until Undo or account deletion and are independent of listening
+  history opt-out. Scores, raw ranking signals, IP addresses, and device fingerprints are not stored.
+
 ### 6.4 Library & Collection (`library`)
 
 **Responsibilities:** per-user likes, follows (artists, playlists, shows), saved albums, user-created
@@ -1067,6 +1154,7 @@ unit IDs `WU-*` are defined in §8.)
 | HLFR-CATALOG-01 | Public catalog | 01.1–01.7 | WU-CAT-1, WU-CAT-2 | catalog | §3 `/home`,`/search`,`/artists*`,`/albums*`,`/tracks*`,`/playlists*` |
 | HLFR-CATALOG-02 | Release lifecycle | 02.1–02.5 | WU-CAT-3, WU-CAT-4, WU-MED-1 | catalog | §11 `/studio/releases*` |
 | HLFR-PLAYBACK-01 | Ownership-aware streaming | 01.1–01.2 | WU-PLY-1 | playback | §4 `/tracks/:id/stream`,`/play` |
+| HLFR-ENGAGEMENT-01 | Listening history, resume & aggregates | 01.1–01.5 | WU-ENG-1 | engagement | Proposed `/me/listening-sessions*`,`/me/listening/recent`,`/me/listening/continue`,`/me/listening/settings` |
 | HLFR-LIBRARY-01 | Collection mgmt | 01.1–01.6 | WU-LIB-1 | library | §5 `/me/collection`,`/me/likes*`,`/me/follows*`,`/me/saved*`,`/me/playlists*`,`/me/owned` |
 | HLFR-COMMERCE-01 | Cart | 01.1–01.3 | WU-COM-1 | commerce | §6 `/me/cart*` |
 | HLFR-COMMERCE-02 | Checkout & ownership | 02.1–02.5 | WU-COM-2, WU-PAY-1 | commerce | §6 `/checkout`,`/me/orders` |
@@ -1128,6 +1216,7 @@ effects are involved.
 | **WU-CAT-3** | Release wizard submit + manage + track upload (CATALOG-02.1–02.4) | release ports; catalog repo; MediaService | release, release_track, split_entry | WU-CAT-1, WU-MED-1, WU-IDN-3 |
 | **WU-CAT-4** | Release state machine + scheduled go-live (CATALOG-02.5, PLATFORM-01.2) | release domain; scheduler | release | WU-CAT-3, WU-PLT-2 |
 | **WU-PLY-1** | Stream URL (ownership-aware) + record play (PLAYBACK-01.*) | GetStreamUrl/RecordPlay; MediaService; OwnershipReader | play_event | WU-MED-1, WU-CAT-1, WU-COM-2 |
+| **WU-ENG-1** | Authenticated listening sessions, monotonic checkpoint ingestion, Recently Played, podcast resume, history privacy controls, and non-financial aggregates (ENGAGEMENT-01.*) | engagement ports/repo; CatalogReader; PodcastReader | listening_session, listening_checkpoint, listening_progress, listening_preference, engagement_daily_rollup | WU-PLY-1, WU-IDN-1, WU-POD-1, WU-PLT-1 |
 | **WU-LIB-1** | Collection: likes/follows/saved/user playlists/owned (LIBRARY-01.*) | collection ports; collection repo; OwnershipReader | liked_track, followed_*, saved_album, user_playlist* | WU-IDN-1, WU-CAT-1 |
 | **WU-COM-1** | Cart with stackability + totals (COMMERCE-01.*) | cart ports; cart repo; PricingService | cart, cart_item | WU-PLT-1, WU-CAT-1 |
 | **WU-PAY-1** | PaymentIntent + InitiateCharge + idempotency (PAYMENTS-01.1) | PaymentGateway port; payment repo | payment_intent | WU-PLT-1 |
@@ -1150,6 +1239,7 @@ effects are involved.
 | **WU-SRCH-1** | Search index lifecycle (SEARCH-01.*) | SearchIndex port (pg_trgm) | search docs | WU-CAT-1 |
 | **WU-ADM-1..8** | Admin overview/health, users, catalog/queue moderation, editorial, risk, support, compliance, settings (ADMIN-01..10) | admin ports; readers; AuditWriter | moderation_case, risk_signal, support_*, compliance_request, featured_slot, push_item, curated_playlist | WU-IDN-4, WU-AUD-1, relevant domain WUs |
 | **WU-PLT-2** | Scheduler infrastructure + job registration (PLATFORM-01.2) | quarkus-scheduler | (n/a) | WU-PLT-1 |
+| **WU-EXT-1..9** | Provider selection, Redde pinning, MEGA S4, Resend, FROG, hosted card checkout, and release validation (EXT-01..05) | See [phase 5 work-unit plan](docs/plans/provider-integrations/implementation-plan.md) | provider_selection, payment_intent, payout_txn, media_asset, delivery_attempt, external object stores | WU-PLT-1, WU-AUD-1, WU-ADM-8, WU-PAY-7, WU-MED-2, WU-NOT-2, WU-IDN-2, WU-COM-2; per-WU edges in backlog |
 
 ### 8.1 Sequencing / dependency graph (valid build order)
 
@@ -1164,6 +1254,9 @@ WU-CAT-2 ; WU-CAT-3 → WU-CAT-4 ; WU-LIB-1.
 **Phase 3 (money completion):** WU-PAY-4 (payouts/KYC) ; WU-PAY-5 (refunds/disputes).
 **Phase 4 (surfaces & proposals):** WU-STO-1, WU-POD-1 → WU-POD-2, WU-EVT-1, WU-NOT-1 → WU-NOT-2,
 WU-STU-1..4, WU-ANA-1 → WU-STU-3, WU-ADM-1..8.
+**Phase 5 (provider integrations):** WU-EXT-1 → WU-EXT-2/3/5/7; WU-EXT-3 → WU-EXT-4;
+WU-EXT-5 → WU-EXT-6; WU-EXT-2 → WU-EXT-8; WU-EXT-2/4/6/7/8 → WU-EXT-9.
+**Phase 6 (web listening and engagement):** WU-ENG-1 (after playback, identity, podcasts, and platform).
 
 The strict rules the graph encodes: **identity + persistence foundations before commerce; payment
 charging before ledger; ledger before payouts; checkout/ownership before playback unlock and before
@@ -1269,6 +1362,10 @@ Dependency-ordered phases (detail in §8.1):
    (in-app + email/SMS), studio profile/podcasts/insights/settings, full admin console, analytics
    rollups, search reindex. *Exit:* the frontend runs against the API with all mocks removed and **no
    visual change**; full audit coverage.
+6. **Phase 5 — Provider integrations.** Add runtime provider selection and per-operation vendor
+   pinning, MEGA S4 object storage and migration, Resend email, FROG SMS, Redde switch safety and
+   hosted-card client completion. *Exit:* all six acceptance scenarios in §13 pass; the production
+   activation runbook contains merchant-sandbox evidence and a tested rollback path.
 
 ---
 
@@ -1306,3 +1403,33 @@ Each carries a recommended default so no work unit is blocked; revisit before th
   reserve on checkout-initiate with a short TTL hold (revisit before WU-EVT/COM).
 - **OQ-12 — Search backend.** Postgres FTS/`pg_trgm` vs OpenSearch. *Default:* Postgres `pg_trgm` for
   v1 behind the `SearchIndex` port; swap to OpenSearch when scale demands, no contract change.
+
+---
+
+## 13. Provider integrations — Phase 5
+
+**Decision:** An operator selects the provider for new work. Payment intents, payout transactions,
+notification delivery attempts, and media assets record their selected provider. Subsequent retries,
+callbacks, status checks, and reads continue through the recorded provider. Deactivating a provider
+blocks new work; it does not abandon work already accepted. In production, payment `disabled` rejects
+new charges and payouts rather than silently using the sandbox. This extends existing hexagonal ports
+and preserves all payment, ownership, preview, audit, and API-contract invariants.
+
+| Requirement | Scope | Work units |
+|---|---|---|
+| **HLFR-EXT-01 / LLFR-EXT-01.1–01.4** | Audited, validated, fail-closed provider selection for storage, payment, email, and SMS; selection pinned when an operation is created. | WU-EXT-1, WU-EXT-2 |
+| **HLFR-EXT-02 / LLFR-EXT-02.1–02.4** | MEGA S4 compatibility, private originals and delivery, per-asset store identity, verified copy and rollback. | WU-EXT-3, WU-EXT-4 |
+| **HLFR-EXT-03 / LLFR-EXT-03.1–03.3** | Resend transactional notifications and password resets, stable idempotency, optional verified delivery webhooks. | WU-EXT-5, WU-EXT-6 |
+| **HLFR-EXT-04 / LLFR-EXT-04.1–04.3** | FROG SMS request format, stable message ID, accepted-versus-delivered state and callback trust. | WU-EXT-7 |
+| **HLFR-EXT-05 / LLFR-EXT-05.1–05.4** | Redde gateway pinning for charges/payouts, disabled state, trusted settlement, hosted card client flow. | WU-EXT-2, WU-EXT-8 |
+
+Detailed acceptance criteria, negative cases, nonfunctional requirements, and provider-documentation
+status: [requirements](docs/plans/provider-integrations/requirements.md). Design, schema and rollback:
+[architecture](docs/plans/provider-integrations/architecture.md). Agent-ready dependency graph,
+file links, tests, and per-WU Definition of Done: [implementation plan](docs/plans/provider-integrations/implementation-plan.md).
+
+The merchant credentials, MEGA S4 endpoint/buckets, verified Resend sending domain, FROG approved
+sender and callback security, and Redde live callback/rail validation are **production activation
+inputs**. Agents can implement ports, adapters, migrations, and tests with local fakes or sandbox
+accounts before those inputs are supplied. They must not mark real-provider activation verified solely
+from mocks or guess ambiguous historical provider identities.

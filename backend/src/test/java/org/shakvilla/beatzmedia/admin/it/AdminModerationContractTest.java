@@ -28,6 +28,7 @@ import org.shakvilla.beatzmedia.admin.application.port.in.ModerationSummaryView;
  * </pre>
  */
 @Tag("unit")
+@Tag("contract")
 class AdminModerationContractTest {
 
   private static final Instant NOW = Instant.parse("2026-07-11T10:00:00Z");

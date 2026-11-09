@@ -1,5 +1,7 @@
 package org.shakvilla.beatzmedia.media.application.service;
 
+import java.nio.charset.StandardCharsets;
+
 import jakarta.enterprise.context.ApplicationScoped;
 
 import org.shakvilla.beatzmedia.media.domain.AudioFormat;
@@ -38,18 +40,19 @@ public class MagicByteValidator {
   private static final byte[] JPEG_MAGIC = {(byte) 0xFF, (byte) 0xD8, (byte) 0xFF};
 
   private static final int PROBE_BYTES = 12;
+  private static final byte[] MP4_FTYP = {0x66, 0x74, 0x79, 0x70}; // "ftyp" at offset 4
 
   /**
    * Detect the audio format from the first bytes of the file.
    *
    * @param header at least 12 bytes from the start of the file
    * @return the detected {@link AudioFormat}
-   * @throws UnsupportedFormatException if the magic bytes match none of WAV, FLAC or MP3
+   * @throws UnsupportedFormatException if the magic bytes match no supported audio format
    */
   public AudioFormat detectAudioFormat(byte[] header) {
     if (header == null || header.length < PROBE_BYTES) {
       throw new UnsupportedFormatException(
-          "File too short to detect format; expected WAV, FLAC or MP3 audio");
+          "File too short to detect format; expected WAV, FLAC, MP3 or M4A audio");
     }
     if (matchesAt(header, 0, WAV_RIFF) && matchesAt(header, 8, WAV_WAVE)) {
       return AudioFormat.WAV;
@@ -57,13 +60,28 @@ public class MagicByteValidator {
     if (matchesAt(header, 0, FLAC_MAGIC)) {
       return AudioFormat.FLAC;
     }
+    // M4A is an ISO BMFF container. Encoders use many major brands, including newer ISO brands,
+    // so a five-brand allowlist wrongly rejects valid audio. Check the box structure here; the
+    // existing ffmpeg stage verifies that the complete file contains decodable audio.
+    long boxSize = ((long) (header[0] & 0xFF) << 24)
+        | ((long) (header[1] & 0xFF) << 16)
+        | ((long) (header[2] & 0xFF) << 8)
+        | (header[3] & 0xFF);
+    String majorBrand = new String(header, 8, 4, StandardCharsets.US_ASCII);
+    if (matchesAt(header, 4, MP4_FTYP)
+        && boxSize >= 16
+        && majorBrand.chars().allMatch(c -> c >= 0x20 && c <= 0x7E)
+        && !majorBrand.equals("M4P ")
+        && !majorBrand.equals("M4V ")) {
+      return AudioFormat.M4A;
+    }
     // Checked last: the frame-sync pattern is only 11 bits, so it is the loosest signature here
     // and must never get the chance to shadow a container with a real magic number.
     if (matchesAt(header, 0, ID3_MAGIC) || isMpegFrameSync(header)) {
       return AudioFormat.MP3;
     }
     throw new UnsupportedFormatException(
-        "Unsupported audio format — only WAV, FLAC and MP3 are accepted");
+        "Unsupported audio format — only WAV, FLAC, MP3 and M4A are accepted");
   }
 
   /**

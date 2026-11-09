@@ -40,7 +40,7 @@ import org.shakvilla.beatzmedia.admin.application.port.in.RiskActions;
 @Path("/v1/admin/risk")
 @Produces(MediaType.APPLICATION_JSON)
 @RolesAllowed({"moderator", "super-admin"})
-@Tag(name = "admin-risk")
+@Tag(name = "Administrator Management")
 @SecurityRequirement(name = "BearerAuth")
 public class AdminRiskResource {
 

@@ -17,6 +17,7 @@ import jakarta.ws.rs.GET;
 import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.PATCH;
 import jakarta.ws.rs.POST;
+import jakarta.ws.rs.PUT;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.PathParam;
 import jakarta.ws.rs.Produces;
@@ -33,10 +34,17 @@ import org.shakvilla.beatzmedia.catalog.application.port.in.DeleteRelease;
 import org.shakvilla.beatzmedia.catalog.application.port.in.FinalizeRelease;
 import org.shakvilla.beatzmedia.catalog.application.port.in.GetRelease;
 import org.shakvilla.beatzmedia.catalog.application.port.in.ListStudioReleases;
+import org.shakvilla.beatzmedia.catalog.application.port.in.LyricLineView;
+import org.shakvilla.beatzmedia.catalog.application.port.in.LyricsView;
+import org.shakvilla.beatzmedia.catalog.application.port.in.ManageReleaseRevision;
+import org.shakvilla.beatzmedia.catalog.application.port.in.ManageReleaseRevision.EditCommand;
+import org.shakvilla.beatzmedia.catalog.application.port.in.ManageReleaseRevision.TrackEdit;
+import org.shakvilla.beatzmedia.catalog.application.port.in.ManageTrackLyrics;
 import org.shakvilla.beatzmedia.catalog.application.port.in.PageView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.RemoveReleaseTrack;
 import org.shakvilla.beatzmedia.catalog.application.port.in.ResendSplitInvites;
 import org.shakvilla.beatzmedia.catalog.application.port.in.SetReleaseCover;
+import org.shakvilla.beatzmedia.catalog.application.port.in.SetReleaseTrackCover;
 import org.shakvilla.beatzmedia.catalog.application.port.in.StudioReleaseDetailView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.StudioReleaseView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.UpdateRelease;
@@ -46,6 +54,7 @@ import org.shakvilla.beatzmedia.catalog.application.port.in.UploadReleaseTrack;
 import org.shakvilla.beatzmedia.catalog.application.port.in.UploadReleaseTrack.AudioUpload;
 import org.shakvilla.beatzmedia.catalog.application.port.in.UploadedTrackView;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
+import org.shakvilla.beatzmedia.catalog.domain.LyricLine;
 import org.shakvilla.beatzmedia.catalog.domain.MissingIdempotencyKeyException;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
@@ -65,7 +74,7 @@ import org.shakvilla.beatzmedia.platform.domain.ValidationException;
  *   <li>GET /v1/studio/releases/:id — get one release (detail view)
  *   <li>PATCH /v1/studio/releases/:id — update draft metadata + track list
  *   <li>DELETE /v1/studio/releases/:id — delete draft/in_review
- *   <li>POST /v1/studio/releases/:id/tracks — multipart WAV/FLAC upload, attaches to the draft
+ *   <li>POST /v1/studio/releases/:id/tracks — multipart WAV/FLAC/MP3/M4A upload, attaches to the draft
  *   <li>DELETE /v1/studio/releases/:id/tracks/:trackId — remove a draft track
  *   <li>POST /v1/studio/releases/:id/submit — finalize draft -> in_review (Idempotency-Key
  *       required)
@@ -83,9 +92,12 @@ public class StudioReleaseResource {
   private final DeleteRelease deleteRelease;
   private final UploadReleaseTrack uploadReleaseTrack;
   private final SetReleaseCover setReleaseCover;
+  private final SetReleaseTrackCover setReleaseTrackCover;
   private final RemoveReleaseTrack removeReleaseTrack;
   private final FinalizeRelease finalizeRelease;
   private final ResendSplitInvites resendSplitInvites;
+  private final ManageReleaseRevision manageRevision;
+  private final ManageTrackLyrics manageTrackLyrics;
   private final JsonWebToken jwt;
 
   @Inject
@@ -97,9 +109,12 @@ public class StudioReleaseResource {
       DeleteRelease deleteRelease,
       UploadReleaseTrack uploadReleaseTrack,
       SetReleaseCover setReleaseCover,
+      SetReleaseTrackCover setReleaseTrackCover,
       RemoveReleaseTrack removeReleaseTrack,
       FinalizeRelease finalizeRelease,
       ResendSplitInvites resendSplitInvites,
+      ManageReleaseRevision manageRevision,
+      ManageTrackLyrics manageTrackLyrics,
       JsonWebToken jwt) {
     this.listStudioReleases = listStudioReleases;
     this.createReleaseDraft = createReleaseDraft;
@@ -108,9 +123,12 @@ public class StudioReleaseResource {
     this.deleteRelease = deleteRelease;
     this.uploadReleaseTrack = uploadReleaseTrack;
     this.setReleaseCover = setReleaseCover;
+    this.setReleaseTrackCover = setReleaseTrackCover;
     this.removeReleaseTrack = removeReleaseTrack;
     this.finalizeRelease = finalizeRelease;
     this.resendSplitInvites = resendSplitInvites;
+    this.manageRevision = manageRevision;
+    this.manageTrackLyrics = manageTrackLyrics;
     this.jwt = jwt;
   }
 
@@ -141,7 +159,8 @@ public class StudioReleaseResource {
         body.scheduledAt() != null ? java.time.Instant.parse(body.scheduledAt()) : null,
         body.genre(),
         body.description(),
-        body.downloadable());
+        body.downloadable(),
+        body.originCountry());
     StudioReleaseDetailView view = createReleaseDraft.create(cmd);
     return Response.status(Response.Status.CREATED).entity(view).build();
   }
@@ -181,7 +200,8 @@ public class StudioReleaseResource {
                             .toList()))
                 .toList()
             : null,
-        body.downloadable());
+        body.downloadable(),
+        body.originCountry());
     return updateRelease.update(new ReleaseId(id), artistId(), cmd);
   }
 
@@ -194,7 +214,7 @@ public class StudioReleaseResource {
   }
 
   /**
-   * POST /v1/studio/releases/:id/tracks — LLFR-CATALOG-02.4. Accepts multipart WAV/FLAC. Returns
+   * POST /v1/studio/releases/:id/tracks — LLFR-CATALOG-02.4. Accepts multipart WAV/FLAC/MP3/M4A. Returns
    * 201 UploadedTrackView.
    */
   @POST
@@ -266,6 +286,162 @@ public class StudioReleaseResource {
     }
   }
 
+  /** POST /v1/studio/releases/:id/tracks/:trackId/cover — multipart {@code image} part. */
+  @POST
+  @Path("/{id}/tracks/{trackId}/cover")
+  @Consumes(MediaType.MULTIPART_FORM_DATA)
+  public Response setTrackCover(
+      @PathParam("id") String releaseId,
+      @PathParam("trackId") String trackId,
+      @MultipartForm ReleaseCoverForm form) {
+    if (form == null || form.image == null) {
+      throw new ValidationException("'image' file part is required", "image");
+    }
+    FileUpload file = form.image;
+    try (InputStream body = java.nio.file.Files.newInputStream(file.uploadedFile())) {
+      MessageDigest digest = MessageDigest.getInstance("SHA-256");
+      DigestInputStream digestBody = new DigestInputStream(body, digest);
+      byte[] buf = new byte[8192];
+      //noinspection StatementWithEmptyBody
+      while (digestBody.read(buf) != -1) {}
+      String contentHash = bytesToHex(digest.digest());
+      try (InputStream uploadBody = java.nio.file.Files.newInputStream(file.uploadedFile())) {
+        String url = setReleaseTrackCover.setCover(
+            artistId(),
+            new ReleaseId(releaseId),
+            new TrackId(trackId),
+            new SetReleaseTrackCover.ImageUpload(
+                file.fileName(), file.contentType(), file.size(), uploadBody, contentHash));
+        return Response.ok(java.util.Map.of("image", url)).build();
+      }
+    } catch (IOException | NoSuchAlgorithmException e) {
+      throw new RuntimeException("Failed to read uploaded track artwork", e);
+    }
+  }
+
+  /** GET /v1/studio/releases/:id/revision — active snapshot plus any saved revision. */
+  @GET
+  @Path("/{id}/revision")
+  public org.shakvilla.beatzmedia.catalog.domain.ReleaseRevision getRevision(@PathParam("id") String id) {
+    return manageRevision.get(new ReleaseId(id), artistId());
+  }
+
+  /** PUT /v1/studio/releases/:id/revision — save proposed live/scheduled release edits. */
+  @PUT
+  @Path("/{id}/revision")
+  @Consumes(MediaType.APPLICATION_JSON)
+  public org.shakvilla.beatzmedia.catalog.domain.ReleaseRevision saveRevision(
+      @PathParam("id") String id, RevisionBody body) {
+    return manageRevision.save(new ReleaseId(id), artistId(), new EditCommand(
+        body.title(), body.genre(), body.description(), body.visibility(),
+        body.scheduledAt() != null ? java.time.Instant.parse(body.scheduledAt()) : null,
+        body.coverImage(), body.downloadable(), body.tracks().stream()
+            .map(t -> new TrackEdit(t.trackId(), t.position(), t.priceMinor(), t.title(), t.image()))
+            .toList()));
+  }
+
+  /** POST /v1/studio/releases/:id/revision/submit — place the saved live edit in moderation. */
+  @POST
+  @Path("/{id}/revision/submit")
+  public org.shakvilla.beatzmedia.catalog.domain.ReleaseRevision submitRevision(@PathParam("id") String id) {
+    return manageRevision.submit(new ReleaseId(id), artistId());
+  }
+
+  /** POST /v1/studio/releases/:id/revision/cover — stage a release cover without changing live art. */
+  @POST
+  @Path("/{id}/revision/cover")
+  @Consumes(MediaType.MULTIPART_FORM_DATA)
+  public Response uploadRevisionCover(@PathParam("id") String id, @MultipartForm ReleaseCoverForm form) {
+    if (form == null || form.image == null) throw new ValidationException("'image' file part is required", "image");
+    FileUpload file = form.image;
+    try {
+      String contentHash = fileHash(file);
+      String url = manageRevision.uploadReleaseArtwork(new ReleaseId(id), artistId(),
+          new ManageReleaseRevision.ImageUpload(file.fileName(), file.contentType(), file.size(),
+              java.nio.file.Files.newInputStream(file.uploadedFile()), contentHash));
+      return Response.ok(java.util.Map.of("image", url)).build();
+    } catch (IOException | NoSuchAlgorithmException e) {
+      throw new RuntimeException("Failed to read revision cover upload", e);
+    }
+  }
+
+  /** POST /v1/studio/releases/:id/revision/tracks/:trackId/cover — stage track artwork. */
+  @POST
+  @Path("/{id}/revision/tracks/{trackId}/cover")
+  @Consumes(MediaType.MULTIPART_FORM_DATA)
+  public Response uploadRevisionTrackCover(
+      @PathParam("id") String id, @PathParam("trackId") String trackId,
+      @MultipartForm ReleaseCoverForm form) {
+    if (form == null || form.image == null) throw new ValidationException("'image' file part is required", "image");
+    FileUpload file = form.image;
+    try {
+      String contentHash = fileHash(file);
+      String url = manageRevision.uploadArtwork(new ReleaseId(id), artistId(), new TrackId(trackId),
+          new ManageReleaseRevision.ImageUpload(file.fileName(), file.contentType(), file.size(),
+              java.nio.file.Files.newInputStream(file.uploadedFile()), contentHash));
+      return Response.ok(java.util.Map.of("image", url)).build();
+    } catch (IOException | NoSuchAlgorithmException e) {
+      throw new RuntimeException("Failed to read revision track artwork upload", e);
+    }
+  }
+
+  /** POST /v1/studio/releases/:id/revision/tracks/:trackId/audio — stage replacement audio. */
+  @POST
+  @Path("/{id}/revision/tracks/{trackId}/audio")
+  @Consumes(MediaType.MULTIPART_FORM_DATA)
+  public Response uploadRevisionTrackAudio(
+      @PathParam("id") String id, @PathParam("trackId") String trackId,
+      @MultipartForm TrackUploadForm form) {
+    if (form == null || form.file() == null) throw new ValidationException("'file' part is required", "file");
+    FileUpload file = form.file();
+    try {
+      String contentHash = fileHash(file);
+      manageRevision.uploadAudio(new ReleaseId(id), artistId(), new TrackId(trackId),
+          new ManageReleaseRevision.AudioUpload(file.fileName(), file.contentType(), file.size(),
+              java.nio.file.Files.newInputStream(file.uploadedFile()), contentHash));
+      return Response.accepted(java.util.Map.of("status", "processing")).build();
+    } catch (IOException | NoSuchAlgorithmException e) {
+      throw new RuntimeException("Failed to read revision audio upload", e);
+    }
+  }
+
+  /** GET /v1/studio/releases/:id/tracks/:trackId/lyrics — read artist-owned lyrics. */
+  @GET
+  @Path("/{id}/tracks/{trackId}/lyrics")
+  public LyricsView getStudioTrackLyrics(
+      @PathParam("id") String releaseId,
+      @PathParam("trackId") String trackId) {
+    List<LyricLine> lines = manageTrackLyrics.get(new ReleaseId(releaseId), new TrackId(trackId), artistId());
+    return new LyricsView(lines.stream().map(line -> new LyricLineView(line.tSec(), line.text())).toList());
+  }
+
+  /** PUT /v1/studio/releases/:id/tracks/:trackId/lyrics — publish lyrics immediately. */
+  @PUT
+  @Path("/{id}/tracks/{trackId}/lyrics")
+  @Consumes(MediaType.APPLICATION_JSON)
+  public Response saveTrackLyrics(
+      @PathParam("id") String releaseId,
+      @PathParam("trackId") String trackId,
+      SaveTrackLyricsBody body) {
+    if (body == null || body.lines() == null) {
+      throw new ValidationException("'lines' is required", "lines");
+    }
+    manageTrackLyrics.save(
+        new ReleaseId(releaseId), new TrackId(trackId), artistId(),
+        body.lines().stream().map(line -> new LyricLine(line.time(), line.text())).toList());
+    return Response.noContent().build();
+  }
+
+  private static String fileHash(FileUpload file) throws IOException, NoSuchAlgorithmException {
+    MessageDigest digest = MessageDigest.getInstance("SHA-256");
+    try (InputStream input = java.nio.file.Files.newInputStream(file.uploadedFile());
+         DigestInputStream digestInput = new DigestInputStream(input, digest)) {
+      byte[] buffer = new byte[8192];
+      while (digestInput.read(buffer) != -1) {}
+    }
+    return bytesToHex(digest.digest());
+  }
+
   /**
    * DELETE /v1/studio/releases/:id/tracks/:trackId — WU-CAT-5. Draft-only (409
    * ILLEGAL_TRANSITION otherwise); unknown track → 404 TRACK_NOT_FOUND.
@@ -327,7 +503,8 @@ public class StudioReleaseResource {
       String scheduledAt,
       String genre,
       String description,
-      Boolean downloadable) {}
+      Boolean downloadable,
+      String originCountry) {}
 
   public record UpdateReleaseBody(
       String title,
@@ -336,7 +513,8 @@ public class StudioReleaseResource {
       String visibility,
       String scheduledAt,
       @jakarta.validation.Valid List<TrackRefBody> tracks,
-      Boolean downloadable) {}
+      Boolean downloadable,
+      String originCountry) {}
 
   public record TrackRefBody(
       String trackId, int position, long priceMinor,
@@ -345,4 +523,14 @@ public class StudioReleaseResource {
   public record SplitRefBody(
       String name, String email, String role,
       @jakarta.validation.constraints.Min(0) @jakarta.validation.constraints.Max(100) int percent) {}
+
+  public record RevisionBody(
+      String title, String genre, String description, String visibility, String scheduledAt,
+      String coverImage, Boolean downloadable, @jakarta.validation.Valid List<RevisionTrackBody> tracks) {}
+
+  public record RevisionTrackBody(String trackId, int position, long priceMinor, String title, String image) {}
+
+  public record SaveTrackLyricsBody(List<LyricLineBody> lines) {}
+
+  public record LyricLineBody(java.math.BigDecimal time, String text) {}
 }

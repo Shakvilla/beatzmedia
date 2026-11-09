@@ -3,7 +3,7 @@ package org.shakvilla.beatzmedia.catalog.domain;
 import java.util.List;
 
 /**
- * Timed lyrics for a track. Entity; one-to-zero/one with Track. Catalog ADD §3 /
+ * Plain or time-synced lyrics for a track. Entity; one-to-zero/one with Track. Catalog ADD §3 /
  * LLFR-CATALOG-01.6. Domain-layer; no framework imports.
  */
 public final class Lyrics {

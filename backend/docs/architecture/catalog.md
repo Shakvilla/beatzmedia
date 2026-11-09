@@ -66,7 +66,10 @@ itself — `admin` calls `PublishRelease` in-process via its own `CatalogAdminPo
 (admin ADD §4.3/§13); `catalog` requires no admin scope of its own any more since it no longer
 serves that REST surface. **Persistence is never shared**: `catalog`
 reads/writes only its own tables; other modules reference its rows by id. **Events published:**
-`ReleaseApproved`, `ReleaseWentLive`, `ContentTakenDown` (after-commit, ids + minimal snapshot).
+`ReleaseApproved` and `ContentTakenDown` remain local after-commit CDI events. Live-bound
+transitions atomically append durable `catalog.release-went-live` v1; the five-second platform
+outbox dispatcher is the sole emitter of `ReleaseWentLive` for album, pricing, and search
+projections.
 
 ## 3. Domain model
 
@@ -78,11 +81,11 @@ reads/writes only its own tables; other modules reference its rows by id. **Even
 | `ReleaseTrack` | Entity (in Release) | `trackId`, `position`, `priceMinor` | Ordered constituents; price feeds bundle math. |
 | `SplitEntry` | Value object | `id`, `trackId`, `name`, `email`, `role`, `percent`, `confirmation` | Per-track royalty split of the **creator pool**; INV-12. |
 | `ReleaseDraft` | Entity | `id`, `artistId`, JSON draft state, `updatedAt` | Server-persisted wizard draft (hydrates the client). |
-| `Track` | Aggregate root | `id`, `title`, `artistId`, `albumId?`, `durationSec`, `ownership`, `priceMinor?`, `plays`, `quality`, `year`, `releaseId?`, `status` | `ownership`/`price` decorated per-caller at the boundary. |
+| `Track` | Aggregate root | `id`, `title`, `artistId`, `albumId?`, `durationSec`, `ownership`, `priceMinor?`, `plays`, `quality`, `year`, `releaseId?`, `status` | `ownership`/`price` decorated per-caller at the boundary; `releasedAt` is read from its live release. |
 | `TrackCredit` | Value object | `role`, `names[]` | Track detail credits. |
 | `Album` | Aggregate root | `id`, `title`, `artistId`, `artistName`, `year`, `coverImage`, `trackIds[]` | List price derived via INV-5 from constituent tracks. **Projected from a live release** — see below. |
 | `Lyrics` | Entity | `trackId`, `lines: LyricLine[]` | One-to-zero/one with Track. |
-| `LyricLine` | Value object | `tSec`, `text` | Time in **whole seconds** (frontend formats). |
+| `LyricLine` | Value object | `tSec?`, `text` | Null time is plain text; otherwise time is seconds with millisecond precision. Artist saves publish immediately. |
 | `ArtistProfile` | Aggregate root | `id`, `name`, `image`, `coverImage?`, `verified`, `monthlyListeners`, `followers`, `bio`, `location`, `genres[]`, `shows[]` | Public artist page + sub-collections. |
 | `Show` | Value object | `date`, `city`, `venue` | ISO date; surfaced on artist page. |
 | `Playlist` | Aggregate root | `id`, `title`, `description?`, `creator`, `image`, `isPublic`, `followers`, `trackIds[]` | Editorial/public; private hidden as 404 to non-owner. |
@@ -208,7 +211,8 @@ erDiagram
   }
   LYRIC_LINE {
     string track_id FK
-    int t_sec
+    int position
+    decimal t_sec "nullable, scale 3"
     string text
   }
   PLAYLIST {
@@ -357,10 +361,10 @@ note and admin ADD §15; `super-admin`/`moderator` write, `support` read),
 idempotent; `FinalizeRelease` (`POST .../submit`, WU-CAT-5 — supersedes the retired `SubmitRelease`)
 is keyed by `Idempotency-Key`; FSM transitions are guard-idempotent
 (re-issuing a settled transition throws `IllegalTransitionException` → 409 `ILLEGAL_TRANSITION`
-rather than repeating a side effect). **Emitted events** (CDI `Event<T>.fire()`, mirroring the
-`AccountRegistered` pattern — no separate `EventPublisher` port yet exists in the codebase):
-`FinalizeRelease` → none public; `APPROVE_*` → `ReleaseApproved`; `GO_LIVE`/immediate approve →
-`ReleaseWentLive`; `TAKEDOWN` → `ContentTakenDown`. **Audit (INV-10):** `PublishReleaseService`
+rather than repeating a side effect). **Emitted events:** `FinalizeRelease` → none public;
+`APPROVE_*` → local `ReleaseApproved`; `GO_LIVE`/immediate approve/reinstate → durable
+`catalog.release-went-live` v1; `TAKEDOWN` → local `ContentTakenDown`. The dispatcher later emits
+`ReleaseWentLive` as the sole projection trigger. **Audit (INV-10):** `PublishReleaseService`
 appends exactly one `AuditEntry` (type `MODERATION`) per admin-triggered transition
 (`APPROVE_SCHEDULED`, `APPROVE_IMMEDIATE`, `TAKEDOWN`, `REINSTATE`); `GO_LIVE` is system-initiated
 and does not audit (no admin actor).
@@ -434,7 +438,9 @@ role; public reads accept anonymous (token, if present, decorates `ownership`/`p
 | GET | `/artists/:id/shows` | public | — | `Show[]` | 200 | 404 `ARTIST_NOT_FOUND` | 01.4 |
 | GET | `/albums/:id?tracks=true` | public | `tracks` flag | `Album (+tracks)` | 200 | 404 `ALBUM_NOT_FOUND` | 01.5 |
 | GET | `/tracks/:id` | public | — | `Track` | 200 | 404 `TRACK_NOT_FOUND` | 01.6 |
-| GET | `/tracks/:id/lyrics` | public | — | `{ lines: {time,text}[] }` | 200 | 404 `LYRICS_NOT_FOUND` | 01.6 |
+| GET | `/tracks/:id/lyrics` | public | — | `{ lines: {time:number|null,text}[] }` | 200 | 404 `LYRICS_NOT_FOUND` | 01.6 |
+| GET | `/studio/releases/:id/tracks/:trackId/lyrics` | artist (owner) | — | `{ lines }` | 200 | 404 | — |
+| PUT | `/studio/releases/:id/tracks/:trackId/lyrics` | artist (owner) | `{ lines }` | — | 204 | 404/422 | — |
 | GET | `/playlists/:id` | public | — | `Playlist (+tracks)` | 200 | 404 (private→404) | 01.7 |
 | POST | `/catalog/resolve` | public | `ResolveCatalogRequest` | `ResolvedCatalogView` | 200 | 422 `VALIDATION` (over-cap) | — |
 
@@ -612,9 +618,10 @@ CREATE TABLE lyrics (
 );
 CREATE TABLE lyric_line (
   track_id         TEXT NOT NULL REFERENCES lyrics(track_id) ON DELETE CASCADE,
-  t_sec            INT  NOT NULL,
+  position         INT  NOT NULL,
+  t_sec            NUMERIC(12,3),
   text             TEXT NOT NULL,
-  PRIMARY KEY (track_id, t_sec)
+  PRIMARY KEY (track_id, position)
 );
 
 CREATE TABLE playlist (

@@ -1,7 +1,9 @@
 package org.shakvilla.beatzmedia.catalog.application.service;
 
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -13,6 +15,7 @@ import org.shakvilla.beatzmedia.catalog.application.port.in.GetHomeFeed;
 import org.shakvilla.beatzmedia.catalog.application.port.in.HomeFeedView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.PlaylistView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.TrackView;
+import org.shakvilla.beatzmedia.catalog.application.port.in.TrendingItemView;
 import org.shakvilla.beatzmedia.catalog.application.port.out.CatalogRepository;
 import org.shakvilla.beatzmedia.catalog.application.port.out.OwnershipReader;
 import org.shakvilla.beatzmedia.catalog.domain.Album;
@@ -44,8 +47,16 @@ public class GetHomeFeedService implements GetHomeFeed {
 
   @Override
   public HomeFeedView get(Optional<String> callerId) {
-    List<TrackView> trending = catalogRepository.trendingTracks(TRENDING_LIMIT).stream()
-        .map(t -> TrackMapper.toView(t, callerId, ownershipReader))
+    List<TrendingItemView> trending = Stream.concat(
+            catalogRepository.trendingSingles(TRENDING_LIMIT).stream()
+                .map(track -> TrendingItemView.track(
+                    TrackMapper.toView(track, callerId, ownershipReader))),
+            catalogRepository.trendingAlbums(TRENDING_LIMIT).stream()
+                .map(item -> TrendingItemView.album(
+                    item.type().name(), toAlbumView(item.album()), item.plays())))
+        .sorted(Comparator.comparingLong(TrendingItemView::plays).reversed()
+            .thenComparing(TrendingItemView::type))
+        .limit(TRENDING_LIMIT)
         .toList();
 
     List<TrackView> top10 = catalogRepository.top10Tracks(TOP10_LIMIT).stream()

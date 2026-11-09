@@ -25,6 +25,7 @@ public record StudioReleaseDetailView(
     String description,
     String visibility,
     String scheduledAt,
+    String coverImage,
     List<TrackDraftView> tracks,
     /**
      * Whether buyers may download this release's audio, straight from {@link
@@ -33,4 +34,5 @@ public record StudioReleaseDetailView(
      * track/album views, needs to tell "not chosen" apart from "chosen: no" to drive the
      * required-choice UI, so this is NOT coerced to {@code false}.
      */
-    Boolean downloadable) {}
+    Boolean downloadable,
+    String originCountry) {}

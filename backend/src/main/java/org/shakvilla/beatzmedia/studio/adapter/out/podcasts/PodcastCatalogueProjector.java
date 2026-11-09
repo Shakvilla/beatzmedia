@@ -19,10 +19,9 @@ import org.shakvilla.beatzmedia.studio.domain.PodcastShow;
  * <p><strong>Why this exists.</strong> Studio wrote {@code studio_podcast_show} /
  * {@code studio_episode} and nothing ever projected those into {@code podcast} /
  * {@code podcast_episode}, so a podcast created in the Studio was invisible to fans no matter how
- * many episodes went live. {@code EpisodePublished} was fired on both publish paths — publish-now in
- * {@code CreateEpisodeService} and the scheduled sweep in {@code RunEpisodeGoLiveSweepService} — and
- * had <em>no observers at all</em>, the same shape the audio upload was in before its projection was
- * added.
+ * many episodes went live. The durable dispatcher emits {@code EpisodePublished} for both
+ * publish-now and scheduled go-live messages; before the observer was added, those transitions had
+ * no path into the fan catalogue.
  *
  * <p><strong>Direction.</strong> studio → podcasts via {@link PublishPodcastEpisode}, an input port.
  * Studio reads only its own tables and hands across a complete command; podcasts owns the write and

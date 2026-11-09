@@ -44,7 +44,8 @@ public class GetNotificationContactService implements GetNotificationContact {
     // "Email-worthy" categories today: newReleases or playlistUpdates (ADD §7); dropsOffers is a
     // promotional-only opt-in and deliberately excluded from transactional dispatch.
     boolean emailOptIn = newReleases || playlistUpdates;
-    boolean smsOptIn = emailOptIn && phone != null && !phone.isBlank();
+    boolean smsOptIn = emailOptIn && settings != null && settings.isPhoneVerified()
+        && phone != null && !phone.isBlank();
 
     return new NotificationContactView(account.getEmail(), phone, emailOptIn, smsOptIn);
   }

@@ -12,6 +12,7 @@ import org.jboss.logging.Logger;
 import org.shakvilla.beatzmedia.analytics.application.port.out.ArtistResolver;
 import org.shakvilla.beatzmedia.analytics.application.port.out.PlayFactRepository;
 import org.shakvilla.beatzmedia.analytics.domain.PlayFact;
+import org.shakvilla.beatzmedia.catalog.application.port.in.IncrementTrackPlayCount;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
 import org.shakvilla.beatzmedia.catalog.domain.TrackId;
 import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
@@ -34,18 +35,26 @@ public class PlayRecordedObserver {
 
   private final PlayFactRepository playFacts;
   private final ArtistResolver artistResolver;
+  private final IncrementTrackPlayCount playCount;
   private final IdGenerator ids;
 
   @Inject
-  public PlayRecordedObserver(PlayFactRepository playFacts, ArtistResolver artistResolver, IdGenerator ids) {
+  public PlayRecordedObserver(
+      PlayFactRepository playFacts,
+      ArtistResolver artistResolver,
+      IncrementTrackPlayCount playCount,
+      IdGenerator ids) {
     this.playFacts = playFacts;
     this.artistResolver = artistResolver;
+    this.playCount = playCount;
     this.ids = ids;
   }
 
   @Transactional(Transactional.TxType.REQUIRES_NEW)
   public void onPlayRecorded(@Observes(during = TransactionPhase.AFTER_SUCCESS) PlayRecorded event) {
-    Optional<ArtistId> artist = artistResolver.artistOfTrack(new TrackId(event.trackId()));
+    TrackId trackId = new TrackId(event.trackId());
+    playCount.increment(trackId);
+    Optional<ArtistId> artist = artistResolver.artistOfTrack(trackId);
     if (artist.isEmpty()) {
       LOG.debugf("PlayRecorded for unresolvable track %s; skipping analytics fact", event.trackId());
       return;

@@ -21,6 +21,7 @@ import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway.Che
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentProviderPolicy;
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentRepository;
 import org.shakvilla.beatzmedia.payments.domain.AccountId;
+import org.shakvilla.beatzmedia.payments.domain.GatewayVendor;
 import org.shakvilla.beatzmedia.payments.domain.IdempotencyConflictException;
 import org.shakvilla.beatzmedia.payments.domain.IdempotencyKey;
 import org.shakvilla.beatzmedia.payments.domain.OrderRef;
@@ -111,7 +112,6 @@ public class InitiateChargeService implements InitiateCharge {
     if (!providerPolicy.isEnabledForCharges(method.provider())) {
       throw new ProviderDisabledException(method.provider());
     }
-
     // Serialise concurrent same-key requests before the read/provider/save window. The loser blocks
     // here until the winner commits, then finds the winner's intent below and returns it — so only
     // one thread ever reaches gateway.initiate, and a same-key double charge is an idempotent replay
@@ -131,20 +131,26 @@ public class InitiateChargeService implements InitiateCharge {
       return PaymentIntentView.of(intent);
     }
 
+    GatewayVendor gatewayVendor = gateway.selectedVendor();
+    if (gatewayVendor == GatewayVendor.DISABLED) {
+      throw new ProviderDisabledException(method.provider());
+    }
+
     PaymentIntent intent =
         PaymentIntent.create(
-            ids.newId(), accountId, orderRef, amount, method, idempotencyKey, fingerprint,
+            ids.newId(), accountId, orderRef, amount, method, gatewayVendor, idempotencyKey, fingerprint,
             clock.now());
 
     try {
-      if (gateway.supportsDirectCharge(method.provider())) {
+      if (gateway.supportsDirectCharge(gatewayVendor, method.provider())) {
         // Direct charge (MoMo, or anything on the sandbox): synchronous initiate, async settlement.
-        ChargeHandle handle = gateway.initiate(method.provider(), orderRef, amount, method);
+        ChargeHandle handle =
+            gateway.initiate(gatewayVendor, method.provider(), orderRef, amount, method);
         intent.markInitiated(handle.providerRef(), clock.now());
       } else {
         // Hosted-checkout redirect (Redde card): the response carries a checkoutUrl the browser is
         // redirected to; settlement is confirmed server-side later, never off that redirect (ADR-28).
-        CheckoutHandle handle = gateway.initiateCheckout(orderRef, amount);
+        CheckoutHandle handle = gateway.initiateCheckout(gatewayVendor, orderRef, amount);
         intent.markCheckoutInitiated(handle.checkoutUrl(), handle.checkoutTransId(), clock.now());
       }
     } catch (ProviderException e) {
