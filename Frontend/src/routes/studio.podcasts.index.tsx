@@ -82,7 +82,13 @@ function StudioPodcasts() {
             <EpisodeRow key={e.id} ep={e}
               onPlay={() => toast(`Previewing “${e.title}”`, 'info')}
               onEdit={() => toast(`Edit “${e.title}”`, 'info')}
-              onView={() => navigate({ to: '/podcasts' })}
+              onView={() => {
+                if (e.status === 'published' && e.duration > 0) {
+                  navigate({ to: '/podcast/$podcastId', params: { podcastId: e.showId } })
+                } else {
+                  toast('Episode audio is still processing; it will appear to fans when ready.', 'info')
+                }
+              }}
               onDelete={() => onDelete(e.id)}
             />
           ))}
@@ -156,9 +162,10 @@ function Header({ onNew }: { onNew: () => void }) {
   )
 }
 
-function StatusPill({ status }: { status: EpisodeStatus }) {
-  const cls = status === 'published' ? 'bg-beatz-green/15 text-beatz-green' : status === 'scheduled' ? 'bg-[#f6c644]/20 text-[#b8881f] dark:text-[#f6c644]' : 'bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-300'
-  return <span className={cn('px-2.5 py-1 rounded-full text-[10px] font-bold', cls)}>{status}</span>
+function StatusPill({ status, duration }: { status: EpisodeStatus; duration: number }) {
+  const processing = status === 'published' && duration <= 0
+  const cls = processing ? 'bg-[#f6c644]/20 text-[#b8881f] dark:text-[#f6c644]' : status === 'published' ? 'bg-beatz-green/15 text-beatz-green' : status === 'scheduled' ? 'bg-[#f6c644]/20 text-[#b8881f] dark:text-[#f6c644]' : 'bg-gray-100 dark:bg-white/10 text-gray-500 dark:text-gray-300'
+  return <span className={cn('px-2.5 py-1 rounded-full text-[10px] font-bold', cls)}>{processing ? 'Processing audio' : status}</span>
 }
 
 function EpisodeRow({ ep, onPlay, onEdit, onView, onDelete }: {
@@ -177,7 +184,7 @@ function EpisodeRow({ ep, onPlay, onEdit, onView, onDelete }: {
       </div>
       <span className="hidden sm:block w-20 text-right text-sm font-mono text-gray-500 dark:text-gray-300 shrink-0">{formatCompact(ep.plays)} plays</span>
       <span className="w-16 text-right text-sm font-mono text-gray-500 dark:text-gray-300 shrink-0">{formatDuration(ep.duration)}</span>
-      <span className="w-24 flex justify-center shrink-0"><StatusPill status={ep.status} /></span>
+      <span className="w-24 flex justify-center shrink-0"><StatusPill status={ep.status} duration={ep.duration} /></span>
       <div className="w-8 shrink-0 relative flex justify-end">
         <button onClick={() => setMenuOpen((o) => !o)} aria-label="Episode options" className="w-8 h-8 flex items-center justify-center rounded-full text-gray-400 hover:text-beatz-dark-bg dark:hover:text-white hover:bg-gray-100 dark:hover:bg-white/10 transition-colors"><MoreHorizontal size={18} /></button>
         {menuOpen && (

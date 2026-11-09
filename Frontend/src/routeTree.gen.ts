@@ -55,6 +55,7 @@ import { Route as AdminTrustRouteImport } from './routes/admin.trust'
 import { Route as AdminTaxonomyRouteImport } from './routes/admin.taxonomy'
 import { Route as AdminSupportRouteImport } from './routes/admin.support'
 import { Route as AdminSettingsRouteImport } from './routes/admin.settings'
+import { Route as AdminPodcastsRouteImport } from './routes/admin.podcasts'
 import { Route as AdminModerationRouteImport } from './routes/admin.moderation'
 import { Route as AdminHealthRouteImport } from './routes/admin.health'
 import { Route as AdminFinanceRouteImport } from './routes/admin.finance'
@@ -308,6 +309,11 @@ const AdminSettingsRoute = AdminSettingsRouteImport.update({
   path: '/settings',
   getParentRoute: () => AdminRoute,
 } as any)
+const AdminPodcastsRoute = AdminPodcastsRouteImport.update({
+  id: '/podcasts',
+  path: '/podcasts',
+  getParentRoute: () => AdminRoute,
+} as any)
 const AdminModerationRoute = AdminModerationRouteImport.update({
   id: '/moderation',
   path: '/moderation',
@@ -446,6 +452,7 @@ export interface FileRoutesByFullPath {
   '/admin/finance': typeof AdminFinanceRouteWithChildren
   '/admin/health': typeof AdminHealthRoute
   '/admin/moderation': typeof AdminModerationRoute
+  '/admin/podcasts': typeof AdminPodcastsRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/support': typeof AdminSupportRoute
   '/admin/taxonomy': typeof AdminTaxonomyRoute
@@ -511,6 +518,7 @@ export interface FileRoutesByTo {
   '/admin/editorial': typeof AdminEditorialRoute
   '/admin/health': typeof AdminHealthRoute
   '/admin/moderation': typeof AdminModerationRoute
+  '/admin/podcasts': typeof AdminPodcastsRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/support': typeof AdminSupportRoute
   '/admin/taxonomy': typeof AdminTaxonomyRoute
@@ -580,6 +588,7 @@ export interface FileRoutesById {
   '/admin/finance': typeof AdminFinanceRouteWithChildren
   '/admin/health': typeof AdminHealthRoute
   '/admin/moderation': typeof AdminModerationRoute
+  '/admin/podcasts': typeof AdminPodcastsRoute
   '/admin/settings': typeof AdminSettingsRoute
   '/admin/support': typeof AdminSupportRoute
   '/admin/taxonomy': typeof AdminTaxonomyRoute
@@ -652,6 +661,7 @@ export interface FileRouteTypes {
     | '/admin/finance'
     | '/admin/health'
     | '/admin/moderation'
+    | '/admin/podcasts'
     | '/admin/settings'
     | '/admin/support'
     | '/admin/taxonomy'
@@ -717,6 +727,7 @@ export interface FileRouteTypes {
     | '/admin/editorial'
     | '/admin/health'
     | '/admin/moderation'
+    | '/admin/podcasts'
     | '/admin/settings'
     | '/admin/support'
     | '/admin/taxonomy'
@@ -785,6 +796,7 @@ export interface FileRouteTypes {
     | '/admin/finance'
     | '/admin/health'
     | '/admin/moderation'
+    | '/admin/podcasts'
     | '/admin/settings'
     | '/admin/support'
     | '/admin/taxonomy'
@@ -1182,6 +1194,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AdminSettingsRouteImport
       parentRoute: typeof AdminRoute
     }
+    '/admin/podcasts': {
+      id: '/admin/podcasts'
+      path: '/podcasts'
+      fullPath: '/admin/podcasts'
+      preLoaderRoute: typeof AdminPodcastsRouteImport
+      parentRoute: typeof AdminRoute
+    }
     '/admin/moderation': {
       id: '/admin/moderation'
       path: '/moderation'
@@ -1362,6 +1381,7 @@ interface AdminRouteChildren {
   AdminFinanceRoute: typeof AdminFinanceRouteWithChildren
   AdminHealthRoute: typeof AdminHealthRoute
   AdminModerationRoute: typeof AdminModerationRoute
+  AdminPodcastsRoute: typeof AdminPodcastsRoute
   AdminSettingsRoute: typeof AdminSettingsRoute
   AdminSupportRoute: typeof AdminSupportRoute
   AdminTaxonomyRoute: typeof AdminTaxonomyRoute
@@ -1380,6 +1400,7 @@ const AdminRouteChildren: AdminRouteChildren = {
   AdminFinanceRoute: AdminFinanceRouteWithChildren,
   AdminHealthRoute: AdminHealthRoute,
   AdminModerationRoute: AdminModerationRoute,
+  AdminPodcastsRoute: AdminPodcastsRoute,
   AdminSettingsRoute: AdminSettingsRoute,
   AdminSupportRoute: AdminSupportRoute,
   AdminTaxonomyRoute: AdminTaxonomyRoute,

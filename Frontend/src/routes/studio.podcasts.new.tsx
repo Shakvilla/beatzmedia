@@ -120,6 +120,7 @@ function NewEpisode() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: studioEpisodesQuery().queryKey }),
         queryClient.invalidateQueries({ queryKey: studioShowsQuery().queryKey }),
+        queryClient.invalidateQueries({ queryKey: ['podcasts'] }),
       ])
       toast(visibility === 'scheduled' ? 'Episode scheduled' : 'Episode published 🎙️', 'success')
       navigate({ to: '/studio/podcasts' })

@@ -4,6 +4,8 @@ import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
+import org.shakvilla.beatzmedia.platform.domain.Page;
+import org.shakvilla.beatzmedia.platform.domain.PageRequest;
 import org.shakvilla.beatzmedia.studio.domain.ArtistId;
 import org.shakvilla.beatzmedia.studio.domain.Episode;
 import org.shakvilla.beatzmedia.studio.domain.EpisodeId;
@@ -40,6 +42,9 @@ public interface StudioRepository {
   Optional<PodcastShow> findShow(ArtistId artist, ShowId id);
 
   List<Episode> findEpisodes(ArtistId artist);
+
+  /** Admin inventory across artists, newest first. Never exposed through artist-scoped routes. */
+  Page<Episode> findEpisodesForAdmin(PageRequest page);
 
   Optional<Episode> findEpisode(ArtistId artist, EpisodeId id);
 

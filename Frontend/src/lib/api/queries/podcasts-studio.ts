@@ -22,6 +22,8 @@ export function studioEpisodesQuery() {
     queryKey: ['studio', 'podcast-episodes'],
     queryFn: async () =>
       (await apiFetch<EpisodeWire[]>('/studio/podcasts/episodes')).map(toStudioEpisode),
+    staleTime: 0,
+    refetchInterval: 15_000,
   })
 }
 

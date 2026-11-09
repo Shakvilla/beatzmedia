@@ -44,6 +44,8 @@ describe('podcasts queries', () => {
     expect(shows[0].id).toBe('the-233-pod')
     expect(shows[0].publisher).toBe('Ama Serwaa')
     expect(shows[0].seasonPassPrice).toEqual({ amount: 5000, currency: 'GHS' })
+    expect(podcastsListQuery().staleTime).toBe(0)
+    expect(podcastsListQuery().refetchInterval).toBe(30_000)
   })
 
   it('lists shows filtered by category', async () => {
@@ -64,5 +66,6 @@ describe('podcasts queries', () => {
     expect(eps[0].id).toBe('ep-1')
     expect(eps[0].duration).toBe(1800)
     expect(eps[0].price).toEqual({ amount: 1000, currency: 'GHS' })
+    expect(podcastEpisodesQuery('the-233-pod').refetchInterval).toBe(30_000)
   })
 })

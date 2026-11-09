@@ -459,6 +459,9 @@ failed and an exact event-type/schema-version handler is registered.
 | GET | `/admin/catalog/:id` | tracklist, ISRC/UPC, rights/splits, action log |
 | POST | `/admin/catalog/:id/{approve\|flag\|takedown}` | takedown requires `{ reason }` |
 
+### Podcast inventory
+| GET | `/admin/podcasts/episodes?page=&size=` | Admin-only paged list of Studio episodes across creators, including processing, scheduled, and published uploads. Read-only. |
+
 ### Moderation queue
 | GET | `/admin/moderation?status=&type=` | queue + SLA/escalation summary |
 | POST | `/admin/moderation/:id/{review\|approve\|remove\|escalate\|dismiss}` | |

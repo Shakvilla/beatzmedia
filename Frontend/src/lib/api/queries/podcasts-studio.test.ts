@@ -39,6 +39,7 @@ describe('studioEpisodesQuery', () => {
     const res = await studioEpisodesQuery().queryFn!({} as never)
     expect(apiFetch).toHaveBeenCalledWith('/studio/podcasts/episodes')
     expect(res[0].id).toBe('ep1')
+    expect(studioEpisodesQuery().refetchInterval).toBe(15_000)
   })
 })
 
