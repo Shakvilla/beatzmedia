@@ -215,7 +215,7 @@ class RealTranscodeIT {
     try {
       Files.write(audioWav, minimalSilentWav(SOURCE_SECONDS));
       runFixtureFfmpeg(List.of("ffmpeg", "-y", "-i", audioWav.toString(),
-          "-c:a", "aac", audioM4a.toString()));
+          "-c:a", "aac", "-brand", "iso6", audioM4a.toString()));
       byte[] bytes = Files.readAllBytes(audioM4a);
       assertTrue(org.shakvilla.beatzmedia.media.application.port.in.AllowedAudioTypes.isAllowed("audio/mp4"));
       assertEquals(org.shakvilla.beatzmedia.media.domain.AudioFormat.M4A,

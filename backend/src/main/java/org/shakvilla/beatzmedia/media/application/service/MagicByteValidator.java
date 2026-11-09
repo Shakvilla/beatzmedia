@@ -1,7 +1,6 @@
 package org.shakvilla.beatzmedia.media.application.service;
 
 import java.nio.charset.StandardCharsets;
-import java.util.Set;
 
 import jakarta.enterprise.context.ApplicationScoped;
 
@@ -42,7 +41,6 @@ public class MagicByteValidator {
 
   private static final int PROBE_BYTES = 12;
   private static final byte[] MP4_FTYP = {0x66, 0x74, 0x79, 0x70}; // "ftyp" at offset 4
-  private static final Set<String> M4A_BRANDS = Set.of("M4A ", "isom", "iso2", "mp41", "mp42");
 
   /**
    * Detect the audio format from the first bytes of the file.
@@ -62,15 +60,19 @@ public class MagicByteValidator {
     if (matchesAt(header, 0, FLAC_MAGIC)) {
       return AudioFormat.FLAC;
     }
-    // ISO BMFF starts with a big-endian box size, then "ftyp" and a registered major brand.
-    // The header is a coarse gate; ffprobe validates the complete audio stream before delivery.
+    // M4A is an ISO BMFF container. Encoders use many major brands, including newer ISO brands,
+    // so a five-brand allowlist wrongly rejects valid audio. Check the box structure here; the
+    // existing ffmpeg stage verifies that the complete file contains decodable audio.
     long boxSize = ((long) (header[0] & 0xFF) << 24)
         | ((long) (header[1] & 0xFF) << 16)
         | ((long) (header[2] & 0xFF) << 8)
         | (header[3] & 0xFF);
+    String majorBrand = new String(header, 8, 4, StandardCharsets.US_ASCII);
     if (matchesAt(header, 4, MP4_FTYP)
         && boxSize >= 16
-        && M4A_BRANDS.contains(new String(header, 8, 4, StandardCharsets.US_ASCII))) {
+        && majorBrand.chars().allMatch(c -> c >= 0x20 && c <= 0x7E)
+        && !majorBrand.equals("M4P ")
+        && !majorBrand.equals("M4V ")) {
       return AudioFormat.M4A;
     }
     // Checked last: the frame-sync pattern is only 11 bits, so it is the loosest signature here

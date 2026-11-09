@@ -78,8 +78,8 @@ class MagicByteValidatorTest {
   }
 
   @Test
-  void m4a_registered_brands_accepted() {
-    for (String brand : new String[]{"M4A ", "isom", "mp42"}) {
+  void m4a_common_and_newer_brands_accepted() {
+    for (String brand : new String[]{"M4A ", "isom", "mp42", "iso6", "M4B ", "qt  "}) {
       assertEquals(AudioFormat.M4A, validator.detectAudioFormat(m4aHeader(brand)));
     }
   }
@@ -90,6 +90,8 @@ class MagicByteValidatorTest {
     tooSmall[3] = 8;
     assertThrows(UnsupportedFormatException.class, () -> validator.detectAudioFormat(tooSmall));
     assertThrows(UnsupportedFormatException.class, () -> validator.detectAudioFormat(m4aHeader("M4P ")));
+    assertThrows(UnsupportedFormatException.class, () -> validator.detectAudioFormat(m4aHeader("M4V ")));
+    assertThrows(UnsupportedFormatException.class, () -> validator.detectAudioFormat(m4aHeader("\0\0\0\0")));
   }
 
   @Test
