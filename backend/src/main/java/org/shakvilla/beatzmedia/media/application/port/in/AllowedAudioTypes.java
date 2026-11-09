@@ -44,4 +44,15 @@ public final class AllowedAudioTypes {
   public static boolean isAllowed(String contentType) {
     return contentType != null && CONTENT_TYPES.contains(contentType.toLowerCase(Locale.ROOT));
   }
+
+  /** Some browsers send M4A with no MIME type (or as octet-stream). The magic-byte gate still
+   * verifies the actual container before any asset is stored. */
+  public static boolean isAllowed(String contentType, String filename) {
+    if (isAllowed(contentType)) {
+      return true;
+    }
+    boolean unknownType = contentType == null || contentType.isBlank()
+        || "application/octet-stream".equalsIgnoreCase(contentType);
+    return unknownType && filename != null && filename.toLowerCase(Locale.ROOT).endsWith(".m4a");
+  }
 }

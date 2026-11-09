@@ -192,6 +192,16 @@ class CreateEpisodeServiceTest {
   }
 
   @Test
+  void create_m4aWithUnknownBrowserMime_reachesMagicByteValidation() {
+    AudioUpload m4a = new AudioUpload("ep.M4A", "application/octet-stream", 1024,
+        new ByteArrayInputStream(new byte[]{1}), "h-m4a-unknown-mime");
+
+    service.create(ARTIST, "idem-m4a-unknown-mime", publicCommand(), m4a);
+
+    assertEquals(1, mediaUpload.callCount());
+  }
+
+  @Test
   void create_missingAudio_throwsMediaInvalid() {
     assertThrows(MediaInvalidException.class, () -> service.create(ARTIST, "idem-8", publicCommand(), null));
   }

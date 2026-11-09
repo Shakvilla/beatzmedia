@@ -82,7 +82,7 @@ public class UploadReleaseTrackService implements UploadReleaseTrack {
     // Validate format before touching persistence (LLFR-CATALOG-02.4). The allowlist is shared
     // with studio's episode upload and with MagicByteValidator — see AllowedAudioTypes for why
     // this must not be inlined again.
-    if (!AllowedAudioTypes.isAllowed(upload.contentType())) {
+    if (!AllowedAudioTypes.isAllowed(upload.contentType(), upload.filename())) {
       throw new UnsupportedFormatException(
           "Only " + AllowedAudioTypes.DISPLAY + " accepted, got: " + upload.contentType());
     }

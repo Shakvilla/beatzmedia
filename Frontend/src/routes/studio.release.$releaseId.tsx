@@ -4,6 +4,7 @@ import { useQuery, useSuspenseQuery, useQueryClient } from '@tanstack/react-quer
 import { ArrowDown, ArrowLeft, ArrowUp, Clock3, Disc3, ExternalLink, Image as ImageIcon, Music2, Save, Send, Trash2, Upload } from 'lucide-react'
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
+import { ApiError } from '../lib/api/errors'
 import {
   studioReleaseQuery, studioReleaseRevisionQuery, studioReleasesQuery, apiDeleteRelease,
   apiUpdateRelease,
@@ -226,8 +227,8 @@ function ReleaseManage() {
       updateTrack(trackId, { status: 'uploading' })
       await queryClient.invalidateQueries({ queryKey: studioReleaseRevisionQuery(release.id).queryKey })
       toast('Replacement audio is processing. Submit the revision after processing finishes.', 'success')
-    } catch {
-      toast('Could not upload replacement audio.', 'error')
+    } catch (error) {
+      toast(error instanceof ApiError ? error.message : 'Could not upload replacement audio.', 'error')
     }
   }
 
@@ -348,7 +349,7 @@ function ReleaseManage() {
               <span className="w-14 text-xs font-mono text-gray-500 inline-flex items-center gap-1"><Clock3 size={12} />{formatDuration(track.duration)}</span>
               <span className="text-[10px] text-gray-500">{track.status.replaceAll('_', ' ')}</span>
               <label className="h-9 px-3 rounded-full border border-gray-200 dark:border-white/10 text-xs font-bold flex items-center gap-1.5 cursor-pointer"><ImageIcon size={13} /> Artwork<input disabled={!editable || busy} type="file" accept="image/png,image/jpeg" className="sr-only" onChange={(event) => { void uploadTrackCover(track.trackId, event.currentTarget.files?.[0]); event.currentTarget.value = '' }} /></label>
-              <label className="h-9 px-3 rounded-full border border-gray-200 dark:border-white/10 text-xs font-bold flex items-center gap-1.5 cursor-pointer"><Upload size={13} /> Replace audio<input disabled={!editable || busy} type="file" accept="audio/*" className="sr-only" onChange={(event) => { void uploadTrackAudio(track.trackId, event.currentTarget.files?.[0]); event.currentTarget.value = '' }} /></label>
+              <label className="h-9 px-3 rounded-full border border-gray-200 dark:border-white/10 text-xs font-bold flex items-center gap-1.5 cursor-pointer"><Upload size={13} /> Replace audio<input disabled={!editable || busy} type="file" accept=".wav,.flac,.mp3,.m4a,audio/wav,audio/flac,audio/mpeg,audio/mp4,audio/m4a,audio/x-m4a" className="sr-only" onChange={(event) => { void uploadTrackAudio(track.trackId, event.currentTarget.files?.[0]); event.currentTarget.value = '' }} /></label>
               <div className="flex gap-1">
                 <button disabled={!editable || index === 0 || busy} aria-label={`Move ${track.title} up`} onClick={() => moveTrack(index, -1)} className="w-8 h-8 rounded-full hover:bg-gray-100 dark:hover:bg-white/10 disabled:opacity-30"><ArrowUp size={15} className="mx-auto" /></button>
                 <button disabled={!editable || index === draft.tracks.length - 1 || busy} aria-label={`Move ${track.title} down`} onClick={() => moveTrack(index, 1)} className="w-8 h-8 rounded-full hover:bg-gray-100 dark:hover:bg-white/10 disabled:opacity-30"><ArrowDown size={15} className="mx-auto" /></button>

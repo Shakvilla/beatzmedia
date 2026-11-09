@@ -138,7 +138,7 @@ public class CreateEpisodeService implements CreateEpisode {
       throw new MediaInvalidException("An 'audio' file part is required");
     }
     // Shared with catalog's track upload and MagicByteValidator — see AllowedAudioTypes.
-    if (!AllowedAudioTypes.isAllowed(audio.contentType())) {
+    if (!AllowedAudioTypes.isAllowed(audio.contentType(), audio.filename())) {
       throw new MediaInvalidException(
           "Only " + AllowedAudioTypes.DISPLAY + " accepted, got: " + audio.contentType());
     }

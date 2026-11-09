@@ -227,7 +227,7 @@ public class ManageReleaseRevisionService implements ManageReleaseRevision {
   @Override
   @Transactional
   public void uploadAudio(ReleaseId releaseId, ArtistId artistId, TrackId trackId, AudioUpload audio) {
-    if (!AllowedAudioTypes.isAllowed(audio.contentType())) {
+    if (!AllowedAudioTypes.isAllowed(audio.contentType(), audio.filename())) {
       throw new UnsupportedFormatException("Only " + AllowedAudioTypes.DISPLAY + " accepted");
     }
     if (audio.sizeBytes() > MAX_AUDIO_BYTES) throw new FileTooLargeException("Upload exceeds 500 MB limit");
