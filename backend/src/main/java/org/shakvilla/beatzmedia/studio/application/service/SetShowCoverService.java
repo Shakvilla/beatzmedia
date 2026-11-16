@@ -12,8 +12,10 @@ import org.shakvilla.beatzmedia.media.domain.MediaKind;
 import org.shakvilla.beatzmedia.media.domain.OwnerRef;
 import org.shakvilla.beatzmedia.platform.domain.NotFoundException;
 import org.shakvilla.beatzmedia.studio.application.port.in.SetShowCover;
+import org.shakvilla.beatzmedia.studio.application.port.out.PodcastCataloguePublisher;
 import org.shakvilla.beatzmedia.studio.application.port.out.StudioRepository;
 import org.shakvilla.beatzmedia.studio.domain.ArtistId;
+import org.shakvilla.beatzmedia.studio.domain.EpisodeStatus;
 import org.shakvilla.beatzmedia.studio.domain.PodcastShow;
 import org.shakvilla.beatzmedia.studio.domain.ShowId;
 
@@ -35,13 +37,16 @@ public class SetShowCoverService implements SetShowCover {
   private final StudioRepository repo;
   private final UploadOriginalUseCase upload;
   private final MediaService media;
+  private final PodcastCataloguePublisher publisher;
 
   @Inject
   public SetShowCoverService(
-      StudioRepository repo, UploadOriginalUseCase upload, MediaService media) {
+      StudioRepository repo, UploadOriginalUseCase upload, MediaService media,
+      PodcastCataloguePublisher publisher) {
     this.repo = repo;
     this.upload = upload;
     this.media = media;
+    this.publisher = publisher;
   }
 
   @Override
@@ -68,6 +73,10 @@ public class SetShowCoverService implements SetShowCover {
 
     String url = IMAGE_URL_PREFIX + handle.assetId().value();
     repo.saveShow(show.withArtwork(url, show.description()));
+    repo.findEpisodes(artist).stream()
+        .filter(episode -> episode.showId().equals(showId)
+            && episode.status() == EpisodeStatus.published && episode.durationSec() > 0)
+        .forEach(episode -> publisher.publish(artist, episode));
     return url;
   }
 }

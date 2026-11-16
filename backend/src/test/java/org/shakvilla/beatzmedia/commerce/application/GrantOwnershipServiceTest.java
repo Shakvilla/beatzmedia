@@ -367,4 +367,17 @@ class GrantOwnershipServiceTest {
     assertEquals(0, ownership.all().size());
     assertEquals(0, grantedEvent.count());
   }
+
+  @Test
+  void settlement_from_an_unrelated_intent_cannot_fulfill_order() {
+    pendingOrder("BZ-2026-00014", trackLine("t1", 1000));
+    expansion.seedTrack("t1", CREATOR);
+
+    service.grantForSettledOrder("BZ-2026-00014", "another-intent", "mtn");
+
+    assertEquals(OrderStatus.pending,
+        orders.findByReference("BZ-2026-00014").orElseThrow().getStatus());
+    assertEquals(0, ownership.activeTrackCount(BUYER));
+    assertEquals(0, ledger.count());
+  }
 }

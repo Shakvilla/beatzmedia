@@ -3,16 +3,20 @@ package org.shakvilla.beatzmedia.catalog.adapter.out.persistence;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 
 import jakarta.inject.Inject;
 
 import org.junit.jupiter.api.Tag;
 import org.junit.jupiter.api.Test;
+import org.shakvilla.beatzmedia.catalog.application.port.out.ArtistMonthlyListenerReader;
 import org.shakvilla.beatzmedia.catalog.application.port.out.CatalogRepository;
 import org.shakvilla.beatzmedia.catalog.domain.Album;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistProfile;
 import org.shakvilla.beatzmedia.catalog.domain.Playlist;
+import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
 
 import io.quarkus.test.junit.QuarkusTest;
 
@@ -22,6 +26,8 @@ import io.quarkus.test.junit.QuarkusTest;
 class HomeRailsQueryIT {
 
   @Inject CatalogRepository repo;
+  @Inject ArtistMonthlyListenerReader monthlyListenerReader;
+  @Inject Clock clock;
 
   @Test
   void newestAlbums_orderedByYearDesc_andLimited() {
@@ -36,12 +42,14 @@ class HomeRailsQueryIT {
 
   @Test
   void popularArtists_orderedByMonthlyListenersDesc_andLimited() {
-    List<ArtistProfile> artists = repo.popularArtists(3);
+    Instant asOf = clock.now();
+    Instant since = asOf.minus(Duration.ofDays(28));
+    List<ArtistProfile> artists = repo.popularArtists(3, since, asOf);
     assertFalse(artists.isEmpty());
     assertTrue(artists.size() <= 3);
     for (int i = 1; i < artists.size(); i++) {
-      long prev = artists.get(i - 1).getMonthlyListeners() == null ? 0 : artists.get(i - 1).getMonthlyListeners();
-      long cur = artists.get(i).getMonthlyListeners() == null ? 0 : artists.get(i).getMonthlyListeners();
+      long prev = monthlyListenerReader.count(artists.get(i - 1).getId(), since, asOf);
+      long cur = monthlyListenerReader.count(artists.get(i).getId(), since, asOf);
       assertTrue(prev >= cur, "artists must be sorted by monthlyListeners DESC");
     }
   }

@@ -16,6 +16,7 @@ import org.shakvilla.beatzmedia.payments.application.service.ReconcileService;
 import org.shakvilla.beatzmedia.payments.application.service.ReconciliationStore;
 import org.shakvilla.beatzmedia.payments.domain.AccountId;
 import org.shakvilla.beatzmedia.payments.domain.DiscrepancyKind;
+import org.shakvilla.beatzmedia.payments.domain.GatewayVendor;
 import org.shakvilla.beatzmedia.payments.domain.MethodKind;
 import org.shakvilla.beatzmedia.payments.domain.OrderRef;
 import org.shakvilla.beatzmedia.payments.domain.PaymentFailed;
@@ -113,6 +114,21 @@ class ReconcileServiceTest {
 
     assertEquals(PaymentIntentStatus.pending, repo.findById("pi-4").orElseThrow().getStatus());
     assertEquals(0, settledEvents.count());
+    assertEquals(0, failedEvents.count());
+  }
+
+  @Test
+  void poll_does_not_time_out_a_redde_intent_while_provider_is_pending() {
+    PaymentIntent intent = seedPending("pi-redde", "REDDE-1", NOW.minus(Duration.ofHours(2)));
+    repo.seed(PaymentIntent.reconstitute(intent.getId(), intent.getAccountId(),
+        intent.getOrderRef(), intent.getAmount(), intent.getProvider(), GatewayVendor.REDDE,
+        intent.getMethodKind(), intent.getProviderRef(), intent.getStatus(), null, null,
+        intent.getIdempotencyKey(), intent.getRequestFingerprint(), intent.getCreatedAt(),
+        intent.getUpdatedAt()));
+
+    service.pollPendingTimeouts(Duration.ZERO, Duration.ofMinutes(30));
+
+    assertEquals(PaymentIntentStatus.pending, repo.findById("pi-redde").orElseThrow().getStatus());
     assertEquals(0, failedEvents.count());
   }
 

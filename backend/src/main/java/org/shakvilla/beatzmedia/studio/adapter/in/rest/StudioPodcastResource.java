@@ -43,6 +43,8 @@ import org.shakvilla.beatzmedia.studio.application.port.in.SetShowCover;
 import org.shakvilla.beatzmedia.studio.application.port.in.SetShowOriginCountry;
 import org.shakvilla.beatzmedia.studio.application.port.in.UpdateEpisode;
 import org.shakvilla.beatzmedia.studio.application.port.in.UpdateEpisode.UpdateEpisodeCommand;
+import org.shakvilla.beatzmedia.studio.application.port.in.UpdatePodcastShow;
+import org.shakvilla.beatzmedia.studio.application.port.in.UpdatePodcastShow.UpdateShowCommand;
 import org.shakvilla.beatzmedia.studio.domain.ArtistId;
 import org.shakvilla.beatzmedia.studio.domain.EpisodeId;
 import org.shakvilla.beatzmedia.studio.domain.ShowId;
@@ -78,6 +80,7 @@ public class StudioPodcastResource {
   private final DeleteEpisode deleteEpisode;
   private final SetShowCover setShowCover;
   private final SetShowOriginCountry setShowOriginCountry;
+  private final UpdatePodcastShow updatePodcastShow;
   private final JsonWebToken jwt;
 
   @Inject
@@ -90,6 +93,7 @@ public class StudioPodcastResource {
       DeleteEpisode deleteEpisode,
       SetShowCover setShowCover,
       SetShowOriginCountry setShowOriginCountry,
+      UpdatePodcastShow updatePodcastShow,
       JsonWebToken jwt) {
     this.listStudioPodcastShows = listStudioPodcastShows;
     this.createPodcastShow = createPodcastShow;
@@ -99,6 +103,7 @@ public class StudioPodcastResource {
     this.deleteEpisode = deleteEpisode;
     this.setShowCover = setShowCover;
     this.setShowOriginCountry = setShowOriginCountry;
+    this.updatePodcastShow = updatePodcastShow;
     this.jwt = jwt;
   }
 
@@ -125,6 +130,16 @@ public class StudioPodcastResource {
             body != null ? body.description() : null,
             body != null ? body.originCountry() : null));
     return Response.status(Response.Status.CREATED).entity(view).build();
+  }
+
+  /** PATCH /v1/studio/podcasts/shows/:id — edit creator-owned show metadata. */
+  @PATCH
+  @Path("/shows/{id}")
+  @Consumes(MediaType.APPLICATION_JSON)
+  public PodcastShowView updateShow(@PathParam("id") String id, UpdateShowBody body) {
+    return updatePodcastShow.update(artistId(), new ShowId(id), body == null ? null
+        : new UpdateShowCommand(body.title(), body.category(), body.description(),
+            body.originCountry()));
   }
 
   /**
@@ -296,6 +311,9 @@ public class StudioPodcastResource {
       String title, String category, String image, String description, String originCountry) {}
 
   public record SetShowOriginCountryBody(String originCountry) {}
+
+  public record UpdateShowBody(String title, String category, String description,
+      String originCountry) {}
 
   /**
    * {@code CreateEpisodeDto} — Studio ADD §6. {@code showId} XOR {@code newShow}; {@code cover} is

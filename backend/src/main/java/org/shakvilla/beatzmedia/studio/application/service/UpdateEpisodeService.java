@@ -19,6 +19,7 @@ import org.shakvilla.beatzmedia.platform.domain.UnauthorizedException;
 import org.shakvilla.beatzmedia.platform.domain.ValidationException;
 import org.shakvilla.beatzmedia.studio.application.port.in.EpisodeView;
 import org.shakvilla.beatzmedia.studio.application.port.in.UpdateEpisode;
+import org.shakvilla.beatzmedia.studio.application.port.out.PodcastCataloguePublisher;
 import org.shakvilla.beatzmedia.studio.application.port.out.StudioRepository;
 import org.shakvilla.beatzmedia.studio.domain.ArtistId;
 import org.shakvilla.beatzmedia.studio.domain.Episode;
@@ -44,6 +45,7 @@ public class UpdateEpisodeService implements UpdateEpisode {
   private final Clock clock;
   private final AuditWriter auditWriter;
   private final DurableEventPublisher durableEvents;
+  private final PodcastCataloguePublisher cataloguePublisher;
 
   @Inject
   public UpdateEpisodeService(
@@ -51,12 +53,14 @@ public class UpdateEpisodeService implements UpdateEpisode {
       IdGenerator ids,
       Clock clock,
       AuditWriter auditWriter,
-      DurableEventPublisher durableEvents) {
+      DurableEventPublisher durableEvents,
+      PodcastCataloguePublisher cataloguePublisher) {
     this.repo = repo;
     this.ids = ids;
     this.clock = clock;
     this.auditWriter = auditWriter;
     this.durableEvents = durableEvents;
+    this.cataloguePublisher = cataloguePublisher;
   }
 
   @Override
@@ -97,6 +101,9 @@ public class UpdateEpisodeService implements UpdateEpisode {
 
     if (firePublished) {
       appendEpisodePublished(saved, artist, now);
+    } else if (saved.status() == EpisodeStatus.published && saved.durationSec() > 0) {
+      // Metadata edits on an already-published episode must update the fan catalogue too.
+      cataloguePublisher.publish(artist, saved);
     }
 
     PodcastShow show = repo.findShow(artist, saved.showId()).orElse(null);

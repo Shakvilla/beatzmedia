@@ -43,6 +43,7 @@ class UpdateEpisodeServiceTest {
   private FakeAuditWriter auditWriter;
   private RecordingDurableEventPublisher durableEvents;
   private UpdateEpisodeService service;
+  private final java.util.List<String> projected = new java.util.ArrayList<>();
 
   @BeforeEach
   void setUp() {
@@ -53,7 +54,8 @@ class UpdateEpisodeServiceTest {
     auditWriter = new FakeAuditWriter();
     durableEvents = new RecordingDurableEventPublisher();
     service = new UpdateEpisodeService(
-        repo, FakeIds.sequential("aud"), clock, auditWriter, durableEvents);
+        repo, FakeIds.sequential("aud"), clock, auditWriter, durableEvents,
+        (artist, episode) -> projected.add(episode.id().value()));
   }
 
   private Episode draftEpisode(String id) {
@@ -71,6 +73,16 @@ class UpdateEpisodeServiceTest {
         ARTIST, new EpisodeId("ep-1"),
         new UpdateEpisodeCommand("New Title", "New desc", null, null, null, null, null));
     assertEquals("New Title", view.title());
+  }
+
+  @Test
+  void update_publishedEpisode_refreshesFanCatalogue() {
+    Episode episode = draftEpisode("ep-published");
+    episode.publishNow(NOW);
+    service.update(ARTIST, episode.id(),
+        new UpdateEpisodeCommand("Corrected", "Corrected description", null, null,
+            null, null, null));
+    assertEquals(java.util.List.of("ep-published"), projected);
   }
 
   @Test

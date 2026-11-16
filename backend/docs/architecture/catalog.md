@@ -1062,7 +1062,7 @@ curatedPlaylists: List<PlaylistView>)`; `GetHomeFeedService.get` populates it fr
 
 - `newestAlbums(limit)` — all albums, `year DESC`, limit **10**. Reuses the same
   `mapAlbumsWithBatchedTrackIds` helper as `featuredAlbums`.
-- `popularArtists(limit)` — all artist profiles, `monthlyListeners DESC NULLS LAST`, limit **10**.
+- `popularArtists(limit, since, asOf)` — artist profiles ranked by distinct identified listeners recorded in the supplied rolling 28-day window, limit **10**. The home response uses those live counts rather than the legacy `artist_profile.monthly_listeners` field.
 - `curatedPlaylists(limit)` — playlists **where `is_public = true`**, `followers DESC NULLS LAST`,
   limit **6**.
 

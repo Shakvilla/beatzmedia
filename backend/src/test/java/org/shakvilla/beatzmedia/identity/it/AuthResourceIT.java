@@ -5,6 +5,7 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.notNullValue;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.Base64;
 
@@ -38,6 +39,7 @@ class AuthResourceIT {
   private static final String SIGNUP_URL = "/v1/auth/signup";
   private static final String LOGIN_URL = "/v1/auth/login";
   private static final String LOGOUT_URL = "/v1/auth/logout";
+  private static final String SESSION_URL = "/v1/auth/session";
   private static final String SOCIAL_URL = "/v1/auth/social";
 
   private static final String ALICE_EMAIL = "alice-it@example.com";
@@ -367,6 +369,36 @@ class AuthResourceIT {
         .post(LOGOUT_URL)
         .then()
         .statusCode(204);
+  }
+
+  @Test
+  @Order(21)
+  void browserSessionRenewsAndLogoutRevokesIt() {
+    var login = given()
+        .contentType(ContentType.JSON)
+        .body("""
+            { "email": "%s", "password": "%s" }
+            """.formatted(ALICE_EMAIL, ALICE_PASSWORD))
+        .post(LOGIN_URL)
+        .then().statusCode(200).extract().response();
+
+    String cookie = login.getCookie("beatz_session");
+    assertNotNull(cookie);
+    assertTrue(login.getHeader("Set-Cookie").contains("HttpOnly"));
+    assertTrue(login.getHeader("Set-Cookie").contains("SameSite=Strict"));
+    assertTrue(login.getHeader("Set-Cookie").contains("Max-Age=2592000"));
+
+    given().cookie("beatz_session", cookie).header("X-Beatz-Session", "1")
+        .post(SESSION_URL).then().statusCode(200)
+        .body("token", notNullValue())
+        .body("account.email", equalTo(ALICE_EMAIL));
+    given().cookie("beatz_session", cookie)
+        .post(SESSION_URL).then().statusCode(403);
+
+    given().cookie("beatz_session", cookie)
+        .post(LOGOUT_URL).then().statusCode(204);
+    given().cookie("beatz_session", cookie).header("X-Beatz-Session", "1")
+        .post(SESSION_URL).then().statusCode(401);
   }
 
   // ---- NB-2: input-size upper bounds (Argon2 DoS prevention) ----

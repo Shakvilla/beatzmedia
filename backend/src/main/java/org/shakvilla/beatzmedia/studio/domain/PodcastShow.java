@@ -99,6 +99,18 @@ public final class PodcastShow {
     return new PodcastShow(id, artistId, title, category, image, description, country, createdAt);
   }
 
+  public PodcastShow withDetails(String newTitle, String newCategory, String newDescription,
+      String newOriginCountry) {
+    if (newTitle == null || newTitle.isBlank()) {
+      throw new IllegalArgumentException("title must not be blank");
+    }
+    if (newCategory == null || newCategory.isBlank()) {
+      throw new IllegalArgumentException("category must not be blank");
+    }
+    return new PodcastShow(id, artistId, newTitle.trim(), newCategory.trim(), image,
+        blankToNull(newDescription), newOriginCountry, createdAt);
+  }
+
   /** Whether this show can be projected to fans — {@code podcast.image} is NOT NULL. */
   public boolean isPublishable() {
     return image != null && !image.isBlank();

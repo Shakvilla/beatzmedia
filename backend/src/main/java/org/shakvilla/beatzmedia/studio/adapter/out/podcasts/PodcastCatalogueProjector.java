@@ -90,8 +90,8 @@ public class PodcastCatalogueProjector implements PodcastCataloguePublisher {
           episode.coverUrl(),
           episode.durationSec(),
           episode.premium(),
-          episode.premium() ? episode.priceMinor() : null,
-          episode.premium() ? episode.currency().name() : null,
+          episode.premium() || episode.earlyAccess() ? episode.priceMinor() : null,
+          episode.premium() || episode.earlyAccess() ? episode.currency().name() : null,
           episode.earlyAccess(),
           episode.publishedAt()));
     } catch (ValidationException e) {

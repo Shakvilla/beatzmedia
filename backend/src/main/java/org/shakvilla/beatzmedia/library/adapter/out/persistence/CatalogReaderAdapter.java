@@ -9,6 +9,7 @@ import org.shakvilla.beatzmedia.catalog.adapter.out.persistence.ArtistProfileEnt
 import org.shakvilla.beatzmedia.catalog.adapter.out.persistence.PlaylistEntity;
 import org.shakvilla.beatzmedia.catalog.adapter.out.persistence.TrackEntity;
 import org.shakvilla.beatzmedia.library.application.port.out.CatalogReader;
+import org.shakvilla.beatzmedia.podcasts.adapter.out.persistence.PodcastEntity;
 
 /**
  * Implements the library's {@link CatalogReader} port by querying the catalog JPA entities
@@ -45,13 +46,7 @@ public class CatalogReaderAdapter implements CatalogReader {
 
   @Override
   public boolean showExists(String showId) {
-    // Shows are stored as ArtistShowEntity keyed by id
-    Long count =
-        em.createQuery(
-                "SELECT COUNT(s) FROM ArtistShowEntity s WHERE s.id = :id", Long.class)
-            .setParameter("id", showId)
-            .getSingleResult();
-    return count > 0;
+    return em.find(PodcastEntity.class, showId) != null;
   }
 
   @Override

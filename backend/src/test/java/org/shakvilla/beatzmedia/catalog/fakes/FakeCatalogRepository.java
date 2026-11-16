@@ -262,7 +262,7 @@ public class FakeCatalogRepository implements CatalogRepository {
   }
 
   @Override
-  public List<ArtistProfile> popularArtists(int limit) {
+  public List<ArtistProfile> popularArtists(int limit, Instant since, Instant asOf) {
     return artists.values().stream()
         .sorted(java.util.Comparator.comparingLong(
             (ArtistProfile a) -> a.getMonthlyListeners() == null ? 0L : a.getMonthlyListeners()).reversed())

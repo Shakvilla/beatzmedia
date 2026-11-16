@@ -113,6 +113,15 @@ public class GrantOwnershipService implements GrantOwnership {
       return;
     }
 
+    // A public payment-intent endpoint can initiate a charge for an arbitrary order reference.
+    // Only the intent attached by this order's own checkout may fulfill it; a settled unrelated
+    // intent (including one for a smaller amount) must never grant the order or credit its sellers.
+    if (!paymentIntentId.equals(order.getPaymentIntentId())) {
+      LOG.warnf("settlement intent %s does not match order %s; skipping grant",
+          paymentIntentId, order.getReference());
+      return;
+    }
+
     // INV-1: transition pending -> paid. An already-paid order is a benign no-op (sequential replay).
     // A failed/refunded order must NEVER become paid — the aggregate throws; we treat that anomalous
     // late-settlement as a logged no-op so the (AFTER_SUCCESS) settlement path never blows up AND no

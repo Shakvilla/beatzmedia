@@ -105,8 +105,8 @@ public interface CatalogRepository {
   /** WU-CAT-8 home rail: albums newest-first (ORDER BY year DESC), capped at {@code limit}. */
   List<Album> newestAlbums(int limit);
 
-  /** WU-CAT-8 home rail: artists by monthly listeners DESC (nulls last), capped at {@code limit}. */
-  List<ArtistProfile> popularArtists(int limit);
+  /** Home rail: artists ranked by distinct identified listeners in the supplied 28-day window. */
+  List<ArtistProfile> popularArtists(int limit, Instant since, Instant asOf);
 
   /** WU-CAT-8 home rail: public playlists by followers DESC (nulls last), capped at {@code limit}. */
   List<Playlist> curatedPlaylists(int limit);

@@ -28,7 +28,9 @@ final class EpisodeMapper {
         e.premium(),
         price,
         publishedAt,
-        e.plays());
+        e.plays(),
+        e.description(),
+        e.earlyAccess());
   }
 
   /**

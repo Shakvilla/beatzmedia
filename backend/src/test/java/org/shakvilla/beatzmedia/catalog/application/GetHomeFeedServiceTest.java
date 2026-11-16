@@ -4,6 +4,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -23,6 +24,7 @@ import org.shakvilla.beatzmedia.catalog.domain.Track;
 import org.shakvilla.beatzmedia.catalog.domain.TrackId;
 import org.shakvilla.beatzmedia.catalog.fakes.FakeCatalogRepository;
 import org.shakvilla.beatzmedia.catalog.fakes.FakeOwnershipReader;
+import org.shakvilla.beatzmedia.platform.fakes.FakeClock;
 
 /** Unit test for LLFR-CATALOG-01.1. Uses fake ports; no framework. */
 @Tag("unit")
@@ -36,7 +38,12 @@ class GetHomeFeedServiceTest {
   void setUp() {
     repo = new FakeCatalogRepository();
     ownershipReader = new FakeOwnershipReader();
-    service = new GetHomeFeedService(repo, ownershipReader);
+    service = new GetHomeFeedService(repo, ownershipReader, (id, since, asOf) -> {
+      assertEquals(new ArtistId("artist-1"), id);
+      assertEquals(Instant.parse("2026-05-25T12:00:00Z"), since);
+      assertEquals(Instant.parse("2026-06-22T12:00:00Z"), asOf);
+      return 3L;
+    }, FakeClock.fixed());
   }
 
   @Test
@@ -81,7 +88,10 @@ class GetHomeFeedServiceTest {
     assertFalse(view.rails().curatedPlaylists().isEmpty(), "curatedPlaylists rail populated");
     // Views carry through the domain values:
     assertEquals(repo.newestAlbums(10).get(0).getId().value(), view.rails().newReleases().get(0).id());
-    assertEquals(repo.popularArtists(10).get(0).getId().value(), view.rails().popularArtists().get(0).id());
+    assertEquals(repo.popularArtists(10, Instant.parse("2026-05-25T12:00:00Z"),
+        Instant.parse("2026-06-22T12:00:00Z")).get(0).getId().value(),
+        view.rails().popularArtists().get(0).id());
+    assertEquals(3L, view.rails().popularArtists().get(0).monthlyListeners());
     assertEquals(repo.curatedPlaylists(6).get(0).getId().value(), view.rails().curatedPlaylists().get(0).id());
   }
 

@@ -458,9 +458,12 @@ The shared repeatable `R__seed_dev_data.sql` contributes a sample fan, a sample 
 admin team (with ≥ 1 `super-admin`) so the API returns the data the UI was built against (to be added
 when catalog/studio seed data is authored).
 
-**OQ-3 note:** WU-IDN-1 implements short-lived access JWTs only (TTL configured via
-`beatz.jwt.access-ttl-seconds`, default 900 s / 15 min per security-authz.md §1.3). No refresh
-token is issued for v1. This is the OQ-3 default.
+**OQ-3 update (2026-11-13):** WU-IDN-1 originally implemented short-lived access JWTs only
+(TTL configured via `beatz.jwt.access-ttl-seconds`, default 900 s / 15 min). Browser logins now also
+receive a first-party, opaque `HttpOnly` session cookie. The server stores only its hash and issues
+a new access JWT via `POST /v1/auth/session` while the session is within its one-hour idle and
+30-day absolute limits. Logout revokes the session. The short-lived impersonation JWT is excluded.
+See `docs/plans/2026-11-13-active-session-renewal-design.md` for the security and client flow.
 
 ## 8. Key flows
 

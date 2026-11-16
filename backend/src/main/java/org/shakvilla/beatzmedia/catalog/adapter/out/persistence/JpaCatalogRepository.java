@@ -411,27 +411,20 @@ public class JpaCatalogRepository implements CatalogRepository {
   }
 
   @Override
-  public List<ArtistProfile> popularArtists(int limit) {
-    List<ArtistProfileEntity> entities =
-        em.createQuery(
-                "SELECT a FROM ArtistProfileEntity a ORDER BY a.monthlyListeners DESC NULLS LAST",
-                ArtistProfileEntity.class)
-            .setMaxResults(limit)
-            .getResultList();
-    if (entities.isEmpty()) return List.of();
-    List<String> ids = entities.stream().map(e -> e.id).toList();
-    List<ArtistShowEntity> allShows =
-        em.createQuery(
-                "SELECT s FROM ArtistShowEntity s WHERE s.artistId IN :ids ORDER BY s.position",
-                ArtistShowEntity.class)
-            .setParameter("ids", ids)
-            .getResultList();
-    Map<String, List<ArtistShowEntity>> showsByArtist =
-        allShows.stream().collect(Collectors.groupingBy(s -> s.artistId));
-    // Preserve query order (ranked); toDomain(e, shows) mirrors artistsByIds.
-    return entities.stream()
-        .map(e -> toDomain(e, showsByArtist.getOrDefault(e.id, Collections.emptyList())))
-        .toList();
+  public List<ArtistProfile> popularArtists(int limit, Instant since, Instant asOf) {
+    // Rank every profile by the same retained play facts used for the public listener count.
+    // Starting from artist_profile keeps artists with no plays visible after active artists.
+    List<String> ids = em.createNativeQuery(
+            "SELECT a.id FROM artist_profile a"
+                + " LEFT JOIN analytics_play_fact f ON f.artist_id = a.id"
+                + " AND f.account_id IS NOT NULL AND f.occurred_at >= :since"
+                + " AND f.occurred_at <= :asOf"
+                + " GROUP BY a.id ORDER BY COUNT(DISTINCT f.account_id) DESC, a.id")
+        .setParameter("since", since)
+        .setParameter("asOf", asOf)
+        .setMaxResults(limit)
+        .getResultList().stream().map(String.class::cast).toList();
+    return artistsByIds(ids);
   }
 
   @Override

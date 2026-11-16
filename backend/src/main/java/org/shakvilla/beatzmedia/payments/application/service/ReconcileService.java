@@ -14,6 +14,7 @@ import org.shakvilla.beatzmedia.payments.application.port.in.ReconciliationRepor
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway;
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway.ProviderStatus;
 import org.shakvilla.beatzmedia.payments.domain.DiscrepancyKind;
+import org.shakvilla.beatzmedia.payments.domain.GatewayVendor;
 import org.shakvilla.beatzmedia.payments.domain.PaymentEventType;
 import org.shakvilla.beatzmedia.payments.domain.PaymentIntent;
 import org.shakvilla.beatzmedia.payments.domain.PaymentIntentStatus;
@@ -99,7 +100,9 @@ public class ReconcileService implements Reconcile {
       case SETTLED -> settlement.settle(intent.getId(), providerRef);
       case FAILED -> settlement.fail(intent.getId(), reasonOr(status.reason(), "declined"));
       case PENDING -> {
-        if (pastMaxWindow) {
+        // A real rail can settle after our local wait window. Only the deterministic sandbox
+        // can be timed out from an inconclusive provider response.
+        if (pastMaxWindow && intent.getGatewayVendor() == GatewayVendor.SANDBOX) {
           settlement.timeout(intent.getId());
         }
       }
