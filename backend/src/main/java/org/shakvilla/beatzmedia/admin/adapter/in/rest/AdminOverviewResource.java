@@ -34,7 +34,7 @@ import org.shakvilla.beatzmedia.admin.domain.AdminRange;
 @Path("/v1/admin")
 @Produces(MediaType.APPLICATION_JSON)
 @RolesAllowed({"super-admin", "finance", "moderator", "editor", "support"})
-@Tag(name = "admin-overview")
+@Tag(name = "Administrator Management")
 @SecurityRequirement(name = "BearerAuth")
 public class AdminOverviewResource {
 

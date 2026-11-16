@@ -35,6 +35,7 @@ public final class PaymentIntent {
   private final OrderRef orderRef;
   private final Money amount;
   private final Provider provider;
+  private final GatewayVendor gatewayVendor;
   private final MethodKind methodKind;
   private String providerRef;
   private PaymentIntentStatus status;
@@ -51,6 +52,7 @@ public final class PaymentIntent {
       OrderRef orderRef,
       Money amount,
       Provider provider,
+      GatewayVendor gatewayVendor,
       MethodKind methodKind,
       String providerRef,
       PaymentIntentStatus status,
@@ -65,6 +67,7 @@ public final class PaymentIntent {
     this.orderRef = orderRef;
     this.amount = amount;
     this.provider = provider;
+    this.gatewayVendor = Objects.requireNonNull(gatewayVendor, "gatewayVendor");
     this.methodKind = methodKind;
     this.providerRef = providerRef;
     this.status = status;
@@ -91,6 +94,22 @@ public final class PaymentIntent {
       IdempotencyKey idempotencyKey,
       String requestFingerprint,
       Instant now) {
+    return create(
+        id, accountId, orderRef, amount, method, GatewayVendor.SANDBOX, idempotencyKey,
+        requestFingerprint, now);
+  }
+
+  /** Factory that pins the selected gateway before the first provider side effect. */
+  public static PaymentIntent create(
+      String id,
+      AccountId accountId,
+      OrderRef orderRef,
+      Money amount,
+      PaymentMethodRef method,
+      GatewayVendor gatewayVendor,
+      IdempotencyKey idempotencyKey,
+      String requestFingerprint,
+      Instant now) {
     Objects.requireNonNull(id, "id");
     Objects.requireNonNull(accountId, "accountId");
     Objects.requireNonNull(orderRef, "orderRef");
@@ -108,6 +127,7 @@ public final class PaymentIntent {
         orderRef,
         amount,
         method.provider(),
+        gatewayVendor,
         method.kind(),
         null,
         PaymentIntentStatus.pending,
@@ -135,8 +155,29 @@ public final class PaymentIntent {
       String requestFingerprint,
       Instant createdAt,
       Instant updatedAt) {
+    return reconstitute(
+        id, accountId, orderRef, amount, provider, GatewayVendor.SANDBOX, methodKind, providerRef,
+        status, failureReason, checkoutUrl, idempotencyKey, requestFingerprint, createdAt, updatedAt);
+  }
+
+  public static PaymentIntent reconstitute(
+      String id,
+      AccountId accountId,
+      OrderRef orderRef,
+      Money amount,
+      Provider provider,
+      GatewayVendor gatewayVendor,
+      MethodKind methodKind,
+      String providerRef,
+      PaymentIntentStatus status,
+      String failureReason,
+      String checkoutUrl,
+      String idempotencyKey,
+      String requestFingerprint,
+      Instant createdAt,
+      Instant updatedAt) {
     return new PaymentIntent(
-        id, accountId, orderRef, amount, provider, methodKind, providerRef, status, failureReason,
+        id, accountId, orderRef, amount, provider, gatewayVendor, methodKind, providerRef, status, failureReason,
         checkoutUrl, idempotencyKey, requestFingerprint, createdAt, updatedAt);
   }
 
@@ -251,6 +292,10 @@ public final class PaymentIntent {
 
   public Provider getProvider() {
     return provider;
+  }
+
+  public GatewayVendor getGatewayVendor() {
+    return gatewayVendor;
   }
 
   public MethodKind getMethodKind() {

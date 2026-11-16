@@ -11,6 +11,7 @@ import org.shakvilla.beatzmedia.payments.application.port.in.WebhookResult;
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentEventRepository;
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway;
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentRepository;
+import org.shakvilla.beatzmedia.payments.domain.GatewayVendor;
 import org.shakvilla.beatzmedia.payments.domain.PaymentEvent;
 import org.shakvilla.beatzmedia.payments.domain.PaymentEventType;
 import org.shakvilla.beatzmedia.payments.domain.PaymentIntent;
@@ -84,7 +85,13 @@ public class HandleProviderWebhookService implements HandleProviderWebhook {
   @Override
   @Transactional
   public WebhookResult handle(Provider provider, String signature, byte[] rawBody) {
-    if (rawBody == null || !gateway.verifySignature(provider, signature, rawBody)) {
+    if (rawBody == null) {
+      throw new WebhookSignatureException();
+    }
+
+    GatewayVendor verifiedVendor =
+        gateway.verifySignatureFromAnyGateway(provider, signature, rawBody);
+    if (verifiedVendor == null) {
       throw new WebhookSignatureException();
     }
 
@@ -96,6 +103,9 @@ public class HandleProviderWebhookService implements HandleProviderWebhook {
     if (intent == null) {
       // Unknown/untrusted ref — accept and ignore (202) so the provider does not retry-storm.
       return WebhookResult.IGNORED_UNKNOWN;
+    }
+    if (intent.getGatewayVendor() != verifiedVendor) {
+      throw new WebhookSignatureException();
     }
 
     PaymentEvent event =

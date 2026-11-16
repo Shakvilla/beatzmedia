@@ -10,4 +10,9 @@ package org.shakvilla.beatzmedia.notifications.application.service;
  * <p>Carries only ids + the already-rendered title/body — {@link DispatchSubscriber} builds
  * {@code EmailMessage}/{@code SmsMessage} payloads straight from these fields, no re-fetch needed.
  */
-public record NotificationCreated(String notificationId, String recipientId, String title, String body) {}
+public record NotificationCreated(
+    String notificationId, String recipientId, String title, String body, String actionRoute) {
+  public NotificationCreated(String notificationId, String recipientId, String title, String body) {
+    this(notificationId, recipientId, title, body, null);
+  }
+}

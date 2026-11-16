@@ -41,6 +41,9 @@ public class TrackEntity {
   @Column(name = "image", nullable = false)
   public String image;
 
+  @Column(name = "custom_artwork", nullable = false)
+  public boolean customArtwork;
+
   /** "owned" | "free" | "for-sale" */
   @Column(name = "ownership", nullable = false)
   public String ownership;

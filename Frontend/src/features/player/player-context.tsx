@@ -20,9 +20,11 @@ import {
   useRef,
   type ReactNode,
 } from 'react'
-import { useQuery } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import type { Track } from '../../types'
-import { trackStreamQuery } from '../../lib/api/queries/playback'
+import { apiRecordTrackPlay, trackStreamQuery } from '../../lib/api/queries/playback'
+import { episodeStreamQuery } from '../../lib/api/queries/podcasts'
+import { ListeningEngagementRecorder } from './listening-engagement'
 
 export type RepeatMode = 'off' | 'all' | 'one'
 
@@ -224,7 +226,7 @@ export function reducer(state: PlayerState, action: PlayerAction): PlayerState {
 
 interface PlayerContextValue extends PlayerState {
   currentTrack: Track | undefined
-  playTrack: (track: Track) => void
+  playTrack: (track: Track, startAtSeconds?: number) => void
   playQueue: (tracks: Track[], startIndex?: number) => void
   togglePlay: () => void
   next: () => void
@@ -284,17 +286,25 @@ export function decideAudioErrorRecovery(
 const PlayerContext = createContext<PlayerContextValue | null>(null)
 
 export function PlayerProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient()
   const [state, dispatch] = useReducer(reducer, initialState)
+  const engagementRef = useRef<ListeningEngagementRecorder | null>(null)
+  engagementRef.current ??= new ListeningEngagementRecorder()
 
   const currentTrack = state.queue[state.currentIndex]
 
   // Only sign a stream once the fan has actually asked for playback. The app boots with a queue
   // nobody chose; fetching for it means every page load hits /v1/tracks/<default>/stream, and a
   // 503 there paints "Not available to play right now" before the first interaction (I7).
-  const streamQuery = useQuery({
+  const trackQuery = useQuery({
     ...trackStreamQuery(currentTrack?.id ?? ''),
-    enabled: !!currentTrack && state.hasStarted,
+    enabled: !!currentTrack && currentTrack.playbackKind !== 'podcast_episode' && state.hasStarted,
   })
+  const episodeQuery = useQuery({
+    ...episodeStreamQuery(currentTrack?.id ?? ''),
+    enabled: !!currentTrack && currentTrack.playbackKind === 'podcast_episode' && state.hasStarted,
+  })
+  const streamQuery = currentTrack?.playbackKind === 'podcast_episode' ? episodeQuery : trackQuery
   const stream = streamQuery.data ?? null
   // A preview stream is one the server clipped — it tells us so via previewSeconds.
   const isPreviewStream = stream?.previewSeconds != null
@@ -326,6 +336,7 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // Position to restore after a same-track src swap (focus refetch, background staleTime:0
   // refetch, or the expiry recovery below).
   const resumeAtRef = useRef<number | null>(null)
+  const requestedStartRef = useRef<{ trackId: string; seconds: number } | null>(null)
   // Single-shot guard on the expiry-recovery refetch (see decideAudioErrorRecovery / I3):
   // bounds it to one attempt per track between successful loads, so clock skew or a
   // persistently broken asset can't turn it into an infinite error→refetch→error loop.
@@ -334,7 +345,9 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
   // A track change invalidates any in-flight resume position and re-arms the recovery guard
   // for the new track (I1, I3).
   useEffect(() => {
-    resumeAtRef.current = null
+    const requested = requestedStartRef.current
+    resumeAtRef.current = requested && requested.trackId === currentTrack?.id ? requested.seconds : null
+    requestedStartRef.current = null
     recoveredRef.current = false
   }, [currentTrack?.id])
 
@@ -427,9 +440,20 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
       // re-fire — without this the player claims to be playing, forever (C1).
       isPlaying: state.isPlaying && !derivedUnavailable,
       duration: state.duration,
-      playTrack: (track) => dispatch({ type: 'PLAY_TRACK', track }),
+      playTrack: (track, startAtSeconds = 0) => {
+        if (currentTrack && currentTrack.id !== track.id) engagementRef.current?.skip()
+        if (currentTrack?.id === track.id) resumeAtRef.current = Math.max(0, startAtSeconds)
+        requestedStartRef.current = {
+          trackId: track.id,
+          seconds: Math.max(0, startAtSeconds),
+        }
+        dispatch({ type: 'PLAY_TRACK', track })
+      },
       playQueue: (tracks, startIndex = 0) =>
-        dispatch({ type: 'PLAY_QUEUE', tracks, startIndex }),
+        {
+          if (currentTrack && currentTrack.id !== tracks[startIndex]?.id) engagementRef.current?.skip()
+          dispatch({ type: 'PLAY_QUEUE', tracks, startIndex })
+        },
       togglePlay: () => dispatch({ type: 'TOGGLE_PLAY' }),
       retry: () => {
         // The reachable way out of `unavailable`: re-sign the stream and ask to play again. A
@@ -439,8 +463,14 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         dispatch({ type: 'PLAY' })
       },
       retrying: streamQuery.isFetching,
-      next: () => dispatch({ type: 'NEXT' }),
-      prev: () => dispatch({ type: 'PREV' }),
+      next: () => {
+        engagementRef.current?.skip()
+        dispatch({ type: 'NEXT' })
+      },
+      prev: () => {
+        if (state.progress <= 3) engagementRef.current?.skip()
+        dispatch({ type: 'PREV' })
+      },
       seek: (seconds: number) => {
         const el = audioRef.current
         if (el) el.currentTime = seconds
@@ -468,7 +498,26 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
         ref={audioRef}
         hidden
         preload="metadata"
-        onTimeUpdate={(e) => dispatch({ type: 'SET_PROGRESS', seconds: e.currentTarget.currentTime })}
+        onPlay={() => {
+          if (!currentTrack) return
+          engagementRef.current?.start(currentTrack, state.duration ?? currentTrack.duration)
+          if (currentTrack.playbackKind !== 'podcast_episode') {
+            void apiRecordTrackPlay(currentTrack.id, isPreviewStream ? 'preview' : 'player')
+              .then(() => Promise.all([
+                queryClient.invalidateQueries({ queryKey: ['track', currentTrack.id] }),
+                queryClient.invalidateQueries({ queryKey: ['home'] }),
+                queryClient.invalidateQueries({ queryKey: ['artist'] }),
+                queryClient.invalidateQueries({ queryKey: ['album'] }),
+              ]))
+              .catch(() => {
+                // Playback and analytics have separate availability; a failed count must not stop audio.
+              })
+          }
+        }}
+        onTimeUpdate={(e) => {
+          engagementRef.current?.progress(e.currentTarget.currentTime, e.currentTarget.duration)
+          dispatch({ type: 'SET_PROGRESS', seconds: e.currentTarget.currentTime })
+        }}
         onLoadedMetadata={(e) => {
           const duration = e.currentTarget.duration
           // A duration of Infinity/NaN (unresolved metadata, some live/streamed formats) is not
@@ -483,7 +532,11 @@ export function PlayerProvider({ children }: { children: ReactNode }) {
             resumeAtRef.current = null
           }
         }}
-        onEnded={() => dispatch({ type: 'ENDED', preview: isPreviewStream })}
+        onEnded={() => {
+          if (isPreviewStream) engagementRef.current?.skip()
+          else engagementRef.current?.complete(state.repeat === 'one')
+          dispatch({ type: 'ENDED', preview: isPreviewStream })
+        }}
         onError={handleAudioError}
       />
       {children}

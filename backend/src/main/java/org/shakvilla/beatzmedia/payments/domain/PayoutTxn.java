@@ -24,6 +24,7 @@ public final class PayoutTxn {
   private final WithdrawalId withdrawalId;
   private final AccountId accountId;
   private final Money amount;
+  private final GatewayVendor gatewayVendor;
   private final PayoutTxnStatus status;
   private final String providerRef;
   private final TxnId disburseTxnId; // null until confirmed-settled (SENT rows)
@@ -35,6 +36,7 @@ public final class PayoutTxn {
       WithdrawalId withdrawalId,
       AccountId accountId,
       Money amount,
+      GatewayVendor gatewayVendor,
       PayoutTxnStatus status,
       String providerRef,
       TxnId disburseTxnId,
@@ -44,6 +46,7 @@ public final class PayoutTxn {
     this.withdrawalId = Objects.requireNonNull(withdrawalId, "withdrawalId");
     this.accountId = Objects.requireNonNull(accountId, "accountId");
     this.amount = Objects.requireNonNull(amount, "amount");
+    this.gatewayVendor = Objects.requireNonNull(gatewayVendor, "gatewayVendor");
     this.status = Objects.requireNonNull(status, "status");
     this.providerRef = providerRef;
     this.disburseTxnId = disburseTxnId;
@@ -69,12 +72,26 @@ public final class PayoutTxn {
       Money amount,
       String providerRef,
       Instant sentAt) {
+    return sent(
+        id, batchId, withdrawalId, accountId, amount, GatewayVendor.SANDBOX, providerRef, sentAt);
+  }
+
+  public static PayoutTxn sent(
+      String id,
+      String batchId,
+      WithdrawalId withdrawalId,
+      AccountId accountId,
+      Money amount,
+      GatewayVendor gatewayVendor,
+      String providerRef,
+      Instant sentAt) {
     return new PayoutTxn(
         id,
         batchId,
         withdrawalId,
         accountId,
         amount,
+        gatewayVendor,
         PayoutTxnStatus.SENT,
         providerRef,
         null,
@@ -91,12 +108,28 @@ public final class PayoutTxn {
       String providerRef,
       TxnId disburseTxnId,
       Instant paidAt) {
+    return executed(
+        id, batchId, withdrawalId, accountId, amount, GatewayVendor.SANDBOX, providerRef,
+        disburseTxnId, paidAt);
+  }
+
+  public static PayoutTxn executed(
+      String id,
+      String batchId,
+      WithdrawalId withdrawalId,
+      AccountId accountId,
+      Money amount,
+      GatewayVendor gatewayVendor,
+      String providerRef,
+      TxnId disburseTxnId,
+      Instant paidAt) {
     return new PayoutTxn(
         id,
         batchId,
         withdrawalId,
         accountId,
         amount,
+        gatewayVendor,
         PayoutTxnStatus.PAID,
         providerRef,
         Objects.requireNonNull(disburseTxnId, "disburseTxnId"),
@@ -112,12 +145,26 @@ public final class PayoutTxn {
       Money amount,
       String providerRef,
       Instant at) {
+    return failed(
+        id, batchId, withdrawalId, accountId, amount, GatewayVendor.SANDBOX, providerRef, at);
+  }
+
+  public static PayoutTxn failed(
+      String id,
+      String batchId,
+      WithdrawalId withdrawalId,
+      AccountId accountId,
+      Money amount,
+      GatewayVendor gatewayVendor,
+      String providerRef,
+      Instant at) {
     return new PayoutTxn(
         id,
         batchId,
         withdrawalId,
         accountId,
         amount,
+        gatewayVendor,
         PayoutTxnStatus.FAILED,
         providerRef,
         null,
@@ -146,6 +193,10 @@ public final class PayoutTxn {
 
   public Money getAmount() {
     return amount;
+  }
+
+  public GatewayVendor getGatewayVendor() {
+    return gatewayVendor;
   }
 
   public String getProviderRef() {

@@ -76,6 +76,8 @@ export interface Album {
 
 export interface Track {
   id: ID
+  /** Selects the backend stream endpoint for non-music audio content. */
+  playbackKind?: 'track' | 'podcast_episode'
   title: string
   artistId: ID
   artistName: string
@@ -97,6 +99,8 @@ export interface Track {
   /** e.g. "Lossless • 24-bit/192kHz" */
   quality?: string
   year?: number
+  /** Exact timestamp when the owning release first went live. */
+  releasedAt?: string
   /**
    * Whether the artist permits buyers to download this track's audio (`GET
    * /tracks/:id/download`). Fixed at purchase time for a given buyer — always a plain boolean

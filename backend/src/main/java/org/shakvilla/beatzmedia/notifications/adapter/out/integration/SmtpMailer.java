@@ -25,6 +25,7 @@ import org.shakvilla.beatzmedia.notifications.domain.TransientDeliveryException;
  * inspect the underlying Vert.x mail SMTP reply code to detect permanent (5xx) rejections.
  */
 @ApplicationScoped
+@EmailProvider("smtp")
 public class SmtpMailer implements Mailer {
 
   private static final Logger LOG = Logger.getLogger(SmtpMailer.class);
@@ -41,6 +42,9 @@ public class SmtpMailer implements Mailer {
     try {
       io.quarkus.mailer.Mail mail =
           io.quarkus.mailer.Mail.withText(message.to(), message.subject(), message.body());
+      if (message.htmlBody() != null && !message.htmlBody().isBlank()) {
+        mail.setHtml(message.htmlBody());
+      }
       quarkusMailer.send(mail);
       LOG.info("email dispatched successfully");
     } catch (RuntimeException e) {

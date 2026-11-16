@@ -26,6 +26,36 @@ export function catalogItemQuery(id: string) {
   })
 }
 
+export interface AdminReleaseRevisionWire {
+  id: string
+  releaseId: string
+  status: 'draft' | 'in_review' | 'rejected' | 'approved'
+  version: number
+  title: string
+  genre: string | null
+  description: string | null
+  visibility: string
+  scheduledAt: string | null
+  coverImage: string | null
+  downloadable: boolean | null
+  tracks: { trackId: string; position: number; priceMinor: number; title: string; image: string | null; customArtwork: boolean; durationSec: number }[]
+}
+
+export function catalogRevisionQuery(id: string) {
+  return queryOptions({
+    queryKey: ['admin', 'catalog', 'revision', id],
+    queryFn: () => apiFetch<AdminReleaseRevisionWire>(`/admin/catalog/${id}/revision`),
+  })
+}
+
+export function apiApproveCatalogRevision(id: string, revisionId: string): Promise<void> {
+  return apiFetch<unknown>(`/admin/catalog/${id}/revision/${revisionId}/approve`, { method: 'POST' }).then(() => undefined)
+}
+
+export function apiRejectCatalogRevision(id: string, revisionId: string, reason: string): Promise<void> {
+  return apiFetch<unknown>(`/admin/catalog/${id}/revision/${revisionId}/reject`, { method: 'POST', body: { reason } }).then(() => undefined)
+}
+
 /** `POST /v1/admin/catalog/:id/approve` — publish a pending/flagged release. */
 export function apiApproveCatalog(id: string): Promise<void> {
   return apiFetch<unknown>(`/admin/catalog/${id}/approve`, { method: 'POST' }).then(() => undefined)

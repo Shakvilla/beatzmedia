@@ -11,6 +11,7 @@ import jakarta.persistence.PersistenceException;
 import org.shakvilla.beatzmedia.payments.application.port.out.DuplicatePayoutException;
 import org.shakvilla.beatzmedia.payments.application.port.out.PayoutRepository;
 import org.shakvilla.beatzmedia.payments.domain.AccountId;
+import org.shakvilla.beatzmedia.payments.domain.GatewayVendor;
 import org.shakvilla.beatzmedia.payments.domain.IdempotencyKey;
 import org.shakvilla.beatzmedia.payments.domain.MethodKind;
 import org.shakvilla.beatzmedia.payments.domain.PayoutBatch;
@@ -289,6 +290,7 @@ public class JpaPayoutRepository implements PayoutRepository {
     entity.accountId = txn.getAccountId().value();
     entity.amountMinor = txn.getAmount().minor();
     entity.status = txn.getStatus().wire();
+    entity.gatewayVendor = txn.getGatewayVendor().wireValue();
     entity.providerRef = txn.getProviderRef();
     entity.disburseTxnId = txn.getDisburseTxnId() == null ? null : txn.getDisburseTxnId().value();
     entity.paidAt = txn.getPaidAt();
@@ -304,6 +306,16 @@ public class JpaPayoutRepository implements PayoutRepository {
       throw e;
     }
     return txn;
+  }
+
+  @Override
+  public GatewayVendor findGatewayVendor(WithdrawalId withdrawalId) {
+    @SuppressWarnings("unchecked")
+    List<String> rows =
+        em.createNativeQuery("SELECT gateway_vendor FROM payout_txn WHERE withdrawal_id = :wid LIMIT 1")
+            .setParameter("wid", withdrawalId.value())
+            .getResultList();
+    return rows.isEmpty() ? GatewayVendor.SANDBOX : GatewayVendor.fromWireValue(rows.getFirst());
   }
 
   // ---- async cashout confirmation (WU-PAY-7) ------------------------------

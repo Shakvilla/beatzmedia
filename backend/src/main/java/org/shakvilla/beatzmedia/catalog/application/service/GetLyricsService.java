@@ -27,7 +27,7 @@ public class GetLyricsService implements GetLyrics {
 
   @Override
   public LyricsView get(TrackId id) {
-    return catalogRepository.findLyrics(id)
+    return catalogRepository.findPublishedLyrics(id)
         .map(lyrics -> new LyricsView(
             lyrics.getLines().stream()
                 .map(l -> new LyricLineView(l.tSec(), l.text()))

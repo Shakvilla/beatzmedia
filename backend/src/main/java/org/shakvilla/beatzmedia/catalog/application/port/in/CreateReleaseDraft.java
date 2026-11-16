@@ -28,7 +28,14 @@ public interface CreateReleaseDraft {
       Instant scheduledAt,
       String genre,
       String description,
-      Boolean downloadable) {
+      Boolean downloadable,
+      String originCountry) {
+
+    public CreateDraftCommand(
+        ArtistId artistId, String title, ReleaseType type, Visibility visibility,
+        Instant scheduledAt, String genre, String description, Boolean downloadable) {
+      this(artistId, title, type, visibility, scheduledAt, genre, description, downloadable, null);
+    }
 
     /** Legacy 7-arg form — no download choice made at creation ({@code downloadable == null}). */
     public CreateDraftCommand(
@@ -39,7 +46,7 @@ public interface CreateReleaseDraft {
         Instant scheduledAt,
         String genre,
         String description) {
-      this(artistId, title, type, visibility, scheduledAt, genre, description, null);
+      this(artistId, title, type, visibility, scheduledAt, genre, description, null, null);
     }
   }
 }

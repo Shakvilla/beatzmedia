@@ -106,7 +106,7 @@ class GrantDownloadPermissionTest {
     seedRelease(RELEASE, true);
     pendingOrder("BZ-2026-00001");
 
-    grantOwnershipService.grantForSettledOrder("BZ-2026-00001", "pi_1", "mtn");
+    grantOwnershipService.grantForSettledOrder("BZ-2026-00001", "intent-BZ-2026-00001", "mtn");
 
     assertTrue(ownershipRepository.findByTrack(TRACK).isDownloadable());
   }
@@ -116,7 +116,7 @@ class GrantDownloadPermissionTest {
     seedRelease(RELEASE, false);
     pendingOrder("BZ-2026-00002");
 
-    grantOwnershipService.grantForSettledOrder("BZ-2026-00002", "pi_2", "mtn");
+    grantOwnershipService.grantForSettledOrder("BZ-2026-00002", "intent-BZ-2026-00002", "mtn");
 
     assertFalse(ownershipRepository.findByTrack(TRACK).isDownloadable());
   }
@@ -125,7 +125,7 @@ class GrantDownloadPermissionTest {
   void anExistingGrantKeepsItsPermissionWhenTheArtistLaterRefuses() {
     seedRelease(RELEASE, true);
     pendingOrder("BZ-2026-00003");
-    grantOwnershipService.grantForSettledOrder("BZ-2026-00003", "pi_3", "mtn");
+    grantOwnershipService.grantForSettledOrder("BZ-2026-00003", "intent-BZ-2026-00003", "mtn");
 
     seedRelease(RELEASE, false); // the artist changes their mind
 

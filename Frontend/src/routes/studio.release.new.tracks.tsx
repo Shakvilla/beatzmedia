@@ -7,6 +7,9 @@ import {
 import { cn } from '../utils/cn'
 import { useReleaseDraft, type UploadedTrack } from '../features/studio/release-draft-context'
 import { PRICE_OPTIONS, CREATOR_REVENUE_SHARE, BUNDLE_DISCOUNT, isMultiTrack } from '../lib/studio-data'
+import { useToast } from '../components/ui/toast-provider'
+import { ApiError } from '../lib/api/errors'
+import { TrackLyricsEditor } from '../features/studio/track-lyrics-editor'
 
 export const Route = createFileRoute('/studio/release/new/tracks')({
   component: UploadTracksStep,
@@ -17,10 +20,8 @@ const LABEL = 'text-[11px] font-bold uppercase tracking-[0.15em] text-gray-500 d
 /**
  * Advisory shown when any queued track came from an already-lossy source (ADR-35).
  *
- * Deliberately NOT blocking: MP3 is accepted, and an artist who only has an MP3 should still be
- * able to release. It exists so an artist who *does* have the master knows to use it — fans buy
- * these tracks outright, and re-encoding an MP3 to the AAC delivery rendition is a second lossy
- * generation they would be paying to own.
+ * Advisory only: MP3 is lossy and M4A may contain lossy AAC. Artists with a lossless master can
+ * upload that instead; the original compressed file remains accepted.
  */
 export function LossySourceNotice({ tracks }: { tracks: UploadedTrack[] }) {
   const lossy = tracks.filter((t) => t.lossy)
@@ -34,12 +35,12 @@ export function LossySourceNotice({ tracks }: { tracks: UploadedTrack[] }) {
       <div className="text-xs leading-relaxed text-amber-900 dark:text-amber-200">
         <span className="font-bold">
           {lossy.length === 1
-            ? `“${lossy[0].title}” is an MP3.`
-            : `${lossy.length} tracks are MP3s.`}
+            ? `“${lossy[0].title}” may be a compressed source.`
+            : `${lossy.length} tracks may be compressed sources.`}
         </span>{' '}
-        We'll still publish {lossy.length === 1 ? 'it' : 'them'}, but MP3 is already compressed —
-        re-encoding for streaming loses a little more quality each time. If you have the original
-        WAV or FLAC, upload that instead and your buyers get the better master.
+        We'll still publish {lossy.length === 1 ? 'it' : 'them'}. MP3 and some M4A files use lossy
+        audio, so re-encoding for streaming can reduce quality. If you have the original WAV or FLAC,
+        upload that instead and your buyers get the better master.
       </div>
     </div>
   )
@@ -55,8 +56,17 @@ function clock(seconds: number): string {
 const priceLabel = (p: number) => (p === 0 ? 'FREE' : `₵${p.toFixed(2)}`)
 
 function UploadTracksStep() {
-  const { draft, uploadTrack, removeTrack, updateTrack, moveTrack, reorderTracks, setAllPrices, setField } = useReleaseDraft()
+  const { draft, uploadTrack, uploadTrackArtwork, removeTrack, updateTrack, moveTrack, reorderTracks, setAllPrices, setField } = useReleaseDraft()
+  const { toast } = useToast()
   const multi = isMultiTrack(draft.releaseType)
+  const uploadArtwork = async (trackId: string, file: File) => {
+    try {
+      await uploadTrackArtwork(trackId, file)
+      toast('Track artwork uploaded', 'success')
+    } catch (error) {
+      toast(error instanceof ApiError ? error.message : 'Could not upload track artwork', 'error')
+    }
+  }
 
   // Shared single-element audio preview so the artist can confirm uploads.
   const audioRef = useRef<HTMLAudioElement | null>(null)
@@ -96,6 +106,8 @@ function UploadTracksStep() {
           onPrice={(id, price) => updateTrack(id, { price })}
           onBulkPrice={setAllPrices}
           onToggleExplicit={(id, explicit) => updateTrack(id, { explicit })}
+          onArtwork={uploadArtwork}
+          releaseId={draft.releaseId}
         />
       ) : (
         <SingleUpload
@@ -106,6 +118,7 @@ function UploadTracksStep() {
           onRemove={removeTrack}
           onPrice={(price) => setField('price', price)}
           onCover={(url) => setField('coverImage', url)}
+          releaseId={draft.releaseId}
         />
       )}
     </>
@@ -115,7 +128,7 @@ function UploadTracksStep() {
 /* ----------------------------- Single mode ----------------------------- */
 
 function SingleUpload({
-  ingest, playingId, onTogglePlay, onRename, onRemove, onPrice, onCover,
+  ingest, playingId, onTogglePlay, onRename, onRemove, onPrice, onCover, releaseId,
 }: {
   ingest: (f: FileList | null) => void
   playingId: string | null
@@ -124,6 +137,7 @@ function SingleUpload({
   onRemove: (id: string) => void
   onPrice: (price: number) => void
   onCover: (url: string) => void
+  releaseId: string | null
 }) {
   const { draft } = useReleaseDraft()
   const audioInput = useRef<HTMLInputElement>(null)
@@ -134,7 +148,7 @@ function SingleUpload({
   return (
     <div className="grid grid-cols-1 lg:grid-cols-[1fr_340px] gap-10 lg:gap-16 items-start">
       <div className="flex flex-col gap-6">
-        <input ref={audioInput} type="file" accept="audio/*" className="hidden" onChange={(e) => ingest(e.target.files)} />
+        <input ref={audioInput} type="file" accept=".wav,.flac,.mp3,.m4a,audio/wav,audio/flac,audio/mpeg,audio/mp4,audio/m4a,audio/x-m4a" className="hidden" onChange={(e) => ingest(e.target.files)} />
 
         {!track ? (
           <button
@@ -150,7 +164,7 @@ function SingleUpload({
           >
             <Upload size={30} className="text-beatz-green" />
             <span className="text-lg font-bold text-beatz-dark-bg dark:text-white">Drop your track here</span>
-            <span className="text-xs text-gray-400 dark:text-gray-500">One audio file · WAV, FLAC or MP3 · up to 200 MB</span>
+            <span className="text-xs text-gray-400 dark:text-gray-500">One audio file · WAV, FLAC, MP3 or M4A · up to 200 MB</span>
           </button>
         ) : (
           <div className="flex flex-col gap-4">
@@ -177,6 +191,8 @@ function SingleUpload({
             </button>
           </div>
         )}
+
+        {track && releaseId && <TrackLyricsEditor releaseId={releaseId} trackId={track.id} trackTitle={track.title} />}
 
         <LossySourceNotice tracks={draft.tracks} />
       </div>
@@ -230,7 +246,7 @@ function SingleUpload({
 /* ------------------------------ Album mode ------------------------------ */
 
 function AlbumUpload({
-  ingest, playingId, onTogglePlay, onRename, onRemove, onMove, onReorder, onPrice, onBulkPrice, onToggleExplicit,
+  ingest, playingId, onTogglePlay, onRename, onRemove, onMove, onReorder, onPrice, onBulkPrice, onToggleExplicit, onArtwork, releaseId,
 }: {
   ingest: (f: FileList | null) => void
   playingId: string | null
@@ -242,6 +258,8 @@ function AlbumUpload({
   onPrice: (id: string, price: number) => void
   onBulkPrice: (price: number) => void
   onToggleExplicit: (id: string, explicit: boolean) => void
+  onArtwork: (id: string, file: File) => Promise<void>
+  releaseId: string | null
 }) {
   const { draft } = useReleaseDraft()
   const fileInput = useRef<HTMLInputElement>(null)
@@ -258,7 +276,7 @@ function AlbumUpload({
 
   return (
     <div className="flex flex-col gap-8">
-      <input ref={fileInput} type="file" accept="audio/*" multiple className="hidden" onChange={(e) => ingest(e.target.files)} />
+      <input ref={fileInput} type="file" accept=".wav,.flac,.mp3,.m4a,audio/wav,audio/flac,audio/mpeg,audio/mp4,audio/m4a,audio/x-m4a" multiple className="hidden" onChange={(e) => ingest(e.target.files)} />
 
       {/* Drop hint */}
       <button
@@ -274,7 +292,7 @@ function AlbumUpload({
       >
         <Upload size={20} className="text-beatz-green" />
         <span className="text-base font-bold text-beatz-green">Drop multiple tracks here</span>
-        <span className="text-xs text-gray-400 dark:text-gray-500">or click to browse · WAV / FLAC / MP3 · drag to reorder</span>
+        <span className="text-xs text-gray-400 dark:text-gray-500">or click to browse · WAV / FLAC / MP3 / M4A · drag to reorder</span>
       </button>
 
       <LossySourceNotice tracks={tracks} />
@@ -312,6 +330,7 @@ function AlbumUpload({
           <div className="flex items-center gap-4 px-2 pb-2 border-b border-gray-200 dark:border-white/10 text-[10px] font-bold uppercase tracking-widest text-gray-400 dark:text-gray-500">
             <span className="w-5 shrink-0" />
             <span className="w-5 text-center shrink-0">#</span>
+            <span className="w-24 text-center shrink-0">Artwork</span>
             <span className="flex-1">Track</span>
             <span className="w-14 text-right shrink-0">Length</span>
             <span className="w-28 text-center shrink-0">Status</span>
@@ -334,6 +353,8 @@ function AlbumUpload({
               onMove={(dir) => onMove(track.id, dir)}
               onPrice={(p) => onPrice(track.id, p)}
               onToggleExplicit={() => onToggleExplicit(track.id, !track.explicit)}
+              onArtwork={(file) => onArtwork(track.id, file)}
+              releaseId={releaseId}
               onDragStart={() => { dragFrom.current = i }}
               onDropRow={() => { if (dragFrom.current !== null) { onReorder(dragFrom.current, i); dragFrom.current = null } }}
             />
@@ -352,7 +373,7 @@ function AlbumUpload({
 }
 
 function AlbumRow({
-  track, index, isFirst, isLast, reorderMode, playing,
+  track, index, isFirst, isLast, reorderMode, playing, onArtwork, releaseId,
   onTogglePlay, onRename, onRemove, onMove, onPrice, onToggleExplicit, onDragStart, onDropRow,
 }: {
   track: UploadedTrack
@@ -361,6 +382,8 @@ function AlbumRow({
   isLast: boolean
   reorderMode: boolean
   playing: boolean
+  onArtwork: (file: File) => Promise<void>
+  releaseId: string | null
   onTogglePlay: () => void
   onRename: (title: string) => void
   onRemove: () => void
@@ -371,8 +394,17 @@ function AlbumRow({
   onDropRow: () => void
 }) {
   const [menuOpen, setMenuOpen] = useState(false)
+  const [artworkBusy, setArtworkBusy] = useState(false)
+  const artworkInput = useRef<HTMLInputElement>(null)
+
+  const chooseArtwork = async (file: File | undefined) => {
+    if (!file || artworkBusy) return
+    setArtworkBusy(true)
+    try { await onArtwork(file) } finally { setArtworkBusy(false) }
+  }
 
   return (
+    <>
     <div
       draggable={reorderMode}
       onDragStart={onDragStart}
@@ -393,6 +425,20 @@ function AlbumRow({
       </div>
 
       <span className="w-5 text-center text-sm font-mono text-gray-400 dark:text-gray-500 shrink-0">{index + 1}</span>
+
+      <div className="w-24 shrink-0 flex flex-col items-center gap-1">
+        <input ref={artworkInput} type="file" accept="image/png,image/jpeg" className="hidden"
+          onChange={(event) => { const file = event.target.files?.[0]; void chooseArtwork(file); event.currentTarget.value = '' }} />
+        <button type="button" disabled={artworkBusy || track.status !== 'ready'} title={`Upload cover art for ${track.title}`}
+          aria-label={`Upload cover art for ${track.title}`} onClick={() => artworkInput.current?.click()}
+          className="relative w-10 h-10 rounded-lg overflow-hidden border border-gray-200 dark:border-white/10 disabled:opacity-50">
+          {track.image ? <img src={track.image} alt="" className="w-full h-full object-cover" /> : <ImageIcon className="m-auto text-gray-400" size={18} />}
+          {artworkBusy && <span className="absolute inset-0 bg-black/60 text-white text-[8px] flex items-center justify-center">Uploading</span>}
+        </button>
+        <span className={cn('text-[9px] font-bold', track.customArtwork ? 'text-beatz-green' : 'text-amber-600 dark:text-amber-400')}>
+          {track.customArtwork ? 'Added' : 'Required'}
+        </span>
+      </div>
 
       <div className="flex-1 min-w-0 flex items-center gap-2">
         <input
@@ -441,6 +487,8 @@ function AlbumRow({
         </button>
       </div>
     </div>
+    {releaseId && <div className="px-2 pb-3 border-b border-dashed border-gray-200 dark:border-white/5"><TrackLyricsEditor releaseId={releaseId} trackId={track.id} trackTitle={track.title} /></div>}
+    </>
   )
 }
 

@@ -37,8 +37,10 @@ class LibraryIT {
 
   // Catalog ids we seed via EM
   private static final String TRACK_ID = "lib-it-track-1";
+  private static final String SECOND_TRACK_ID = "lib-it-track-2";
   private static final String ARTIST_ID = "lib-it-artist-1";
   private static final String ALBUM_ID = "lib-it-album-1";
+  private static final String PODCAST_ID = "lib-it-podcast-1";
 
   /** Tokens obtained after sign-up (static: sign-up only happens once per Quarkus run). */
   private static String fan1Token;
@@ -68,11 +70,26 @@ class LibraryIT {
         .executeUpdate();
 
     em.createNativeQuery(
+            "INSERT INTO track (id, title, artist_id, artist_name, duration_sec, image, ownership)"
+                + " VALUES (:id, 'LIB IT Track 2', :aid, 'LIB IT Artist', 180, 'img.jpg', 'free')"
+                + " ON CONFLICT (id) DO NOTHING")
+        .setParameter("id", SECOND_TRACK_ID)
+        .setParameter("aid", ARTIST_ID)
+        .executeUpdate();
+
+    em.createNativeQuery(
             "INSERT INTO album (id, title, artist_id, artist_name, year, cover_image, list_price_minor)"
                 + " VALUES (:id, 'LIB IT Album', :aid, 'LIB IT Artist', 2024, 'img.jpg', 0)"
                 + " ON CONFLICT (id) DO NOTHING")
         .setParameter("id", ALBUM_ID)
         .setParameter("aid", ARTIST_ID)
+        .executeUpdate();
+
+    em.createNativeQuery(
+            "INSERT INTO podcast (id, title, publisher, image, category, supports_tips)"
+                + " VALUES (:id, 'LIB IT Podcast', 'LIB IT Publisher', 'img.jpg', 'Tech', false)"
+                + " ON CONFLICT (id) DO NOTHING")
+        .setParameter("id", PODCAST_ID)
         .executeUpdate();
 
     // Sign up fans if not already done (tokens are static)
@@ -191,6 +208,16 @@ class LibraryIT {
         .put("/v1/me/follows/artists/" + ARTIST_ID)
         .then()
         .statusCode(204);
+
+    given().when().get("/v1/artists/" + ARTIST_ID)
+        .then().statusCode(200).body("followers", equalTo(1));
+
+    // Repeating an idempotent follow must not inflate the public total.
+    given().header("Authorization", "Bearer " + fan1Token)
+        .when().put("/v1/me/follows/artists/" + ARTIST_ID)
+        .then().statusCode(204);
+    given().when().get("/v1/artists/" + ARTIST_ID)
+        .then().statusCode(200).body("followers", equalTo(1));
   }
 
   @Test
@@ -202,6 +229,9 @@ class LibraryIT {
         .delete("/v1/me/follows/artists/" + ARTIST_ID)
         .then()
         .statusCode(204);
+
+    given().when().get("/v1/artists/" + ARTIST_ID)
+        .then().statusCode(200).body("followers", equalTo(0));
   }
 
   @Test
@@ -214,6 +244,37 @@ class LibraryIT {
         .then()
         .statusCode(404)
         .body("error.code", equalTo("ARTIST_NOT_FOUND"));
+  }
+
+  @Test
+  @Order(8)
+  void followPodcast_persistsForOnlyTheFollowingAccount() {
+    given().header("Authorization", "Bearer " + fan2Token)
+        .put("/v1/me/follows/shows/" + PODCAST_ID).then().statusCode(204);
+    given().header("Authorization", "Bearer " + fan2Token)
+        .put("/v1/me/follows/shows/" + PODCAST_ID).then().statusCode(204);
+
+    given().header("Authorization", "Bearer " + fan2Token)
+        .get("/v1/me/collection").then().statusCode(200)
+        .body("followedShows", contains(PODCAST_ID));
+    given().header("Authorization", "Bearer " + fan1Token)
+        .get("/v1/me/collection").then().statusCode(200)
+        .body("followedShows", not(hasItem(PODCAST_ID)));
+
+    given().header("Authorization", "Bearer " + fan2Token)
+        .delete("/v1/me/follows/shows/" + PODCAST_ID).then().statusCode(204);
+    given().header("Authorization", "Bearer " + fan2Token)
+        .get("/v1/me/collection").then().statusCode(200)
+        .body("followedShows", not(hasItem(PODCAST_ID)));
+  }
+
+  @Test
+  @Order(8)
+  void followPodcast_unknown_returns404() {
+    given().header("Authorization", "Bearer " + fan2Token)
+        .put("/v1/me/follows/shows/no-such-podcast-xyz")
+        .then().statusCode(404)
+        .body("error.code", equalTo("SHOW_NOT_FOUND"));
   }
 
   // ---- Saved albums (LLFR-LIBRARY-01.4) ----
@@ -387,5 +448,46 @@ class LibraryIT {
         .get("/v1/me/collection")
         .then()
         .statusCode(401);
+  }
+
+  @Test
+  @Order(20)
+  void monthlyListeners_count_unique_identified_accounts_after_playback() {
+    given().when().get("/v1/artists/" + ARTIST_ID)
+        .then().statusCode(200).body("monthlyListeners", equalTo(0));
+
+    given().header("Authorization", "Bearer " + fan1Token)
+        .contentType(ContentType.JSON).body("{\"source\":\"player\"}")
+        .when().post("/v1/tracks/" + TRACK_ID + "/play")
+        .then().statusCode(204);
+    given().when().get("/v1/artists/" + ARTIST_ID)
+        .then().statusCode(200).body("monthlyListeners", equalTo(1));
+
+    // Another play by the same account on a different track is still one listener.
+    given().header("Authorization", "Bearer " + fan1Token)
+        .contentType(ContentType.JSON).body("{\"source\":\"player\"}")
+        .when().post("/v1/tracks/" + SECOND_TRACK_ID + "/play")
+        .then().statusCode(204);
+    given().when().get("/v1/artists/" + ARTIST_ID)
+        .then().statusCode(200).body("monthlyListeners", equalTo(1));
+
+    given().header("Authorization", "Bearer " + fan2Token)
+        .contentType(ContentType.JSON).body("{\"source\":\"player\"}")
+        .when().post("/v1/tracks/" + TRACK_ID + "/play")
+        .then().statusCode(204);
+    given().when().get("/v1/artists/" + ARTIST_ID)
+        .then().statusCode(200).body("monthlyListeners", equalTo(2));
+    given().when().get("/v1/home")
+        .then().statusCode(200)
+        .body("rails.popularArtists.find { it.id == '" + ARTIST_ID + "' }.monthlyListeners",
+            equalTo(2))
+        .body("rails.popularArtists[0].id", equalTo(ARTIST_ID));
+
+    // Anonymous plays have no stable listener identity and cannot inflate the total.
+    given().contentType(ContentType.JSON).body("{\"source\":\"player\"}")
+        .when().post("/v1/tracks/" + TRACK_ID + "/play")
+        .then().statusCode(204);
+    given().when().get("/v1/artists/" + ARTIST_ID)
+        .then().statusCode(200).body("monthlyListeners", equalTo(2));
   }
 }

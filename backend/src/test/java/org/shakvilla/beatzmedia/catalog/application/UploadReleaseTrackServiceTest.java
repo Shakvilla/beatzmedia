@@ -80,6 +80,17 @@ class UploadReleaseTrackServiceTest {
     assertEquals(ARTIST.value(), entry.getActor());
   }
 
+  @Test
+  void upload_m4aWithUnknownBrowserMime_reachesMediaValidation() {
+    draft();
+    AudioUpload upload = new AudioUpload("song.m4a", "application/octet-stream", 3L,
+        new ByteArrayInputStream(new byte[] {1, 2, 3}), "m4a-hash");
+
+    UploadedTrackView view = service.upload(new ReleaseId("r1"), ARTIST, upload);
+
+    assertEquals(0, view.position());
+  }
+
   /**
    * Regression (payments-review F1): position must be derived as max(existing)+1, not size().
    * removeTrack filters by trackId without renumbering, so upload(0),upload(1),remove(first),

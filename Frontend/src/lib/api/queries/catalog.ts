@@ -16,7 +16,12 @@ import {
 } from '../mappers'
 
 interface HomeFeedWire {
-  trending: TrackWire[]
+  trending: {
+    type: 'track' | 'album' | 'ep' | 'mixtape'
+    track: TrackWire | null
+    album: AlbumWire | null
+    plays: number
+  }[]
   top10: TrackWire[]
   featuredAlbums: AlbumWire[]
   rails: {
@@ -31,8 +36,19 @@ export function homeQuery() {
     queryKey: ['home'],
     queryFn: async () => {
       const wire = await apiFetch<HomeFeedWire>('/home')
+      const trending: (
+        | { type: 'track'; track: ReturnType<typeof toTrack>; plays: number }
+        | { type: 'album' | 'ep' | 'mixtape'; album: ReturnType<typeof toAlbum>; plays: number }
+      )[] = []
+      for (const item of wire.trending) {
+        if (item.type !== 'track' && item.album) {
+          trending.push({ type: item.type, album: toAlbum(item.album), plays: item.plays })
+        } else if (item.type === 'track' && item.track) {
+          trending.push({ type: 'track', track: toTrack(item.track), plays: item.plays })
+        }
+      }
       return {
-        trending: wire.trending.map(toTrack),
+        trending,
         top10: wire.top10.map(toTrack),
         featuredAlbums: wire.featuredAlbums.map(toAlbum),
         rails: {

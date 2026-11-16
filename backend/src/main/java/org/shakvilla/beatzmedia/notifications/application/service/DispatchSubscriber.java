@@ -49,7 +49,7 @@ public class DispatchSubscriber {
     NotificationId notificationId = new NotificationId(event.notificationId());
 
     if (contact.emailDispatchable()) {
-      dispatch(notificationId, Channel.email, contact.email(), event.title(), event.body());
+      dispatch(notificationId, Channel.email, contact.email(), event.title(), event.body(), event.actionRoute());
     } else {
       LOG.debugf(
           "notification %s: email channel skipped (opted out or no usable contact) — INV-N3",
@@ -57,7 +57,7 @@ public class DispatchSubscriber {
     }
 
     if (contact.smsDispatchable()) {
-      dispatch(notificationId, Channel.sms, contact.phone(), event.title(), event.body());
+      dispatch(notificationId, Channel.sms, contact.phone(), event.title(), event.body(), null);
     } else {
       LOG.debugf(
           "notification %s: sms channel skipped (opted out or no usable contact) — INV-N3",
@@ -65,8 +65,8 @@ public class DispatchSubscriber {
     }
   }
 
-  private void dispatch(NotificationId notificationId, Channel channel, String to, String title, String body) {
+  private void dispatch(NotificationId notificationId, Channel channel, String to, String title, String body, String actionRoute) {
     DeliveryAttempt attempt = attemptService.createPendingIfAbsent(notificationId, channel);
-    attemptService.attemptSend(attempt, to, title, body);
+    attemptService.attemptSend(attempt, to, title, body, actionRoute);
   }
 }

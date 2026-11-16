@@ -54,7 +54,7 @@ import org.shakvilla.beatzmedia.platform.domain.PageRequest;
  */
 @Path("/v1/admin/users")
 @Produces(MediaType.APPLICATION_JSON)
-@Tag(name = "admin-users")
+@Tag(name = "Administrator Management")
 @SecurityRequirement(name = "BearerAuth")
 public class AdminUsersResource {
 

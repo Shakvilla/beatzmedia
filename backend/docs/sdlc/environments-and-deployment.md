@@ -83,7 +83,7 @@ services:
     restart: unless-stopped
 
   objectstore:
-    image: minio/minio:latest
+    image: pgsty/silo:RELEASE.2026-10-26T00-00-00Z
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: minioadmin
@@ -101,7 +101,7 @@ services:
     restart: unless-stopped
 
   createbuckets:
-    image: minio/mc:latest
+    image: pgsty/mc:RELEASE.2026-09-16T00-00-00Z
     depends_on:
       objectstore:
         condition: service_healthy
@@ -238,7 +238,7 @@ docker compose ps                          # all healthy?
 curl localhost:8080/q/health/ready         # {"status":"UP",...}
 # Mailpit UI http://localhost:8025 · MinIO console http://localhost:9001
 docker compose down                        # stop (keeps volumes)
-docker compose down -v                     # stop + wipe pgdata/miniodata
+docker compose down -v                     # DESTRUCTIVE: stop + delete pgdata/miniodata
 ```
 
 For the fastest inner loop, prefer **`./mvnw -f backend/pom.xml quarkus:dev`** (live reload). With no
@@ -247,10 +247,11 @@ Testcontainers (PRD §5.3). When Compose URLs are set, Dev Services stand down. 
 (`*IT`) target the Compose / Testcontainers Postgres + MinIO; unit tests use in-memory fakes for
 output ports.
 
-### 2.3 Running MinIO locally
+### 2.3 Running the S3-compatible store locally
 
-MinIO is the local stand-in for S3. It's already wired as the `objectstore` service in
-`backend/docker-compose.yml`, and a companion **`createbuckets`** one-shot job (`minio/mc`) creates the
+Silo is the local stand-in for S3 and preserves the MinIO-compatible API used by the app. It's
+already wired as the `objectstore` service in `backend/docker-compose.yml`, and a companion
+**`createbuckets`** one-shot job (`pgsty/mc`) creates the
 two required buckets. You almost never configure it by hand — pick one of the two workflows below.
 
 **Fixed facts** (defaults in `application.properties`, overridable via `BEATZ_S3_*` env):
@@ -313,7 +314,7 @@ Both buckets **must exist** or uploads fail. If you run MinIO outside the Compos
 `createbuckets` didn't run), create them with the `mc` client on the Compose network:
 
 ```bash
-docker run --rm --network beatzclik_default minio/mc:latest sh -c "\
+docker run --rm --network beatzclik_default pgsty/mc:RELEASE.2026-09-16T00-00-00Z sh -c "\
   mc alias set local http://objectstore:9000 minioadmin minioadmin && \
   mc mb --ignore-existing local/beatz-media-originals && \
   mc mb --ignore-existing local/beatz-media-delivery && \
@@ -330,7 +331,7 @@ served only via time-boxed presigned URLs (INV-3 / `architecture/media.md`).
 ```bash
 docker compose logs -f objectstore createbuckets   # inspect MinIO / bucket-init output
 docker compose down                                 # stop, keep the miniodata volume
-docker compose down -v                              # stop + wipe pgdata/miniodata (createbuckets re-runs on next up)
+docker compose down -v                              # DESTRUCTIVE: delete pgdata/miniodata (createbuckets re-runs on next up)
 ```
 
 - **Path-style access is mandatory** — MinIO doesn't support the AWS virtual-host bucket style. It's
@@ -465,6 +466,7 @@ From PRD §5.2. **Secret?** marks values that must never be committed and must c
 | Variable | Purpose | Example (dev) | Secret? | Notes per env |
 |---|---|---|---|---|
 | `QUARKUS_PROFILE` | Active profile | `dev` | no | `prod` in staging+prod |
+| `BEATZ_CORS_ORIGINS` | Browser origins allowed to call the API | `http://localhost:5173,http://localhost:4173` | no | required in `%prod`; explicit HTTPS origins only, never `*` |
 | `QUARKUS_DATASOURCE_JDBC_URL` | Postgres JDBC URL | `jdbc:postgresql://db:5432/beatzmedia` | no | managed host in prod |
 | `QUARKUS_DATASOURCE_USERNAME` | DB user | `beatz` | no | least-priv role in prod |
 | `QUARKUS_DATASOURCE_PASSWORD` | DB password | `beatz` | **yes** | from secret store |
@@ -476,16 +478,22 @@ From PRD §5.2. **Secret?** marks values that must never be committed and must c
 | `BEATZ_S3_BUCKET_DELIVERY` | Delivery bucket | `beatz-media-delivery` | no | per-env bucket name |
 | `BEATZ_SIGNED_URL_TTL_SECONDS` | Signed URL lifetime | `300` | no | tune per env |
 | `BEATZ_PREVIEW_SECONDS` | Preview clip length | `30` | no | INV-3 |
-| `BEATZ_JWT_PRIVATE_KEY` | JWT signing key (PEM/PKCS8) | dev key | **yes** | unique per env, rotate |
-| `BEATZ_JWT_PUBLIC_KEY` | JWT verify key | dev key | no* | public, but env-specific |
+| `BEATZ_JWT_PRIVATE_KEY_LOCATION` | JWT signing-key file path or HTTPS URL | classpath dev key | **yes** | required in `%prod`; unique per env, rotate |
+| `BEATZ_JWT_PUBLIC_KEY_LOCATION` | JWT verification-key file path or HTTPS URL | classpath dev key | no* | required in `%prod`; paired with signing key |
 | `BEATZ_JWT_ISSUER` | Token issuer claim | `https://beatzclik` | no | per env |
 | `QUARKUS_MAILER_HOST` | SMTP host | `mail` | no | provider host in prod |
 | `QUARKUS_MAILER_PORT` | SMTP port | `1025` | no | `587`/`465` in prod |
 | `QUARKUS_MAILER_FROM` | From address | `no-reply@beatzclik.local` | no | verified domain in prod |
 | `QUARKUS_MAILER_USERNAME` | SMTP user | — | **yes** | prod only |
 | `QUARKUS_MAILER_PASSWORD` | SMTP password | — | **yes** | prod only |
+| `BEATZ_PROVIDER_CONFIG_ENCRYPTION_KEY` | AES-256 key for admin-managed provider credentials (base64, 32 decoded bytes) | — | **yes** | persist/backup per environment; losing it makes saved credentials unreadable |
 | `BEATZ_SMS_ENDPOINT` | SMS send endpoint | `http://sms:8026/send` | no | provider URL in prod |
 | `BEATZ_SMS_API_KEY` | SMS provider key | — | **yes** | prod only |
+| `BEATZ_FROG_BASE_URL` | FROG API base URL | `https://frogapi.wigal.com.gh` | no | override only for a controlled FROG test endpoint |
+| `BEATZ_FROG_API_KEY` | FROG API key (environment fallback) | — | **yes** | or configure in super-admin settings |
+| `BEATZ_FROG_USERNAME` | FROG account username (environment fallback) | — | **yes** | or configure in super-admin settings |
+| `BEATZ_FROG_SENDER_ID` | FROG-approved sender ID (environment fallback) | — | no | or configure in super-admin settings |
+| `BEATZ_PHONE_VERIFICATION_HMAC_KEY` | Base64 key (at least 32 decoded bytes) used to protect stored OTPs | dev/test profile only | **yes** | unique secret per environment; production startup requires it |
 | `BEATZ_MOMO_MTN_API_KEY` | MTN MoMo key | — | **yes** | sandbox (stg) / live (prod) |
 | `BEATZ_MOMO_VODAFONE_API_KEY` | Telecel/Vodafone Cash key | — | **yes** | sandbox / live |
 | `BEATZ_MOMO_AIRTELTIGO_API_KEY` | AirtelTigo Money key | — | **yes** | sandbox / live |
@@ -502,6 +510,19 @@ From PRD §5.2. **Secret?** marks values that must never be committed and must c
 
 > *Public JWT key is not a secret per se, but is environment-specific and paired with the private key —
 > keep it in the same secret store for clean rotation.
+
+### 4.1 Production configuration preflight
+
+The deploy workflow checks the runtime environment on the deploy host before pulling or restarting
+the application. It requires non-empty values for the production CORS origin list, database
+password, S3 access/secret keys, JWT key locations, payment-webhook secret, and provider-config
+encryption key. The check prints missing variable **names only**; it never prints their values.
+
+The application repeats this check during `%prod` startup. An unresolved or blank mandatory value
+stops startup before the service accepts traffic. Development and test retain their local defaults.
+For CORS, production must list each approved HTTPS frontend origin explicitly. The API permits
+`GET`, `POST`, `PUT`, `PATCH`, and `DELETE` preflights with `Content-Type`, `Authorization`, and
+`Idempotency-Key`; wildcard production origins are forbidden.
 
 ---
 

@@ -1,7 +1,11 @@
 package org.shakvilla.beatzmedia.catalog.application.service;
 
+import java.time.Duration;
+import java.time.Instant;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Optional;
+import java.util.stream.Stream;
 
 import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
@@ -13,11 +17,14 @@ import org.shakvilla.beatzmedia.catalog.application.port.in.GetHomeFeed;
 import org.shakvilla.beatzmedia.catalog.application.port.in.HomeFeedView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.PlaylistView;
 import org.shakvilla.beatzmedia.catalog.application.port.in.TrackView;
+import org.shakvilla.beatzmedia.catalog.application.port.in.TrendingItemView;
+import org.shakvilla.beatzmedia.catalog.application.port.out.ArtistMonthlyListenerReader;
 import org.shakvilla.beatzmedia.catalog.application.port.out.CatalogRepository;
 import org.shakvilla.beatzmedia.catalog.application.port.out.OwnershipReader;
 import org.shakvilla.beatzmedia.catalog.domain.Album;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistProfile;
 import org.shakvilla.beatzmedia.catalog.domain.Playlist;
+import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
 
 /**
  * Application service for LLFR-CATALOG-01.1 (home feed). Catalog ADD §4.1, WU-CAT-2.
@@ -32,20 +39,37 @@ public class GetHomeFeedService implements GetHomeFeed {
   private static final int NEW_RELEASES_LIMIT = 10;
   private static final int POPULAR_ARTISTS_LIMIT = 10;
   private static final int CURATED_PLAYLISTS_LIMIT = 6;
+  private static final Duration LISTENER_WINDOW = Duration.ofDays(28);
 
   private final CatalogRepository catalogRepository;
   private final OwnershipReader ownershipReader;
+  private final ArtistMonthlyListenerReader monthlyListenerReader;
+  private final Clock clock;
 
   @Inject
-  public GetHomeFeedService(CatalogRepository catalogRepository, OwnershipReader ownershipReader) {
+  public GetHomeFeedService(
+      CatalogRepository catalogRepository,
+      OwnershipReader ownershipReader,
+      ArtistMonthlyListenerReader monthlyListenerReader,
+      Clock clock) {
     this.catalogRepository = catalogRepository;
     this.ownershipReader = ownershipReader;
+    this.monthlyListenerReader = monthlyListenerReader;
+    this.clock = clock;
   }
 
   @Override
   public HomeFeedView get(Optional<String> callerId) {
-    List<TrackView> trending = catalogRepository.trendingTracks(TRENDING_LIMIT).stream()
-        .map(t -> TrackMapper.toView(t, callerId, ownershipReader))
+    List<TrendingItemView> trending = Stream.concat(
+            catalogRepository.trendingSingles(TRENDING_LIMIT).stream()
+                .map(track -> TrendingItemView.track(
+                    TrackMapper.toView(track, callerId, ownershipReader))),
+            catalogRepository.trendingAlbums(TRENDING_LIMIT).stream()
+                .map(item -> TrendingItemView.album(
+                    item.type().name(), toAlbumView(item.album()), item.plays())))
+        .sorted(Comparator.comparingLong(TrendingItemView::plays).reversed()
+            .thenComparing(TrendingItemView::type))
+        .limit(TRENDING_LIMIT)
         .toList();
 
     List<TrackView> top10 = catalogRepository.top10Tracks(TOP10_LIMIT).stream()
@@ -56,9 +80,11 @@ public class GetHomeFeedService implements GetHomeFeed {
         .map(this::toAlbumView)
         .toList();
 
+    Instant asOf = clock.now();
     HomeFeedView.RailsView rails = new HomeFeedView.RailsView(
         catalogRepository.newestAlbums(NEW_RELEASES_LIMIT).stream().map(this::toAlbumView).toList(),
-        catalogRepository.popularArtists(POPULAR_ARTISTS_LIMIT).stream().map(this::toArtistView).toList(),
+        catalogRepository.popularArtists(POPULAR_ARTISTS_LIMIT, asOf.minus(LISTENER_WINDOW), asOf).stream()
+            .map(a -> toArtistView(a, asOf)).toList(),
         catalogRepository.curatedPlaylists(CURATED_PLAYLISTS_LIMIT).stream().map(this::toPlaylistView).toList());
 
     return new HomeFeedView(trending, top10, featuredAlbums, rails);
@@ -78,10 +104,12 @@ public class GetHomeFeedService implements GetHomeFeed {
         album.isDownloadable());
   }
 
-  private ArtistView toArtistView(ArtistProfile a) {
+  private ArtistView toArtistView(ArtistProfile a, Instant asOf) {
+    long monthlyListeners = monthlyListenerReader.count(
+        a.getId(), asOf.minus(LISTENER_WINDOW), asOf);
     return new ArtistView(
         a.getId().value(), a.getName(), a.getImage(), a.getCoverImage(), a.isVerified(),
-        a.getMonthlyListeners(), a.getFollowers(), a.getBio(), a.getLocation(), a.getGenres());
+        monthlyListeners, a.getFollowers(), a.getBio(), a.getLocation(), a.getGenres());
   }
 
   private PlaylistView toPlaylistView(Playlist p) {

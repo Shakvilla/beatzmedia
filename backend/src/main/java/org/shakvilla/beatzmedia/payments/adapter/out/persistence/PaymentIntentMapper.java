@@ -1,6 +1,7 @@
 package org.shakvilla.beatzmedia.payments.adapter.out.persistence;
 
 import org.shakvilla.beatzmedia.payments.domain.AccountId;
+import org.shakvilla.beatzmedia.payments.domain.GatewayVendor;
 import org.shakvilla.beatzmedia.payments.domain.MethodKind;
 import org.shakvilla.beatzmedia.payments.domain.OrderRef;
 import org.shakvilla.beatzmedia.payments.domain.PaymentIntent;
@@ -25,6 +26,7 @@ final class PaymentIntentMapper {
     e.amountMinor = intent.getAmount().minor();
     e.currency = intent.getAmount().currency().name();
     e.provider = intent.getProvider().name();
+    e.gatewayVendor = intent.getGatewayVendor().wireValue();
     e.methodKind = intent.getMethodKind().name();
     e.providerRef = intent.getProviderRef();
     e.status = intent.getStatus().name();
@@ -44,6 +46,7 @@ final class PaymentIntentMapper {
         new OrderRef(e.orderRef),
         Money.ofMinor(e.amountMinor, Currency.valueOf(e.currency)),
         Provider.valueOf(e.provider),
+        GatewayVendor.fromWireValue(e.gatewayVendor),
         MethodKind.valueOf(e.methodKind),
         e.providerRef,
         PaymentIntentStatus.valueOf(e.status),

@@ -52,4 +52,7 @@ public class FanSettingsEntity {
 
   @Column(name = "phone")
   public String phone;
+
+  @Column(name = "phone_verified", nullable = false)
+  public boolean phoneVerified;
 }

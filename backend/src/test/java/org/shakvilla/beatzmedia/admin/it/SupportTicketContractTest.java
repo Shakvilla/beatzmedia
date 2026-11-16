@@ -30,6 +30,7 @@ import org.shakvilla.beatzmedia.admin.domain.TicketStatus;
  * Admin ADD §6 / DoD §11 contract-test requirement (LLFR-ADMIN-08.1).
  */
 @Tag("unit")
+@Tag("contract")
 class SupportTicketContractTest {
 
   private static final Set<String> VALID_STATUSES = Set.of("open", "pending", "resolved");

@@ -102,6 +102,11 @@ class DispatchFlowIT {
             java.util.Optional.empty(), java.util.Optional.empty(), java.util.Optional.empty(),
             java.util.Optional.of(new NotificationPrefs(true, true, false)),
             java.util.Optional.empty(), java.util.Optional.of(phone)));
+    // SMS delivery requires a verified number. The phone verification flow is tested separately.
+    em.flush();
+    em.createNativeQuery("UPDATE fan_settings SET phone_verified = true WHERE account_id = ?1")
+        .setParameter(1, id.value())
+        .executeUpdate();
   }
 
   @jakarta.transaction.Transactional

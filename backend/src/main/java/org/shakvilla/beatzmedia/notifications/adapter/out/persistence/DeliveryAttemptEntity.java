@@ -25,6 +25,12 @@ public class DeliveryAttemptEntity {
   @Column(name = "provider_idempotency_key", nullable = false)
   public String providerIdempotencyKey;
 
+  @Column(name = "provider_code", nullable = false, length = 24)
+  public String providerCode;
+
+  @Column(name = "provider_message_id", length = 255)
+  public String providerMessageId;
+
   @Column(name = "status", nullable = false)
   public String status;
 

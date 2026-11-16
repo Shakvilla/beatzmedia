@@ -35,6 +35,10 @@ public class PaymentIntentEntity {
   @Column(name = "provider", nullable = false)
   public String provider;
 
+  /** Gateway vendor pinned when this intent was first created. */
+  @Column(name = "gateway_vendor", nullable = false)
+  public String gatewayVendor;
+
   /** Values: momo | bank | card */
   @Column(name = "method_kind", nullable = false)
   public String methodKind;

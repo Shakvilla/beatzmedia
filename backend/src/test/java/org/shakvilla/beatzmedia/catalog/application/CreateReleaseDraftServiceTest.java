@@ -79,4 +79,14 @@ class CreateReleaseDraftServiceTest {
     assertEquals("CREATE_DRAFT", auditWriter.all().get(0).getAction());
     assertEquals(ARTIST.value(), auditWriter.all().get(0).getActor());
   }
+
+  @Test
+  void create_persistsExplicitOriginCountry() {
+    StudioReleaseDetailView view = service.create(new CreateDraftCommand(
+        ARTIST, "My EP", ReleaseType.ep, Visibility.PUBLIC, null, null, null, null, " gh "));
+
+    assertEquals("GH", view.originCountry());
+    assertEquals("GH", repo.findRelease(new org.shakvilla.beatzmedia.catalog.domain.ReleaseId(
+        view.id())).orElseThrow().getOriginCountry());
+  }
 }

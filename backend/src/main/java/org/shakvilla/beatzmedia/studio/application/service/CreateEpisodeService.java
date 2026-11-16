@@ -5,10 +5,10 @@ import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
 import java.time.Instant;
 import java.util.HexFormat;
+import java.util.Map;
 import java.util.Optional;
 
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 
@@ -22,8 +22,10 @@ import org.shakvilla.beatzmedia.media.domain.MediaHandle;
 import org.shakvilla.beatzmedia.media.domain.MediaKind;
 import org.shakvilla.beatzmedia.media.domain.OwnerRef;
 import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
+import org.shakvilla.beatzmedia.platform.application.port.out.DurableEventPublisher;
 import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
 import org.shakvilla.beatzmedia.platform.domain.Currency;
+import org.shakvilla.beatzmedia.platform.domain.DurableEventMessage;
 import org.shakvilla.beatzmedia.platform.domain.Money;
 import org.shakvilla.beatzmedia.platform.domain.ValidationException;
 import org.shakvilla.beatzmedia.studio.application.port.in.CreateEpisode;
@@ -32,7 +34,6 @@ import org.shakvilla.beatzmedia.studio.application.port.out.StudioRepository;
 import org.shakvilla.beatzmedia.studio.domain.ArtistId;
 import org.shakvilla.beatzmedia.studio.domain.Episode;
 import org.shakvilla.beatzmedia.studio.domain.EpisodeId;
-import org.shakvilla.beatzmedia.studio.domain.EpisodePublished;
 import org.shakvilla.beatzmedia.studio.domain.IdempotencyConflictException;
 import org.shakvilla.beatzmedia.studio.domain.InvalidPriceException;
 import org.shakvilla.beatzmedia.studio.domain.MediaInvalidException;
@@ -58,7 +59,7 @@ import org.shakvilla.beatzmedia.studio.domain.ShowNotFoundException;
  *   <li><strong>Premium ⇒ price &gt; 0</strong> (422 {@code INVALID_PRICE}); <strong>scheduled ⇒
  *       date required &amp; future</strong> (422 {@code SCHEDULE_DATE_REQUIRED}); unknown/missing
  *       show (404 {@code SHOW_NOT_FOUND}).
- *   <li>Fires {@code EpisodePublished} exactly once when {@code visibility == public} (publish-now).
+ *   <li>Appends one durable publication event when {@code visibility == public} (publish-now).
  * </ul>
  */
 @ApplicationScoped
@@ -69,7 +70,7 @@ public class CreateEpisodeService implements CreateEpisode {
   private final IdGenerator ids;
   private final Clock clock;
   private final AuditWriter auditWriter;
-  private final Event<EpisodePublished> episodePublishedEvent;
+  private final DurableEventPublisher durableEvents;
 
   @Inject
   public CreateEpisodeService(
@@ -78,13 +79,13 @@ public class CreateEpisodeService implements CreateEpisode {
       IdGenerator ids,
       Clock clock,
       AuditWriter auditWriter,
-      Event<EpisodePublished> episodePublishedEvent) {
+      DurableEventPublisher durableEvents) {
     this.repo = repo;
     this.uploadOriginalUseCase = uploadOriginalUseCase;
     this.ids = ids;
     this.clock = clock;
     this.auditWriter = auditWriter;
-    this.episodePublishedEvent = episodePublishedEvent;
+    this.durableEvents = durableEvents;
   }
 
   @Override
@@ -137,7 +138,7 @@ public class CreateEpisodeService implements CreateEpisode {
       throw new MediaInvalidException("An 'audio' file part is required");
     }
     // Shared with catalog's track upload and MagicByteValidator — see AllowedAudioTypes.
-    if (!AllowedAudioTypes.isAllowed(audio.contentType())) {
+    if (!AllowedAudioTypes.isAllowed(audio.contentType(), audio.filename())) {
       throw new MediaInvalidException(
           "Only " + AllowedAudioTypes.DISPLAY + " accepted, got: " + audio.contentType());
     }
@@ -188,11 +189,25 @@ public class CreateEpisodeService implements CreateEpisode {
         null, now));
 
     if (publishNow) {
-      episodePublishedEvent.fire(
-          new EpisodePublished(saved.id().value(), saved.showId().value(), artist.value(), now));
+      appendEpisodePublished(saved, artist, now);
     }
 
     return EpisodeMapper.toView(saved, show.title());
+  }
+
+  private void appendEpisodePublished(Episode episode, ArtistId artist, Instant now) {
+    durableEvents.append(new DurableEventMessage(
+        ids.newId(),
+        "studio.episode-published",
+        1,
+        "episode",
+        episode.id().value(),
+        Map.of(
+            "episodeId", episode.id().value(),
+            "showId", episode.showId().value(),
+            "artistId", artist.value(),
+            "occurredAt", now.toString()),
+        now));
   }
 
   private PodcastShow resolveShow(ArtistId artist, CreateEpisodeCommand cmd) {

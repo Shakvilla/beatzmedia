@@ -15,6 +15,10 @@
         <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
         <quarkus.platform.version>3.38.1</quarkus.platform.version>
         <skipITs>true</skipITs>
+        <skipUnitTests>false</skipUnitTests>
+        <surefire.test.include>**/*Test.java</surefire.test.include>
+        <surefire.contract.exclude>**/*ContractTest.java</surefire.contract.exclude>
+        <surefire.architecture.exclude>**/ArchitectureRulesTest.java</surefire.architecture.exclude>
         <surefire-plugin.version>3.5.4</surefire-plugin.version>
         <!-- Coverage thresholds — testing-strategy.md §10 -->
         <jacoco.line.overall>0.80</jacoco.line.overall>
@@ -39,16 +43,16 @@
 
     <dependencyManagement>
         <dependencies>
-            <!-- Jackson BOM pin (imported BEFORE quarkus-bom so it wins): quarkus-bom
-                 3.37.3 ships jackson 2.22.0, whose jackson-core carries a HIGH advisory
-                 GHSA-r7wm-3cxj-wff9 (async parser maxNumberLength bypass), fixed in 2.22.1.
+            <!-- Jackson BOM pin (imported BEFORE quarkus-bom so it wins): older
+                 jackson-core releases carry HIGH parser advisories, including
+                 CVE-2026-89407 and CVE-2026-89425, fixed in 2.22.3.
                  Jackson is the app's JSON serializer (reachable), so this is a real patch,
                  not a suppression. Importing the whole jackson-bom keeps core/databind/
-                 annotations aligned. Remove once quarkus-bom ships jackson >= 2.22.1. -->
+                 annotations aligned. Remove once quarkus-bom ships jackson >= 2.22.3. -->
             <dependency>
                 <groupId>com.fasterxml.jackson</groupId>
                 <artifactId>jackson-bom</artifactId>
-                <version>2.22.1</version>
+                <version>2.22.3</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -321,6 +325,15 @@
                 <version>${surefire-plugin.version}</version>
                 <configuration>
                     <argLine>@{argLine}</argLine>
+                    <failIfNoTests>true</failIfNoTests>
+                    <skipTests>${skipUnitTests}</skipTests>
+                    <includes>
+                        <include>${surefire.test.include}</include>
+                    </includes>
+                    <excludes>
+                        <exclude>${surefire.contract.exclude}</exclude>
+                        <exclude>${surefire.architecture.exclude}</exclude>
+                    </excludes>
                     <systemPropertyVariables>
                         <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
                         <maven.home>${maven.home}</maven.home>
@@ -342,6 +355,10 @@
                 </executions>
                 <configuration>
                     <argLine>@{argLine}</argLine>
+                    <failIfNoTests>true</failIfNoTests>
+                    <includes>
+                        <include>**/*IT.java</include>
+                    </includes>
                     <systemPropertyVariables>
                         <native.image.path>${project.build.directory}/${project.build.finalName}-runner</native.image.path>
                         <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
@@ -413,6 +430,35 @@
     </build>
 
     <profiles>
+        <!-- Explicit backend test phases. The default `test` lifecycle is unit-only; each
+             infrastructure-bearing phase must be selected deliberately so CI job names match
+             the work they execute and an empty selection fails closed. -->
+        <profile>
+            <id>integration-tests</id>
+            <properties>
+                <skipUnitTests>true</skipUnitTests>
+                <skipITs>false</skipITs>
+            </properties>
+        </profile>
+
+        <profile>
+            <id>contract-tests</id>
+            <properties>
+                <surefire.test.include>**/*ContractTest.java</surefire.test.include>
+                <surefire.contract.exclude>**/__no_contract_exclusion__</surefire.contract.exclude>
+                <surefire.architecture.exclude>**/__no_architecture_exclusion__</surefire.architecture.exclude>
+            </properties>
+        </profile>
+
+        <profile>
+            <id>architecture-tests</id>
+            <properties>
+                <surefire.test.include>**/ArchitectureRulesTest.java</surefire.test.include>
+                <surefire.contract.exclude>**/__no_contract_exclusion__</surefire.contract.exclude>
+                <surefire.architecture.exclude>**/__no_architecture_exclusion__</surefire.architecture.exclude>
+            </properties>
+        </profile>
+
         <!-- Native image build -->
         <profile>
             <id>native</id>

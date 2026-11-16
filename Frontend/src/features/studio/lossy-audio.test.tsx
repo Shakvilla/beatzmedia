@@ -26,6 +26,8 @@ const track = (over: Partial<UploadedTrack> = {}): UploadedTrack => ({
   src: '',
   price: 5,
   explicit: false,
+  image: '/images/placeholder.svg',
+  customArtwork: false,
   ...over,
 })
 
@@ -37,6 +39,13 @@ describe('isLossyAudio', () => {
 
   it('flags mp3 by extension when the browser reports no type', () => {
     expect(isLossyAudio(file('Sunset Groove.MP3', ''))).toBe(true)
+  })
+
+  it('flags M4A conservatively by MIME or extension', () => {
+    expect(isLossyAudio(file('a.m4a', 'audio/mp4'))).toBe(true)
+    expect(isLossyAudio(file('a.m4a', 'audio/x-m4a'))).toBe(true)
+    expect(isLossyAudio(file('a.m4a', 'audio/m4a'))).toBe(true)
+    expect(isLossyAudio(file('a.M4A', ''))).toBe(true)
   })
 
   it('does not flag the lossless masters', () => {
@@ -53,7 +62,7 @@ describe('LossySourceNotice', () => {
 
   it('names the track when exactly one is lossy', () => {
     render(<LossySourceNotice tracks={[track({ lossy: true })]} />)
-    expect(screen.getByText(/“Sunset Groove” is an MP3\./)).toBeTruthy()
+    expect(screen.getByText(/“Sunset Groove” may be a compressed source\./)).toBeTruthy()
   })
 
   it('counts them when several are lossy', () => {
@@ -62,7 +71,7 @@ describe('LossySourceNotice', () => {
         tracks={[track({ lossy: true }), track({ id: 't2', lossy: true }), track({ id: 't3' })]}
       />,
     )
-    expect(screen.getByText(/2 tracks are MP3s\./)).toBeTruthy()
+    expect(screen.getByText(/2 tracks may be compressed sources\./)).toBeTruthy()
   })
 
   it('is advisory, not a blocker — it offers the better path without refusing the upload', () => {

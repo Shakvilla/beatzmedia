@@ -73,7 +73,7 @@ Persistence (`media_asset`) is private to this module; consumers reference asset
 |---|---|---|---|
 | `MediaAsset` | Aggregate root | `id`, `ownerRef`, `kind`, `status`, `durationSec`, `originalKey`, `fullKey`, `previewKey`, `losslessKey?` | One row per uploaded binary; lifecycle owner |
 | `OwnerRef` | Value object | `module`, `entityId` | Opaque back-reference to the catalog/studio entity (no cross-module FK) |
-| `ObjectKey` | Value object | `bucket`, `key` | Fully-qualified storage location |
+| `ObjectKey` | Value object | `store`, `bucket`, `key` | Fully-qualified location. New references persist the provider code; legacy `bucket|key` references decode as MinIO. |
 | `SignedUrl` | Value object | `url`, `variant`, `expiresAt` | Result of presigning; ISO-8601 `expiresAt` |
 | `MediaHandle` | Value object | `assetId`, `kind`, `durationSec`, `status` | Returned to caller after upload |
 
@@ -82,7 +82,7 @@ Persistence (`media_asset`) is private to this module; consumers reference asset
 - `MediaKind { AUDIO, ARTWORK }`
 - `MediaStatus { UPLOADING, TRANSCODING, READY, ERROR }`
 - `DeliveryVariant { FULL, PREVIEW, LOSSLESS }`
-- `AudioFormat { WAV, FLAC, MP3 }` (MP3 is `lossy()`, ADR-35) · `ImageFormat { PNG, JPG }`
+- `AudioFormat { WAV, FLAC, MP3, M4A }` (MP3 and potentially lossy M4A trigger a quality advisory) · `ImageFormat { PNG, JPG }`
 
 **Invariants enforced here:**
 
@@ -110,7 +110,7 @@ Persistence (`media_asset`) is private to this module; consumers reference asset
   written; artwork reaches `READY` after its processed variant is written. `losslessKey` is
   independent of `READY` — `markLosslessReady(...)` is a separate transition (§8, §13) precisely so a
   track that can already stream never blocks on a FLAC transcode nobody has to wait for.
-- Format guard: only `AUDIO ∈ {WAV,FLAC,MP3}` and `ARTWORK ∈ {PNG,JPG}` are admitted (§9).
+- Format guard: only `AUDIO ∈ {WAV,FLAC,MP3,M4A}` and `ARTWORK ∈ {PNG,JPG}` are admitted (§9).
 
 ### Object-storage layout
 
@@ -118,7 +118,7 @@ Two S3-compatible buckets (PRD §5: `beatz-media-originals` PRIVATE, `beatz-medi
 
 | Bucket | Prefix | Access | Contents |
 |---|---|---|---|
-| `beatz-media-originals` | `originals/{kind}/{assetId}` | **private**, never public, never signed for read by clients | raw uploaded WAV/FLAC/MP3/PNG/JPG |
+| `beatz-media-originals` | `originals/{kind}/{assetId}` | **private**, never public, never signed for read by clients | raw uploaded WAV/FLAC/MP3/M4A/PNG/JPG |
 | `beatz-media-delivery` | `delivery/{assetId}/full.m4a` | signed read only | single AAC/M4A object, full rendition |
 | `beatz-media-delivery` | `delivery/{assetId}/preview.m4a` | signed read only | single AAC/M4A object, physically ≤30s |
 | `beatz-media-delivery` | `delivery/{assetId}/lossless.flac` | signed read only | single FLAC object, the download payload (INV-13); nullable, produced after `READY` |
@@ -411,7 +411,7 @@ sequenceDiagram
   participant FF as ffmpeg transcoder
   participant DB as media_asset
   Studio->>Svc: uploadOriginal(multipart WAV, ownerRef)
-  Svc->>Svc: validate magic bytes (WAV/FLAC/MP3) + size + virus scan
+  Svc->>Svc: validate magic bytes (WAV/FLAC/MP3/M4A) + size + virus scan
   alt rejected
     Svc-->>Studio: 422 UNSUPPORTED_FORMAT / FILE_REJECTED  (413 if oversize)
   else accepted
@@ -494,7 +494,7 @@ units (CAT-3, PLY-1, POD-1, STU-2) list WU-MED-1 as a dependency.
 
 ## 11. Testing plan
 
-- **Unit (fakes for output ports):** format validation table (WAV/FLAC/MP3/PNG/JPG accept; EXE/oversize
+- **Unit (fakes for output ports):** format validation table (WAV/FLAC/MP3/M4A/PNG/JPG accept; EXE/oversize
   reject); status state-machine transitions; INV-3 guard (FULL refused without ownership assertion).
 - **Integration (Testcontainers MinIO + Postgres, REST-assured via the inbound modules):** real
   upload→store→transcode→ready against Compose MinIO and the `transcoder`; presign + fetch.

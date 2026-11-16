@@ -20,6 +20,7 @@ import jakarta.transaction.Transactional;
 import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.shakvilla.beatzmedia.media.application.port.in.FindAssetForOwnerUseCase;
 import org.shakvilla.beatzmedia.media.application.port.in.IssueDeliveryUrlUseCase;
+import org.shakvilla.beatzmedia.media.application.port.in.PromoteRevisionAudio;
 import org.shakvilla.beatzmedia.media.application.port.in.ReadArtworkUseCase;
 import org.shakvilla.beatzmedia.media.application.port.in.TranscodeUseCase;
 import org.shakvilla.beatzmedia.media.application.port.in.UploadCommand;
@@ -75,6 +76,7 @@ public class MediaApplicationService
         TranscodeUseCase,
         IssueDeliveryUrlUseCase,
         FindAssetForOwnerUseCase,
+        PromoteRevisionAudio,
         ReadArtworkUseCase,
         MediaService {
 
@@ -263,6 +265,23 @@ public class MediaApplicationService
     return repository.findCurrentByOwnerRef(ownerRef).map(MediaAsset::getId);
   }
 
+  @Override
+  public boolean isReady(MediaAssetId assetId) {
+    return repository.findById(assetId).map(a -> a.getStatus() == MediaStatus.READY).orElse(false);
+  }
+
+  @Override
+  @Transactional
+  public MediaHandle promote(MediaAssetId assetId, OwnerRef canonicalOwner) {
+    MediaAsset asset = repository.findById(assetId)
+        .orElseThrow(() -> new NotFoundException("Revision audio asset not found"));
+    if (asset.getKind() != MediaKind.AUDIO || asset.getStatus() != MediaStatus.READY) {
+      throw new IllegalStateException("Revision audio must be ready before approval");
+    }
+    asset.reassignOwner(canonicalOwner);
+    return repository.save(asset).toHandle();
+  }
+
   // ---- MediaService facade ----
 
   @Override
@@ -370,6 +389,7 @@ public class MediaApplicationService
         case WAV -> "audio/wav";
         case FLAC -> "audio/flac";
         case MP3 -> "audio/mpeg";
+        case M4A -> "audio/mp4";
       };
     } else {
       return switch (magicByteValidator.detectImageFormat(header)) {

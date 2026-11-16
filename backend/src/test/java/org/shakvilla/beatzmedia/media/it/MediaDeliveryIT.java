@@ -25,6 +25,7 @@ import org.shakvilla.beatzmedia.media.domain.SignedUrl;
 import org.testcontainers.containers.MinIOContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.utility.DockerImageName;
 
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
@@ -53,7 +54,8 @@ class MediaDeliveryIT {
 
   @Container
   static MinIOContainer minio =
-      new MinIOContainer("minio/minio:RELEASE.2024-01-16T16-07-38Z")
+      new MinIOContainer(DockerImageName.parse("pgsty/silo:RELEASE.2026-10-26T00-00-00Z")
+          .asCompatibleSubstituteFor("minio/minio"))
           .withUserName("minioadmin")
           .withPassword("minioadmin");
 

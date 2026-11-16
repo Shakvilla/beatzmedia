@@ -63,6 +63,9 @@ public class ReleaseEntity {
   @Column(name = "description")
   public String description;
 
+  @Column(name = "origin_country")
+  public String originCountry;
+
   /** Cover art URL (V975); nullable until the artist uploads one. */
   @Column(name = "cover_image")
   public String coverImage;

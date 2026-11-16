@@ -97,6 +97,11 @@ public class ReddePaymentGateway implements PaymentGateway {
       throw new ProviderException("Redde rejected charge: amount must be positive");
     }
     String paymentOption = momoPaymentOption(provider);
+    String walletNumber = method == null ? null : method.token();
+    if (walletNumber == null
+        || !walletNumber.replaceAll("[\\s()+-]", "").matches("(?:0\\d{9}|233\\d{9})")) {
+      throw new ProviderException("Redde requires a valid Ghana MoMo wallet number");
+    }
     ReddeReceiveRequest body =
         new ReddeReceiveRequest(
             amount.toCedis(),
@@ -106,7 +111,7 @@ public class ReddePaymentGateway implements PaymentGateway {
             "BeatzClik order " + ref.value(),
             merchantName,
             paymentOption,
-            method.token());
+            walletNumber.replaceAll("[\\s()+-]", ""));
 
     ReddeInitialResponse resp;
     try {
@@ -123,6 +128,9 @@ public class ReddePaymentGateway implements PaymentGateway {
   @Override
   public CheckoutHandle initiateCheckout(OrderRef ref, Money amount) {
     requireConfigured();
+    if (isBlank(checkoutSuccessUrl) || isBlank(checkoutFailureUrl)) {
+      throw new ProviderException("Redde hosted checkout return URLs are not configured");
+    }
     if (amount == null || !amount.isPositive()) {
       throw new ProviderException("Redde rejected checkout: amount must be positive");
     }

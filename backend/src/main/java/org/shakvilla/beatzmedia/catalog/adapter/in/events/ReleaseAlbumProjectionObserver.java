@@ -7,6 +7,7 @@ import jakarta.inject.Inject;
 
 import org.shakvilla.beatzmedia.catalog.application.port.in.ProjectReleaseAlbum;
 import org.shakvilla.beatzmedia.catalog.domain.ContentTakenDown;
+import org.shakvilla.beatzmedia.catalog.domain.ReleaseRevisionApproved;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseWentLive;
 
 /**
@@ -32,6 +33,11 @@ public class ReleaseAlbumProjectionObserver {
 
   public void onReleaseWentLive(
       @Observes(during = TransactionPhase.AFTER_SUCCESS) ReleaseWentLive event) {
+    projector.project(event.releaseId());
+  }
+
+  public void onRevisionApproved(
+      @Observes(during = TransactionPhase.AFTER_SUCCESS) ReleaseRevisionApproved event) {
     projector.project(event.releaseId());
   }
 

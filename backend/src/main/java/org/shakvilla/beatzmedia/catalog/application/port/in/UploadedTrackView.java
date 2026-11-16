@@ -13,4 +13,6 @@ public record UploadedTrackView(
     String src,
     MoneyView price,
     boolean explicit,
-    int position) {}
+    int position,
+    String image,
+    boolean customArtwork) {}

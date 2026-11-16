@@ -101,6 +101,7 @@ public class DeliveryRetrySweepJob implements ScheduledJob {
     }
 
     attemptService.attemptSend(
-        attempt, to, notification.get().title(), notification.get().body());
+        attempt, to, notification.get().title(), notification.get().body(),
+        notification.get().toRoute().orElse(null));
   }
 }

@@ -83,7 +83,7 @@ class ReddePaymentGatewayTest {
     client.onReceive(new ReddeInitialResponse("FAILED", "insufficient funds", null, "42", "d"));
     assertThrows(
         ProviderException.class,
-        () -> gateway().initiate(Provider.mtn, ORDER, TEN_CEDIS, momo(Provider.mtn, "0244")));
+        () -> gateway().initiate(Provider.mtn, ORDER, TEN_CEDIS, momo(Provider.mtn, "0241234567")));
   }
 
   @Test
@@ -91,7 +91,15 @@ class ReddePaymentGatewayTest {
     client.onReceiveThrow(new RuntimeException("connection refused"));
     assertThrows(
         ProviderException.class,
-        () -> gateway().initiate(Provider.mtn, ORDER, TEN_CEDIS, momo(Provider.mtn, "0244")));
+        () -> gateway().initiate(Provider.mtn, ORDER, TEN_CEDIS, momo(Provider.mtn, "0241234567")));
+
+  }
+
+  @Test
+  void initiateRejectsProviderNameAsWallet() {
+    assertThrows(ProviderException.class,
+        () -> gateway().initiate(Provider.mtn, ORDER, TEN_CEDIS, momo(Provider.mtn, "mtn")));
+    assertTrue(client.receiveRequests.isEmpty());
   }
 
   @Test
@@ -138,6 +146,15 @@ class ReddePaymentGatewayTest {
     assertEquals("54", handle.checkoutTransId());
     assertEquals("https://checkout.redde/xyz", handle.checkoutUrl());
     assertEquals("test-key", client.checkoutRequests.get(0).apikey()); // apikey is a body field here
+  }
+
+  @Test
+  void initiateCheckoutRejectsMissingReturnUrlsBeforeCallingProvider() {
+    ReddePaymentGateway unconfigured = new ReddePaymentGateway(
+        client, null, new ObjectMapper(), Optional.of("test-key"), Optional.of("app-1"),
+        "BeatzClik", Optional.empty(), Optional.empty(), Optional.empty());
+    assertThrows(ProviderException.class, () -> unconfigured.initiateCheckout(ORDER, TEN_CEDIS));
+    assertTrue(client.checkoutRequests.isEmpty());
   }
 
   @Test

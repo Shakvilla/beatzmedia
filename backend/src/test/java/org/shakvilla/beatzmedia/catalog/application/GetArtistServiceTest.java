@@ -5,6 +5,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.time.Instant;
 import java.util.Collections;
 import java.util.List;
 import java.util.Optional;
@@ -28,6 +29,7 @@ import org.shakvilla.beatzmedia.catalog.domain.Track;
 import org.shakvilla.beatzmedia.catalog.domain.TrackId;
 import org.shakvilla.beatzmedia.catalog.fakes.FakeCatalogRepository;
 import org.shakvilla.beatzmedia.catalog.fakes.FakeOwnershipReader;
+import org.shakvilla.beatzmedia.platform.fakes.FakeClock;
 
 /**
  * Unit tests for {@link GetArtistService}. LLFR-CATALOG-01.4. Uses fake ports; no framework.
@@ -45,7 +47,13 @@ class GetArtistServiceTest {
   void setUp() {
     repo = new FakeCatalogRepository();
     ownershipReader = new FakeOwnershipReader();
-    service = new GetArtistService(repo, ownershipReader);
+    service = new GetArtistService(repo, ownershipReader, id -> 7L,
+        (id, since, asOf) -> {
+          assertEquals(ARTIST_ID, id);
+          assertEquals(Instant.parse("2026-05-25T12:00:00Z"), since);
+          assertEquals(Instant.parse("2026-06-22T12:00:00Z"), asOf);
+          return 3L;
+        }, FakeClock.fixed());
   }
 
   @Test
@@ -55,6 +63,8 @@ class GetArtistServiceTest {
     assertEquals("black-sherif", view.id());
     assertEquals("Black Sherif", view.name());
     assertTrue(view.verified());
+    assertEquals(7L, view.followers());
+    assertEquals(3L, view.monthlyListeners());
   }
 
   @Test

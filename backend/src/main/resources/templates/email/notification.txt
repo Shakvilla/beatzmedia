@@ -1,0 +1,10 @@
+BEATZCLIK — ACCOUNT UPDATE
+
+{title}
+
+{body}
+{#if actionUrl}
+View in BeatzClik: {actionUrl}
+{/if}
+
+BeatzClik · You received this because email notifications are enabled for your account.

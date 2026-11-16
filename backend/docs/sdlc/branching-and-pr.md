@@ -162,10 +162,10 @@ be up to date before merging").
 | `compose-smoke`                 | `docker compose up` boots healthy; `/q/health/ready` 200  | §11.4 |
 | `frontend`                      | SPA typecheck (`tsc -b` via `npm run build`) + `vitest run` | —   |
 
-> **`frontend` is new and not yet enforcing.** The job exists in `ci.yml` and runs on every PR, but a
-> job only blocks a merge once its name is added to the required status checks in the branch-
-> protection rule — a repository setting no file in this repo can express. Until someone adds it,
-> `frontend` reports and does not gate.
+> **`frontend` must be required in branch protection.** Repository settings remain an external
+> control, but release publication also checks the conclusion of the complete `ci` workflow. A
+> failed frontend job therefore blocks publication even if branch protection is temporarily
+> misconfigured.
 >
 > It was added because the SPA had **no CI whatsoever**: 226 source files and 348 tests ran only
 > where a developer remembered to run them, while the backend carried the ten checks above.
@@ -281,10 +281,10 @@ flowchart TD
   accumulates the version bump and a generated **CHANGELOG.md** (grouped from Conventional Commits).
   Merging that release PR creates the `vX.Y.Z` **tag** and GitHub Release. (Pre-1.0, breaking changes
   bump the minor per SemVer 0.x convention.)
-- **Deploy on release.** The tag triggers the deploy workflow in `sdlc/ci-cd-github-actions.md`:
-  build the JVM image from `backend/src/main/docker/Dockerfile.jvm`, push it tagged with the version,
-  run Flyway, and roll out. `main`-without-a-tag deploys only to a staging environment; a tag
-  promotes to production.
+- **Release and deploy evidence.** A successful `ci` run on `master` starts release publication only
+  after both the complete `ci` and `security` workflows are verified for the exact commit. A tag can
+  publish only when it points to that verified commit. Images carry an immutable full-SHA tag and
+  revision label; deployments accept SemVer or full-SHA tags and reject `latest`.
 
 ---
 

@@ -2,22 +2,24 @@
 # cut a GitHub Release.
 #
 # Triggers:
-#   - push to main      -> publish image tagged with the project version + sha
-#                          (every merged, CI-validated commit is releasable)
-#   - tag v*.*.*        -> immutable SemVer release + GitHub Release/CHANGELOG
+#   - successful ci on master -> publish image tagged latest + verified sha
+#   - tag v*.*.*              -> prove the tag commit has the same full CI evidence,
+#                                then publish immutable SemVer + GitHub Release
 #
-# CI-pass guard: this workflow only proceeds once the `ci` workflow has
-# concluded successfully for the same commit (gate-ci job below). Branch
-# protection already blocks un-green merges to main, this is defence in depth.
+# CI-pass guard: the workflow verifies both `ci` and `security` concluded
+# successfully for the exact commit. A tag never bypasses this evidence.
 name: release
 
 on:
-  push:
+  workflow_run:
+    workflows: [ci]
+    types: [completed]
     branches: [master]
+  push:
     tags: ["v*.*.*"]
 
 concurrency:
-  group: release-${{ github.ref }}
+  group: release-${{ github.event.workflow_run.head_sha || github.sha }}
   cancel-in-progress: false # never cancel an in-flight release
 
 permissions:
@@ -29,44 +31,78 @@ env:
 
 jobs:
   # ---------------------------------------------------------------------------
-  # gate-ci — confirm CI passed for this exact commit before we publish.
-  # Tags (manually cut from a green main) skip the wait.
+  # gate-ci — confirm all required workflows passed for this exact commit.
   # ---------------------------------------------------------------------------
-  gate-ci:
+  gate_ci:
     name: gate-ci
+    if: ${{ github.event_name == 'push' || github.event.workflow_run.conclusion == 'success' }}
     runs-on: ubuntu-latest
+    outputs:
+      verified_sha: ${{ steps.required_workflows.outputs.verified_sha }}
     permissions:
       checks: read
       actions: read
       contents: read
     steps:
-      - name: Wait for CI to succeed on this commit
-        if: ${{ !startsWith(github.ref, 'refs/tags/v') }}
-        uses: fountainhead/action-wait-for-check@v1.2.0
+      - uses: actions/checkout@v4
         with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          # Wait on a representative required CI check on the head commit.
-          checkName: build
-          ref: ${{ github.sha }}
-          timeoutSeconds: 1800
-          intervalSeconds: 20
-      - name: CI gate satisfied
-        run: echo "CI green (or tag release) — proceeding."
+          ref: ${{ github.event.workflow_run.head_sha || github.sha }}
+      - name: Test release-gate failure handling
+        run: node --test .github/scripts/release-gate.test.cjs
+      - name: Verify required workflows for exact commit
+        id: required_workflows
+        uses: actions/github-script@v7
+        env:
+          RELEASE_SHA: ${{ github.event.workflow_run.head_sha || github.sha }}
+        with:
+          script: |
+            const { evaluateWorkflowGate } = require(`${process.env.GITHUB_WORKSPACE}/.github/scripts/release-gate.cjs`);
+            const required = ["ci", "security"];
+            const sha = process.env.RELEASE_SHA;
 
-  build-and-publish:
+            for (let attempt = 0; attempt < 90; attempt += 1) {
+              const { data } = await github.rest.actions.listWorkflowRunsForRepo({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                head_sha: sha,
+                event: "push",
+                per_page: 100,
+              });
+              const result = evaluateWorkflowGate(data.workflow_runs, required, sha, "master");
+              core.info(result.message);
+
+              if (result.state === "success") {
+                core.setOutput("verified_sha", sha);
+                return;
+              }
+              if (result.state === "failure") {
+                core.setFailed(result.message);
+                return;
+              }
+              await new Promise(resolve => setTimeout(resolve, 20000));
+            }
+
+            core.setFailed(`Timed out waiting for ci and security on ${sha}`);
+
+  build_and_publish:
     name: build-and-publish
     runs-on: ubuntu-latest
-    needs: gate-ci
+    needs: gate_ci
     permissions:
       contents: read
       packages: write # push to ghcr.io
       id-token: write # OIDC for build provenance/attestation
     outputs:
       version: ${{ steps.meta.outputs.version }}
+      verified_sha: ${{ needs.gate_ci.outputs.verified_sha }}
     steps:
       - uses: actions/checkout@v4
         with:
+          ref: ${{ needs.gate_ci.outputs.verified_sha }}
           fetch-depth: 0 # full history for release notes
+
+      - name: Assert checkout matches verified commit
+        run: test "$(git rev-parse HEAD)" = "${{ needs.gate_ci.outputs.verified_sha }}"
 
       - uses: actions/setup-java@v5
         with:
@@ -93,8 +129,8 @@ jobs:
           tags: |
             type=semver,pattern={{version}}
             type=semver,pattern={{major}}.{{minor}}
-            type=sha,format=long
-            type=raw,value=latest,enable={{is_default_branch}}
+            type=raw,value=sha-${{ needs.gate_ci.outputs.verified_sha }}
+            type=raw,value=latest,enable=${{ github.event_name == 'workflow_run' }}
 
       - name: Set up Buildx
         uses: docker/setup-buildx-action@v3
@@ -106,16 +142,18 @@ jobs:
           file: backend/src/main/docker/Dockerfile.jvm
           push: true
           tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
+          labels: |
+            ${{ steps.meta.outputs.labels }}
+            org.opencontainers.image.revision=${{ needs.gate_ci.outputs.verified_sha }}
           provenance: true
           cache-from: type=gha
           cache-to: type=gha,mode=max
 
-  github-release:
+  github_release:
     name: github-release
     runs-on: ubuntu-latest
-    needs: build-and-publish
-    if: startsWith(github.ref, 'refs/tags/v')
+    needs: build_and_publish
+    if: ${{ github.event_name == 'push' && startsWith(github.ref, 'refs/tags/v') }}
     permissions:
       contents: write # create the GitHub Release
     steps:
@@ -129,6 +167,8 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           body: |
-            Container image: `ghcr.io/${{ github.repository }}:${{ needs.build-and-publish.outputs.version }}`
+            Container image: `ghcr.io/${{ github.repository }}:${{ needs.build_and_publish.outputs.version }}`
+            Immutable image: `ghcr.io/${{ github.repository }}:sha-${{ needs.build_and_publish.outputs.verified_sha }}`
+            Verified commit: `${{ needs.build_and_publish.outputs.verified_sha }}`
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}

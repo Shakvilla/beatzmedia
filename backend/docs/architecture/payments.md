@@ -100,7 +100,7 @@ never knows which rail it is talking to.
 
 | Name | Kind | Key fields | Notes |
 |---|---|---|---|
-| `PaymentIntent` | Aggregate root | `id`, `orderRef`, `amount` (Money), `provider`, `providerRef`, `status`, `idempotencyKey` | Lifecycle pending→settled/failed/timeout (INV-1). |
+| `PaymentIntent` | Aggregate root | `id`, `orderRef`, `amount` (Money), `provider`, `gatewayVendor`, `providerRef`, `status`, `idempotencyKey` | Lifecycle pending→settled/failed/timeout (INV-1); gateway vendor is pinned at creation. |
 | `PaymentEvent` | Entity (child) | `id`, `intentId`, `providerEventId`, `type`, `payload`, `receivedAt` | Idempotent on `providerEventId` (UNIQUE). |
 | `LedgerAccount` | Entity | `id`, `kind`, `ownerAccountId?` | Kinds: `provider_clearing`, `creator_payable`, `platform_revenue`, `payout_clearing`. |
 | `LedgerEntry` | Value object (within a txn) | `id`, `txnId`, `accountId`, `direction` (DEBIT/CREDIT), `amount` (Money), `refType`, `refId`, `clearedAt?`, `postedAt` | A `txnId` groups balanced rows (INV-6). |
@@ -108,7 +108,7 @@ never knows which rail it is talking to.
 | `PayoutMethod` | Aggregate | `id`, `accountId`, `kind` (momo/bank), `label`, `detail`, `isDefault` | Exactly one default per account. |
 | `WithdrawalRequest` | Aggregate root | `id`, `accountId`, `amount`, `fee`, `methodId`, `status`, `requestedAt` | KYC-gated, floor-gated (INV-8). |
 | `PayoutBatch` | Aggregate root | `id`, `kind` (weekly/single), `runBy`, `status`, `totalMinor`, `runAt` | Groups paid `PayoutTxn`. |
-| `PayoutTxn` | Entity (child of batch) | `id`, `batchId`, `withdrawalId`, `accountId`, `amount`, `status`, `providerRef` | One per executed withdrawal. |
+| `PayoutTxn` | Entity (child of batch) | `id`, `batchId`, `withdrawalId`, `accountId`, `amount`, `gatewayVendor`, `status`, `providerRef` | One per executed withdrawal; gateway vendor is pinned at send. |
 | `KycRecord` | Value object (read via port) | `accountId`, `status`, `verifiedAt?` | Resolved from `identity`; mirrored read-only here. |
 | `Dispute` | Aggregate root | `id`, `orderId`, `kind`, `status`, `amount`, `openedAt` | Lifecycle open→refunded/rejected/escalated. |
 | `DisputeEvent` | Entity (child) | `id`, `disputeId`, `text`, `actor`, `at` | Timeline. |
@@ -688,14 +688,15 @@ public interface IdGenerator { String newId(); }
 >   .InvalidRangeException` → 422 `INVALID_RANGE` (mirrors the studio range parser, WU-STU-3). Blank
 >   defaults to `7d`.
 
-> **WU-PAY-6 implementation notes (as-built) — Redde PSP gateway, pluggable (LLFR-PAYMENTS-06.*).** See
+> **WU-PAY-6 implementation notes (original behavior) — Redde PSP gateway, pluggable (LLFR-PAYMENTS-06.*).** See
 > ADR-27 (one vendor, all rails, `PSP_REDDE`-selected) and ADR-28 (verify-by-pull-back, no HMAC).
-> - **Pluggability.** `PaymentGatewayRouter` is the sole unqualified `PaymentGateway` bean; it delegates
+> The original per-call feature-flag routing below has been superseded by WU-EXT-2 vendor pinning.
+> - **Pluggability.** `PaymentGatewayRouter` is the sole unqualified `PaymentGateway` bean; legacy methods delegate
 >   per-call to `@PspGateway(SANDBOX)` `SandboxPaymentGateway` or `@PspGateway(REDDE)`
 >   `ReddePaymentGateway` based on `FeatureKey.PSP_REDDE` (new key; seeded **false** in V966 because
 >   `FeatureFlagsAdapter` fails OPEN for unknown keys). It is NOT an admin-settings flag (out-of-band ops
->   toggle). Every existing `@Inject PaymentGateway` site is unchanged; flag off = today's sandbox
->   behaviour byte-for-byte.
+>   toggle). WU-EXT-2 routes new operations from the audited provider selection and persists the chosen
+>   `gateway_vendor`; status checks use the persisted vendor. The legacy methods remain for compatibility.
 > - **MoMo direct debit.** `ReddePaymentGateway.initiate` → Redde `POST /v1/receive` (`paymentoption`
 >   mtn→MTN / telecel→VODAFONE / airteltigo→AIRTELTIGO; `walletnumber` = `PaymentMethodRef.token`;
 >   `clienttransid` ≤10 digits from a DB sequence `redde_clienttransid_seq`). `status:OK` → `ChargeHandle`
@@ -745,6 +746,16 @@ public interface IdGenerator { String newId(); }
 >   NOT auto-reverse the reservation — a finance reconciliation item, explicit non-goal. Ambiguous errors
 >   are treated as FAILED to avoid a retry double-send. Real `BEATZ_REDDE_*` creds are the deploy-secret
 >   human gate; sandbox stays authoritative until they are supplied.
+
+> **WU-EXT-2 implementation notes — provider pinning and safe disable.** New payment intents and payout
+> transactions persist `gateway_vendor` at creation/send. Reconciliation and provider receipts route using
+> that stored vendor, so changing the current selection does not redirect existing work. A disabled
+> selection rejects new work while preserving callback/reconciliation routing for known vendors. Callbacks
+> verify the raw body against configured gateway verifiers before parsing; the verified gateway must match
+> the vendor stored on the intent. V983 assigns `unknown` to legacy pending intents and sent payouts because
+> the old mutable `PSP_REDDE` flag cannot establish their historical creator. Those records fail closed and
+> require evidence-based manual reconciliation before automatic processing; terminal history is tagged
+> sandbox because it is not routed again. See [provider integration implementation plan](../../../docs/plans/provider-integrations/implementation-plan.md#wu-ext-2--payment-vendor-pinning-and-safe-disable).
 
 ## 5. Adapters
 

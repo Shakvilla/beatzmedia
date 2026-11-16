@@ -9,16 +9,19 @@ import org.shakvilla.beatzmedia.catalog.domain.AlbumId;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistProfile;
 import org.shakvilla.beatzmedia.catalog.domain.InviteOutcome;
+import org.shakvilla.beatzmedia.catalog.domain.LyricLine;
 import org.shakvilla.beatzmedia.catalog.domain.Lyrics;
 import org.shakvilla.beatzmedia.catalog.domain.Playlist;
 import org.shakvilla.beatzmedia.catalog.domain.PlaylistId;
 import org.shakvilla.beatzmedia.catalog.domain.Release;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
+import org.shakvilla.beatzmedia.catalog.domain.ReleaseRevision;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
 import org.shakvilla.beatzmedia.catalog.domain.SplitEntry;
 import org.shakvilla.beatzmedia.catalog.domain.SplitInvite;
 import org.shakvilla.beatzmedia.catalog.domain.Track;
 import org.shakvilla.beatzmedia.catalog.domain.TrackId;
+import org.shakvilla.beatzmedia.catalog.domain.TrendingAlbum;
 import org.shakvilla.beatzmedia.platform.domain.Page;
 import org.shakvilla.beatzmedia.platform.domain.PageRequest;
 
@@ -37,6 +40,9 @@ public interface CatalogRepository {
    * curated fields. Catalog ADD §10.
    */
   void saveArtistProfile(ArtistProfile profile);
+
+  /** Updates only the public avatar/banner projection, preserving all other curated artist fields. */
+  void updateArtistProfileImages(ArtistId id, String image, String coverImage, Instant updatedAt);
 
   List<Track> tracksByArtist(ArtistId id);
 
@@ -67,7 +73,16 @@ public interface CatalogRepository {
 
   Optional<Track> findTrack(TrackId id);
 
+  /** Atomically increments the public lifetime play count for a track, if it still exists. */
+  void incrementPlayCount(TrackId id);
+
   Optional<Lyrics> findLyrics(TrackId id);
+
+  /** Returns lyrics only when the track is ready and belongs to a live release. */
+  Optional<Lyrics> findPublishedLyrics(TrackId id);
+
+  /** Replaces a track's lyrics; an empty list clears them. */
+  void saveLyrics(TrackId id, List<LyricLine> lines);
 
   Optional<Playlist> findPlaylist(PlaylistId id);
 
@@ -77,6 +92,12 @@ public interface CatalogRepository {
 
   List<Track> trendingTracks(int limit);
 
+  /** Trending single releases, represented by their one track. */
+  List<Track> trendingSingles(int limit);
+
+  /** Albums ranked by the combined plays of their published tracks. */
+  List<TrendingAlbum> trendingAlbums(int limit);
+
   List<Track> top10Tracks(int limit);
 
   List<Album> featuredAlbums(int limit);
@@ -84,8 +105,8 @@ public interface CatalogRepository {
   /** WU-CAT-8 home rail: albums newest-first (ORDER BY year DESC), capped at {@code limit}. */
   List<Album> newestAlbums(int limit);
 
-  /** WU-CAT-8 home rail: artists by monthly listeners DESC (nulls last), capped at {@code limit}. */
-  List<ArtistProfile> popularArtists(int limit);
+  /** Home rail: artists ranked by distinct identified listeners in the supplied 28-day window. */
+  List<ArtistProfile> popularArtists(int limit, Instant since, Instant asOf);
 
   /** WU-CAT-8 home rail: public playlists by followers DESC (nulls last), capped at {@code limit}. */
   List<Playlist> curatedPlaylists(int limit);
@@ -103,6 +124,14 @@ public interface CatalogRepository {
   Optional<Release> findRelease(ReleaseId id);
 
   void saveRelease(Release release);
+
+  Optional<ReleaseRevision> findPendingRevision(ReleaseId releaseId);
+
+  Optional<ReleaseRevision> findLatestRevision(ReleaseId releaseId);
+
+  Optional<ReleaseRevision> findRevision(String revisionId);
+
+  void saveRevision(ReleaseRevision revision);
 
   void deleteRelease(ReleaseId id);
 

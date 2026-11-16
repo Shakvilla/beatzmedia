@@ -31,6 +31,7 @@ import io.restassured.response.Response;
  */
 @QuarkusTest
 @Tag("integration")
+@Tag("contract")
 class CatalogContractTest {
 
   @Inject
@@ -135,7 +136,7 @@ class CatalogContractTest {
         .body("tracks[0].id", isA(String.class));
   }
 
-  // --- Lyrics contract: { lines: { time: int, text: string }[] }
+  // --- Lyrics contract: { lines: { time: number, text: string }[] }
 
   @Test
   void lyrics_response_shape_matches_contract() {
@@ -144,7 +145,7 @@ class CatalogContractTest {
         .then()
         .statusCode(200)
         .body("lines", notNullValue())
-        .body("lines[0].time", isA(Integer.class))   // whole seconds
+        .body("lines[0].time", isA(Number.class))   // seconds, including subsecond values
         .body("lines[0].text", isA(String.class));
   }
 

@@ -51,6 +51,7 @@ import io.quarkus.scheduler.Scheduled.ConcurrentExecution;
  *   payment-recon    every 30 s   — payment reconciliation / timeout poll
  *   digest           daily 08:00  — digest emails
  *   delivery-retry-sweep every 60 s — notifications email/SMS delivery_attempt retry/backoff sweep
+ *   publication-fanout every 5 s — resumable publication notifications to current followers
  *   analytics-rollup every 5 min  — analytics rollups
  *   search-reindex   every 10 min — search re-index
  * </pre>
@@ -81,8 +82,12 @@ public class SchedulerRegistry {
   private static final String JOB_PAYOUT_RECON     = "payments.payout-recon";
   private static final String JOB_DIGEST           = "notifications.digest";
   private static final String JOB_DELIVERY_RETRY   = "notifications.delivery-retry-sweep";
+  private static final String JOB_PUBLICATION_FANOUT = "notifications.publication-fanout";
   private static final String JOB_ANALYTICS_ROLLUP = "analytics.rollup";
   private static final String JOB_SEARCH_REINDEX   = "search.reindex";
+  private static final String JOB_PUBLICATION_OUTBOX = "platform.publication-outbox";
+  private static final String JOB_ENGAGEMENT_AGGREGATE = "engagement.aggregate";
+  private static final String JOB_RECOMMENDATION_CLEANUP = "discovery.recommendation-cleanup";
 
   @Inject
   Instance<ScheduledJob> jobBeans;
@@ -152,6 +157,13 @@ public class SchedulerRegistry {
     runWithLock(JOB_DELIVERY_RETRY);
   }
 
+  /** Durable follower notification fanout — frequent bounded pages. */
+  @Scheduled(every = "5s", identity = "publication-fanout",
+      concurrentExecution = ConcurrentExecution.SKIP)
+  void fanOutPublicationNotifications() {
+    runWithLock(JOB_PUBLICATION_FANOUT);
+  }
+
   /** Analytics rollups — every 5 minutes. */
   @Scheduled(every = "5m", identity = "analytics-rollup",
       concurrentExecution = ConcurrentExecution.SKIP)
@@ -164,6 +176,27 @@ public class SchedulerRegistry {
       concurrentExecution = ConcurrentExecution.SKIP)
   void reindexSearch() {
     runWithLock(JOB_SEARCH_REINDEX);
+  }
+
+  /** Durable publication outbox — frequent, small, non-blocking batches. */
+  @Scheduled(every = "5s", identity = "publication-outbox",
+      concurrentExecution = ConcurrentExecution.SKIP)
+  void dispatchPublicationOutbox() {
+    runWithLock(JOB_PUBLICATION_OUTBOX);
+  }
+
+  /** Privacy-safe engagement aggregates — frequent bounded batches. */
+  @Scheduled(every = "15s", identity = "engagement-aggregate",
+      concurrentExecution = ConcurrentExecution.SKIP)
+  void projectEngagementAggregates() {
+    runWithLock(JOB_ENGAGEMENT_AGGREGATE);
+  }
+
+  /** Expired recommendation attribution facts — hourly, bounded and independently retryable. */
+  @Scheduled(every = "1h", identity = "recommendation-cleanup",
+      concurrentExecution = ConcurrentExecution.SKIP)
+  void cleanRecommendationAttribution() {
+    runWithLock(JOB_RECOMMENDATION_CLEANUP);
   }
 
   // -------------------------------------------------------------------------

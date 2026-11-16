@@ -12,7 +12,7 @@ import org.shakvilla.beatzmedia.media.application.service.MagicByteValidator;
 
 /**
  * LLFR-MEDIA-01.1 — format validation table.
- * AC: WAV, FLAC and MP3 accepted (MP3 per ADR-35); EXE/short/null and malformed frame syncs
+ * AC: WAV, FLAC, MP3 and M4A accepted; EXE/short/null and malformed headers
  * rejected with UNSUPPORTED_FORMAT.
  */
 class MagicByteValidatorTest {
@@ -68,12 +68,30 @@ class MagicByteValidatorTest {
   }
 
   @Test
-  void mp3_is_the_only_lossy_accepted_format() {
+  void compressed_formats_receive_quality_advisory() {
     // The wizard's quality warning keys off this flag, so a format silently flipping to
     // lossy() == false would drop the warning without any test noticing.
     assertTrue(AudioFormat.MP3.lossy());
+    assertTrue(AudioFormat.M4A.lossy());
     assertFalse(AudioFormat.WAV.lossy());
     assertFalse(AudioFormat.FLAC.lossy());
+  }
+
+  @Test
+  void m4a_common_and_newer_brands_accepted() {
+    for (String brand : new String[]{"M4A ", "isom", "mp42", "iso6", "M4B ", "qt  "}) {
+      assertEquals(AudioFormat.M4A, validator.detectAudioFormat(m4aHeader(brand)));
+    }
+  }
+
+  @Test
+  void m4a_malformed_box_or_unrecognized_brand_rejected() {
+    byte[] tooSmall = m4aHeader("M4A ");
+    tooSmall[3] = 8;
+    assertThrows(UnsupportedFormatException.class, () -> validator.detectAudioFormat(tooSmall));
+    assertThrows(UnsupportedFormatException.class, () -> validator.detectAudioFormat(m4aHeader("M4P ")));
+    assertThrows(UnsupportedFormatException.class, () -> validator.detectAudioFormat(m4aHeader("M4V ")));
+    assertThrows(UnsupportedFormatException.class, () -> validator.detectAudioFormat(m4aHeader("\0\0\0\0")));
   }
 
   @Test
@@ -156,6 +174,13 @@ class MagicByteValidatorTest {
         0x00, 0x00, 0x00, 0x00, // size (ignored)
         0x57, 0x41, 0x56, 0x45  // WAVE
     };
+  }
+
+  static byte[] m4aHeader(String brand) {
+    byte[] header = new byte[]{0, 0, 0, 24, 'f', 't', 'y', 'p', 0, 0, 0, 0};
+    byte[] brandBytes = brand.getBytes(java.nio.charset.StandardCharsets.US_ASCII);
+    System.arraycopy(brandBytes, 0, header, 8, 4);
+    return header;
   }
 
   /** A bare MPEG-1 Layer III frame: 11-bit sync, version 11 (MPEG-1), layer 01 (Layer III). */

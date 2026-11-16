@@ -1,5 +1,5 @@
 import { createFileRoute } from '@tanstack/react-router'
-import { useQueryClient } from '@tanstack/react-query'
+import { useQuery, useQueryClient } from '@tanstack/react-query'
 import { useEffect, useState } from 'react'
 import { Edit2, Sun, Moon, Monitor, LogOut, type LucideIcon } from 'lucide-react'
 import { cn } from '../utils/cn'
@@ -8,6 +8,9 @@ import { useCollection } from '../features/collection/collection-context'
 import { useTheme, type Theme } from '../components/theme-provider'
 import { useToast } from '../components/ui/toast-provider'
 import { Toggle } from '../components/ui/toggle'
+import { ApiError } from '../lib/api/errors'
+import { apiConfirmPhoneVerification, apiStartPhoneVerification, fanSettingsQuery } from '../lib/api/queries/fan-settings'
+import { ListeningHistorySettings } from '../features/engagement/listening-history-settings'
 
 export const Route = createFileRoute('/settings')({
   component: SettingsComponent,
@@ -28,7 +31,7 @@ interface FanPrefs {
 const PREFS_KEY = 'beatzclik-fan-settings'
 const DEFAULTS: FanPrefs = {
   country: 'Ghana',
-  phone: '0244 ··· 9210',
+  phone: '',
   streamingQuality: 'High (256 kbps)',
   crossfade: 'Off',
   dataSaver: false,
@@ -53,6 +56,7 @@ function SettingsComponent() {
   const { ownedTracks, userPlaylists } = useCollection()
   const { toast } = useToast()
   const queryClient = useQueryClient()
+  const { data: fanSettings } = useQuery(fanSettingsQuery())
 
   /**
    * Actually clear the client-side cache. This used to be `toast('Cache cleared', 'success')` —
@@ -78,12 +82,60 @@ function SettingsComponent() {
   }
 
   const [prefs, setPrefs] = useState<FanPrefs>(loadPrefs)
+  const [phoneDraft, setPhoneDraft] = useState<string | null>(null)
+  const [verificationCode, setVerificationCode] = useState('')
+  const [phoneBusy, setPhoneBusy] = useState(false)
+  const [resendAvailableAt, setResendAvailableAt] = useState<string | null>(null)
+  const [clockNow, setClockNow] = useState(() => Date.now())
+  useEffect(() => {
+    const timer = window.setInterval(() => setClockNow(Date.now()), 1000)
+    return () => window.clearInterval(timer)
+  }, [])
   useEffect(() => { try { localStorage.setItem(PREFS_KEY, JSON.stringify(prefs)) } catch { /* ignore */ } }, [prefs])
   const set = <K extends keyof FanPrefs>(k: K, v: FanPrefs[K]) => setPrefs((p) => ({ ...p, [k]: v }))
   const setNotif = (k: keyof FanPrefs['notif'], v: boolean) => setPrefs((p) => ({ ...p, notif: { ...p.notif, [k]: v } }))
 
   const name = account?.name ?? 'Listener'
   const email = account?.email ?? ''
+  const phone = phoneDraft ?? fanSettings?.phone ?? ''
+  const phoneMatchesSaved = phone === (fanSettings?.phone ?? '')
+  const isPhoneVerified = Boolean(fanSettings?.phoneVerified && phoneMatchesSaved)
+  const cooldownSeconds = resendAvailableAt
+    ? Math.max(0, Math.ceil((Date.parse(resendAvailableAt) - clockNow) / 1000))
+    : 0
+
+  const sendPhoneCode = async () => {
+    if (phoneBusy || !phone.trim()) return
+    setPhoneBusy(true)
+    try {
+      const result = await apiStartPhoneVerification(phone.trim())
+      setPhoneDraft(null)
+      setResendAvailableAt(result.resendAvailableAt)
+      await queryClient.invalidateQueries({ queryKey: ['me', 'settings'] })
+      toast(result.alreadyVerified ? 'This phone number is already verified' : `Verification code sent to ${result.maskedPhone}`, 'success')
+    } catch (error) {
+      toast(error instanceof ApiError ? error.message : 'Could not send a verification code', 'error')
+    } finally {
+      setPhoneBusy(false)
+    }
+  }
+
+  const confirmPhoneCode = async () => {
+    if (phoneBusy || !/^\d{6}$/.test(verificationCode)) return
+    setPhoneBusy(true)
+    try {
+      await apiConfirmPhoneVerification(verificationCode)
+      setVerificationCode('')
+      setPhoneDraft(null)
+      setResendAvailableAt(null)
+      await queryClient.invalidateQueries({ queryKey: ['me', 'settings'] })
+      toast('Phone number verified', 'success')
+    } catch (error) {
+      toast(error instanceof ApiError ? error.message : 'Could not verify this code', 'error')
+    } finally {
+      setPhoneBusy(false)
+    }
+  }
 
   return (
     <div className="flex flex-col gap-8 pb-20">
@@ -142,8 +194,29 @@ function SettingsComponent() {
                 {['Ghana', 'Nigeria', 'Côte d’Ivoire', 'UK', 'USA'].map((c) => <option key={c} value={c}>{c}</option>)}
               </select>
             </Row>
-            <Row label="Phone (MoMo)" last>
-              <input value={prefs.phone} onChange={(e) => set('phone', e.target.value)} className={cn(SELECT, 'w-40 text-right')} />
+            <Row label="Phone (MoMo)" desc={isPhoneVerified ? 'Verified phone number' : 'Verify your number to enable SMS notifications'} last>
+              <div className="flex flex-col items-end gap-2">
+                <div className="flex flex-wrap justify-end gap-2">
+                  <input aria-label="Phone number" type="tel" autoComplete="tel" value={phone}
+                    onChange={(e) => setPhoneDraft(e.target.value)} placeholder="0244 123 456 or +233…"
+                    className={cn(SELECT, 'w-52 text-right')} />
+                  <button type="button" onClick={sendPhoneCode} disabled={phoneBusy || !phone.trim() || cooldownSeconds > 0 || (isPhoneVerified && phoneMatchesSaved)}
+                    className="h-10 rounded-xl bg-beatz-green px-4 text-xs font-bold text-black disabled:opacity-40">
+                    {isPhoneVerified ? 'Verified' : phoneBusy ? 'Sending…' : cooldownSeconds > 0 ? `Resend in ${cooldownSeconds}s` : 'Send code'}
+                  </button>
+                </div>
+                {!isPhoneVerified && phone.trim() && (
+                  <div className="flex flex-wrap justify-end gap-2">
+                    <input aria-label="Six-digit verification code" inputMode="numeric" autoComplete="one-time-code"
+                      maxLength={6} value={verificationCode} onChange={(e) => setVerificationCode(e.target.value.replace(/\D/g, '').slice(0, 6))}
+                      placeholder="6-digit code" className={cn(SELECT, 'w-36 text-center tracking-[0.2em]')} />
+                    <button type="button" onClick={confirmPhoneCode} disabled={phoneBusy || verificationCode.length !== 6}
+                      className="h-10 rounded-xl border border-gray-300 px-4 text-xs font-bold text-beatz-dark-bg dark:border-white/20 dark:text-white disabled:opacity-40">
+                      Verify
+                    </button>
+                  </div>
+                )}
+              </div>
             </Row>
           </Group>
 
@@ -162,6 +235,7 @@ function SettingsComponent() {
 
           <Group title="Data & storage">
             <ToggleRow label="Data saver" desc="Lower quality on mobile data" checked={prefs.dataSaver} onChange={(v) => set('dataSaver', v)} />
+            <ListeningHistorySettings />
             <Row label="Downloads" desc={`${ownedTracks.length} tracks`} />
             <Row label="Cache" desc="Cached artwork and API responses" last>
               <button onClick={clearCache} className="text-sm font-bold text-beatz-green hover:underline">Clear</button>

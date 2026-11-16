@@ -14,7 +14,7 @@ import { useBuyTrack } from '../features/cart/use-buy-track'
 import { useCollection } from '../features/collection/collection-context'
 import { useToast } from '../components/ui/toast-provider'
 import { trackQuery, artistQuery, lyricsQuery, artistTracksQuery } from '../lib/api/queries/catalog'
-import { formatCount, formatDuration, formatPrice } from '../lib/format'
+import { dayMonthYear, formatCount, formatDuration, formatPrice } from '../lib/format'
 
 export const Route = createFileRoute('/track/$trackId')({
   loader: async ({ context: { queryClient }, params: { trackId } }) => {
@@ -138,7 +138,7 @@ function TrackPageComponent() {
                 <><span className="text-gray-400">•</span>
                 <Link to="/album/$albumId" params={{ albumId: track.albumId }} className="text-gray-500 dark:text-gray-300 hover:text-beatz-dark-bg dark:hover:text-white transition-colors">{track.albumTitle}</Link></>
               )}
-              {track.year && <><span className="text-gray-400">•</span><span className="text-gray-500 dark:text-gray-300">{track.year}</span></>}
+              {(track.year || track.releasedAt) && <><span className="text-gray-400">•</span><span className="text-gray-500 dark:text-gray-300">{track.year ?? track.releasedAt?.slice(0, 4)}</span></>}
               <span className="text-gray-400">•</span><span className="text-gray-500 dark:text-gray-300">{formatDuration(track.duration)}</span>
             </div>
           </div>
@@ -278,9 +278,9 @@ function TrackPageComponent() {
           <aside className="flex flex-col gap-4">
             <h2 className="text-title text-beatz-dark-bg dark:text-white">About</h2>
             <div className="bg-white dark:bg-beatz-dark-surface-2 rounded-2xl p-6 flex flex-col gap-5 shadow-sm">
-              <InfoRow icon={<CalendarDays size={18} />} label="Released" value={track.year ? String(track.year) : '—'} />
+              <InfoRow icon={<CalendarDays size={18} />} label="Released" value={track.releasedAt ? dayMonthYear(track.releasedAt) : track.year ? String(track.year) : '—'} />
               <InfoRow icon={<Clock size={18} />} label="Duration" value={formatDuration(track.duration)} />
-              {track.plays != null && <InfoRow icon={<Info size={18} />} label="Plays" value={`${formatCount(track.plays)}`} />}
+              <InfoRow icon={<Info size={18} />} label="Plays" value={formatCount(track.plays)} />
               {track.quality && <InfoRow icon={<Info size={18} />} label="Audio quality" value={track.quality} />}
               {/*
                 Visible regardless of ownership, before checkout: the download permission is

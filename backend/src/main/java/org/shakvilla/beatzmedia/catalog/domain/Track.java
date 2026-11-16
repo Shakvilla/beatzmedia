@@ -1,5 +1,6 @@
 package org.shakvilla.beatzmedia.catalog.domain;
 
+import java.time.Instant;
 import java.util.List;
 import java.util.Optional;
 
@@ -20,6 +21,8 @@ public final class Track {
   private final int durationSec;
   /** Square cover art URL. */
   private final String image;
+  /** True when {@code image} is track-specific rather than inherited from the release cover. */
+  private final boolean customArtwork;
   /** Intrinsic ownership for this track (stored; per-caller decoration via OwnershipReader). */
   private final OwnershipStatus ownership;
   /** Stored price in pesewas; present when ownership=for-sale. */
@@ -29,6 +32,7 @@ public final class Track {
   private final List<TrackCredit> credits;
   private final String quality;
   private final Integer year;
+  private final Instant releasedAt;
   private final String status;
   /**
    * Whether this track's release permits buyer downloads. Sourced from the owning release's
@@ -68,7 +72,7 @@ public final class Track {
       String status) {
     this(
         id, title, artistId, artistName, albumId, albumTitle, durationSec, image, ownership,
-        priceMinor, plays, audioUrl, credits, quality, year, status, false);
+        priceMinor, plays, audioUrl, credits, quality, year, status, false, false);
   }
 
   public Track(
@@ -89,6 +93,54 @@ public final class Track {
       Integer year,
       String status,
       boolean downloadable) {
+    this(id, title, artistId, artistName, albumId, albumTitle, durationSec, image, ownership,
+        priceMinor, plays, audioUrl, credits, quality, year, status, downloadable, false);
+  }
+
+  public Track(
+      TrackId id,
+      String title,
+      ArtistId artistId,
+      String artistName,
+      AlbumId albumId,
+      String albumTitle,
+      int durationSec,
+      String image,
+      OwnershipStatus ownership,
+      Long priceMinor,
+      Long plays,
+      String audioUrl,
+      List<TrackCredit> credits,
+      String quality,
+      Integer year,
+      String status,
+      boolean downloadable,
+      boolean customArtwork) {
+    this(id, title, artistId, artistName, albumId, albumTitle, durationSec, image, ownership,
+        priceMinor, plays, audioUrl, credits, quality, year, status, downloadable, customArtwork,
+        null);
+  }
+
+  public Track(
+      TrackId id,
+      String title,
+      ArtistId artistId,
+      String artistName,
+      AlbumId albumId,
+      String albumTitle,
+      int durationSec,
+      String image,
+      OwnershipStatus ownership,
+      Long priceMinor,
+      Long plays,
+      String audioUrl,
+      List<TrackCredit> credits,
+      String quality,
+      Integer year,
+      String status,
+      boolean downloadable,
+      boolean customArtwork,
+      Instant releasedAt) {
     this.id = id;
     this.title = title;
     this.artistId = artistId;
@@ -97,6 +149,7 @@ public final class Track {
     this.albumTitle = albumTitle;
     this.durationSec = durationSec;
     this.image = image;
+    this.customArtwork = customArtwork;
     this.ownership = ownership;
     this.priceMinor = priceMinor;
     this.plays = plays;
@@ -104,6 +157,7 @@ public final class Track {
     this.credits = credits;
     this.quality = quality;
     this.year = year;
+    this.releasedAt = releasedAt;
     this.status = status;
     this.downloadable = downloadable;
   }
@@ -127,7 +181,7 @@ public final class Track {
         id, title, artistId, artistName, albumId, albumTitle,
         probedDurationSec > 0 ? probedDurationSec : durationSec,
         image, ownership, priceMinor, plays, audioUrl, credits, quality, year, READY_STATUS,
-        downloadable);
+        downloadable, customArtwork, releasedAt);
   }
 
   /**
@@ -139,13 +193,55 @@ public final class Track {
    * all until V975. Idempotent: the same URL returns the same instance and costs no write.
    */
   public Track withImage(String newImage) {
-    if (newImage == null || newImage.isBlank() || newImage.equals(image)) {
+    if (newImage == null || newImage.isBlank() || (newImage.equals(image) && customArtwork)) {
       return this;
     }
     return new Track(
         id, title, artistId, artistName, albumId, albumTitle, durationSec,
         newImage, ownership, priceMinor, plays, audioUrl, credits, quality, year, status,
-        downloadable);
+        downloadable, true, releasedAt);
+  }
+
+  /** Applies an approved title change without changing the stable track identity. */
+  public Track withTitle(String newTitle) {
+    if (newTitle == null || newTitle.isBlank() || newTitle.equals(title)) return this;
+    return new Track(
+        id, newTitle.trim(), artistId, artistName, albumId, albumTitle, durationSec, image,
+        ownership, priceMinor, plays, audioUrl, credits, quality, year, status, downloadable,
+        customArtwork, releasedAt);
+  }
+
+  /** Applies the track price selected for its owning release. */
+  public Track withReleasePrice(long priceMinor) {
+    return withReleasePricing(priceMinor);
+  }
+
+  /** Applies a replacement audio duration after its staged media asset is promoted. */
+  public Track withApprovedAudio(int newDurationSec) {
+    if (newDurationSec <= 0) throw new IllegalArgumentException("audio duration must be positive");
+    return new Track(
+        id, title, artistId, artistName, albumId, albumTitle, newDurationSec, image, ownership,
+        priceMinor, plays, audioUrl, credits, quality, year, READY_STATUS, downloadable,
+        customArtwork, releasedAt);
+  }
+
+  /** Marks a non-public track while replacement audio is transcoding. */
+  public Track withPendingAudio() {
+    if ("uploading".equals(status)) return this;
+    return new Track(id, title, artistId, artistName, albumId, albumTitle, durationSec, image,
+        ownership, priceMinor, plays, audioUrl, credits, quality, year, "uploading", downloadable,
+        customArtwork, releasedAt);
+  }
+
+  /** Applies release artwork only while this track has no artist-selected cover. */
+  public Track withReleaseCover(String releaseImage) {
+    if (customArtwork || releaseImage == null || releaseImage.isBlank() || releaseImage.equals(image)) {
+      return this;
+    }
+    return new Track(
+        id, title, artistId, artistName, albumId, albumTitle, durationSec,
+        releaseImage, ownership, priceMinor, plays, audioUrl, credits, quality, year, status,
+        downloadable, false, releasedAt);
   }
 
   /**
@@ -170,11 +266,30 @@ public final class Track {
     return new Track(
         id, title, artistId, artistName, albumId, albumTitle, durationSec,
         image, newOwnership, newPrice, plays, audioUrl, credits, quality, year, status,
-        downloadable);
+        downloadable, customArtwork, releasedAt);
+  }
+
+  /** Enriches the track read model with the go-live timestamp from its owning live release. */
+  public Track withReleasedAt(Instant value) {
+    if (java.util.Objects.equals(releasedAt, value)) return this;
+    return new Track(id, title, artistId, artistName, albumId, albumTitle, durationSec, image,
+        ownership, priceMinor, plays, audioUrl, credits, quality, year, status, downloadable,
+        customArtwork, value);
+  }
+
+  /** Applies one successfully recorded play to this immutable read-model value. */
+  public Track withOneMorePlay() {
+    return new Track(id, title, artistId, artistName, albumId, albumTitle, durationSec, image,
+        ownership, priceMinor, plays == null ? 1L : plays + 1L, audioUrl, credits, quality, year,
+        status, downloadable, customArtwork, releasedAt);
   }
 
   public TrackId getId() {
     return id;
+  }
+
+  public boolean hasCustomArtwork() {
+    return customArtwork;
   }
 
   public String getTitle() {
@@ -231,6 +346,10 @@ public final class Track {
 
   public Optional<Integer> getYear() {
     return Optional.ofNullable(year);
+  }
+
+  public Optional<Instant> getReleasedAt() {
+    return Optional.ofNullable(releasedAt);
   }
 
   public String getStatus() {

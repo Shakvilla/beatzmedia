@@ -36,6 +36,7 @@ const byNewest = (a: PodcastEpisode, b: PodcastEpisode) => b.publishedAt.localeC
 function episodeToTrack(ep: PodcastEpisode): Track {
   return {
     id: ep.id,
+    playbackKind: 'podcast_episode',
     title: ep.title,
     artistId: ep.podcastId,
     artistName: ep.showTitle,

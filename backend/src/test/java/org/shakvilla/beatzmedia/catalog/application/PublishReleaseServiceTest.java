@@ -32,12 +32,12 @@ import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseTrack;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseType;
-import org.shakvilla.beatzmedia.catalog.domain.ReleaseWentLive;
 import org.shakvilla.beatzmedia.catalog.domain.Visibility;
 import org.shakvilla.beatzmedia.catalog.fakes.FakeCatalogRepository;
 import org.shakvilla.beatzmedia.platform.domain.ErrorCode;
 import org.shakvilla.beatzmedia.platform.fakes.FakeClock;
 import org.shakvilla.beatzmedia.platform.fakes.FakeIds;
+import org.shakvilla.beatzmedia.platform.fakes.RecordingDurableEventPublisher;
 
 /**
  * Unit tests for {@link PublishReleaseService}. Covers LLFR-CATALOG-02.5 acceptance criteria:
@@ -54,8 +54,8 @@ class PublishReleaseServiceTest {
   private FakeCatalogRepository repo;
   private FakeAuditWriter auditWriter;
   private FakeClock clock;
+  private RecordingDurableEventPublisher durableEvents;
   private final RecordingEvent<ReleaseApproved> approvedEvent = new RecordingEvent<>();
-  private final RecordingEvent<ReleaseWentLive> wentLiveEvent = new RecordingEvent<>();
   private final RecordingEvent<ContentTakenDown> takenDownEvent = new RecordingEvent<>();
 
   private PublishReleaseService service;
@@ -103,9 +103,11 @@ class PublishReleaseServiceTest {
     repo = new FakeCatalogRepository();
     auditWriter = new FakeAuditWriter();
     clock = FakeClock.at(NOW);
+    durableEvents = new RecordingDurableEventPublisher();
     service = new PublishReleaseService(
         repo, clock, FakeIds.sequential("aud"), auditWriter,
-        approvedEvent, wentLiveEvent, takenDownEvent);
+        durableEvents,
+        approvedEvent, takenDownEvent);
   }
 
   @Test
@@ -121,7 +123,7 @@ class PublishReleaseServiceTest {
     assertEquals(AuditType.MODERATION, auditWriter.all().get(0).getType());
     assertEquals(ADMIN, auditWriter.all().get(0).getActor());
     assertEquals(1, approvedEvent.fired.size());
-    assertTrue(wentLiveEvent.fired.isEmpty());
+    assertTrue(durableEvents.messages().isEmpty());
   }
 
   @Test
@@ -136,7 +138,8 @@ class PublishReleaseServiceTest {
     assertEquals(1, auditWriter.size());
     assertEquals(1, repo.markReadyCallCount("rel-2"));
     assertEquals(1, approvedEvent.fired.size());
-    assertEquals(1, wentLiveEvent.fired.size());
+    assertEquals(1, durableEvents.messages().size());
+    assertEquals("catalog.release-went-live", durableEvents.messages().get(0).eventType());
   }
 
   @Test
@@ -162,7 +165,7 @@ class PublishReleaseServiceTest {
   }
 
   @Test
-  void goLive_from_scheduled_moves_to_live_marks_tracks_ready_and_fires_ReleaseWentLive_no_audit() {
+  void goLive_from_scheduled_moves_to_live_marks_tracks_ready_and_appends_durable_event_no_audit() {
     Release release = scheduled("rel-4");
     repo.addRelease(release);
 
@@ -171,7 +174,7 @@ class PublishReleaseServiceTest {
 
     assertEquals(ReleaseStatus.live, view.status());
     assertEquals(1, repo.markReadyCallCount("rel-4"));
-    assertEquals(1, wentLiveEvent.fired.size());
+    assertEquals(1, durableEvents.messages().size());
     // GO_LIVE is system-initiated — no admin actor, so no AuditEntry (INV-10 covers privileged
     // *admin* mutations; the scheduler is not an admin actor).
     assertEquals(0, auditWriter.size());
@@ -207,7 +210,7 @@ class PublishReleaseServiceTest {
   }
 
   @Test
-  void reinstate_from_takedown_moves_to_live_audits_and_fires_ReleaseWentLive() {
+  void reinstate_from_takedown_moves_to_live_audits_and_appends_durable_event() {
     Release release = takenDown("rel-7");
     repo.addRelease(release);
 
@@ -216,7 +219,7 @@ class PublishReleaseServiceTest {
 
     assertEquals(ReleaseStatus.live, view.status());
     assertEquals(1, auditWriter.size());
-    assertEquals(1, wentLiveEvent.fired.size());
+    assertEquals(1, durableEvents.messages().size());
   }
 
   @Test

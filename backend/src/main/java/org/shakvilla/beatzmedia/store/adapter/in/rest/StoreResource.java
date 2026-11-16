@@ -16,8 +16,10 @@ import org.shakvilla.beatzmedia.platform.domain.Page;
 import org.shakvilla.beatzmedia.platform.domain.PageRequest;
 import org.shakvilla.beatzmedia.platform.domain.ValidationException;
 import org.shakvilla.beatzmedia.store.application.port.in.GetStoreItem;
+import org.shakvilla.beatzmedia.store.application.port.in.ListPaidMusic;
 import org.shakvilla.beatzmedia.store.application.port.in.ListStore;
 import org.shakvilla.beatzmedia.store.application.port.in.ListStore.StoreQuery;
+import org.shakvilla.beatzmedia.store.application.port.in.PaidMusicView;
 import org.shakvilla.beatzmedia.store.application.port.in.StoreItemView;
 import org.shakvilla.beatzmedia.store.domain.StoreItemId;
 import org.shakvilla.beatzmedia.store.domain.StoreItemType;
@@ -44,11 +46,13 @@ import org.shakvilla.beatzmedia.store.domain.StoreSort;
 public class StoreResource {
 
   private final ListStore listStore;
+  private final ListPaidMusic listPaidMusic;
   private final GetStoreItem getStoreItem;
 
   @Inject
-  public StoreResource(ListStore listStore, GetStoreItem getStoreItem) {
+  public StoreResource(ListStore listStore, ListPaidMusic listPaidMusic, GetStoreItem getStoreItem) {
     this.listStore = listStore;
+    this.listPaidMusic = listPaidMusic;
     this.getStoreItem = getStoreItem;
   }
 
@@ -62,6 +66,16 @@ public class StoreResource {
       @QueryParam("size") @DefaultValue("20") int size) {
     StoreQuery query = new StoreQuery(parseType(type), parseGenre(genre), parseSort(sort));
     return listStore.list(query, new PageRequest(page, size));
+  }
+
+  /** Live, priced catalog tracks and releases; checkout uses their native track/album kinds. */
+  @GET
+  @Path("/music")
+  public Page<PaidMusicView> music(
+      @QueryParam("sort") String sort,
+      @QueryParam("page") @DefaultValue("1") int page,
+      @QueryParam("size") @DefaultValue("20") int size) {
+    return listPaidMusic.list(parseSort(sort), new PageRequest(page, size));
   }
 
   /** GET /v1/store/:id — LLFR-STORE-01.2. */

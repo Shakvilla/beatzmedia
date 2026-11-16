@@ -50,6 +50,7 @@ final class TrackMapper {
         creditViews,
         track.getQuality().orElse(null),
         track.getYear().orElse(null),
+        track.getReleasedAt().orElse(null),
         track.isDownloadable());
   }
 }

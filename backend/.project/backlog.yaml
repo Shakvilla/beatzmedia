@@ -21,6 +21,8 @@ meta:
     2: "Commerce & Payments core"
     3: "Money completion (payouts/KYC, refunds/disputes)"
     4: "Surfaces & proposals (store, podcasts, events, notifications, studio, admin, analytics)"
+    5: "Provider integrations (MEGA S4, Resend, FROG, Redde switch safety)"
+    6: "Web listening and engagement"
 
 work_units:
   # ---------------- Phase 0 — Foundations ----------------
@@ -210,7 +212,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-CAT-2]
     llfrs: [LLFR-CATALOG-01.1]
-    status: in_progress
+    status: done   # PR #150 merged 2026-07-18 (squash 6b298d7). Backend rails queries + HomeFeedView.RailsView + frontend rails wiring. All CI green.
   - id: WU-CAT-9
     title: Collaborator split invite/accept flow
     phase: 1
@@ -228,7 +230,7 @@ work_units:
     owner: backend-engineer
     depends_on: [WU-CAT-5]
     llfrs: [LLFR-CATALOG-02.3]
-    status: in_progress
+    status: done   # PR #152 merged 2026-07-19 (squash 873a81f). SplitEntry persistence via saveTrackSplits + finalize Σ≤100 guard. All CI green.
   - id: WU-LIB-1
     title: Collection — likes/follows/saved/user playlists/owned
     phase: 1
@@ -598,3 +600,138 @@ work_units:
     depends_on: [WU-IDN-4, WU-AUD-1, WU-PLT-1]
     llfrs: [LLFR-ADMIN-09.1, LLFR-ADMIN-10.1]
     status: done   # PR #110 merged 2026-07-12 (squash bd138fe). Compliance queue (GET /v1/admin/compliance + start/complete/export/notice) & platform settings/flags (GET+PUT /v1/admin/settings), super-admin only. ComplianceRequest FSM (new|overdue->in_progress->completed, illegal transitions 409); ComplianceType wire-map (DSAR export/delete, takedown, tax) 422 on unknown. Settings: forward-only platformFeePct change (audited SETTINGS, creatorSharePct kept complementary), all 5 real FeatureKeys persisted (incl FAN_MESSAGING), payoutMinimum bounded @DecimalMax + service range-guard (422 not overflow/500). V965 compliance_request migration. Category B honest-empty: providers.* (no per-provider enablement subsystem), export mints jobId returning queued (no async job runner). Fixed payoutMinimum longValueExact overflow (code-review LOW). Closes notification-retry-settings carryover from WU-NOT-2.
+
+  # ---------------- Phase 5 — Provider integrations ----------------
+  # Canonical requirements: BACKEND-PRD.md §13. Detailed files/tests: docs/plans/provider-integrations/.
+  # Keep status todo until each WU's PR is merged and all required checks are green.
+  - id: WU-EXT-1
+    title: Audited provider selection kernel and safe operational API
+    phase: 5
+    module: platform
+    add: analytics-audit-platform.md
+    owner: backend-engineer
+    depends_on: [WU-PLT-1, WU-AUD-1, WU-ADM-8]
+    llfrs: [LLFR-EXT-01.1, LLFR-EXT-01.2, LLFR-EXT-01.3, LLFR-EXT-01.4]
+    status: in_progress   # WU-EXT-1 implementation started 2026-10-10.
+  - id: WU-EXT-2
+    title: Pin Redde or sandbox vendor on charges and payouts; safe disabled state
+    phase: 5
+    module: payments
+    add: payments.md
+    owner: payments-specialist
+    depends_on: [WU-EXT-1, WU-PAY-7]
+    llfrs: [LLFR-EXT-01.3, LLFR-EXT-05.1, LLFR-EXT-05.2, LLFR-EXT-05.3]
+    status: in_progress   # Payment vendor pinning implementation started 2026-10-28; compile passes, integration verification remains.
+  - id: WU-EXT-3
+    title: MEGA S4 S3 adapter compatibility and per-provider client configuration
+    phase: 5
+    module: media
+    add: media.md
+    owner: backend-engineer
+    depends_on: [WU-EXT-1, WU-MED-2]
+    llfrs: [LLFR-EXT-02.1, LLFR-EXT-02.2]
+    status: in_progress   # Dual MinIO/S4 clients and per-object store routing compile; credentialed S4 checks remain.
+  - id: WU-EXT-4
+    title: Durable media locations and verified migration between object stores
+    phase: 5
+    module: media
+    add: media.md
+    owner: backend-engineer
+    depends_on: [WU-EXT-3]
+    llfrs: [LLFR-EXT-02.3, LLFR-EXT-02.4]
+    status: in_progress   # New ObjectKey format records store identity; migration inventory/copy/rollback tooling remains.
+  - id: WU-EXT-5
+    title: Resend notifications with pinned email provider and delivery tracking
+    phase: 5
+    module: notifications
+    add: notifications.md
+    owner: backend-engineer
+    depends_on: [WU-EXT-1, WU-NOT-2]
+    llfrs: [LLFR-EXT-03.1, LLFR-EXT-03.3]
+    status: in_progress   # Resend adapter, pinned provider, acceptance ID, migrations, and identity mail wiring in progress 2026-10-29.
+  - id: WU-EXT-6
+    title: Password-reset email through selected transactional provider
+    phase: 5
+    module: identity
+    add: identity.md
+    owner: backend-engineer
+    depends_on: [WU-EXT-5, WU-IDN-2]
+    llfrs: [LLFR-EXT-03.2]
+    status: in_progress   # Password-reset mail now routes through the selected email transport; verification remains.
+  - id: WU-EXT-7
+    title: FROG SMS adapter and trusted delivery-status lifecycle
+    phase: 5
+    module: notifications
+    add: notifications.md
+    owner: backend-engineer
+    depends_on: [WU-EXT-1, WU-NOT-2]
+    llfrs: [LLFR-EXT-04.1, LLFR-EXT-04.2, LLFR-EXT-04.3]
+    status: in_progress   # FROG SMS adapter and phone verification implementation started 2026-11-02.
+  - id: WU-EXT-8
+    title: Hosted Redde card checkout client completion
+    phase: 5
+    module: commerce
+    add: payments.md
+    owner: frontend-developer
+    depends_on: [WU-EXT-2, WU-COM-2]
+    llfrs: [LLFR-EXT-05.4]
+    status: todo
+  - id: WU-EXT-9
+    title: Provider sandbox evidence, activation checklist, and rollback runbook
+    phase: 5
+    module: platform
+    add: analytics-audit-platform.md
+    owner: tech-lead
+    depends_on: [WU-EXT-2, WU-EXT-4, WU-EXT-6, WU-EXT-7, WU-EXT-8]
+    llfrs: [LLFR-EXT-01.1, LLFR-EXT-02.4, LLFR-EXT-03.2, LLFR-EXT-04.3, LLFR-EXT-05.4]
+    status: todo
+
+  # ---------------- Phase 6 — Web listening and engagement ----------------
+  # Delivery-sequence source: docs/plans/2026-11-01-web-release-to-fan-delivery-sequence-design.md
+  - id: WU-ENG-1
+    title: Account listening sessions, monotonic checkpoints, history, podcast resume, and safe aggregates
+    phase: 6
+    module: engagement
+    add: engagement.md
+    owner: backend-engineer
+    depends_on: [WU-PLY-1, WU-IDN-1, WU-POD-1, WU-PLT-1]
+    llfrs: [LLFR-ENGAGEMENT-01.1, LLFR-ENGAGEMENT-01.2, LLFR-ENGAGEMENT-01.3, LLFR-ENGAGEMENT-01.4, LLFR-ENGAGEMENT-01.5]
+    status: done   # Durable engagement, web history/resume/settings, tests, Docker build, and image confirmation completed 2026-11-02.
+    # Acceptance boundary: duplicate checkpoints are idempotent; older sequences cannot overwrite
+    # progress or inflate aggregates; engagement never writes play_event or grants ownership/revenue;
+    # account history is isolated; creators receive aggregates only. Authenticated accounts get
+    # durable cross-device history; anonymous history/resume remains client-local for this work unit.
+
+  - id: WU-DIS-1
+    title: Paged follower resolution and chronological Following feed
+    phase: 6
+    module: discovery
+    add: discovery.md
+    owner: backend-engineer
+    depends_on: [WU-ENG-1, WU-LIB-1, WU-CAT-2, WU-POD-1, WU-PLT-1]
+    llfrs: [LLFR-DISCOVERY-01.1, LLFR-DISCOVERY-01.2]
+    status: done   # Following feed plus durable, paged, retryable publication notification fanout completed 2026-11-03.
+
+  - id: WU-DIS-2
+    title: Explainable mixed-media personalized discovery rail
+    phase: 6
+    module: discovery
+    add: discovery.md
+    owner: backend-engineer
+    depends_on: [WU-DIS-1, WU-ENG-1, WU-LIB-1, WU-CAT-2, WU-POD-1]
+    llfrs: [LLFR-DISCOVERY-02.1, LLFR-DISCOVERY-02.2]
+    status: done   # Four-type recommendations (single/album/EP/podcast) and Home rail completed 2026-11-05.
+    # Acceptance boundary: request-time and bounded; no per-account recommendation rows; history
+    # opt-out removes behavioral signals; Trending and Following ordering remain unchanged.
+
+  - id: WU-DIS-3
+    title: Recommendation feedback, suppression, and listening attribution
+    phase: 6
+    module: discovery
+    add: discovery.md
+    owner: backend-engineer
+    depends_on: [WU-DIS-2, WU-ENG-1]
+    llfrs: [LLFR-DISCOVERY-03.1, LLFR-DISCOVERY-03.2, LLFR-DISCOVERY-03.3]
+    status: done   # Feedback, suppression, attribution, web controls, and PostgreSQL verification completed 2026-11-05.
+    # Acceptance boundary: source suppression affects recommendations only; attribution is
+    # best-effort and cannot block playback; raw attribution facts expire after 90 days.

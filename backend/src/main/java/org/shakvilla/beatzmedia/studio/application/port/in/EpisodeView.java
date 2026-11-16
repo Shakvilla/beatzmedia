@@ -21,4 +21,6 @@ public record EpisodeView(
     boolean premium,
     BigDecimal price,
     String publishedAt,
-    long plays) {}
+    long plays,
+    String description,
+    boolean earlyAccess) {}

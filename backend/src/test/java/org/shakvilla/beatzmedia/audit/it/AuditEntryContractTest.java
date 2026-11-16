@@ -25,6 +25,7 @@ import org.shakvilla.beatzmedia.audit.domain.AuditType;
  * Audit ADD §6.2 / DoD §11 contract-test requirement.
  */
 @Tag("unit")
+@Tag("contract")
 class AuditEntryContractTest {
 
   private static final Set<String> VALID_TYPES =

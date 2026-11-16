@@ -23,4 +23,9 @@ public class ProviderDisabledException extends DomainException {
         "Payments are not being accepted on " + provider.name() + " right now",
         "provider");
   }
+
+  /** No payment gateway is active, so the refused operation is not tied to one payment rail. */
+  public ProviderDisabledException() {
+    super(ErrorCode.PROVIDER_DISABLED, "Payments are temporarily unavailable", "provider");
+  }
 }

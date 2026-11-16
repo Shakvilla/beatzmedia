@@ -4,7 +4,7 @@ import java.util.List;
 
 /** Read-model for the home feed. LLFR-CATALOG-01.1, WU-CAT-2 (+ WU-CAT-8 rails). */
 public record HomeFeedView(
-    List<TrackView> trending,
+    List<TrendingItemView> trending,
     List<TrackView> top10,
     List<AlbumView> featuredAlbums,
     RailsView rails) {

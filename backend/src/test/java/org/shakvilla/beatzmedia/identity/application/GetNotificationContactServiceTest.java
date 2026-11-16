@@ -20,7 +20,7 @@ import org.shakvilla.beatzmedia.identity.fakes.FakeAccountRepository;
  * Unit tests for {@link GetNotificationContactService} — the ONLY cross-module read path the
  * {@code notifications} module uses to resolve contact + opt-in state (WU-NOT-2). Proves INV-N3's
  * "opted in AND usable contact" precondition is entirely identity's call: opted-in categories
- * drive {@code emailOptIn}, and SMS additionally requires a non-blank phone.
+ * drive {@code emailOptIn}, and SMS additionally requires a verified, non-blank phone.
  */
 class GetNotificationContactServiceTest {
 
@@ -80,7 +80,7 @@ class GetNotificationContactServiceTest {
     accountRepository.seed(fanAccount(id, "fan@example.com"));
     accountRepository.saveSettings(
         new FanSettings(id, "system", "High (256 kbps)", "High (256 kbps)", "Very high (320 kbps)",
-            "Off", false, false, true, false, "Ghana", "+233555000111"));
+            "Off", false, false, true, false, "Ghana", "+233555000111", true));
 
     NotificationContactView view = service.resolve(id);
 

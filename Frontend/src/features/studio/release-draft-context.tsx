@@ -15,6 +15,7 @@ import type { ReleaseType } from '../../lib/studio-data'
 import {
   apiCreateDraft, apiUploadTrack, apiUpdateRelease, apiSubmitRelease, apiDeleteTrack,
   apiUploadReleaseCover,
+  apiUploadTrackArtwork,
   apiGetReleaseDetail,
   type CreateDraftInput, type UpdateReleaseInput,
 } from '../../lib/api/queries/studio'
@@ -48,20 +49,26 @@ export interface UploadedTrack {
    */
   error?: string
   /**
-   * The uploaded file was already a lossy format (MP3). Client-side only — derived from the
+   * The uploaded file is lossy or may contain lossy audio (MP3/M4A). Client-side only — derived from the
    * picked `File`, never returned by the server, so it must be carried across `REPLACE_TRACK`
    * the same way `price` is. Drives the wizard's quality warning (ADR-35).
    */
   lossy?: boolean
+  /** Fan-facing artwork URL; initially the album-cover fallback or shared placeholder. */
+  image: string
+  /** Whether the artist explicitly uploaded artwork for this track. */
+  customArtwork: boolean
+  artworkUploading?: boolean
 }
 
 /**
- * Whether a picked file is an already-lossy source, so the delivery rendition would be a second
- * lossy generation. The backend admits WAV, FLAC and MP3 (ADR-35); of those only MP3 is lossy.
+ * Whether a picked file is lossy or could contain lossy audio. M4A can hold AAC or ALAC; warn
+ * conservatively without claiming its codec is known.
  * Matched on MIME type with an extension fallback, since some browsers report an empty `type`.
  */
 export function isLossyAudio(file: File): boolean {
-  return file.type === 'audio/mpeg' || file.type === 'audio/mp3' || /\.mp3$/i.test(file.name)
+  return ['audio/mpeg', 'audio/mp3', 'audio/mp4', 'audio/m4a', 'audio/x-m4a'].includes(file.type.toLowerCase())
+    || /\.(mp3|m4a)$/i.test(file.name)
 }
 
 export interface ReleaseDraft {
@@ -89,6 +96,7 @@ export interface ReleaseDraft {
    * with an answer the artist never gave.
    */
   downloadable: boolean | null
+  originCountry: string
 }
 
 const initialDraft: ReleaseDraft = {
@@ -109,6 +117,7 @@ const initialDraft: ReleaseDraft = {
   agreementAccepted: false,
   presaveGenerated: false,
   downloadable: null,
+  originCountry: '',
 }
 
 type DraftAction =
@@ -203,6 +212,7 @@ function toCreateInput(d: ReleaseDraft): CreateDraftInput {
     // `null` (not chosen yet) is omitted rather than sent — the wire field is a plain optional
     // boolean, and omitting it is exactly what leaves the choice unanswered server-side.
     downloadable: d.downloadable ?? undefined,
+    originCountry: d.originCountry.trim().toUpperCase() || undefined,
   }
 }
 
@@ -219,6 +229,7 @@ function toMetaPatch(d: ReleaseDraft): UpdateReleaseInput {
     // sent before the artist has chosen would clear/overwrite nothing but still risk one day being
     // read as an explicit "no".
     downloadable: d.downloadable ?? undefined,
+    originCountry: d.originCountry.trim().toUpperCase(),
   }
 }
 
@@ -243,6 +254,7 @@ interface ReleaseDraftContextValue {
    */
   hydrateFromServer: (releaseId: string) => Promise<void>
   uploadTrack: (file: File) => Promise<void>
+  uploadTrackArtwork: (trackId: string, file: File) => Promise<void>
   /**
    * Remembers the picked cover FILE, not just its preview URL.
    *
@@ -379,6 +391,7 @@ export function ReleaseDraftProvider({ children, initial }: { children: ReactNod
             releaseDate: d.scheduledAt ? d.scheduledAt.slice(0, 10) : '',
             price: d.price?.amount ?? initialDraft.price,
             downloadable: d.downloadable ?? null,
+            originCountry: d.originCountry ?? '',
             tracks: (d.tracks ?? [])
               .slice()
               .sort((a, b) => a.position - b.position)
@@ -394,6 +407,8 @@ export function ReleaseDraftProvider({ children, initial }: { children: ReactNod
                 src: '',
                 price: t.price?.amount ?? 0,
                 explicit: false,
+                image: t.image ?? '/images/placeholder.svg',
+                customArtwork: t.customArtwork ?? false,
               })),
             splits: Object.fromEntries(
               (d.tracks ?? []).map((t) => [
@@ -427,6 +442,8 @@ export function ReleaseDraftProvider({ children, initial }: { children: ReactNod
             price: stateRef.current.price,
             explicit: false,
             lossy,
+            image: '/images/placeholder.svg',
+            customArtwork: false,
           },
         })
         try {
@@ -466,6 +483,19 @@ export function ReleaseDraftProvider({ children, initial }: { children: ReactNod
           } catch {
             // already removed from the UI; server cleanup can happen via the releases list
           }
+        }
+      },
+
+      uploadTrackArtwork: async (trackId, file) => {
+        const rid = stateRef.current.releaseId
+        if (!rid || !isServerId(trackId)) throw new Error('Upload the audio track before its artwork')
+        dispatch({ type: 'UPDATE_TRACK', id: trackId, patch: { artworkUploading: true } })
+        try {
+          const image = await apiUploadTrackArtwork(rid, trackId, file)
+          dispatch({ type: 'UPDATE_TRACK', id: trackId, patch: { image, customArtwork: true, artworkUploading: false } })
+        } catch (error) {
+          dispatch({ type: 'UPDATE_TRACK', id: trackId, patch: { artworkUploading: false } })
+          throw error
         }
       },
 

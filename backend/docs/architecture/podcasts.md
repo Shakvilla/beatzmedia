@@ -258,8 +258,9 @@ at the same position).
   avoid N+1.
 - **`MediaServiceAdapter`** implements `MediaService` by calling the media module's `MediaService`
   output port (WU-MED-1), resolving the episode's asset via `findAssetIdForOwner` under the
-  owner-ref convention `("podcasts", episodeId)` — mirroring playback's `("catalog", trackId)`
-  convention for tracks. Any media outage/illegal-state is translated to `MediaUnavailableException`
+  owner-ref convention `("studio", episodeId)` written by Studio's episode upload. The
+  fan-facing podcasts catalogue does not create a separate media asset. Any media outage or
+  illegal state is translated to `MediaUnavailableException`
   (503 `MEDIA_UNAVAILABLE`), never an unmapped 500.
 - **`PaymentsTipAdapter`** (realized WU-POD-2) implements podcasts' `IssueTipUseCase` output port by
   calling payments' `IssueTip` INPUT port in-process (symmetric to how `OwnershipReaderAdapter` calls

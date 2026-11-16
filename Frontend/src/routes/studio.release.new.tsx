@@ -55,6 +55,8 @@ function WizardChrome() {
   const queryClient = useQueryClient()
 
   const slug = (location.pathname.split('/').pop() ?? 'details') as ReleaseStepSlug
+  const isWizardPath =
+    location.pathname === '/studio/release/new' || location.pathname.startsWith('/studio/release/new/')
   const stepIndex = Math.max(0, RELEASE_WIZARD_STEPS.findIndex((s) => s.slug === slug))
   const isLast = stepIndex === RELEASE_WIZARD_STEPS.length - 1
 
@@ -78,6 +80,10 @@ function WizardChrome() {
 
   // Guard against deep-linking to a step whose prerequisites aren't met.
   useEffect(() => {
+    // During a route transition the current wizard chrome can briefly remain mounted while the
+    // destination loads. Do not interpret a StudioShell destination (e.g. /studio/releases) as
+    // an unknown wizard step and redirect the user back into the wizard.
+    if (!isWizardPath) return
     if (resuming) return
     if (slug === 'details') return
     if (!draft.title.trim()) { goTo('details'); return }
@@ -87,7 +93,7 @@ function WizardChrome() {
       if (badSplit) goTo('splits')
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug, resuming])
+  }, [isWizardPath, slug, resuming])
 
   const handleContinue = async () => {
     if (busy) return
@@ -104,6 +110,11 @@ function WizardChrome() {
     if (slug === 'tracks') {
       if (draft.tracks.length === 0) { toast('Upload at least one track to continue', 'error'); return }
       if (draft.tracks.some((t) => t.status === 'uploading')) { toast('Wait for uploads to finish', 'error'); return }
+      if (isMultiTrack(draft.releaseType) && draft.tracks.some((t) => !t.customArtwork)) {
+        const missing = draft.tracks.find((t) => !t.customArtwork)
+        toast(`Add separate cover art for “${missing?.title || 'every album track'}” to continue`, 'error')
+        return
+      }
       goTo('splits'); return
     }
 
@@ -116,6 +127,10 @@ function WizardChrome() {
     // review (isLast) — keep both client gates (cover art + splits), plus the count matrix
     if (!draft.coverImage) { toast('Add cover art before submitting', 'error'); return }
     if (draft.tracks.length === 0) { toast('Upload at least one track', 'error'); return }
+    if (isMultiTrack(draft.releaseType) && draft.tracks.some((t) => !t.customArtwork)) {
+      toast('Add separate cover art for every album track before submitting', 'error')
+      return
+    }
     const badSplit = draft.tracks.find((t) => (draft.splits[t.id] ?? []).reduce((s, e) => s + e.percent, 0) !== 100)
     if (badSplit) { toast(`Splits for “${badSplit.title || 'a track'}” must total 100%`, 'error'); return }
     // No default: the artist must actively pick whether buyers can download this release before it

@@ -1,6 +1,7 @@
 package org.shakvilla.beatzmedia.catalog.application.service;
 
 import java.time.Instant;
+import java.util.Map;
 import java.util.Optional;
 
 import jakarta.enterprise.context.ApplicationScoped;
@@ -23,16 +24,17 @@ import org.shakvilla.beatzmedia.catalog.domain.ReleaseApproved;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseNotFoundException;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
-import org.shakvilla.beatzmedia.catalog.domain.ReleaseWentLive;
 import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
+import org.shakvilla.beatzmedia.platform.application.port.out.DurableEventPublisher;
 import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
+import org.shakvilla.beatzmedia.platform.domain.DurableEventMessage;
 
 /**
  * Application service for {@link PublishRelease}. Orchestrates the release lifecycle FSM
  * (LLFR-CATALOG-02.5): loads the aggregate, enforces INV-12 (no live transition while any split is
  * pending) before delegating to the domain guard methods, persists the result, flips constituent
  * tracks to publicly streamable on any transition that results in {@code live}, appends exactly
- * one {@link AuditEntry} for admin-triggered transitions (INV-10), and fires the documented domain
+ * one {@link AuditEntry} for admin-triggered transitions (INV-10), and appends durable publication
  * events after the state change is persisted. Catalog ADD §4.1 / §8 / §9.
  */
 @ApplicationScoped
@@ -42,8 +44,8 @@ public class PublishReleaseService implements PublishRelease {
   private final Clock clock;
   private final IdGenerator ids;
   private final AuditWriter auditWriter;
+  private final DurableEventPublisher durableEvents;
   private final Event<ReleaseApproved> releaseApprovedEvent;
-  private final Event<ReleaseWentLive> releaseWentLiveEvent;
   private final Event<ContentTakenDown> contentTakenDownEvent;
 
   @Inject
@@ -52,15 +54,15 @@ public class PublishReleaseService implements PublishRelease {
       Clock clock,
       IdGenerator ids,
       AuditWriter auditWriter,
+      DurableEventPublisher durableEvents,
       Event<ReleaseApproved> releaseApprovedEvent,
-      Event<ReleaseWentLive> releaseWentLiveEvent,
       Event<ContentTakenDown> contentTakenDownEvent) {
     this.repo = repo;
     this.clock = clock;
     this.ids = ids;
     this.auditWriter = auditWriter;
+    this.durableEvents = durableEvents;
     this.releaseApprovedEvent = releaseApprovedEvent;
-    this.releaseWentLiveEvent = releaseWentLiveEvent;
     this.contentTakenDownEvent = contentTakenDownEvent;
   }
 
@@ -107,8 +109,7 @@ public class PublishReleaseService implements PublishRelease {
         auditApprove(release, actorId, now);
         releaseApprovedEvent.fire(new ReleaseApproved(
             release.getId(), release.getArtistId(), ReleaseStatus.live, null, actorId, now));
-        releaseWentLiveEvent.fire(
-            new ReleaseWentLive(release.getId(), release.getArtistId(), now));
+        appendReleaseWentLive(release, now);
       }
       case GO_LIVE -> {
         // System-only (scheduler). INV-12 guard applies here too — a scheduled release with a
@@ -117,8 +118,7 @@ public class PublishReleaseService implements PublishRelease {
         release.goLive(now);
         repo.saveRelease(release);
         repo.markReleaseTracksReady(id);
-        releaseWentLiveEvent.fire(
-            new ReleaseWentLive(release.getId(), release.getArtistId(), now));
+        appendReleaseWentLive(release, now);
       }
       case TAKEDOWN -> {
         release.takedown(now);
@@ -132,8 +132,7 @@ public class PublishReleaseService implements PublishRelease {
         repo.saveRelease(release);
         repo.markReleaseTracksReady(id);
         auditReinstate(release, actorId, now);
-        releaseWentLiveEvent.fire(
-            new ReleaseWentLive(release.getId(), release.getArtistId(), now));
+        appendReleaseWentLive(release, now);
       }
       default -> throw new IllegalStateException("Unhandled transition: " + action);
     }
@@ -195,6 +194,20 @@ public class PublishReleaseService implements PublishRelease {
         release.getId(),
         AuditType.MODERATION,
         null,
+        now));
+  }
+
+  private void appendReleaseWentLive(Release release, Instant now) {
+    durableEvents.append(new DurableEventMessage(
+        ids.newId(),
+        "catalog.release-went-live",
+        1,
+        "release",
+        release.getId(),
+        Map.of(
+            "releaseId", release.getId(),
+            "artistId", release.getArtistId(),
+            "wentLiveAt", now.toString()),
         now));
   }
 

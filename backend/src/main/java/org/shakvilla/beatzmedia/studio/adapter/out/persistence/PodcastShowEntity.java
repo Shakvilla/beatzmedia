@@ -37,6 +37,9 @@ public class PodcastShowEntity {
   @Column(name = "description")
   public String description;
 
+  @Column(name = "origin_country")
+  public String originCountry;
+
   @Column(name = "created_at", nullable = false)
   public Instant createdAt;
 }

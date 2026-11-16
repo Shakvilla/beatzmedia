@@ -2,24 +2,26 @@ package org.shakvilla.beatzmedia.studio.application.service;
 
 import java.time.Instant;
 import java.util.List;
+import java.util.Map;
 
 import jakarta.enterprise.context.ApplicationScoped;
-import jakarta.enterprise.event.Event;
 import jakarta.inject.Inject;
 import jakarta.transaction.Transactional;
 
 import org.jboss.logging.Logger;
 import org.shakvilla.beatzmedia.platform.application.port.out.Clock;
+import org.shakvilla.beatzmedia.platform.application.port.out.DurableEventPublisher;
+import org.shakvilla.beatzmedia.platform.application.port.out.IdGenerator;
+import org.shakvilla.beatzmedia.platform.domain.DurableEventMessage;
 import org.shakvilla.beatzmedia.studio.application.port.in.RunEpisodeGoLiveSweep;
 import org.shakvilla.beatzmedia.studio.application.port.out.StudioRepository;
 import org.shakvilla.beatzmedia.studio.domain.Episode;
-import org.shakvilla.beatzmedia.studio.domain.EpisodePublished;
 import org.shakvilla.beatzmedia.studio.domain.IllegalEpisodeTransitionException;
 
 /**
  * Application service for {@link RunEpisodeGoLiveSweep}. Enumerates due {@code scheduled} episodes
  * via {@link StudioRepository#findDueScheduled} and transitions each via {@link Episode#goLive}
- * (the single source of FSM truth), persists, and fires {@code EpisodePublished} exactly once per
+ * (the single source of FSM truth), persists, and appends one durable publication event per
  * episode. INV-7 / LLFR-STUDIO-02.3. Mirrors {@code catalog.RunGoLiveSweepService} exactly. Studio
  * ADD §4.1 / §8 (WU-STU-2).
  */
@@ -30,14 +32,17 @@ public class RunEpisodeGoLiveSweepService implements RunEpisodeGoLiveSweep {
 
   private final StudioRepository repo;
   private final Clock clock;
-  private final Event<EpisodePublished> episodePublishedEvent;
+  private final IdGenerator ids;
+  private final DurableEventPublisher durableEvents;
 
   @Inject
   public RunEpisodeGoLiveSweepService(
-      StudioRepository repo, Clock clock, Event<EpisodePublished> episodePublishedEvent) {
+      StudioRepository repo,
+      Clock clock, IdGenerator ids, DurableEventPublisher durableEvents) {
     this.repo = repo;
     this.clock = clock;
-    this.episodePublishedEvent = episodePublishedEvent;
+    this.ids = ids;
+    this.durableEvents = durableEvents;
   }
 
   @Override
@@ -50,8 +55,18 @@ public class RunEpisodeGoLiveSweepService implements RunEpisodeGoLiveSweep {
       try {
         episode.goLive(now);
         Episode saved = repo.saveEpisode(episode);
-        episodePublishedEvent.fire(new EpisodePublished(
-            saved.id().value(), saved.showId().value(), saved.artistId().value(), now));
+        durableEvents.append(new DurableEventMessage(
+            ids.newId(),
+            "studio.episode-published",
+            1,
+            "episode",
+            saved.id().value(),
+            Map.of(
+                "episodeId", saved.id().value(),
+                "showId", saved.showId().value(),
+                "artistId", saved.artistId().value(),
+                "occurredAt", now.toString()),
+            now));
         transitioned++;
       } catch (IllegalEpisodeTransitionException e) {
         // Already left 'scheduled' between enumeration and transition (e.g. raced by a PATCH

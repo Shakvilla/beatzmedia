@@ -15,6 +15,7 @@ import org.shakvilla.beatzmedia.payments.application.port.out.LedgerRepository;
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway;
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway.ProviderStatus;
 import org.shakvilla.beatzmedia.payments.application.port.out.PayoutRepository;
+import org.shakvilla.beatzmedia.payments.domain.GatewayVendor;
 import org.shakvilla.beatzmedia.payments.domain.MethodKind;
 import org.shakvilla.beatzmedia.payments.domain.PaymentEventType;
 import org.shakvilla.beatzmedia.payments.domain.PayoutMethod;
@@ -125,10 +126,11 @@ public class HandleCashoutWebhookService implements HandleCashoutWebhook {
       return; // gone, already confirmed, or locked by a concurrent confirm (SKIP LOCKED)
     }
     Provider rail = railFor(w);
+    GatewayVendor gatewayVendor = payouts.findGatewayVendor(wid);
 
     ProviderStatus pulled;
     try {
-      pulled = gateway.queryStatus(rail, cashoutRef);
+      pulled = gateway.queryStatus(gatewayVendor, rail, cashoutRef);
     } catch (ProviderException e) {
       // Rail unreachable — do not confirm off an unverified body; leave SENT for the recon poll.
       LOG.warnf(

@@ -80,17 +80,15 @@
 # You can find more information about the UBI base runtime images and their configuration here:
 # https://rh-openjdk.github.io/redhat-openjdk-containers/
 ###
-# Pin to the most recent patch rebuild of the 1.24 stream (as of 2026-07-24).
-# Red Hat rebuilds this image frequently; each rebuild incorporates current OS
-# security patches. Update by querying:
-#   curl -s https://registry.access.redhat.com/v2/ubi9/openjdk-25-runtime/tags/list
-# There is no 1.25/1.26 minor available yet — 1.24-3 is the latest.
+# Pin to the current Red Hat Java 25 runtime rebuild (checked 2026-11-08).
+# Red Hat rebuilds this image frequently; inspect the multi-architecture digest
+# with `docker buildx imagetools inspect` before updating it.
 #
-# Pinned by DIGEST as well as tag: this rebuild publishes only floating tags
-# (1.24, 1.24-3, latest) with no immutable build-number suffix, so the tag alone
-# would not pin anything. The digest is the multi-arch manifest list
+# Pinned by DIGEST as well as tag so a later `latest` rebuild cannot change
+# the scanned runtime bytes. The digest is the multi-arch manifest list
 # (amd64/arm64/ppc64le/s390x), so it resolves on CI and on developer machines.
 #
+# 2026-11-08: refreshed the August runtime pin after new fixable OS CVEs.
 # 2026-08-18: bumped from 1.24-3.1785873418 to clear the last base-image CVE
 # suppression. This rebuild ships python3/python3-libs 3.9.25-7.el9_8.3 (the fix
 # for CVE-2026-11940, tarfile extraction filter bypass); the previous pin was
@@ -112,7 +110,7 @@
 FROM mwader/static-ffmpeg:9.0 AS ffmpeg-stage
 
 # ── Stage 2: Quarkus JVM runtime ─────────────────────────────────────────────
-FROM registry.access.redhat.com/ubi9/openjdk-25-runtime:1.24-3.1786536503@sha256:6b320cbb20bd8b74ed4b44d0ea086cc9651bfc64396fbe6c0d906a8da12bdd20
+FROM registry.access.redhat.com/ubi9/openjdk-25-runtime:latest@sha256:2ddacad5332f4e481353668f210623f7e7420f1561515f5686e5abd33cd6d38f
 
 ENV LANGUAGE='en_US:en'
 

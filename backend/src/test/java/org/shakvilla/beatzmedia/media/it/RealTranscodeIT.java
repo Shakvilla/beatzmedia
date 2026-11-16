@@ -1,5 +1,6 @@
 package org.shakvilla.beatzmedia.media.it;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assumptions.assumeTrue;
@@ -24,6 +25,7 @@ import org.shakvilla.beatzmedia.media.domain.ObjectKey;
 import org.testcontainers.containers.MinIOContainer;
 import org.testcontainers.junit.jupiter.Container;
 import org.testcontainers.junit.jupiter.Testcontainers;
+import org.testcontainers.utility.DockerImageName;
 
 import software.amazon.awssdk.auth.credentials.AwsBasicCredentials;
 import software.amazon.awssdk.auth.credentials.StaticCredentialsProvider;
@@ -49,7 +51,8 @@ class RealTranscodeIT {
 
   @Container
   static MinIOContainer minio =
-      new MinIOContainer("minio/minio:RELEASE.2024-01-16T16-07-38Z")
+      new MinIOContainer(DockerImageName.parse("pgsty/silo:RELEASE.2026-10-26T00-00-00Z")
+          .asCompatibleSubstituteFor("minio/minio"))
           .withUserName("minioadmin")
           .withPassword("minioadmin");
 
@@ -141,6 +144,21 @@ class RealTranscodeIT {
     assertDurationNear(PREVIEW_SECONDS, transcoder.probeDurationSec(previewKey), "preview rendition");
   }
 
+  @Test
+  void transcode_uploaded_m4a_produces_playable_renditions() throws Exception {
+    MediaAssetId id = new MediaAssetId("asset-m4a-upload");
+    ObjectKey originalKey = uploadSourceM4a(id);
+
+    assertDurationNear(SOURCE_SECONDS, transcoder.probeDurationSec(originalKey), "M4A original");
+    ObjectKey fullKey = transcoder.transcodeFull(originalKey, id);
+    ObjectKey previewKey = transcoder.clipPreview(originalKey, id, PREVIEW_SECONDS);
+
+    assertTrue(objectStore.exists(fullKey));
+    assertTrue(objectStore.exists(previewKey));
+    assertDurationNear(SOURCE_SECONDS, transcoder.probeDurationSec(fullKey), "M4A full rendition");
+    assertDurationNear(PREVIEW_SECONDS, transcoder.probeDurationSec(previewKey), "M4A preview");
+  }
+
   /**
    * A lossless rendition that is silently clipped, or silently lossy, would pass a mere
    * "the object exists" check. Assert the duration matches the source — the same reasoning that
@@ -189,6 +207,27 @@ class RealTranscodeIT {
         new ByteArrayInputStream(wav),
         "audio/wav",
         wav.length);
+  }
+
+  private static ObjectKey uploadSourceM4a(MediaAssetId id) throws IOException, InterruptedException {
+    Path audioWav = Files.createTempFile("m4a-src-", ".wav");
+    Path audioM4a = Files.createTempFile("m4a-src-", ".m4a");
+    try {
+      Files.write(audioWav, minimalSilentWav(SOURCE_SECONDS));
+      runFixtureFfmpeg(List.of("ffmpeg", "-y", "-i", audioWav.toString(),
+          "-c:a", "aac", "-brand", "iso6", audioM4a.toString()));
+      byte[] bytes = Files.readAllBytes(audioM4a);
+      assertTrue(org.shakvilla.beatzmedia.media.application.port.in.AllowedAudioTypes.isAllowed("audio/mp4"));
+      assertEquals(org.shakvilla.beatzmedia.media.domain.AudioFormat.M4A,
+          new org.shakvilla.beatzmedia.media.application.service.MagicByteValidator()
+              .detectAudioFormat(java.util.Arrays.copyOf(bytes, 12)));
+      return objectStore.putOriginal(
+          org.shakvilla.beatzmedia.media.domain.MediaKind.AUDIO,
+          id, new ByteArrayInputStream(bytes), "audio/mp4", bytes.length);
+    } finally {
+      Files.deleteIfExists(audioWav);
+      Files.deleteIfExists(audioM4a);
+    }
   }
 
   /**

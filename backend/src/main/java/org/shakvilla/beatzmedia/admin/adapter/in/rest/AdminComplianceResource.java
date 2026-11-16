@@ -41,7 +41,7 @@ import org.shakvilla.beatzmedia.admin.domain.ComplianceType;
 @Path("/v1/admin/compliance")
 @Produces(MediaType.APPLICATION_JSON)
 @RolesAllowed("super-admin")
-@Tag(name = "admin-compliance")
+@Tag(name = "Administrator Management")
 @SecurityRequirement(name = "BearerAuth")
 public class AdminComplianceResource {
 

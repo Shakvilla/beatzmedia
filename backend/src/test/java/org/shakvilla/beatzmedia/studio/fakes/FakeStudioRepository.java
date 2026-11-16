@@ -6,6 +6,8 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
+import org.shakvilla.beatzmedia.platform.domain.Page;
+import org.shakvilla.beatzmedia.platform.domain.PageRequest;
 import org.shakvilla.beatzmedia.studio.application.port.out.StudioRepository;
 import org.shakvilla.beatzmedia.studio.domain.ArtistId;
 import org.shakvilla.beatzmedia.studio.domain.Episode;
@@ -104,6 +106,17 @@ public class FakeStudioRepository implements StudioRepository {
     return episodes.values().stream()
         .filter(e -> e.artistId().value().equals(artist.value()))
         .toList();
+  }
+
+  @Override
+  public Page<Episode> findEpisodesForAdmin(PageRequest page) {
+    List<Episode> all = episodes.values().stream()
+        .sorted((a, b) -> {
+          int byCreated = b.createdAt().compareTo(a.createdAt());
+          return byCreated != 0 ? byCreated : b.id().value().compareTo(a.id().value());
+        }).toList();
+    List<Episode> items = all.stream().skip(page.offset()).limit(page.size()).toList();
+    return Page.of(items, page.page(), page.size(), all.size());
   }
 
   @Override

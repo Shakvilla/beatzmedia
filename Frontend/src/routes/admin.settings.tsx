@@ -8,6 +8,9 @@ import { Toggle } from '../components/ui/toggle'
 import { AdminLoadError } from '../components/admin/load-error'
 import { ApiError } from '../lib/api/errors'
 import { platformSettingsQuery, apiSaveSettings } from '../lib/api/queries/admin-settings'
+import {
+  apiSaveFrogConfig, apiSaveResendConfig, apiSelectProvider, frogConfigQuery, providerConfigQuery, resendConfigQuery,
+} from '../lib/api/queries/admin-provider-config'
 import { adminTeamQuery, apiInviteAdmin, apiChangeAdminRole, apiRemoveAdmin } from '../lib/api/queries/admin-team'
 import { ADMIN_ROLES, type PlatformSettings, type AdminRole } from '../lib/admin-data'
 
@@ -32,6 +35,17 @@ function AdminSettings() {
   // was already being fetched on this page and returns the actual members; the UI simply threw the
   // response away and rendered the fakes, so the console showed a staff roster that did not exist.
   const { data: team = [] } = useQuery(adminTeamQuery())
+  const { data: providerConfig } = useQuery(providerConfigQuery())
+  const { data: resendConfig } = useQuery(resendConfigQuery())
+  const { data: frogConfig } = useQuery(frogConfigQuery())
+  const [resendApiKey, setResendApiKey] = useState('')
+  const [resendFrom, setResendFrom] = useState<string | null>(null)
+  const [frogApiKey, setFrogApiKey] = useState('')
+  const [frogUsername, setFrogUsername] = useState('')
+  const [frogSenderId, setFrogSenderId] = useState<string | null>(null)
+  const [emailProviderDraft, setEmailProviderDraft] = useState<string | null>(null)
+  const [smsProviderDraft, setSmsProviderDraft] = useState<string | null>(null)
+  const [providerBusy, setProviderBusy] = useState(false)
   const [inviteEmail, setInviteEmail] = useState('')
   const [inviteRole, setInviteRole] = useState<AdminRole>('Support')
   const [teamBusy, setTeamBusy] = useState(false)
@@ -110,6 +124,95 @@ function AdminSettings() {
     }
   }
 
+  const emailProvider = providerConfig?.items.find((item) => item.capability === 'email')
+  const activeEmailProvider = emailProviderDraft ?? emailProvider?.provider ?? 'smtp'
+  const senderAddress = resendFrom ?? resendConfig?.from ?? ''
+  const smsProvider = providerConfig?.items.find((item) => item.capability === 'sms')
+  const activeSmsProvider = smsProviderDraft ?? smsProvider?.provider ?? 'capture'
+  const senderId = frogSenderId ?? frogConfig?.senderId ?? ''
+
+  const saveResendConfig = async () => {
+    if (providerBusy || !resendConfig) return
+    setProviderBusy(true)
+    try {
+      await apiSaveResendConfig({
+        ...(resendApiKey.trim() ? { apiKey: resendApiKey.trim() } : {}),
+        from: senderAddress,
+        expectedVersion: resendConfig.version,
+      })
+      setResendApiKey('')
+      setResendFrom(null)
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'provider-config'] })
+      toast('Resend settings saved securely', 'success')
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'Could not save Resend settings', 'error')
+    } finally {
+      setProviderBusy(false)
+    }
+  }
+
+  const saveEmailProvider = async () => {
+    if (providerBusy || !emailProvider) return
+    setProviderBusy(true)
+    try {
+      await apiSelectProvider({
+        capability: 'email',
+        provider: activeEmailProvider,
+        expectedVersion: emailProvider.version,
+      })
+      setEmailProviderDraft(null)
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'provider-config'] })
+      toast(`Email provider changed to ${activeEmailProvider}`, 'success')
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'Could not change the email provider', 'error')
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'provider-config'] })
+    } finally {
+      setProviderBusy(false)
+    }
+  }
+
+  const saveFrogConfig = async () => {
+    if (providerBusy || !frogConfig) return
+    setProviderBusy(true)
+    try {
+      await apiSaveFrogConfig({
+        ...(frogApiKey.trim() ? { apiKey: frogApiKey.trim() } : {}),
+        ...(frogUsername.trim() ? { username: frogUsername.trim() } : {}),
+        senderId,
+        expectedVersion: frogConfig.version,
+      })
+      setFrogApiKey('')
+      setFrogUsername('')
+      setFrogSenderId(null)
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'provider-config'] })
+      toast('FROG settings saved securely', 'success')
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'Could not save FROG settings', 'error')
+    } finally {
+      setProviderBusy(false)
+    }
+  }
+
+  const saveSmsProvider = async () => {
+    if (providerBusy || !smsProvider) return
+    setProviderBusy(true)
+    try {
+      await apiSelectProvider({
+        capability: 'sms',
+        provider: activeSmsProvider,
+        expectedVersion: smsProvider.version,
+      })
+      setSmsProviderDraft(null)
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'provider-config'] })
+      toast(`SMS provider changed to ${activeSmsProvider}`, 'success')
+    } catch (err) {
+      toast(err instanceof ApiError ? err.message : 'Could not change the SMS provider', 'error')
+      await queryClient.invalidateQueries({ queryKey: ['admin', 'provider-config'] })
+    } finally {
+      setProviderBusy(false)
+    }
+  }
+
   return (
     <div className="flex flex-col gap-6 max-w-4xl">
       <div className="flex items-center justify-between gap-4 flex-wrap">
@@ -165,6 +268,119 @@ function AdminSettings() {
             <ToggleRow label="AirtelTigo Money" checked={s.providers.airteltigo} onChange={(v) => setProvider('airteltigo', v)} />
             <ToggleRow label="Card" checked={s.providers.card} onChange={(v) => setProvider('card', v)} />
             <ToggleRow label="Bank transfer" checked={s.providers.bank} onChange={(v) => setProvider('bank', v)} last />
+          </Section>
+
+          {/* Email provider */}
+          <Section title="Email provider" desc="Configure transactional email and choose which provider handles new messages. Existing queued deliveries stay pinned to their original provider.">
+            <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-4 items-end">
+              <Field label="Active email provider">
+                <select className={cn(INPUT, 'w-full')} value={activeEmailProvider} onChange={(e) => setEmailProviderDraft(e.target.value)}>
+                  <option value="smtp">SMTP / Mailpit</option>
+                  <option value="resend">Resend</option>
+                  <option value="disabled">Disabled</option>
+                </select>
+              </Field>
+              <button onClick={saveEmailProvider} disabled={!emailProvider || providerBusy || activeEmailProvider === emailProvider?.provider}
+                className="h-11 px-5 rounded-full bg-beatz-green text-black text-sm font-bold disabled:opacity-40">
+                {activeEmailProvider === 'resend'
+                  ? 'Activate Resend'
+                  : activeEmailProvider === 'disabled'
+                    ? 'Disable email'
+                    : 'Switch to SMTP / Mailpit'}
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+              {emailProvider?.ready
+                ? `Current provider is ready (${emailProvider.provider}).`
+                : `Current provider is not ready${emailProvider?.readinessReason ? `: ${emailProvider.readinessReason}` : '.'}`}
+            </p>
+            <p className="mt-1 text-xs text-gray-500 dark:text-gray-400">
+              Saving Resend settings stores its credentials. To route email through Resend, select it above and click <strong>Save provider</strong>.
+            </p>
+            <Divider />
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-5">
+              <Field label="Resend sender address">
+                <input className={cn(INPUT, 'w-full')} type="text" autoComplete="off" placeholder="BeatzClik <no-reply@your-domain.com>"
+                  value={senderAddress} onChange={(e) => setResendFrom(e.target.value)} />
+              </Field>
+              <Field label="Resend API key">
+                <input className={cn(INPUT, 'w-full')} type="password" autoComplete="new-password"
+                  placeholder={resendConfig?.configured ? 'Saved securely · leave blank to keep' : 're_…'}
+                  value={resendApiKey} onChange={(e) => setResendApiKey(e.target.value)} />
+              </Field>
+            </div>
+            <div className="mt-4 flex items-center justify-between gap-4 flex-wrap">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {resendConfig?.source === 'environment'
+                  ? 'Resend is currently configured through the environment; saving here stores an encrypted database copy.'
+                  : resendConfig?.configured
+                    ? 'API key is saved encrypted and is never returned to this page.'
+                    : 'Set the deployment encryption key before saving provider credentials.'}
+              </p>
+              <button onClick={saveResendConfig} disabled={!resendConfig?.encryptionReady || providerBusy || !senderAddress.trim()}
+                className="h-10 px-5 rounded-full border border-gray-300 dark:border-white/20 text-sm font-bold text-beatz-dark-bg dark:text-white disabled:opacity-40">
+                Save Resend settings
+              </button>
+            </div>
+            {!resendConfig?.encryptionReady && (
+              <p className="mt-3 rounded-lg bg-[#f6c644]/10 px-3 py-2 text-xs text-[#9a741b] dark:text-[#f6c644]">
+                Configure <code>BEATZ_PROVIDER_CONFIG_ENCRYPTION_KEY</code> as a base64-encoded 32-byte deployment secret, then restart the backend.
+              </p>
+            )}
+          </Section>
+
+          <Section title="SMS provider" desc="Configure FROG SMS and choose the provider for new SMS deliveries. Existing attempts keep their selected provider.">
+            <div className="grid grid-cols-1 sm:grid-cols-[1fr_auto] gap-4 items-end">
+              <Field label="Active SMS provider">
+                <select className={cn(INPUT, 'w-full')} value={activeSmsProvider} onChange={(e) => setSmsProviderDraft(e.target.value)}>
+                  <option value="capture">Local capture</option>
+                  <option value="frog">FROG SMS</option>
+                  <option value="disabled">Disabled</option>
+                </select>
+              </Field>
+              <button onClick={saveSmsProvider} disabled={!smsProvider || providerBusy || activeSmsProvider === smsProvider?.provider}
+                className="h-11 px-5 rounded-full bg-beatz-green text-black text-sm font-bold disabled:opacity-40">
+                {activeSmsProvider === 'frog' ? 'Activate FROG' : activeSmsProvider === 'disabled' ? 'Disable SMS' : 'Switch to capture'}
+              </button>
+            </div>
+            <p className="mt-2 text-xs text-gray-500 dark:text-gray-400">
+              {smsProvider?.ready
+                ? `Current provider is ready (${smsProvider.provider}).`
+                : `Current provider is not ready${smsProvider?.readinessReason ? `: ${smsProvider.readinessReason}` : '.'}`}
+            </p>
+            <Divider />
+            <div className="grid grid-cols-1 sm:grid-cols-3 gap-5">
+              <Field label="FROG username">
+                <input className={cn(INPUT, 'w-full')} autoComplete="username" placeholder={frogConfig?.configured ? 'Saved securely · leave blank to keep' : 'FROG account username'}
+                  value={frogUsername} onChange={(e) => setFrogUsername(e.target.value)} />
+              </Field>
+              <Field label="FROG API key">
+                <input className={cn(INPUT, 'w-full')} type="password" autoComplete="new-password" placeholder={frogConfig?.configured ? 'Saved securely · leave blank to keep' : 'FROG API key'}
+                  value={frogApiKey} onChange={(e) => setFrogApiKey(e.target.value)} />
+              </Field>
+              <Field label="Approved sender ID">
+                <input className={cn(INPUT, 'w-full')} autoComplete="off" placeholder="Approved FROG sender ID"
+                  value={senderId} onChange={(e) => setFrogSenderId(e.target.value)} />
+              </Field>
+            </div>
+            <div className="mt-4 flex items-center justify-between gap-4 flex-wrap">
+              <p className="text-xs text-gray-500 dark:text-gray-400">
+                {frogConfig?.source === 'environment'
+                  ? 'FROG is configured through deployment environment values; saving here stores an encrypted database copy.'
+                  : frogConfig?.configured
+                    ? 'Credentials are encrypted at rest and never returned to this page.'
+                    : 'Set the provider configuration encryption key before saving credentials.'}
+              </p>
+              <button onClick={saveFrogConfig} disabled={!frogConfig?.encryptionReady || providerBusy || !senderId.trim()}
+                className="h-10 px-5 rounded-full border border-gray-300 dark:border-white/20 text-sm font-bold text-beatz-dark-bg dark:text-white disabled:opacity-40">
+                Save FROG settings
+              </button>
+            </div>
+            {!frogConfig?.encryptionReady && (
+              <p className="mt-3 rounded-lg bg-[#f6c644]/10 px-3 py-2 text-xs text-[#9a741b] dark:text-[#f6c644]">
+                Configure <code>BEATZ_PROVIDER_CONFIG_ENCRYPTION_KEY</code> as a base64-encoded 32-byte deployment secret, then restart the backend.
+              </p>
+            )}
           </Section>
 
           {/* Feature flags */}

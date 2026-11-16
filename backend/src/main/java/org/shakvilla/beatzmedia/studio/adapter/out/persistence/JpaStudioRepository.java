@@ -8,6 +8,8 @@ import jakarta.enterprise.context.ApplicationScoped;
 import jakarta.inject.Inject;
 import jakarta.persistence.EntityManager;
 
+import org.shakvilla.beatzmedia.platform.domain.Page;
+import org.shakvilla.beatzmedia.platform.domain.PageRequest;
 import org.shakvilla.beatzmedia.studio.application.port.out.StudioRepository;
 import org.shakvilla.beatzmedia.studio.domain.ArtistId;
 import org.shakvilla.beatzmedia.studio.domain.Episode;
@@ -133,6 +135,17 @@ public class JpaStudioRepository implements StudioRepository {
         .stream()
         .map(PodcastEntityMapper::toDomain)
         .toList();
+  }
+
+  @Override
+  public Page<Episode> findEpisodesForAdmin(PageRequest page) {
+    long total = em.createQuery("SELECT COUNT(e) FROM EpisodeEntity e", Long.class).getSingleResult();
+    List<Episode> items = em.createQuery(
+            "SELECT e FROM EpisodeEntity e ORDER BY e.createdAt DESC, e.id DESC", EpisodeEntity.class)
+        .setFirstResult(page.offset())
+        .setMaxResults(page.size())
+        .getResultList().stream().map(PodcastEntityMapper::toDomain).toList();
+    return Page.of(items, page.page(), page.size(), total);
   }
 
   @Override

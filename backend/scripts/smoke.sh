@@ -2,7 +2,7 @@
 # smoke.sh — Bring up the local stack and health-check it.
 #
 # Boots the Docker Compose stack, polls /q/health/ready, runs a couple of
-# basic GET smoke checks, then tears the stack down on exit (trap). Mirrors
+# basic GET smoke checks, then stops the stack on exit (trap) while keeping data volumes. Mirrors
 # the compose-smoke CI job (ci-cd-github-actions.md §5) and the local runbook
 # (environments-and-deployment.md §2.2).
 #
@@ -11,10 +11,11 @@
 # early project.
 #
 # Usage:
-#   scripts/smoke.sh [--keep] [--timeout N] [--help]
-#     --keep         Do not tear the stack down on exit (leave it running).
-#     --timeout N    Seconds to wait for readiness (default 180).
-#     --help         Show this help.
+#   scripts/smoke.sh [--keep] [--destroy-volumes] [--timeout N] [--help]
+#     --keep             Do not tear the stack down on exit (leave it running).
+#     --destroy-volumes  Also delete Postgres/MinIO volumes after the smoke run.
+#     --timeout N        Seconds to wait for readiness (default 180).
+#     --help             Show this help.
 
 set -uo pipefail
 # shellcheck source=_common.sh
@@ -24,16 +25,18 @@ usage() {
   cat <<EOF
 smoke.sh — boot the Compose stack and health-check it.
 
-Usage: scripts/smoke.sh [--keep] [--timeout N] [--help]
+Usage: scripts/smoke.sh [--keep] [--destroy-volumes] [--timeout N] [--help]
 
 Options:
-  --keep         Leave the stack running after the checks (skip teardown).
-  --timeout N    Readiness wait budget in seconds (default 180).
-  --help         Show this help and exit.
+  --keep             Leave the stack running after the checks (skip teardown).
+  --destroy-volumes  Delete Postgres and MinIO data volumes after the smoke run.
+  --timeout N        Readiness wait budget in seconds (default 180).
+  --help             Show this help and exit.
 EOF
 }
 
 KEEP=0
+DESTROY_VOLUMES=0
 TIMEOUT=180
 HEALTH_URL="http://localhost:8080/q/health/ready"
 LIVE_URL="http://localhost:8080/q/health/live"
@@ -41,6 +44,7 @@ LIVE_URL="http://localhost:8080/q/health/live"
 while [ "$#" -gt 0 ]; do
   case "$1" in
     --keep) KEEP=1 ;;
+    --destroy-volumes) DESTROY_VOLUMES=1 ;;
     --timeout)
       shift; [ "$#" -gt 0 ] || die "--timeout requires a value"
       case "$1" in (*[!0-9]*|'') die "--timeout must be a positive integer";; esac
@@ -87,12 +91,18 @@ fi
 
 cleanup() {
   if [ "$KEEP" -eq 1 ]; then
-    warn "--keep set: leaving the stack running. Tear down with: (cd $COMPOSE_DIR && docker compose down -v)"
+    warn "--keep set: leaving the stack and its data volumes running. Stop safely with: (cd $COMPOSE_DIR && docker compose down)"
     return
   fi
   section "Tearing down stack"
-  DC down -v >/dev/null 2>&1 || true
-  ok "Stack stopped."
+  if [ "$DESTROY_VOLUMES" -eq 1 ]; then
+    warn "--destroy-volumes set: deleting the Postgres and MinIO data volumes."
+    DC down -v >/dev/null 2>&1 || true
+    ok "Stack stopped and data volumes deleted."
+  else
+    DC down >/dev/null 2>&1 || true
+    ok "Stack stopped. Postgres and MinIO data volumes are preserved."
+  fi
 }
 trap cleanup EXIT INT TERM
 
@@ -162,19 +172,19 @@ else
   SMOKE_FAIL=1
 fi
 
-# Optional representative read endpoint. Treated as best-effort: a 404 on an
-# early project (endpoint not built yet) is a WARN, not a failure.
-CATALOG_URL="http://localhost:${APP_HOST_PORT:-8080}/v1/catalog/releases?page=1&size=1"
+# Representative application assertion. Health alone is insufficient: the
+# public catalog must respond successfully for the smoke gate to pass.
+CATALOG_URL="http://localhost:${APP_HOST_PORT:-8080}/v1/home"
 code="$(curl -s -o /dev/null -w '%{http_code}' -H 'Accept: application/json' "$CATALOG_URL" 2>/dev/null || echo 000)"
 case "$code" in
-  2*) status_row OK   "GET /v1/catalog/releases" "HTTP $code" ;;
-  000) status_row WARN "GET /v1/catalog/releases" "no response (endpoint not built yet?)" ;;
-  *)  status_row WARN "GET /v1/catalog/releases" "HTTP $code (endpoint not built yet?)" ;;
+  2*) status_row OK   "GET /v1/home" "HTTP $code" ;;
+  000) status_row FAIL "GET /v1/home" "no response"; SMOKE_FAIL=1 ;;
+  *)  status_row FAIL "GET /v1/home" "HTTP $code"; SMOKE_FAIL=1 ;;
 esac
 
 section "Smoke result"
 if [ "$SMOKE_FAIL" -ne 0 ]; then
-  err "Health checks FAILED."
+  err "Smoke checks FAILED."
   DC logs --no-color 2>/dev/null | tail -n 60 || true
   exit 1
 fi

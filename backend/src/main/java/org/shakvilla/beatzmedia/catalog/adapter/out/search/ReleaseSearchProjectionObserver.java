@@ -29,8 +29,8 @@ import org.shakvilla.beatzmedia.search.application.port.in.IndexEntityUseCase;
  * remained searchable after being pulled.
  *
  * <p>This is the wiring {@code IndexEventObserversStub} described and deferred until the events
- * existed. They exist now: {@code PublishReleaseService} fires {@link ReleaseWentLive} on admin
- * approval, on the scheduled go-live job, and on reinstate, and {@link ContentTakenDown} on
+ * existed. They exist now: the durable publication dispatcher fires {@link ReleaseWentLive} for
+ * admin approval, scheduled go-live, and reinstatement, while {@link ContentTakenDown} is fired on
  * takedown — so all four paths are covered by observing the two events rather than by hooking each
  * call site.
  *

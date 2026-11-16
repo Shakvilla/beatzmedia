@@ -189,7 +189,7 @@ gate** exactly as CI will:
 docker compose up -d --wait
 curl -fsS http://localhost:8080/q/health/ready
 # ...exercise the WU's endpoints, then:
-docker compose down -v
+docker compose down  # stops containers and preserves local Postgres/MinIO volumes
 ```
 
 Only when every step is green does the agent open the PR. (Details of each layer live in

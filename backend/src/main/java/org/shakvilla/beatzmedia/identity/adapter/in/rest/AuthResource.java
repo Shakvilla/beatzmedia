@@ -4,14 +4,18 @@ import jakarta.annotation.security.PermitAll;
 import jakarta.inject.Inject;
 import jakarta.validation.Valid;
 import jakarta.ws.rs.Consumes;
+import jakarta.ws.rs.CookieParam;
+import jakarta.ws.rs.HeaderParam;
 import jakarta.ws.rs.POST;
 import jakarta.ws.rs.Path;
 import jakarta.ws.rs.Produces;
 import jakarta.ws.rs.core.MediaType;
 import jakarta.ws.rs.core.Response;
 
+import org.eclipse.microprofile.config.inject.ConfigProperty;
 import org.eclipse.microprofile.jwt.JsonWebToken;
 import org.shakvilla.beatzmedia.identity.application.port.in.AuthResult;
+import org.shakvilla.beatzmedia.identity.application.port.in.BrowserSessions;
 import org.shakvilla.beatzmedia.identity.application.port.in.Login;
 import org.shakvilla.beatzmedia.identity.application.port.in.Logout;
 import org.shakvilla.beatzmedia.identity.application.port.in.RegisterFan;
@@ -19,8 +23,9 @@ import org.shakvilla.beatzmedia.identity.application.port.in.ResetPassword;
 import org.shakvilla.beatzmedia.identity.application.port.in.SocialLogin;
 import org.shakvilla.beatzmedia.identity.domain.AccountId;
 import org.shakvilla.beatzmedia.identity.domain.SocialProvider;
-
-import io.quarkus.security.Authenticated;
+import org.shakvilla.beatzmedia.platform.adapter.in.rest.ErrorEnvelope;
+import org.shakvilla.beatzmedia.platform.domain.ApiError;
+import org.shakvilla.beatzmedia.platform.domain.ErrorCode;
 
 /**
  * Thin REST resource for the auth endpoints. Maps DTOs to commands, calls input ports, maps
@@ -43,6 +48,13 @@ public class AuthResource {
   private final Logout logoutPort;
   private final ResetPassword resetPasswordPort;
   private final JsonWebToken jwt;
+  private final BrowserSessions browserSessions;
+
+  @ConfigProperty(name = "beatz.auth.session-max-seconds", defaultValue = "2592000")
+  long sessionMaxSeconds;
+
+  @ConfigProperty(name = "beatz.auth.cookie-secure", defaultValue = "false")
+  boolean secureCookie;
 
   @Inject
   public AuthResource(
@@ -51,12 +63,14 @@ public class AuthResource {
       SocialLogin socialLoginPort,
       Logout logoutPort,
       ResetPassword resetPasswordPort,
+      BrowserSessions browserSessions,
       JsonWebToken jwt) {
     this.registerFanPort = registerFanPort;
     this.loginPort = loginPort;
     this.socialLoginPort = socialLoginPort;
     this.logoutPort = logoutPort;
     this.resetPasswordPort = resetPasswordPort;
+    this.browserSessions = browserSessions;
     this.jwt = jwt;
   }
 
@@ -91,6 +105,8 @@ public class AuthResource {
     AuthResult result = registerFanPort.register(
         new RegisterFan.RegisterFanCommand(request.name(), request.email(), request.password()));
     return Response.status(Response.Status.CREATED)
+        .header("Set-Cookie", sessionCookie(browserSessions.start(new AccountId(result.account().id()))))
+        .header("Cache-Control", "no-store")
         .entity(new AuthResponse(result.token(), result.account()))
         .build();
   }
@@ -103,7 +119,10 @@ public class AuthResource {
   public Response login(@Valid LoginRequest request) {
     AuthResult result = loginPort.login(
         new Login.LoginCommand(request.email(), request.password()));
-    return Response.ok(new AuthResponse(result.token(), result.account())).build();
+    return Response.ok(new AuthResponse(result.token(), result.account()))
+        .header("Set-Cookie", sessionCookie(browserSessions.start(new AccountId(result.account().id()))))
+        .header("Cache-Control", "no-store")
+        .build();
   }
 
   /**
@@ -120,22 +139,63 @@ public class AuthResource {
     SocialProvider provider = SocialProvider.fromWireValue(request.provider());
     AuthResult result = socialLoginPort.socialLogin(
         new SocialLogin.SocialLoginCommand(provider, request.token()));
-    return Response.ok(new AuthResponse(result.token(), result.account())).build();
+    return Response.ok(new AuthResponse(result.token(), result.account()))
+        .header("Set-Cookie", sessionCookie(browserSessions.start(new AccountId(result.account().id()))))
+        .header("Cache-Control", "no-store")
+        .build();
+  }
+
+  /** Exchanges a valid, bounded browser session for a new short-lived access JWT. */
+  @POST
+  @Path("/session")
+  @PermitAll
+  @Consumes(MediaType.WILDCARD)
+  public Response renewSession(
+      @CookieParam("beatz_session") String cookie,
+      @HeaderParam("X-Beatz-Session") String sessionHeader) {
+    if (!"1".equals(sessionHeader)) {
+      return Response.status(Response.Status.FORBIDDEN)
+          .entity(new ErrorEnvelope(ApiError.of(ErrorCode.UNAUTHORIZED, "Not permitted.")))
+          .build();
+    }
+    return browserSessions.renew(cookie)
+        .map(result -> Response.ok(new AuthResponse(result.token(), result.account()))
+            .header("Cache-Control", "no-store")
+            .build())
+        .orElseGet(() -> Response.status(Response.Status.UNAUTHORIZED)
+            .header("Set-Cookie", expiredSessionCookie())
+            .header("Cache-Control", "no-store")
+            .entity(new ErrorEnvelope(ApiError.of(ErrorCode.UNAUTHENTICATED, "Session expired.")))
+            .build());
   }
 
   /**
-   * POST /v1/auth/logout — LLFR-IDENTITY-01.4. Returns 204; idempotent. Stateless JWT — always
-   * succeeds for any authenticated caller. No request body; accepts any content-type.
+   * POST /v1/auth/logout — LLFR-IDENTITY-01.4. Revokes the browser session and clears its cookie.
+   * Existing stateless access JWTs retain their normal, short expiry.
    */
   @POST
   @Path("/logout")
-  @Authenticated
+  @PermitAll
   @Consumes(MediaType.WILDCARD)
-  public Response logout() {
+  public Response logout(@CookieParam("beatz_session") String cookie) {
+    browserSessions.revoke(cookie);
     String subject = jwt.getSubject();
     if (subject != null && !subject.isBlank()) {
       logoutPort.logout(new AccountId(subject));
     }
-    return Response.noContent().build();
+    return Response.noContent()
+        .header("Set-Cookie", expiredSessionCookie())
+        .header("Cache-Control", "no-store")
+        .build();
+  }
+
+  private String sessionCookie(String value) {
+    return "beatz_session=" + value + "; Path=/v1/auth; Max-Age=" + sessionMaxSeconds
+        + "; HttpOnly; SameSite=Strict" + (secureCookie ? "; Secure" : "");
+  }
+
+  private String expiredSessionCookie() {
+    return "beatz_session=; Path=/v1/auth; Max-Age=0; HttpOnly; SameSite=Strict"
+        + (secureCookie ? "; Secure" : "");
   }
 }

@@ -7,7 +7,14 @@ import java.util.List;
  * its collaborator revenue splits (WU-CAT-6). Catalog ADD §4.1 / WU-CAT-5 / WU-CAT-6.
  */
 public record TrackDraftView(
-    String trackId, String title, int duration, String status, int position, MoneyView price,
+    String trackId,
+    String title,
+    int duration,
+    String status,
+    int position,
+    String image,
+    boolean customArtwork,
+    MoneyView price,
     List<SplitView> splits) {
 
   /** A single collaborator's royalty split of the track (creator is implicit, not listed). */

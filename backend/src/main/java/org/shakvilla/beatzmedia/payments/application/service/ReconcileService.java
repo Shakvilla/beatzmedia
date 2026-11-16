@@ -14,6 +14,7 @@ import org.shakvilla.beatzmedia.payments.application.port.in.ReconciliationRepor
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway;
 import org.shakvilla.beatzmedia.payments.application.port.out.PaymentGateway.ProviderStatus;
 import org.shakvilla.beatzmedia.payments.domain.DiscrepancyKind;
+import org.shakvilla.beatzmedia.payments.domain.GatewayVendor;
 import org.shakvilla.beatzmedia.payments.domain.PaymentEventType;
 import org.shakvilla.beatzmedia.payments.domain.PaymentIntent;
 import org.shakvilla.beatzmedia.payments.domain.PaymentIntentStatus;
@@ -87,7 +88,7 @@ public class ReconcileService implements Reconcile {
 
     ProviderStatus status;
     try {
-      status = gateway.queryStatus(intent.getProvider(), providerRef);
+      status = gateway.queryStatus(intent.getGatewayVendor(), intent.getProvider(), providerRef);
     } catch (ProviderException e) {
       // Rail unreachable: leave pending and retry next tick (do not time out on a transient error).
       LOG.warnf("queryStatus failed for intent %s: %s — leaving pending", intent.getId(),
@@ -99,7 +100,9 @@ public class ReconcileService implements Reconcile {
       case SETTLED -> settlement.settle(intent.getId(), providerRef);
       case FAILED -> settlement.fail(intent.getId(), reasonOr(status.reason(), "declined"));
       case PENDING -> {
-        if (pastMaxWindow) {
+        // A real rail can settle after our local wait window. Only the deterministic sandbox
+        // can be timed out from an inconclusive provider response.
+        if (pastMaxWindow && intent.getGatewayVendor() == GatewayVendor.SANDBOX) {
           settlement.timeout(intent.getId());
         }
       }
@@ -117,7 +120,9 @@ public class ReconcileService implements Reconcile {
     for (PaymentIntent intent : store.loadForReconciliation(from, to)) {
       ProviderStatus status;
       try {
-        status = gateway.queryStatus(intent.getProvider(), intent.getProviderRef());
+        status =
+            gateway.queryStatus(
+                intent.getGatewayVendor(), intent.getProvider(), intent.getProviderRef());
       } catch (ProviderException e) {
         LOG.warnf("Reconciliation skipped intent %s: queryStatus failed: %s", intent.getId(),
             e.getMessage());

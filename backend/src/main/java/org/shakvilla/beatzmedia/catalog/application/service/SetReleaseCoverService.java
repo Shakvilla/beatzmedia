@@ -8,8 +8,10 @@ import org.jboss.logging.Logger;
 import org.shakvilla.beatzmedia.catalog.application.port.in.SetReleaseCover;
 import org.shakvilla.beatzmedia.catalog.application.port.out.CatalogRepository;
 import org.shakvilla.beatzmedia.catalog.domain.ArtistId;
+import org.shakvilla.beatzmedia.catalog.domain.IllegalTransitionException;
 import org.shakvilla.beatzmedia.catalog.domain.Release;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseId;
+import org.shakvilla.beatzmedia.catalog.domain.ReleaseStatus;
 import org.shakvilla.beatzmedia.catalog.domain.ReleaseTrack;
 import org.shakvilla.beatzmedia.catalog.domain.Track;
 import org.shakvilla.beatzmedia.catalog.domain.TrackId;
@@ -22,11 +24,14 @@ import org.shakvilla.beatzmedia.media.domain.OwnerRef;
 import org.shakvilla.beatzmedia.platform.domain.NotFoundException;
 
 /**
- * Uploads a release's cover art and applies it to the release and its tracks.
+ * Uploads a release's cover art and applies it as the fallback artwork for tracks without custom art.
  *
  * <p>The wizard has always had a cover picker, but the image never left the browser — it held a
  * {@code blob:} object URL and no request ever carried the file, so "Add cover art before
  * submitting" was satisfied by something that did not exist server-side. This is the missing half.
+ *
+ * <p>Release art remains the fallback for tracks that do not have custom artwork. Individual
+ * track artwork is preserved when the release cover changes.
  *
  * <p>Artwork is processed inline rather than queued: image variants are cheap, and the artist needs
  * the URL back in the same request to render a preview.
@@ -61,6 +66,9 @@ public class SetReleaseCoverService implements SetReleaseCover {
       // Same message as a genuine miss: an artist must not be able to probe for other artists' ids.
       throw new NotFoundException("Release not found: " + releaseId.value());
     }
+    if (release.getStatus() == ReleaseStatus.live || release.getStatus() == ReleaseStatus.scheduled) {
+      throw new IllegalTransitionException(release.getStatus(), "SET_RELEASE_COVER_DIRECTLY");
+    }
 
     // Format is decided by media's magic-byte sniffing, not the declared content type.
     MediaHandle handle = upload.uploadOriginal(new UploadCommand(
@@ -88,7 +96,7 @@ public class SetReleaseCoverService implements SetReleaseCover {
       if (track == null) {
         continue;
       }
-      Track withArt = track.withImage(url);
+      Track withArt = track.withReleaseCover(url);
       if (withArt != track) {
         repo.saveTrack(withArt);
         updated++;

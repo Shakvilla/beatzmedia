@@ -1,0 +1,41 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    {
+      "name": "frontend",
+      "runtimeExecutable": "/Users/mac/.nvm/versions/node/v22.17.1/bin/npm",
+      "runtimeArgs": [
+        "--prefix",
+        "/Users/mac/Desktop/BeatzClik FullStack/Frontend",
+        "run",
+        "dev",
+        "--",
+        "--port",
+        "5174"
+      ],
+      "port": 5174
+    },
+    {
+      "name": "backend",
+      "runtimeExecutable": "/Users/mac/Desktop/BeatzClik FullStack/backend/mvnw",
+      "runtimeArgs": [
+        "-f",
+        "/Users/mac/Desktop/BeatzClik FullStack/backend/pom.xml",
+        "quarkus:dev",
+        "-Dquarkus.http.port=18080"
+      ],
+      "port": 18080
+    },
+    {
+      "name": "stack",
+      "runtimeExecutable": "docker",
+      "runtimeArgs": [
+        "compose",
+        "-f",
+        "/Users/mac/Desktop/BeatzClik FullStack/backend/docker-compose.yml",
+        "up"
+      ],
+      "port": 8080
+    }
+  ]
+}

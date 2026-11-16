@@ -48,7 +48,7 @@ import org.shakvilla.beatzmedia.platform.domain.PageRequest;
  */
 @Path("/v1/admin/moderation")
 @Produces(MediaType.APPLICATION_JSON)
-@Tag(name = "admin-moderation")
+@Tag(name = "Administrator Management")
 @SecurityRequirement(name = "BearerAuth")
 public class AdminModerationResource {
 

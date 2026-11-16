@@ -22,6 +22,7 @@ import org.shakvilla.beatzmedia.identity.application.port.in.AdminMemberView;
  * Identity ADD §6 / DoD §11 contract-test requirement.
  */
 @Tag("unit")
+@Tag("contract")
 class AdminMemberContractTest {
 
   private static final Set<String> VALID_ROLES =

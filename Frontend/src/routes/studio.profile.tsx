@@ -10,7 +10,7 @@ import { useToast } from '../components/ui/toast-provider'
 import { type StudioProfile, type StudioShow } from '../lib/studio-data'
 import { useCreatorIdentity, initialsOf } from '../features/studio/use-creator-identity'
 import { artistTracksQuery } from '../lib/api/queries/catalog'
-import { studioProfileQuery, apiSaveStudioProfile } from '../lib/api/queries/studio'
+import { studioProfileQuery, apiSaveStudioProfile, apiUploadStudioProfileImage } from '../lib/api/queries/studio'
 import { ApiError } from '../lib/api/errors'
 import { taxonomyQuery } from '../lib/api/queries/taxonomy'
 
@@ -38,6 +38,7 @@ function ProfileComponent() {
   })
 
   const [p, setP] = useState<StudioProfile>(storeProfile)
+  const [uploadingImage, setUploadingImage] = useState<'avatar' | 'banner' | null>(null)
   const { data: allGenres = [] } = useQuery(taxonomyQuery('genre'))
   const avatarRef = useRef<HTMLInputElement>(null)
   const bannerRef = useRef<HTMLInputElement>(null)
@@ -45,10 +46,29 @@ function ProfileComponent() {
 
   const dirty = useMemo(() => JSON.stringify(p) !== JSON.stringify(storeProfile), [p, storeProfile])
   // The API rejects a blank username with 422; block the save rather than let it fail.
-  const canSave = dirty && !!p.username.trim()
+  const canSave = dirty && !!p.username.trim() && uploadingImage === null
 
   const set = <K extends keyof StudioProfile>(key: K, value: StudioProfile[K]) => setP((prev) => ({ ...prev, [key]: value }))
   const setLink = (key: keyof StudioProfile['links'], value: string) => setP((prev) => ({ ...prev, links: { ...prev.links, [key]: value } }))
+
+  const uploadProfileImage = async (type: 'avatar' | 'banner', file: File) => {
+    setUploadingImage(type)
+    try {
+      const url = await apiUploadStudioProfileImage(type, file)
+      set(type, url)
+      queryClient.setQueryData<StudioProfile>(studioProfileQuery().queryKey, (current) =>
+        current ? { ...current, [type]: url } : current,
+      )
+      toast(`${type === 'avatar' ? 'Avatar' : 'Banner'} uploaded and saved`, 'success')
+    } catch (err) {
+      const message = err instanceof ApiError && err.message.trim()
+        ? err.message
+        : `Could not upload the ${type}. Please try again.`
+      toast(message, 'error')
+    } finally {
+      setUploadingImage(null)
+    }
+  }
 
   const addTag = (label: string) => {
     const t = label.trim()
@@ -124,21 +144,21 @@ function ProfileComponent() {
 
       {/* Banner + avatar */}
       <div className="relative">
-        <input ref={bannerRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) set('banner', URL.createObjectURL(f)) }} />
-        <input ref={avatarRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) set('avatar', URL.createObjectURL(f)) }} />
+        <input ref={bannerRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadProfileImage('banner', f); e.currentTarget.value = '' }} />
+        <input ref={avatarRef} type="file" accept="image/*" className="hidden" onChange={(e) => { const f = e.target.files?.[0]; if (f) void uploadProfileImage('avatar', f); e.currentTarget.value = '' }} />
         <div className="relative w-full aspect-[4/1] min-h-[160px] rounded-2xl overflow-hidden bg-beatz-light-surface-2 dark:bg-white/5 border border-gray-200 dark:border-white/10 flex items-center justify-center">
           {p.banner ? <img src={p.banner} alt="Banner" className="w-full h-full object-cover" /> : <span className="text-[11px] font-mono uppercase tracking-[0.2em] text-gray-400 dark:text-gray-500">Banner · 2400×600</span>}
-          <button onClick={() => bannerRef.current?.click()} className="absolute right-4 bottom-4 h-9 px-4 rounded-full bg-white/90 dark:bg-black/60 backdrop-blur text-beatz-dark-bg dark:text-white text-xs font-bold flex items-center gap-2 hover:bg-white dark:hover:bg-black/80 transition-colors shadow-sm">
-            <ImagePlus size={14} /> Upload banner
+          <button onClick={() => bannerRef.current?.click()} disabled={uploadingImage !== null} className="absolute right-4 bottom-4 h-9 px-4 rounded-full bg-white/90 dark:bg-black/60 backdrop-blur text-beatz-dark-bg dark:text-white text-xs font-bold flex items-center gap-2 hover:bg-white dark:hover:bg-black/80 transition-colors shadow-sm disabled:opacity-60">
+            <ImagePlus size={14} /> {uploadingImage === 'banner' ? 'Uploading banner…' : 'Upload banner'}
           </button>
         </div>
         <div className="absolute -bottom-8 left-6 flex items-end gap-4">
-          <button onClick={() => avatarRef.current?.click()} className="w-28 h-28 rounded-full overflow-hidden border-4 border-beatz-light-bg dark:border-beatz-dark-bg bg-beatz-light-surface-2 dark:bg-beatz-dark-surface-2 flex items-center justify-center shrink-0 group relative">
+          <button onClick={() => avatarRef.current?.click()} disabled={uploadingImage !== null} className="w-28 h-28 rounded-full overflow-hidden border-4 border-beatz-light-bg dark:border-beatz-dark-bg bg-beatz-light-surface-2 dark:bg-beatz-dark-surface-2 flex items-center justify-center shrink-0 group relative disabled:opacity-60">
             {p.avatar ? <img src={p.avatar} alt="Avatar" className="w-full h-full object-cover" /> : <span className="text-2xl font-bold text-gray-500 dark:text-gray-300">{p.displayName.trim() ? initialsOf(p.displayName) : creator.initials}</span>}
             <span className="absolute inset-0 bg-black/40 opacity-0 group-hover:opacity-100 flex items-center justify-center transition-opacity"><ImagePlus size={20} className="text-white" /></span>
           </button>
-          <button onClick={() => avatarRef.current?.click()} className="mb-2 h-9 px-4 rounded-full bg-gray-100 dark:bg-white/10 text-beatz-dark-bg dark:text-white text-xs font-bold hover:bg-gray-200 dark:hover:bg-white/15 transition-colors">
-            Change avatar
+          <button onClick={() => avatarRef.current?.click()} disabled={uploadingImage !== null} className="mb-2 h-9 px-4 rounded-full bg-gray-100 dark:bg-white/10 text-beatz-dark-bg dark:text-white text-xs font-bold hover:bg-gray-200 dark:hover:bg-white/15 transition-colors disabled:opacity-60">
+            {uploadingImage === 'avatar' ? 'Uploading avatar…' : 'Change avatar'}
           </button>
         </div>
       </div>

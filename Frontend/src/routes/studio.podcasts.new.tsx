@@ -40,6 +40,7 @@ function NewEpisode() {
   // category an admin added was unselectable here, and one they removed was still offered.
   const { data: categoryTerms = [] } = useQuery(taxonomyQuery('podcast_category'))
   const [newShowCat, setNewShowCat] = useState<string>('')
+  const [newShowCountry, setNewShowCountry] = useState('')
   const [title, setTitle] = useState('')
   const [description, setDescription] = useState('')
   const [cover, setCover] = useState<string | null>(null)
@@ -90,7 +91,8 @@ function NewEpisode() {
       // whose show has no cover never reaches fans — podcast.image is NOT NULL.
       let targetShowId = showId === NEW_SHOW ? null : showId
       if (showId === NEW_SHOW) {
-        const created = await apiCreateShow({ title: newShowTitle.trim(), category: newShowCat })
+        const created = await apiCreateShow({ title: newShowTitle.trim(), category: newShowCat,
+          originCountry: newShowCountry.trim().toUpperCase() || null })
         targetShowId = created.id
       }
 
@@ -118,6 +120,7 @@ function NewEpisode() {
       await Promise.all([
         queryClient.invalidateQueries({ queryKey: studioEpisodesQuery().queryKey }),
         queryClient.invalidateQueries({ queryKey: studioShowsQuery().queryKey }),
+        queryClient.invalidateQueries({ queryKey: ['podcasts'] }),
       ])
       toast(visibility === 'scheduled' ? 'Episode scheduled' : 'Episode published 🎙️', 'success')
       navigate({ to: '/studio/podcasts' })
@@ -147,13 +150,13 @@ function NewEpisode() {
         {/* Main */}
         <div className="flex flex-col gap-6">
           {/* Audio */}
-          <input ref={fileRef} type="file" accept="audio/*" className="hidden" onChange={(e) => onAudio(e.target.files?.[0])} />
+          <input ref={fileRef} type="file" accept=".wav,.flac,.mp3,.m4a,audio/wav,audio/flac,audio/mpeg,audio/mp4,audio/m4a,audio/x-m4a" className="hidden" onChange={(e) => onAudio(e.target.files?.[0])} />
           {!audio ? (
             <button type="button" onClick={() => fileRef.current?.click()}
               className="w-full rounded-2xl border-2 border-dashed border-gray-300 dark:border-white/15 flex flex-col items-center justify-center gap-3 py-16 hover:border-beatz-green/60 transition-colors">
               <Upload size={30} className="text-beatz-green" />
               <span className="text-lg font-bold text-beatz-dark-bg dark:text-white">Drop episode audio</span>
-              <span className="text-xs text-gray-400 dark:text-gray-500">WAV or FLAC · up to 500 MB</span>
+              <span className="text-xs text-gray-400 dark:text-gray-500">WAV, FLAC, MP3 or M4A · up to 500 MB</span>
             </button>
           ) : (
             <div className={cn(CARD, 'flex items-center gap-4')}>
@@ -181,6 +184,16 @@ function NewEpisode() {
                     <option value="" disabled>Select a category</option>
                     {categoryTerms.map((c) => <option key={c.id} value={c.label}>{c.label}</option>)}
                   </select>
+                </Field>
+                <Field label="Show country of origin (optional)">
+                  <input className={INPUT} value={newShowCountry}
+                    onChange={(e) => setNewShowCountry(e.target.value.toUpperCase())}
+                    placeholder="GH" maxLength={2} autoCapitalize="characters"
+                    aria-label="Show country of origin"
+                    aria-describedby="show-origin-help" />
+                  <span id="show-origin-help" className="text-xs text-gray-500 dark:text-gray-400">
+                    Two-letter country code for future country charts. Leave empty if unsure.
+                  </span>
                 </Field>
               </div>
             )}

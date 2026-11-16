@@ -31,6 +31,7 @@ import io.quarkus.test.junit.QuarkusTest;
  */
 @QuarkusTest
 @Tag("integration")
+@Tag("contract")
 class EventsContractTest {
 
   @Inject EntityManager em;

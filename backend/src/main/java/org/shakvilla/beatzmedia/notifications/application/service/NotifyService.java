@@ -94,7 +94,8 @@ public class NotifyService implements NotifyUseCase {
     // provider outage during dispatch never rolls back the in-app notification.
     notificationCreatedEvent.fire(
         new NotificationCreated(
-            saved.id().value(), saved.recipientId().value(), saved.title(), saved.body()));
+            saved.id().value(), saved.recipientId().value(), saved.title(), saved.body(),
+            saved.toRoute().orElse(null)));
 
     return saved.id();
   }

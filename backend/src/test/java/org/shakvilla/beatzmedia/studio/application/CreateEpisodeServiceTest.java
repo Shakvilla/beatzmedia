@@ -14,12 +14,12 @@ import org.shakvilla.beatzmedia.audit.fakes.FakeAuditWriter;
 import org.shakvilla.beatzmedia.platform.domain.ValidationException;
 import org.shakvilla.beatzmedia.platform.fakes.FakeClock;
 import org.shakvilla.beatzmedia.platform.fakes.FakeIds;
+import org.shakvilla.beatzmedia.platform.fakes.RecordingDurableEventPublisher;
 import org.shakvilla.beatzmedia.studio.application.port.in.CreateEpisode.AudioUpload;
 import org.shakvilla.beatzmedia.studio.application.port.in.CreateEpisode.CreateEpisodeCommand;
 import org.shakvilla.beatzmedia.studio.application.port.in.EpisodeView;
 import org.shakvilla.beatzmedia.studio.application.service.CreateEpisodeService;
 import org.shakvilla.beatzmedia.studio.domain.ArtistId;
-import org.shakvilla.beatzmedia.studio.domain.EpisodePublished;
 import org.shakvilla.beatzmedia.studio.domain.IdempotencyConflictException;
 import org.shakvilla.beatzmedia.studio.domain.InvalidPriceException;
 import org.shakvilla.beatzmedia.studio.domain.MediaInvalidException;
@@ -29,7 +29,6 @@ import org.shakvilla.beatzmedia.studio.domain.ShowId;
 import org.shakvilla.beatzmedia.studio.domain.ShowNotFoundException;
 import org.shakvilla.beatzmedia.studio.fakes.FakeStudioRepository;
 import org.shakvilla.beatzmedia.studio.fakes.FakeUploadOriginalUseCase;
-import org.shakvilla.beatzmedia.studio.fakes.RecordingEvent;
 
 /**
  * Unit tests for {@link CreateEpisodeService} — LLFR-STUDIO-02.3. Fakes for {@link
@@ -49,7 +48,7 @@ class CreateEpisodeServiceTest {
   private FakeUploadOriginalUseCase mediaUpload;
   private FakeClock clock;
   private FakeAuditWriter auditWriter;
-  private RecordingEvent<EpisodePublished> publishedEvent;
+  private RecordingDurableEventPublisher durableEvents;
   private CreateEpisodeService service;
 
   @BeforeEach
@@ -61,9 +60,9 @@ class CreateEpisodeServiceTest {
     mediaUpload = new FakeUploadOriginalUseCase();
     clock = FakeClock.at(NOW);
     auditWriter = new FakeAuditWriter();
-    publishedEvent = new RecordingEvent<>();
+    durableEvents = new RecordingDurableEventPublisher();
     service = new CreateEpisodeService(
-        repo, mediaUpload, FakeIds.sequential("ep"), clock, auditWriter, publishedEvent);
+        repo, mediaUpload, FakeIds.sequential("ep"), clock, auditWriter, durableEvents);
   }
 
   private static AudioUpload wavUpload() {
@@ -78,21 +77,22 @@ class CreateEpisodeServiceTest {
   // ---- Happy path: publish now ----
 
   @Test
-  void create_publicVisibility_publishesNowAndFiresEventExactlyOnce() {
+  void create_publicVisibility_publishesNowAndAppendsDurableEventExactlyOnce() {
     EpisodeView view = service.create(ARTIST, "idem-1", publicCommand(), wavUpload());
 
     assertEquals("published", view.status());
     assertEquals("sh-1", view.showId());
     assertEquals("Konongo Diaries", view.showTitle());
     assertEquals(1, mediaUpload.callCount());
-    assertEquals(1, publishedEvent.fired().size());
+    assertEquals(1, durableEvents.messages().size());
+    assertEquals("studio.episode-published", durableEvents.messages().get(0).eventType());
     assertEquals(1, auditWriter.size());
   }
 
   // ---- Happy path: schedule ----
 
   @Test
-  void create_scheduledVisibilityWithFutureDate_schedulesAndDoesNotFireEvent() {
+  void create_scheduledVisibilityWithFutureDate_schedulesAndDoesNotAppendEvent() {
     CreateEpisodeCommand cmd = new CreateEpisodeCommand(
         "sh-1", null, null, "Ep 2", "desc", null, "scheduled",
         java.time.Instant.parse(FUTURE), true, new BigDecimal("5"), true);
@@ -101,7 +101,7 @@ class CreateEpisodeServiceTest {
 
     assertEquals("scheduled", view.status());
     assertTrue(view.premium());
-    assertEquals(0, publishedEvent.fired().size());
+    assertEquals(0, durableEvents.messages().size());
   }
 
   // ---- Premium ⇒ price > 0 ----
@@ -182,6 +182,26 @@ class CreateEpisodeServiceTest {
   }
 
   @Test
+  void create_m4aAudio_isAccepted() {
+    AudioUpload m4a =
+        new AudioUpload("ep.m4a", "audio/mp4", 1024, new ByteArrayInputStream(new byte[]{1}), "h-m4a");
+
+    service.create(ARTIST, "idem-m4a", publicCommand(), m4a);
+
+    assertEquals(1, mediaUpload.callCount());
+  }
+
+  @Test
+  void create_m4aWithUnknownBrowserMime_reachesMagicByteValidation() {
+    AudioUpload m4a = new AudioUpload("ep.M4A", "application/octet-stream", 1024,
+        new ByteArrayInputStream(new byte[]{1}), "h-m4a-unknown-mime");
+
+    service.create(ARTIST, "idem-m4a-unknown-mime", publicCommand(), m4a);
+
+    assertEquals(1, mediaUpload.callCount());
+  }
+
+  @Test
   void create_missingAudio_throwsMediaInvalid() {
     assertThrows(MediaInvalidException.class, () -> service.create(ARTIST, "idem-8", publicCommand(), null));
   }
@@ -197,7 +217,7 @@ class CreateEpisodeServiceTest {
 
     assertEquals(first.id(), replay.id());
     assertEquals(1, mediaUpload.callCount(), "replay must not call the media pipeline a second time");
-    assertEquals(1, publishedEvent.fired().size(), "replay must not re-fire EpisodePublished");
+    assertEquals(1, durableEvents.messages().size(), "replay must not append a second event");
   }
 
   @Test

@@ -51,7 +51,7 @@ import org.shakvilla.beatzmedia.admin.domain.PushItem;
  */
 @Path("/v1/admin/editorial")
 @Produces(MediaType.APPLICATION_JSON)
-@Tag(name = "admin-editorial")
+@Tag(name = "Administrator Management")
 @SecurityRequirement(name = "BearerAuth")
 public class AdminEditorialResource {
 

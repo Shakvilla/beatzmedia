@@ -1,6 +1,6 @@
 import { Link, Outlet, useLocation } from '@tanstack/react-router'
 import { useEffect, useState } from 'react'
-import { LayoutDashboard, Users, ListMusic, Flag, Wallet, Radio, Activity, ScrollText, SlidersHorizontal, ShieldAlert, LifeBuoy, Scale, Search, ArrowLeft, Menu, X, ShieldCheck, Tags, type LucideIcon } from 'lucide-react'
+import { LayoutDashboard, Users, ListMusic, Mic, Flag, Wallet, Radio, Activity, ScrollText, SlidersHorizontal, ShieldAlert, LifeBuoy, Scale, Search, ArrowLeft, Menu, X, ShieldCheck, Tags, type LucideIcon } from 'lucide-react'
 import { cn } from '../../utils/cn'
 import { useAdminIdentity } from '../../features/admin/use-admin-identity'
 import { AdminCommand } from './admin-command'
@@ -9,6 +9,7 @@ const NAV: { to: string; icon: LucideIcon; label: string }[] = [
   { to: '/admin', icon: LayoutDashboard, label: 'Overview' },
   { to: '/admin/users', icon: Users, label: 'Users' },
   { to: '/admin/catalog', icon: ListMusic, label: 'Catalog' },
+  { to: '/admin/podcasts', icon: Mic, label: 'Podcasts' },
   { to: '/admin/moderation', icon: Flag, label: 'Moderation' },
   { to: '/admin/finance', icon: Wallet, label: 'Finance' },
   { to: '/admin/editorial', icon: Radio, label: 'Editorial' },

@@ -5,7 +5,7 @@ import { ArrowLeft, Disc3, Check, Flag, ShieldX, RotateCcw, Clock, Play } from '
 import { cn } from '../utils/cn'
 import { useToast } from '../components/ui/toast-provider'
 import { type CatalogStatus } from '../lib/admin-data'
-import { catalogItemQuery, apiApproveCatalog, apiFlagCatalog, apiTakedownCatalog, apiReinstateCatalog } from '../lib/api/queries/admin-catalog'
+import { catalogItemQuery, catalogRevisionQuery, apiApproveCatalog, apiApproveCatalogRevision, apiRejectCatalogRevision, apiFlagCatalog, apiTakedownCatalog, apiReinstateCatalog } from '../lib/api/queries/admin-catalog'
 import { TakedownModal } from '../components/admin/takedown-modal'
 import { AdminLoadError } from '../components/admin/load-error'
 import { ApiError } from '../lib/api/errors'
@@ -27,6 +27,7 @@ function AdminCatalogDetail() {
   const { toast } = useToast()
   const queryClient = useQueryClient()
   const { data, isError, error, refetch } = useQuery(catalogItemQuery(itemId))
+  const revisionQuery = useQuery({ ...catalogRevisionQuery(itemId), enabled: data?.status === 'published' })
   const [takedownOpen, setTakedownOpen] = useState(false)
 
   if (isError) {
@@ -53,7 +54,11 @@ function AdminCatalogDetail() {
   }
 
   const invalidate = async () => {
-    await queryClient.invalidateQueries({ queryKey: ['admin', 'catalog'] })
+    await Promise.all([
+      queryClient.invalidateQueries({ queryKey: ['admin', 'catalog'] }),
+      queryClient.invalidateQueries({ queryKey: ['admin', 'moderation'] }),
+      queryClient.invalidateQueries({ queryKey: catalogRevisionQuery(itemId).queryKey }),
+    ])
   }
   const invalidateModeration = () => queryClient.invalidateQueries({ queryKey: ['admin', 'moderation'] })
   const runAction = async (fn: () => Promise<void>, okMsg: string, errMsg: string) => {
@@ -64,6 +69,13 @@ function AdminCatalogDetail() {
   const flag = () => runAction(async () => { await apiFlagCatalog(item.id); await invalidateModeration() }, 'Flagged for review', 'Could not flag release')
   const takedown = (reason: string) => runAction(() => apiTakedownCatalog(item.id, reason), `Taken down · ${reason}`, 'Could not take down release')
   const reinstate = () => runAction(() => apiReinstateCatalog(item.id), 'Reinstated — live again', 'Could not reinstate release')
+  const revision = revisionQuery.data
+  const approveRevision = () => revision && runAction(() => apiApproveCatalogRevision(item.id, revision.id), 'Release changes approved', 'Could not approve release changes')
+  const rejectRevision = () => {
+    if (!revision) return
+    const reason = window.prompt('Give the artist a reason for requesting changes:')?.trim()
+    if (reason) void runAction(() => apiRejectCatalogRevision(item.id, revision.id, reason), 'Changes returned to artist', 'Could not reject release changes')
+  }
 
   const reviewable = item.status === 'pending' || item.status === 'flagged'
 
@@ -99,6 +111,21 @@ function AdminCatalogDetail() {
           </div>
         </div>
       </div>
+
+      {revision && <section className={cn(CARD, 'flex flex-col gap-5 border-beatz-blue/30')} aria-labelledby="revision-review-heading">
+        <div className="flex items-start justify-between gap-4 flex-wrap">
+          <div><h2 id="revision-review-heading" className="text-lg font-bold text-beatz-dark-bg dark:text-white">Artist changes · version {revision.version}</h2><p className="mt-1 text-sm text-gray-500 dark:text-gray-400">Review the proposed release and track changes. The current version stays live until approval.</p></div>
+          <div className="flex gap-2"><button onClick={rejectRevision} className="h-10 px-4 rounded-full bg-beatz-red/10 text-beatz-red text-sm font-bold">Request changes</button><button onClick={approveRevision} className="h-10 px-4 rounded-full bg-beatz-green text-black text-sm font-bold">Approve changes</button></div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+          <div className="rounded-xl bg-gray-50 dark:bg-white/5 p-4"><span className="text-[10px] font-bold uppercase tracking-widest text-gray-400">Current</span><p className="mt-2 font-bold">{item.title}</p><p className="mt-1 text-sm text-gray-500">{item.genre ?? 'No genre'} · {item.tracks.length} tracks</p></div>
+          <div className="rounded-xl bg-beatz-green/5 p-4"><span className="text-[10px] font-bold uppercase tracking-widest text-beatz-green">Proposed</span><p className="mt-2 font-bold">{revision.title}</p><p className="mt-1 text-sm text-gray-500">{revision.genre ?? 'No genre'} · {revision.tracks.length} tracks</p>{revision.description && <p className="mt-2 text-sm text-gray-500">{revision.description}</p>}</div>
+        </div>
+        <div className="grid grid-cols-1 md:grid-cols-2 gap-5">
+          <div><h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-gray-400">Current tracklist</h3>{item.tracks.map((track) => <p key={`${track.position}-${track.title}`} className="border-b border-dashed border-gray-200 dark:border-white/10 py-2 text-sm">{track.position}. {track.title} · {track.duration}</p>)}</div>
+          <div><h3 className="mb-2 text-xs font-bold uppercase tracking-wider text-beatz-green">Proposed tracklist</h3>{[...revision.tracks].sort((a, b) => a.position - b.position).map((track) => <div key={track.trackId} className="border-b border-dashed border-gray-200 dark:border-white/10 py-2 text-sm"><p>{track.position}. {track.title} · ₵{(track.priceMinor / 100).toFixed(2)}</p>{track.image && <a className="text-xs text-beatz-green underline" href={track.image} target="_blank" rel="noreferrer">View proposed artwork</a>}</div>)}</div>
+        </div>
+      </section>}
 
       <div className="grid grid-cols-1 lg:grid-cols-[1.5fr_1fr] gap-6 items-start">
         {/* Tracklist */}
